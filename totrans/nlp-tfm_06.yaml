@@ -1,0 +1,769 @@
+- en: Chapter 5\. Text Generation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the most uncanny features of transformer-based language models is their
+    ability to generate text that is almost indistinguishable from text written by
+    humans. A famous example is OpenAI’s GPT-2, which when given the prompt:^([1](ch05.xhtml#idm46238719467344))
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a shocking finding, scientist discovered a herd of unicorns living in a remote,
+    previously unexplored valley, in the Andes Mountains. Even more surprising to
+    the researchers was the fact that the unicorns spoke perfect English.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'was able to generate a compelling news article about talking unicorns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The scientist named the population, after their distinctive horn, Ovid’s Unicorn.
+    These four-horned, silver-white unicorns were previously unknown to science. Now,
+    after almost two centuries, the mystery of what sparked this odd phenomenon is
+    finally solved. Dr. Jorge Pérez, an evolutionary biologist from the University
+    of La Paz, and several companions, were exploring the Andes Mountains when they
+    found a small valley, with no other animals or humans. Pérez noticed that the
+    valley had what appeared to be a natural fountain, surrounded by two peaks of
+    rock and silver snow. Pérez and the others then ventured further into the valley.
+    “By the time we reached the top of one peak, the water looked blue, with some
+    crystals on top,” said Pérez. Pérez and his friends were astonished to see the
+    unicorn herd. These creatures could be seen from the air without having to move
+    too much to see them—they were so close they could touch their horns. While examining
+    these bizarre creatures the scientists discovered that the creatures also spoke
+    some fairly regular English …
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: What makes this example so remarkable is that it was generated without any explicit
+    supervision! By simply learning to predict the next word in the text of millions
+    of web pages, GPT-2 and its more powerful descendants like GPT-3 are able to acquire
+    a broad set of skills and pattern recognition abilities that can be activated
+    with different kinds of input prompts. [Figure 5-1](#lm-meta-learning) shows how
+    language models are sometimes exposed during pretraining to sequences of tasks
+    where they need to predict the following tokens based on the context alone, like
+    addition, unscrambling words, and translation. This allows them to transfer this
+    knowledge effectively during fine-tuning or (if the model is large enough) at
+    inference time. These tasks are not chosen ahead of time, but occur naturally
+    in the huge corpora used to train billion-parameter language models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![LM Meta Learning](Images/nlpt_0501.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-1\. During pretraining, language models are exposed to sequences of
+    tasks that can be adapted during inference (courtesy of Tom B. Brown)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The ability of transformers to generate realistic text has led to a diverse
+    range of applications, like [InferKit](https://oreil.ly/I4adh), [Write With Transformer](https://oreil.ly/ipkap),
+    [AI Dungeon](https://oreil.ly/8ubC1), and conversational agents like [Google’s
+    Meena](https://oreil.ly/gMegC) that can even tell corny jokes, as shown in [Figure 5-2](#meena)!^([2](ch05.xhtml#idm46238719449616))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Meena](Images/nlpt_0502.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-2\. Meena on the left telling a corny joke to a human on the right
+    (courtesy of Daniel Adiwardana and Thang Luong)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this chapter we’ll use GPT-2 to illustrate how text generation works for
+    language models and explore how different decoding strategies impact the generated
+    texts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Challenge with Generating Coherent Text
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'So far in this book, we have focused on tackling NLP tasks via a combination
+    of pretraining and supervised fine-tuning. As we’ve seen, for task-specific heads
+    like sequence or token classification, generating predictions is fairly straightforward;
+    the model produces some logits and we either take the maximum value to get the
+    predicted class, or apply a softmax function to obtain the predicted probabilities
+    per class. By contrast, converting the model’s probabilistic output to text requires
+    a *decoding method*, which introduces a few challenges that are unique to text
+    generation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The decoding is done *iteratively* and thus involves significantly more compute
+    than simply passing inputs once through the forward pass of a model.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The *quality* and *diversity* of the generated text depend on the choice of
+    decoding method and associated hyperparameters.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To understand how this decoding process works, let’s start by examining how
+    GPT-2 is pretrained and subsequently applied to generate text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Like other *autoregressive* or *causal language models*, GPT-2 is pretrained
+    to estimate the probability <math alttext="upper P left-parenthesis bold y vertical-bar
+    bold x right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <mi>𝐲</mi> <mo>|</mo> <mi>𝐱</mi>
+    <mo>)</mo></mrow></math> of a sequence of tokens <math alttext="bold y equals
+    y 1 comma y 2 comma ellipsis y Subscript t Baseline"><mrow><mi>𝐲</mi> <mo>=</mo>
+    <msub><mi>y</mi> <mn>1</mn></msub> <mo>,</mo> <msub><mi>y</mi> <mn>2</mn></msub>
+    <mo>,</mo> <mo>...</mo> <msub><mi>y</mi> <mi>t</mi></msub></mrow></math> occurring
+    in the text, given some initial prompt or context sequence <math alttext="bold
+    x equals x 1 comma x 2 comma ellipsis x Subscript k Baseline"><mrow><mi>𝐱</mi>
+    <mo>=</mo> <msub><mi>x</mi> <mn>1</mn></msub> <mo>,</mo> <msub><mi>x</mi> <mn>2</mn></msub>
+    <mo>,</mo> <mo>...</mo> <msub><mi>x</mi> <mi>k</mi></msub></mrow></math> . Since
+    it is impractical to acquire enough training data to estimate <math alttext="upper
+    P left-parenthesis bold y vertical-bar bold x right-parenthesis"><mrow><mi>P</mi>
+    <mo>(</mo> <mi>𝐲</mi> <mo>|</mo> <mi>𝐱</mi> <mo>)</mo></mrow></math> directly,
+    it is common to use the chain rule of probability to factorize it as a product
+    of *conditional* probabilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper P left-parenthesis y 1 comma ellipsis comma y Subscript
+    t Baseline vertical-bar bold x right-parenthesis equals product Underscript t
+    equals 1 Overscript upper N Endscripts upper P left-parenthesis y Subscript t
+    Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis" display="block"><mrow><mi>P</mi>
+    <mrow><mo>(</mo> <msub><mi>y</mi> <mn>1</mn></msub> <mo>,</mo> <mo>...</mo> <mo>,</mo>
+    <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo>
+    <munderover><mo>∏</mo> <mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow> <mi>N</mi></munderover>
+    <mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo> <msub><mi>y</mi>
+    <mrow><mo><</mo><mi>t</mi></mrow></msub> <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where <math alttext="y Subscript t"><msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub></math>
+    is a shorthand notation for the sequence <math alttext="y 1 comma ellipsis comma
+    y Subscript t minus 1 Baseline"><mrow><msub><mi>y</mi> <mn>1</mn></msub> <mo>,</mo>
+    <mo>...</mo> <mo>,</mo> <msub><mi>y</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></mrow></math>
+    . It is from these conditional probabilities that we pick up the intuition that
+    autoregressive language modeling amounts to predicting each word given the preceding
+    words in a sentence; this is exactly what the probability on the righthand side
+    of the preceding equation describes. Notice that this pretraining objective is
+    quite different from BERT’s, which utilizes both *past* and *future* contexts
+    to predict a *masked* token.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By now you may have guessed how we can adapt this next token prediction task
+    to generate text sequences of arbitrary length. As shown in [Figure 5-3](#text-generation),
+    we start with a prompt like “Transformers are the” and use the model to predict
+    the next token. Once we have determined the next token, we append it to the prompt
+    and then use the new input sequence to generate another token. We do this until
+    we have reached a special end-of-sequence token or a predefined maximum length.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Text generation](Images/nlpt_0503.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-3\. Generating text from an input sequence by adding a new word to
+    the input at each step
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since the output sequence is *conditioned* on the choice of input prompt, this
+    type of text generation is often called *conditional text generation*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At the heart of this process lies a decoding method that determines which token
+    is selected at each timestep. Since the language model head produces a logit <math
+    alttext="z Subscript t comma i"><msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub></math>
+    per token in the vocabulary at each step, we can get the probability distribution
+    over the next possible token <math alttext="w Subscript i"><msub><mi>w</mi> <mi>i</mi></msub></math>
+    by taking the softmax:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper P left-parenthesis y Subscript t Baseline equals w Subscript
+    i Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis
+    equals normal s normal o normal f normal t normal m normal a normal x left-parenthesis
+    z Subscript t comma i Baseline right-parenthesis" display="block"><mrow><mi>P</mi>
+    <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>w</mi>
+    <mi>i</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub>
+    <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>softmax</mi> <mrow><mo>(</mo>
+    <msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The goal of most decoding methods is to search for the most likely overall
+    sequence by picking a <math alttext="ModifyingAbove bold y With caret"><mover
+    accent="true"><mi>𝐲</mi> <mo>^</mo></mover></math> such that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="ModifyingAbove bold y With caret equals a r g m a x Underscript
+    bold y Endscripts upper P left-parenthesis bold y vertical-bar bold x right-parenthesis"
+    display="block"><mrow><mover accent="true"><mi>𝐲</mi> <mo>^</mo></mover> <mo>=</mo>
+    <munder><mo form="prefix">argmax</mo> <mi>𝐲</mi></munder> <mi>P</mi> <mrow><mo>(</mo>
+    <mi>𝐲</mi> <mo>|</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finding <math alttext="ModifyingAbove bold y With caret"><mover accent="true"><mi>𝐲</mi>
+    <mo>^</mo></mover></math> directly would involve evaluating every possible sequence
+    with the language model. Since there does not exist an algorithm that can do this
+    in a reasonable amount of time, we rely on approximations instead. In this chapter
+    we’ll explore a few of these approximations and gradually build up toward smarter
+    and more complex algorithms that can be used to generate high-quality texts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Greedy Search Decoding
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The simplest decoding method to get discrete tokens from a model’s continuous
+    output is to greedily select the token with the highest probability at each timestep:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="ModifyingAbove y With caret Subscript t Baseline equals a r g
+    m a x Underscript y Subscript t Baseline Endscripts upper P left-parenthesis y
+    Subscript t Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis"
+    display="block"><mrow><msub><mover accent="true"><mi>y</mi> <mo>^</mo></mover>
+    <mi>t</mi></msub> <mo>=</mo> <munder><mo form="prefix">argmax</mo> <msub><mi>y</mi>
+    <mi>t</mi></msub></munder> <mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub>
+    <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub> <mo>,</mo>
+    <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: To see how greedy search works, let’s start by loading the 1.5-billion-parameter
+    version of GPT-2 with a language modeling head:^([3](ch05.xhtml#idm46238719316128))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s generate some text! Although ![nlpt_pin01](Images/nlpt_pin01.png)
+    Transformers provides a `generate()` function for autoregressive models like GPT-2,
+    we’ll implement this decoding method ourselves to see what goes on under the hood.
+    To warm up, we’ll take the same iterative approach shown in [Figure 5-3](#text-generation):
+    we’ll use “Transformers are the” as the input prompt and run the decoding for
+    eight timesteps. At each timestep, we pick out the model’s logits for the last
+    token in the prompt and wrap them with a softmax to get a probability distribution.
+    We then pick the next token with the highest probability, add it to the input
+    sequence, and run the process again. The following code does the job, and also
+    stores the five most probable tokens at each timestep so we can visualize the
+    alternatives:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '|  | Input | Choice 1 | Choice 2 | Choice 3 | Choice 4 | Choice 5 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | Transformers are the | most (8.53%) | only (4.96%) | best (4.65%) | Transformers
+    (4.37%) | ultimate (2.16%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | Transformers are the most | popular (16.78%) | powerful (5.37%) | common
+    (4.96%) | famous (3.72%) | successful (3.20%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | Transformers are the most popular | toy (10.63%) | toys (7.23%) | Transformers
+    (6.60%) | of (5.46%) | and (3.76%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3 | Transformers are the most popular toy | line (34.38%) | in (18.20%) |
+    of (11.71%) | brand (6.10%) | line (2.69%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4 | Transformers are the most popular toy line | in (46.28%) | of (15.09%)
+    | , (4.94%) | on (4.40%) | ever (2.72%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 5 | Transformers are the most popular toy line in | the (65.99%) | history
+    (12.42%) | America (6.91%) | Japan (2.44%) | North (1.40%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 6 | Transformers are the most popular toy line in the | world (69.26%) |
+    United (4.55%) | history (4.29%) | US (4.23%) | U (2.30%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 7 | Transformers are the most popular toy line in the world | , (39.73%)
+    | . (30.64%) | and (9.87%) | with (2.32%) | today (1.74%) |'
+  prefs: []
+  type: TYPE_TB
+- en: With this simple method we were able to generate the sentence “Transformers
+    are the most popular toy line in the world”. Interestingly, this indicates that
+    GPT-2 has internalized some knowledge about the Transformers media franchise,
+    which was created by two toy companies (Hasbro and Takara Tomy). We can also see
+    the other possible continuations at each step, which shows the iterative nature
+    of text generation. Unlike other tasks such as sequence classification where a
+    single forward pass suffices to generate the predictions, with text generation
+    we need to decode the output tokens one at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Implementing greedy search wasn’t too hard, but we’ll want to use the built-in
+    `generate()` function from ![nlpt_pin01](Images/nlpt_pin01.png) Transformers to
+    explore more sophisticated decoding methods. To reproduce our simple example,
+    let’s make sure sampling is switched off (it’s off by default, unless the specific
+    configuration of the model you are loading the checkpoint from states otherwise)
+    and specify the `max_new_tokens` for the number of newly generated tokens:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s try something a bit more interesting: can we reproduce the unicorn
+    story from OpenAI? As we did previously, we’ll encode the prompt with the tokenizer,
+    and we’ll specify a larger value for `max_length` to generate a longer sequence
+    of text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Well, the first few sentences are quite different from the OpenAI example and
+    amusingly involve different universities being credited with the discovery! We
+    can also see one of the main drawbacks with greedy search decoding: it tends to
+    produce repetitive output sequences, which is certainly undesirable in a news
+    article. This is a common problem with greedy search algorithms, which can fail
+    to give you the optimal solution; in the context of decoding, they can miss word
+    sequences whose overall probability is higher just because high-probability words
+    happen to be preceded by low-probability ones.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, we can do better—let’s examine a popular method known as *beam
+    search decoding*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Although greedy search decoding is rarely used for text generation tasks that
+    require diversity, it can be useful for producing short sequences like arithmetic
+    where a deterministic and factually correct output is preferred.^([4](ch05.xhtml#idm46238718765760))
+    For these tasks, you can condition GPT-2 by providing a few line-separated examples
+    in the format `"5 + 8 => 13 \n 7 + 2 => 9 \n 1 + 0 =>"` as the input prompt.`  `#
+    Beam Search Decoding
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of decoding the token with the highest probability at each step, beam
+    search keeps track of the top-*b* most probable next tokens, where *b* is referred
+    to as the number of *beams* or *partial hypotheses*. The next set of beams are
+    chosen by considering all possible next-token extensions of the existing set and
+    selecting the *b* most likely extensions. The process is repeated until we reach
+    the maximum length or an EOS token, and the most likely sequence is selected by
+    ranking the *b* beams according to their log probabilities. An example of beam
+    search is shown in [Figure 5-4](#beam-search).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Beam search](Images/nlpt_0504.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-4\. Beam search with two beams
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Why do we score the sequences using log probabilities instead of the probabilities
+    themselves? That calculating the overall probability of a sequence <math alttext="upper
+    P left-parenthesis y 1 comma y 2 comma ellipsis comma y Subscript t Baseline vertical-bar
+    bold x right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <msub><mi>y</mi> <mn>1</mn></msub>
+    <mo>,</mo> <msub><mi>y</mi> <mn>2</mn></msub> <mo>,</mo> <mo>...</mo> <mo>,</mo>
+    <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo> <mi>𝐱</mi> <mo>)</mo></mrow></math>
+    involves calculating a *product* of conditional probabilities <math alttext="upper
+    P left-parenthesis y Subscript t Baseline vertical-bar y Subscript t Baseline
+    comma bold x right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub>
+    <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub> <mo>,</mo>
+    <mi>𝐱</mi> <mo>)</mo></mrow></math> is one reason. Since each conditional probability
+    is typically a small number in the range [ <math alttext="0 comma 1"><mrow><mn>0</mn>
+    <mo>,</mo> <mn>1</mn></mrow></math> ], taking their product can lead to an overall
+    probability that can easily underflow. This means that the computer can no longer
+    precisely represent the result of the calculation. For example, suppose we have
+    a sequence of <math alttext="t equals 1024"><mrow><mi>t</mi> <mo>=</mo> <mn>1024</mn></mrow></math>
+    tokens and generously assume that the probability for each token is 0.5\. The
+    overall probability for this sequence is an extremely small number:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'which leads to numerical instability as we run into underflow. We can avoid
+    this by calculating a related term, the log probability. If we apply the logarithm
+    to the joint and conditional probabilities, then with the help of the product
+    rule for logarithms we get:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="log upper P left-parenthesis y 1 comma ellipsis y Subscript t
+    Baseline vertical-bar bold x right-parenthesis equals sigma-summation Underscript
+    t equals 1 Overscript upper N Endscripts log upper P left-parenthesis y Subscript
+    t Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis"
+    display="block"><mrow><mo form="prefix">log</mo> <mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi>
+    <mn>1</mn></msub> <mo>,</mo> <mo>...</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo>
+    <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <munderover><mo>∑</mo> <mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow>
+    <mi>N</mi></munderover> <mo form="prefix">log</mo> <mi>P</mi> <mrow><mo>(</mo>
+    <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub>
+    <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In other words, the product of probabilities we saw earlier becomes a sum of
+    log probabilities, which is much less likely to run into numerical instabilities.
+    For example, calculating the log probability of the same example as before gives:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is a number we can easily deal with, and this approach still works for
+    much smaller numbers. Since we only want to compare relative probabilities, we
+    can do this directly with log probabilities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s calculate and compare the log probabilities of the texts generated by
+    greedy and beam search to see if beam search can improve the overall probability.
+    Since ![nlpt_pin01](Images/nlpt_pin01.png) Transformers models return the unnormalized
+    logits for the next token given the input tokens, we first need to normalize the
+    logits to create a probability distribution over the whole vocabulary for each
+    token in the sequence. We then need to select only the token probabilities that
+    were present in the sequence. The following function implements these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This gives us the log probability for a single token, so to get the total log
+    probability of a sequence we just need to sum the log probabilities for each token:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we ignore the log probabilities of the input sequence because they
+    are not generated by the model. We can also see that it is important to align
+    the logits and the labels; since the model predicts the next token, we do not
+    get a logit for the first label, and we don’t need the last logit because we don’t
+    have a ground truth token for it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s use these functions to first calculate the sequence log probability of
+    the greedy decoder on the OpenAI prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s compare this to a sequence that is generated with beam search. To
+    activate beam search with the `generate()` function we just need to specify the
+    number of beams with the `num_beams` parameter. The more beams we choose, the
+    better the result potentially gets; however, the generation process becomes much
+    slower since we generate parallel sequences for each beam:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can see that we get a better log probability (higher is better) with beam
+    search than we did with simple greedy decoding. However, we can see that beam
+    search also suffers from repetitive text. One way to address this is to impose
+    an *n*-gram penalty with the `no_repeat_ngram_size` parameter that tracks which
+    *n*-grams have been seen and sets the next token probability to zero if it would
+    produce a previously seen *n*-gram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: This isn’t too bad! We’ve managed to stop the repetitions, and we can see that
+    despite producing a lower score, the text remains coherent. Beam search with *n*-gram
+    penalty is a good way to find a trade-off between focusing on high-probability
+    tokens (with beam search) while reducing repetitions (with *n*-gram penalty),
+    and it’s commonly used in applications such as summarization or machine translation
+    where factual correctness is important. When factual correctness is less important
+    than the diversity of generated output, for instance in open-domain chitchat or
+    story generation, another alternative to reduce repetitions while improving diversity
+    is to use sampling. Let’s round out our exploration of text generation by examining
+    a few of the most common sampling methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sampling Methods
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The simplest sampling method is to randomly sample from the probability distribution
+    of the model’s outputs over the full vocabulary at each timestep:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper P left-parenthesis y Subscript t Baseline equals w Subscript
+    i Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis
+    equals normal s normal o normal f normal t normal m normal a normal x left-parenthesis
+    z Subscript t comma i Baseline right-parenthesis equals StartFraction exp left-parenthesis
+    z Subscript t comma i Baseline right-parenthesis Over sigma-summation Underscript
+    j equals 1 Overscript StartAbsoluteValue upper V EndAbsoluteValue Endscripts exp
+    left-parenthesis z Subscript t comma j Baseline right-parenthesis EndFraction"
+    display="block"><mrow><mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub>
+    <mo>=</mo> <msub><mi>w</mi> <mi>i</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub>
+    <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>softmax</mi> <mrow><mo>(</mo>
+    <msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub> <mo>)</mo></mrow>
+    <mo>=</mo> <mfrac><mrow><mo form="prefix">exp</mo><mo>(</mo><msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub>
+    <mo>)</mo></mrow> <mrow><msubsup><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow>
+    <mrow><mo>|</mo><mi>V</mi><mo>|</mo></mrow></msubsup> <mo form="prefix">exp</mo><mrow><mo>(</mo><msub><mi>z</mi>
+    <mrow><mi>t</mi><mo>,</mo><mi>j</mi></mrow></msub> <mo>)</mo></mrow></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'where <math alttext="StartAbsoluteValue upper V EndAbsoluteValue"><mrow><mo>|</mo>
+    <mi>V</mi> <mo>|</mo></mrow></math> denotes the cardinality of the vocabulary.
+    We can easily control the diversity of the output by adding a temperature parameter
+    *T* that rescales the logits before taking the softmax:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper P left-parenthesis y Subscript t Baseline equals w Subscript
+    i Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis
+    equals StartFraction exp left-parenthesis z Subscript t comma i Baseline slash
+    upper T right-parenthesis Over sigma-summation Underscript j equals 1 Overscript
+    StartAbsoluteValue upper V EndAbsoluteValue Endscripts exp left-parenthesis z
+    Subscript t comma j Baseline slash upper T right-parenthesis EndFraction" display="block"><mrow><mi>P</mi>
+    <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>w</mi>
+    <mi>i</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub>
+    <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mo form="prefix">exp</mo><mo>(</mo><msub><mi>z</mi>
+    <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub> <mo>/</mo><mi>T</mi><mo>)</mo></mrow>
+    <mrow><msubsup><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mrow><mo>|</mo><mi>V</mi><mo>|</mo></mrow></msubsup>
+    <mo form="prefix">exp</mo><mrow><mo>(</mo><msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>j</mi></mrow></msub>
+    <mo>/</mo><mi>T</mi><mo>)</mo></mrow></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: By tuning *T* we can control the shape of the probability distribution.^([5](ch05.xhtml#idm46238718164208))
+    When <math alttext="upper T much-less-than 1"><mrow><mi>T</mi> <mo>≪</mo> <mn>1</mn></mrow></math>
+    , the distribution becomes peaked around the origin and the rare tokens are suppressed.
+    On the other hand, when <math alttext="upper T much-greater-than 1"><mrow><mi>T</mi>
+    <mo>≫</mo> <mn>1</mn></mrow></math> , the distribution flattens out and each token
+    becomes equally likely. The effect of temperature on token probabilities is shown
+    in [Figure 5-5](#temperature).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Token probabilities as a function of temperature](Images/nlpt_0505.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-5\. Distribution of randomly generated token probabilities for three
+    selected temperatures
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To see how we can use temperature to influence the generated text, let’s sample
+    with <math alttext="upper T equals 2"><mrow><mi>T</mi> <mo>=</mo> <mn>2</mn></mrow></math>
+    by setting the `temperature` parameter in the `generate()` function (we’ll explain
+    the meaning of the `top_k` parameter in the next section):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can clearly see that a high temperature has produced mostly gibberish; by
+    accentuating the rare tokens, we’ve caused the model to create strange grammar
+    and quite a few made-up words! Let’s see what happens if we cool down the temperature:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is significantly more coherent, and even includes a quote from yet another
+    university being credited with the discovery! The main lesson we can draw from
+    temperature is that it allows us to control the quality of the samples, but there’s
+    always a trade-off between coherence (low temperature) and diversity (high temperature)
+    that one has to tune to the use case at hand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another way to adjust the trade-off between coherence and diversity is to truncate
+    the distribution of the vocabulary. This allows us to adjust the diversity freely
+    with the temperature, but in a more limited range that excludes words that would
+    be too strange in the context (i.e., low-probability words). There are two main
+    ways to do this: top-*k* and nucleus (or top-*p*) sampling. Let’s take a look.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Top-k and Nucleus Sampling
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Top-*k* and nucleus (top-*p*) sampling are two popular alternatives or extensions
+    to using temperature. In both cases, the basic idea is to restrict the number
+    of possible tokens we can sample from at each timestep. To see how this works,
+    let’s first visualize the cumulative probability distribution of the model’s outputs
+    at <math alttext="upper T equals 1"><mrow><mi>T</mi> <mo>=</mo> <mn>1</mn></mrow></math>
+    as seen in [Figure 5-6](#distribution).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s tease apart these plots, since they contain a lot of information. In the
+    upper plot we can see a histogram of the token probabilities. It has a peak around
+    <math alttext="10 Superscript negative 8"><msup><mn>10</mn> <mrow><mo>-</mo><mn>8</mn></mrow></msup></math>
+    and a second, smaller peak around <math alttext="10 Superscript negative 4"><msup><mn>10</mn>
+    <mrow><mo>-</mo><mn>4</mn></mrow></msup></math> , followed by a sharp drop with
+    just a handful of tokens occurring with probability between <math alttext="10
+    Superscript negative 2"><msup><mn>10</mn> <mrow><mo>-</mo><mn>2</mn></mrow></msup></math>
+    and <math alttext="10 Superscript negative 1"><msup><mn>10</mn> <mrow><mo>-</mo><mn>1</mn></mrow></msup></math>
+    . Looking at this diagram, we can see that the probability of picking the token
+    with the highest probability (the isolated bar at <math alttext="10 Superscript
+    negative 1"><msup><mn>10</mn> <mrow><mo>-</mo><mn>1</mn></mrow></msup></math>
+    ) is 1 in 10.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Probability distribution of next token prediction.](Images/nlpt_0506.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-6\. Probability distribution of next token prediction (upper) and cumulative
+    distribution of descending token probabilities (lower)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In the lower plot, we’ve ordered the tokens by descending probability and calculated
+    the cumulative sum of the first 10,000 tokens (in total, there are 50,257 tokens
+    in GPT-2’s vocabulary). The curved line represents the probability of picking
+    any of the preceding tokens. For example, there is roughly a 96% chance of picking
+    any of the 1,000 tokens with the highest probability. We see that the probability
+    rises quickly above 90% but saturates to close to 100% only after several thousand
+    tokens. The plot shows that there is a 1 in 100 chance of not picking any of the
+    tokens that are not even in the top 2,000.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Although these numbers might appear small at first sight, they become important
+    because we sample once per token when generating text. So even if there is only
+    a 1 in 100 or 1,000 chance, if we sample hundreds of times there is a significant
+    chance of picking an unlikely token at some point—and picking such tokens when
+    sampling can badly influence the quality of the generated text. For this reason,
+    we generally want to avoid these very unlikely tokens. This is where top-*k* and
+    top-*p* sampling come into play.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The idea behind top-*k* sampling is to avoid the low-probability choices by
+    only sampling from the *k* tokens with the highest probability. This puts a fixed
+    cut on the long tail of the distribution and ensures that we only sample from
+    likely choices. Going back to [Figure 5-6](#distribution), top-*k* sampling is
+    equivalent to defining a vertical line and sampling from the tokens on the left.
+    Again, the `generate()` function provides an easy method to achieve this with
+    the `top_k` argument:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is arguably the most human-looking text we’ve generated so far. But how
+    do we choose *k*? The value of *k* is chosen manually and is the same for each
+    choice in the sequence, independent of the actual output distribution. We can
+    find a good value for *k* by looking at some text quality metrics, which we will
+    explore in the next chapter—but that fixed cutoff might not be very satisfactory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An alternative is to use a *dynamic* cutoff. With nucleus or top-*p* sampling,
+    instead of choosing a fixed cutoff value, we set a condition of when to cut off.
+    This condition is when a certain probability mass in the selection is reached.
+    Let’s say we set that value to 95%. We then order all tokens in descending order
+    by probability and add one token after another from the top of the list until
+    the sum of the probabilities of the selected tokens is 95%. Returning to [Figure 5-6](#distribution),
+    the value for *p* defines a horizontal line on the cumulative sum of probabilities
+    plot, and we sample only from tokens below the line. Depending on the output distribution,
+    this could be just one (very likely) token or a hundred (more equally likely)
+    tokens. At this point, you are probably not surprised that the `generate()` function
+    also provides an argument to activate top-*p* sampling. Let’s try it out:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Top-*p* sampling has also produced a coherent story, and this time with a new
+    twist about migrations from Australia to South America. You can even combine the
+    two sampling approaches to get the best of both worlds. Setting `top_k=50` and
+    `top_p=0.9` corresponds to the rule of choosing tokens with a probability mass
+    of 90%, from a pool of at most 50 tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can also apply beam search when we use sampling. Instead of selecting the
+    next batch of candidate tokens greedily, we can sample them and build up the beams
+    in the same way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Which Decoding Method Is Best?
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Unfortunately, there is no universally “best” decoding method. Which approach
+    is best will depend on the nature of the task you are generating text for. If
+    you want your model to perform a precise task like arithmetic or providing an
+    answer to a specific question, then you should lower the temperature or use deterministic
+    methods like greedy search in combination with beam search to guarantee getting
+    the most likely answer. If you want the model to generate longer texts and even
+    be a bit creative, then you should switch to sampling methods and increase the
+    temperature or use a mix of top-*k* and nucleus sampling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we looked at text generation, which is a very different task
+    from the NLU tasks we encountered previously. Generating text requires at least
+    one forward pass per generated token, and even more if we use beam search. This
+    makes text generation computationally demanding, and one needs the right infrastructure
+    to run a text generation model at scale. In addition, a good decoding strategy
+    that transforms the model’s output probabilities into discrete tokens can improve
+    the text quality. Finding the best decoding strategy requires some experimentation
+    and a subjective evaluation of the generated texts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In practice, however, we don’t want to make these decisions based on gut feeling
+    alone! Like with other NLP tasks, we should choose a model performance metric
+    that reflects the problem we want to solve. Unsurprisingly, there are a wide range
+    of choices, and we will encounter the most common ones in the next chapter, where
+    we have a look at how to train and evaluate a model for text summarization. Or,
+    if you can’t wait to learn how to train a GPT-type model from scratch, you can
+    skip right to [Chapter 10](ch10.xhtml#chapter_fromscratch), where we collect a
+    large dataset of code and then train an autoregressive language model on it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch05.xhtml#idm46238719467344-marker)) This example comes from OpenAI’s
+    [blog post on GPT-2](https://openai.com/blog/better-language-models).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.xhtml#idm46238719449616-marker)) However, as [Delip Rao points out](https://oreil.ly/mOM3V),
+    whether Meena *intends* to tell corny jokes is a subtle question.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch05.xhtml#idm46238719316128-marker)) If you run out of memory on your
+    machine, you can load a smaller GPT-2 version by replacing `model_name = "gpt-xl"`
+    with `model_name = "gpt"`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([4](ch05.xhtml#idm46238718765760-marker)) N.S. Keskar et al., [“CTRL: A Conditional
+    Transformer Language Model for Controllable Generation”](https://arxiv.org/abs/1909.05858),
+    (2019).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch05.xhtml#idm46238718164208-marker)) If you know some physics, you may
+    recognize a striking resemblance to the [Boltzmann distribution](https://oreil.ly/ZsMmx).`
+  prefs: []
+  type: TYPE_NORMAL
