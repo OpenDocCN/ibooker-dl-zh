@@ -1,8 +1,8 @@
-# 第十一章。未来方向
+# 第十一章：未来方向
 
-在本书中，我们探讨了变压器在各种自然语言处理任务中的强大能力。在本章中，我们将转变视角，看看这些模型目前面临的挑战以及试图克服这些挑战的研究趋势。在第一部分中，我们探讨了变压器的扩展问题，包括模型和语料库的规模。然后我们将注意力转向各种提出的技术，以使自注意机制更加高效。最后，我们将探讨新兴且令人兴奋的*多模态变压器*领域，该领域可以模拟跨多个领域的输入，如文本、图像和音频。
+在本书中，我们探讨了 Transformer 在各种自然语言处理任务中的强大能力。在本章中，我们将转变视角，看看这些模型目前面临的挑战以及试图克服这些挑战的研究趋势。在第一部分中，我们探讨了 Transformer 的扩展问题，包括模型和语料库的规模。然后我们将注意力转向各种提出的技术，以使自注意机制更加高效。最后，我们将探讨新兴且令人兴奋的*多模态 Transformer*领域，该领域可以模拟跨多个领域的输入，如文本、图像和音频。
 
-# 扩展变压器
+# 扩展 Transformer
 
 2019 年，研究人员[Richard Sutton](https://oreil.ly/119br)撰写了一篇引人深思的文章，题为[“苦涩的教训”](https://oreil.ly/YtD3V)，在文中他认为：
 
@@ -12,17 +12,17 @@
 
 > 我们必须学会苦涩的教训，即在长期内构建我们认为的思维方式是行不通的…… 从苦涩的教训中应该学到的一件事是通用方法的巨大威力，这些方法随着计算的增加而继续扩展，即使可用的计算变得非常庞大。似乎以这种方式任意扩展的两种方法是*搜索*和*学习*。
 
-现在有迹象表明，变压器也在发挥类似的作用；虽然早期的 BERT 和 GPT 后代中有许多关注调整架构或预训练目标的模型，但到了 2021 年中期，表现最佳的模型，如 GPT-3，实质上是原始模型的基本放大版本，没有太多的架构修改。在图 11-1 中，您可以看到自 2017 年原始变压器架构发布以来最大模型的发展时间线，这表明模型大小在短短几年内增加了四个数量级！
+现在有迹象表明，Transformer 也在发挥类似的作用；虽然早期的 BERT 和 GPT 后代中有许多关注调整架构或预训练目标的模型，但到了 2021 年中期，表现最佳的模型，如 GPT-3，实质上是原始模型的基本放大版本，没有太多的架构修改。在图 11-1 中，您可以看到自 2017 年原始 Transformer 架构发布以来最大模型的发展时间线，这表明模型大小在短短几年内增加了四个数量级！
 
 ![语言模型参数计数](img/nlpt_1101.png)
 
-###### 图 11-1。突出的变压器架构随时间的参数计数
+###### 图 11-1。突出的 Transformer 架构随时间的参数计数
 
-这种戏剧性的增长是基于经验证据，即大型语言模型在下游任务上表现更好，并且在 100 亿到 1000 亿参数范围内出现了零-shot 和少-shot 学习等有趣的能力。然而，参数数量并不是影响模型性能的唯一因素；计算量和训练数据的数量也必须同时扩展以训练这些庞然大物。鉴于像 GPT-3 这样的大型语言模型估计训练成本为[$4.6 million](https://oreil.ly/DUVcq)，显然希望能够预先估计模型的性能。令人惊讶的是，语言模型的性能似乎服从于模型大小和其他因素的*幂律关系*，这一关系被编码在一组缩放定律中。^(1) 让我们来看看这个令人兴奋的研究领域。
+这种戏剧性的增长是基于经验证据，即大型语言模型在下游任务上表现更好，并且在 100 亿到 1000 亿参数范围内出现了零-shot 和少-shot 学习等有趣的能力。然而，参数数量并不是影响模型性能的唯一因素；计算量和训练数据的数量也必须同时扩展以训练这些庞然大物。鉴于像 GPT-3 这样的大型语言模型估计训练成本为[$4.6 million](https://oreil.ly/DUVcq)，显然希望能够预先估计模型的性能。令人惊讶的是，语言模型的性能似乎服从于模型大小和其他因素的*幂律关系*，这一关系被编码在一组缩放定律中。¹ 让我们来看看这个令人兴奋的研究领域。
 
 ## 缩放定律
 
-缩放定律允许通过研究语言模型在不同计算预算*C*、数据集大小*D*和模型大小*N*下的行为来经验性地量化“越大越好”的范式。^(2)基本思想是绘制交叉熵损失*L*对这三个因素的依赖关系，并确定是否存在关系。对于像 GPT 系列中的自回归模型，得到的损失曲线如图 11-2 所示，其中每条蓝色曲线代表单个模型的训练运行。
+缩放定律允许通过研究语言模型在不同计算预算*C*、数据集大小*D*和模型大小*N*下的行为来经验性地量化“越大越好”的范式。²基本思想是绘制交叉熵损失*L*对这三个因素的依赖关系，并确定是否存在关系。对于像 GPT 系列中的自回归模型，得到的损失曲线如图 11-2 所示，其中每条蓝色曲线代表单个模型的训练运行。
 
 ![scaling-laws](img/nlpt_1102.png)
 
@@ -48,7 +48,7 @@
 
 ###### 图 11-3。测试损失与计算预算的幂律缩放跨越各种模态（由 Tom Henighan 提供）
 
-变压器语言模型的幂律缩放是否是普遍属性目前尚不清楚。目前，我们可以将缩放定律作为一种工具，来外推大型昂贵的模型，而无需明确训练它们。然而，缩放并不像听起来那么简单。现在让我们来看看在绘制这一前沿时会遇到的一些挑战。
+Transformer 语言模型的幂律缩放是否是普遍属性目前尚不清楚。目前，我们可以将缩放定律作为一种工具，来外推大型昂贵的模型，而无需明确训练它们。然而，缩放并不像听起来那么简单。现在让我们来看看在绘制这一前沿时会遇到的一些挑战。
 
 ## 缩放的挑战
 
@@ -82,19 +82,19 @@ BigScience
 
 EleutherAI
 
-这是一个由志愿研究人员、工程师和开发人员组成的去中心化集体，专注于 AI 对齐、扩展和开源 AI 研究。其目标之一是训练和开源一个类似 GPT-3 大小的模型，该团队已经发布了一些令人印象深刻的模型，如[GPT-Neo](https://oreil.ly/ZVGaz)和[GPT-J](https://oreil.ly/Kup60)，后者是一个 60 亿参数的模型，目前是公开可用的变压器模型中性能最佳的零-shot 性能。您可以在 EleutherAI 的[网站](https://eleuther.ai)上找到更多信息。
+这是一个由志愿研究人员、工程师和开发人员组成的去中心化集体，专注于 AI 对齐、扩展和开源 AI 研究。其目标之一是训练和开源一个类似 GPT-3 大小的模型，该团队已经发布了一些令人印象深刻的模型，如[GPT-Neo](https://oreil.ly/ZVGaz)和[GPT-J](https://oreil.ly/Kup60)，后者是一个 60 亿参数的模型，目前是公开可用的 Transformer 模型中性能最佳的零-shot 性能。您可以在 EleutherAI 的[网站](https://eleuther.ai)上找到更多信息。
 
-既然我们已经探讨了如何在计算、模型大小和数据集大小上扩展变压器，让我们来看看另一个活跃的研究领域：使自注意力更加高效。
+既然我们已经探讨了如何在计算、模型大小和数据集大小上扩展 Transformer，让我们来看看另一个活跃的研究领域：使自注意力更加高效。
 
 ## 请注意！
 
-我们在本书中已经看到，自注意力机制在变压器的架构中起着核心作用；毕竟，原始的 Transformer 论文就叫做“注意力机制就是你所需要的”！然而，自注意力存在一个关键挑战：由于权重是从序列中所有标记的成对比较生成的，当尝试处理长文档或将变压器应用于语音处理或计算机视觉等领域时，该层成为计算瓶颈。就时间和内存复杂度而言，变压器架构的自注意力层在计算上的规模化就像<math alttext="script upper O left-parenthesis n squared right-parenthesis"><mrow><mi>𝒪</mi> <mo>(</mo> <msup><mi>n</mi> <mn>2</mn></msup> <mo>)</mo></mrow></math>，其中*n*是序列的长度。^(5)
+我们在本书中已经看到，自注意力机制在 Transformer 的架构中起着核心作用；毕竟，原始的 Transformer 论文就叫做“注意力机制就是你所需要的”！然而，自注意力存在一个关键挑战：由于权重是从序列中所有标记的成对比较生成的，当尝试处理长文档或将 Transformer 应用于语音处理或计算机视觉等领域时，该层成为计算瓶颈。就时间和内存复杂度而言，Transformer 架构的自注意力层在计算上的规模化就像<math alttext="script upper O left-parenthesis n squared right-parenthesis"><mrow><mi>𝒪</mi> <mo>(</mo> <msup><mi>n</mi> <mn>2</mn></msup> <mo>)</mo></mrow></math>，其中*n*是序列的长度。⁵
 
-因此，最近关于变压器的研究大部分集中在使自注意力更加高效。研究方向大致聚集在图 11-4 中。
+因此，最近关于 Transformer 的研究大部分集中在使自注意力更加高效。研究方向大致聚集在图 11-4 中。
 
 ![efficient-attention](img/nlpt_1104.png)
 
-###### 图 11-4. 使注意力更高效的研究方向总结（由 Yi Tay 等人提供）^(6)
+###### 图 11-4. 使注意力更高效的研究方向总结（由 Yi Tay 等人提供）⁶
 
 一种常见的模式是通过在注意力机制中引入稀疏性或在注意力矩阵上应用核来使注意力更加高效。让我们快速看一下使自注意力更加高效的一些最流行方法，从稀疏性开始。
 
@@ -106,7 +106,7 @@ EleutherAI
 
 ###### 图 11-5. 自注意力的常见原子稀疏注意力模式：彩色方块表示计算注意力分数，而空白方块表示分数被丢弃（由 Tianyang Lin 提供）
 
-我们可以将这些模式描述如下：^(7)
+我们可以将这些模式描述如下：⁷
 
 全局注意力
 
@@ -154,7 +154,7 @@ EleutherAI
 
 <math alttext="y Subscript i Baseline equals StartFraction phi left-parenthesis upper Q Subscript i Baseline right-parenthesis Superscript upper T Baseline sigma-summation Underscript j Endscripts phi left-parenthesis upper K Subscript j Baseline right-parenthesis upper V Subscript j Superscript upper T Baseline Over phi left-parenthesis upper Q Subscript i Baseline right-parenthesis Superscript upper T Baseline sigma-summation Underscript k Endscripts phi left-parenthesis upper K Subscript k Baseline right-parenthesis EndFraction" display="block"><mrow><msub><mi>y</mi> <mi>i</mi></msub> <mo>=</mo> <mfrac><mrow><mi>ϕ</mi><msup><mrow><mo>(</mo><msub><mi>Q</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <mi>T</mi></msup> <msub><mo>∑</mo> <mi>j</mi></msub> <mi>ϕ</mi><mrow><mo>(</mo><msub><mi>K</mi> <mi>j</mi></msub> <mo>)</mo></mrow><msubsup><mi>V</mi> <mi>j</mi> <mi>T</mi></msubsup></mrow> <mrow><mi>ϕ</mi><msup><mrow><mo>(</mo><msub><mi>Q</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <mi>T</mi></msup> <msub><mo>∑</mo> <mi>k</mi></msub> <mi>ϕ</mi><mrow><mo>(</mo><msub><mi>K</mi> <mi>k</mi></msub> <mo>)</mo></mrow></mrow></mfrac></mrow></math>
 
-通过首先计算<math alttext="sigma-summation Underscript j Endscripts phi left-parenthesis upper K Subscript j Baseline right-parenthesis upper V Subscript j Superscript upper T"><mrow><msub><mo>∑</mo> <mi>j</mi></msub> <mi>ϕ</mi> <mrow><mo>(</mo> <msub><mi>K</mi> <mi>j</mi></msub> <mo>)</mo></mrow> <msubsup><mi>V</mi> <mi>j</mi> <mi>T</mi></msubsup></mrow></math>和<math alttext="sigma-summation Underscript k Endscripts phi left-parenthesis upper K Subscript k Baseline right-parenthesis"><mrow><msub><mo>∑</mo> <mi>k</mi></msub> <mi>ϕ</mi> <mrow><mo>(</mo> <msub><mi>K</mi> <mi>k</mi></msub> <mo>)</mo></mrow></mrow></math>，我们可以有效地线性化自注意力的空间和时间复杂度！这两种方法之间的比较在图 11-7 中有所说明。实现线性化自注意力的流行模型包括线性变换器和表演者。^(8)
+通过首先计算<math alttext="sigma-summation Underscript j Endscripts phi left-parenthesis upper K Subscript j Baseline right-parenthesis upper V Subscript j Superscript upper T"><mrow><msub><mo>∑</mo> <mi>j</mi></msub> <mi>ϕ</mi> <mrow><mo>(</mo> <msub><mi>K</mi> <mi>j</mi></msub> <mo>)</mo></mrow> <msubsup><mi>V</mi> <mi>j</mi> <mi>T</mi></msubsup></mrow></math>和<math alttext="sigma-summation Underscript k Endscripts phi left-parenthesis upper K Subscript k Baseline right-parenthesis"><mrow><msub><mo>∑</mo> <mi>k</mi></msub> <mi>ϕ</mi> <mrow><mo>(</mo> <msub><mi>K</mi> <mi>k</mi></msub> <mo>)</mo></mrow></mrow></math>，我们可以有效地线性化自注意力的空间和时间复杂度！这两种方法之间的比较在图 11-7 中有所说明。实现线性化自注意力的流行模型包括线性变换器和表演者。⁸
 
 ![线性注意力](img/nlpt_1107.png)
 
@@ -170,7 +170,7 @@ EleutherAI
 
 人类报告偏见
 
-文本中事件的频率可能不代表它们的真实频率。^(9)仅在互联网文本上训练的模型可能对世界有非常扭曲的看法。
+文本中事件的频率可能不代表它们的真实频率。⁹仅在互联网文本上训练的模型可能对世界有非常扭曲的看法。
 
 常识
 
@@ -192,7 +192,7 @@ EleutherAI
 
 ### iGPT
 
-受到 GPT 系列模型在文本方面的成功的启发，iGPT（即图像 GPT）将相同的方法应用于图像。^(10)通过将图像视为像素序列，iGPT 使用 GPT 架构和自回归预训练目标来预测下一个像素值。在大型图像数据集上进行预训练使 iGPT 能够“自动完成”部分图像，如图 11-8 所示。当在模型中添加分类头时，它还可以在分类任务上实现良好的结果。
+受到 GPT 系列模型在文本方面的成功的启发，iGPT（即图像 GPT）将相同的方法应用于图像。¹⁰通过将图像视为像素序列，iGPT 使用 GPT 架构和自回归预训练目标来预测下一个像素值。在大型图像数据集上进行预训练使 iGPT 能够“自动完成”部分图像，如图 11-8 所示。当在模型中添加分类头时，它还可以在分类任务上实现良好的结果。
 
 ![iGPT](img/nlpt_1108.png)
 
@@ -200,7 +200,7 @@ EleutherAI
 
 ### ViT
 
-我们看到 iGPT 紧随 GPT 风格的架构和预训练程序。Vision Transformer（ViT）^(11)是对视觉的 transformer 的 BERT 风格的处理，如图 11-9 所示。首先，图像被分成较小的补丁，然后每个补丁都用线性投影嵌入。结果与 BERT 中的标记嵌入非常相似，接下来的步骤几乎完全相同。补丁嵌入与位置嵌入相结合，然后通过普通的 transformer 编码器进行处理。在预训练期间，一些补丁被屏蔽或扭曲，目标是预测屏蔽补丁的平均颜色。
+我们看到 iGPT 紧随 GPT 风格的架构和预训练程序。Vision Transformer（ViT）¹¹是对视觉的 transformer 的 BERT 风格的处理，如图 11-9 所示。首先，图像被分成较小的补丁，然后每个补丁都用线性投影嵌入。结果与 BERT 中的标记嵌入非常相似，接下来的步骤几乎完全相同。补丁嵌入与位置嵌入相结合，然后通过普通的 transformer 编码器进行处理。在预训练期间，一些补丁被屏蔽或扭曲，目标是预测屏蔽补丁的平均颜色。
 
 ![vit-architecture](img/nlpt_1109.png)
 
@@ -244,7 +244,7 @@ preds_df
 
 很好，预测的类别似乎与图像匹配！
 
-图像模型的自然扩展是视频模型。除了空间维度，视频还具有时间维度。这使得任务变得更具挑战性，因为数据量变得更大，需要处理额外的维度。诸如 TimeSformer 的模型引入了空间和时间注意机制来解决这个问题。^(12)在未来，这样的模型可以帮助构建用于各种任务的工具，例如视频序列的分类或注释。
+图像模型的自然扩展是视频模型。除了空间维度，视频还具有时间维度。这使得任务变得更具挑战性，因为数据量变得更大，需要处理额外的维度。诸如 TimeSformer 的模型引入了空间和时间注意机制来解决这个问题。¹²在未来，这样的模型可以帮助构建用于各种任务的工具，例如视频序列的分类或注释。
 
 ## 表格
 
@@ -254,7 +254,7 @@ preds_df
 
 ###### 图 11-10。表格问答（由 Jonathan Herzig 提供）
 
-TAPAS（Table Parser 的缩写）^(13)来拯救！该模型将 Transformer 架构应用于表格，通过将表格信息与查询结合起来，如图 11-11 所示。
+TAPAS（Table Parser 的缩写）¹³来拯救！该模型将 Transformer 架构应用于表格，通过将表格信息与查询结合起来，如图 11-11 所示。
 
 ![tapas-architecture](img/nlpt_1111.png)
 
@@ -352,7 +352,7 @@ Predicted answer: COUNT > 1, 2, 3
 
 虽然能够使用文本与计算机进行交互是一个重大进步，但使用口语是我们进行交流的更自然方式。您可以在行业中看到这种趋势，应用程序如 Siri 和 Alexa 正在兴起，并变得越来越有用。此外，对于大部分人口来说，写作和阅读比说话更具挑战性。因此，能够处理和理解音频不仅方便，还可以帮助许多人获取更多信息。在这个领域的一个常见任务是*自动语音识别*（ASR），它将口语转换为文本，并使 Siri 等语音技术能够回答问题，比如“今天天气如何？”
 
-[wav2vec 2.0](https://oreil.ly/tPpC7)系列模型是 ASR 领域最新的发展之一：它们使用了变压器层与 CNN 的组合，如图 11-12 所示。^(14)通过在预训练期间利用未标记数据，这些模型仅使用少量标记数据就能取得有竞争力的结果。
+[wav2vec 2.0](https://oreil.ly/tPpC7)系列模型是 ASR 领域最新的发展之一：它们使用了 Transformer 层与 CNN 的组合，如图 11-12 所示。¹⁴通过在预训练期间利用未标记数据，这些模型仅使用少量标记数据就能取得有竞争力的结果。
 
 ![wav2vec2](img/nlpt_1112.png)
 
@@ -416,7 +416,7 @@ WELCOME HIS GOSPEL'}
 
 这个转录似乎是正确的。我们可以看到一些标点符号丢失了，但这很难从仅有的音频中获取，并且可以在后处理步骤中添加。只需几行代码，我们就可以构建一个最先进的语音转文本应用程序！
 
-为新语言构建模型仍然需要一定数量的标记数据，这可能很难获得，特别是对于资源匮乏的语言。在 wav2vec 2.0 发布后不久，发表了一篇描述一种名为 wav2vec-U 的方法的论文。^(15)在这项工作中，使用了聪明的聚类和 GAN 训练的组合，仅使用独立的未标记语音和未标记文本数据构建语音转文本模型。这个过程在图 11-13 中有详细的可视化。根本不需要对齐的语音和文本数据，这使得能够训练出更多语言的高性能语音转文本模型。
+为新语言构建模型仍然需要一定数量的标记数据，这可能很难获得，特别是对于资源匮乏的语言。在 wav2vec 2.0 发布后不久，发表了一篇描述一种名为 wav2vec-U 的方法的论文。¹⁵在这项工作中，使用了聪明的聚类和 GAN 训练的组合，仅使用独立的未标记语音和未标记文本数据构建语音转文本模型。这个过程在图 11-13 中有详细的可视化。根本不需要对齐的语音和文本数据，这使得能够训练出更多语言的高性能语音转文本模型。
 
 ![wav2vec-u](img/nlpt_1113.png)
 
@@ -527,13 +527,13 @@ Hugging Face 主持专注于改进生态系统中的库的短期活动，这些�
 
 教别人你所学到的知识是对自己知识的一个强大测试，从某种意义上说，这是我们写这本书的驱动动力之一！有很好的工具可以帮助您开始技术博客；我们推荐[*fastpages*](https://oreil.ly/f0L9u)，因为您可以轻松地使用 Jupyter 笔记本进行一切。
 
-^(1) J. Kaplan 等人的[“Scaling Laws for Neural Language Models”](https://arxiv.org/abs/2001.08361)，（2020）。
+¹ J. Kaplan 等人的[“Scaling Laws for Neural Language Models”](https://arxiv.org/abs/2001.08361)，（2020）。
 
-^(2) 数据集大小是以标记数来衡量的，而模型大小不包括嵌入层的参数。
+² 数据集大小是以标记数来衡量的，而模型大小不包括嵌入层的参数。
 
-^(3) T. Henighan 等人的[“Scaling Laws for Autoregressive Generative Modeling”](https://arxiv.org/abs/2010.14701)，（2020）。
+³ T. Henighan 等人的[“Scaling Laws for Autoregressive Generative Modeling”](https://arxiv.org/abs/2010.14701)，（2020）。
 
-^(4) 然而，最近提出了一个分布式深度学习框架，使较小的团体能够共享其计算资源，并以合作的方式预训练模型。参见 M. Diskin 等人的[“Distributed Deep Learning in Open Collaborations”](https://arxiv.org/abs/2106.10207)，（2021）。
+⁴ 然而，最近提出了一个分布式深度学习框架，使较小的团体能够共享其计算资源，并以合作的方式预训练模型。参见 M. Diskin 等人的[“Distributed Deep Learning in Open Collaborations”](https://arxiv.org/abs/2106.10207)，（2021）。
 
 5. 虽然自注意力的标准实现具有 O(n²)的时间和内存复杂度，但一篇谷歌研究人员的最新论文表明，通过简单重新排序操作，内存复杂度可以降低到 O(log n)。
 

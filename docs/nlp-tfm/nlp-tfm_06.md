@@ -1,6 +1,6 @@
-# 第五章。文本生成
+# 第五章：文本生成
 
-基于变压器的语言模型最令人不安的特点之一是它们生成的文本几乎无法与人类写的文本区分开。一个著名的例子是 OpenAI 的 GPT-2，当给出以下提示时：^(1)
+基于 Transformer 的语言模型最令人不安的特点之一是它们生成的文本几乎无法与人类写的文本区分开。一个著名的例子是 OpenAI 的 GPT-2，当给出以下提示时：¹
 
 > 在一个令人震惊的发现中，科学家们发现了一群生活在安第斯山脉偏远、以前未被探索过的山谷中的独角兽。更令研究人员感到惊讶的是，这些独角兽竟然讲着一口流利的英语。
 
@@ -14,7 +14,7 @@
 
 ###### 图 5-1。在预训练期间，语言模型会接触到可以在推断期间进行调整的任务序列（由汤姆·布朗提供）
 
-变压器生成逼真文本的能力已经导致了各种各样的应用，比如[InferKit](https://oreil.ly/I4adh)、[Write With Transformer](https://oreil.ly/ipkap)、[AI Dungeon](https://oreil.ly/8ubC1)，以及像[Google 的 Meena](https://oreil.ly/gMegC)这样的对话代理，甚至可以讲一些陈腐的笑话，就像图 5-2 中所示的那样！^(2)
+Transformer 生成逼真文本的能力已经导致了各种各样的应用，比如[InferKit](https://oreil.ly/I4adh)、[Write With Transformer](https://oreil.ly/ipkap)、[AI Dungeon](https://oreil.ly/8ubC1)，以及像[Google 的 Meena](https://oreil.ly/gMegC)这样的对话代理，甚至可以讲一些陈腐的笑话，就像图 5-2 中所示的那样！²
 
 ![Meena](img/nlpt_0502.png)
 
@@ -38,7 +38,7 @@
 
 其中<math alttext="y Subscript t"><msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub></math>是序列<math alttext="y 1 comma ellipsis comma y Subscript t minus 1 Baseline"><mrow><msub><mi>y</mi> <mn>1</mn></msub> <mo>,</mo> <mo>...</mo> <mo>,</mo> <msub><mi>y</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></mrow></math>的简写符号。我们从这些条件概率中得到的直觉是，自回归语言建模等于在给定句子中的前面单词的情况下预测每个单词；这正是前面方程右边的概率描述的内容。请注意，这种预训练目标与 BERT 的目标非常不同，BERT 利用*过去*和*未来*上下文来预测*掩码*标记。
 
-到目前为止，您可能已经猜到了我们如何将下一个标记预测任务调整为生成任意长度的文本序列。如图 5-3 所示，我们从一个提示开始，比如“变压器是”，然后使用模型预测下一个标记。一旦确定了下一个标记，我们将其附加到提示上，然后使用新的输入序列生成另一个标记。我们一直这样做，直到达到特殊的序列结束标记或预定义的最大长度。
+到目前为止，您可能已经猜到了我们如何将下一个标记预测任务调整为生成任意长度的文本序列。如图 5-3 所示，我们从一个提示开始，比如“Transformer 是”，然后使用模型预测下一个标记。一旦确定了下一个标记，我们将其附加到提示上，然后使用新的输入序列生成另一个标记。我们一直这样做，直到达到特殊的序列结束标记或预定义的最大长度。
 
 ![文本生成](img/nlpt_0503.png)
 
@@ -64,7 +64,7 @@
 
 <math alttext="ModifyingAbove y With caret Subscript t Baseline equals a r g m a x Underscript y Subscript t Baseline Endscripts upper P left-parenthesis y Subscript t Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis" display="block"><mrow><msub><mover accent="true"><mi>y</mi> <mo>^</mo></mover> <mi>t</mi></msub> <mo>=</mo> <munder><mo form="prefix">argmax</mo> <msub><mi>y</mi> <mi>t</mi></msub></munder> <mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub> <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
 
-为了看看贪婪搜索是如何工作的，让我们从加载带有语言建模头的 GPT-2 的 15 亿参数版本开始：^(3)
+为了看看贪婪搜索是如何工作的，让我们从加载带有语言建模头的 GPT-2 的 15 亿参数版本开始：³
 
 ```py
 import torch
@@ -172,7 +172,7 @@ The researchers were surprised to find that the unicorns were able
 
 ###### 注意
 
-尽管贪婪搜索解码在需要多样性的文本生成任务中很少使用，但它对于生成像算术这样需要确定性和事实正确的输出的短序列是有用的。^(4) 对于这些任务，您可以通过提供格式为`"5 + 8 => 13 \n 7 + 2 => 9 \n 1 + 0 =>"`的几个以换行符分隔的示例来对 GPT-2 进行条件设置。`  `#束搜索解码
+尽管贪婪搜索解码在需要多样性的文本生成任务中很少使用，但它对于生成像算术这样需要确定性和事实正确的输出的短序列是有用的。⁴ 对于这些任务，您可以通过提供格式为`"5 + 8 => 13 \n 7 + 2 => 9 \n 1 + 0 =>"`的几个以换行符分隔的示例来对 GPT-2 进行条件设置。`  `#束搜索解码
 
 束搜索不是在每一步解码时选择具有最高概率的标记，而是跟踪前*b*个最有可能的下一个标记，其中*b*被称为*束*或*部分假设*的数量。下一组束是通过考虑现有集合的所有可能的下一个标记扩展，并选择*b*个最有可能的扩展来选择的。这个过程重复进行，直到达到最大长度或 EOS 标记，并且通过根据它们的对数概率对*b*束进行排名来选择最有可能的序列。束搜索的一个示例显示在图 5-4 中。
 
@@ -325,7 +325,7 @@ log-prob: -93.12
 
 <math alttext="upper P left-parenthesis y Subscript t Baseline equals w Subscript i Baseline vertical-bar y Subscript t Baseline comma bold x right-parenthesis equals StartFraction exp left-parenthesis z Subscript t comma i Baseline slash upper T right-parenthesis Over sigma-summation Underscript j equals 1 Overscript StartAbsoluteValue upper V EndAbsoluteValue Endscripts exp left-parenthesis z Subscript t comma j Baseline slash upper T right-parenthesis EndFraction" display="block"><mrow><mi>P</mi> <mrow><mo>(</mo> <msub><mi>y</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>w</mi> <mi>i</mi></msub> <mo>|</mo> <msub><mi>y</mi> <mrow><mo><</mo><mi>t</mi></mrow></msub> <mo>,</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mo form="prefix">exp</mo><mo>(</mo><msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>i</mi></mrow></msub> <mo>/</mo><mi>T</mi><mo>)</mo></mrow> <mrow><msubsup><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mrow><mo>|</mo><mi>V</mi><mo>|</mo></mrow></msubsup> <mo form="prefix">exp</mo><mrow><mo>(</mo><msub><mi>z</mi> <mrow><mi>t</mi><mo>,</mo><mi>j</mi></mrow></msub> <mo>/</mo><mi>T</mi><mo>)</mo></mrow></mrow></mfrac></mrow></math>
 
-通过调整*T*，我们可以控制概率分布的形状。^(5) 当<math alttext="upper T much-less-than 1"><mrow><mi>T</mi> <mo>≪</mo> <mn>1</mn></mrow></math>时，分布在原点附近呈峰值，罕见的标记被抑制。另一方面，当<math alttext="upper T much-greater-than 1"><mrow><mi>T</mi> <mo>≫</mo> <mn>1</mn></mrow></math>时，分布变得平坦，每个标记变得同样可能。温度对标记概率的影响在图 5-5 中显示。
+通过调整*T*，我们可以控制概率分布的形状。⁵ 当<math alttext="upper T much-less-than 1"><mrow><mi>T</mi> <mo>≪</mo> <mn>1</mn></mrow></math>时，分布在原点附近呈峰值，罕见的标记被抑制。另一方面，当<math alttext="upper T much-greater-than 1"><mrow><mi>T</mi> <mo>≫</mo> <mn>1</mn></mrow></math>时，分布变得平坦，每个标记变得同样可能。温度对标记概率的影响在图 5-5 中显示。
 
 ![标记概率作为温度的函数](img/nlpt_0505.png)
 
@@ -463,12 +463,12 @@ Top-*p*采样也产生了一个连贯的故事，这次是关于从澳大利亚�
 
 然而，在实践中，我们不希望仅凭直觉做出这些决定！与其他 NLP 任务一样，我们应该选择一个反映我们想要解决的问题的模型性能指标。毫不奇怪，有很多选择，我们将在下一章中遇到最常见的选择，在那里我们将看看如何训练和评估文本摘要模型。或者，如果你迫不及待地想学习如何从头开始训练 GPT 类型的模型，你可以直接跳到第十章，在那里我们收集了大量的代码数据集，然后对其进行自回归语言模型的训练。
 
-^(1) 这个例子来自 OpenAI 的[GPT-2 博客文章](https://openai.com/blog/better-language-models)。
+¹ 这个例子来自 OpenAI 的[GPT-2 博客文章](https://openai.com/blog/better-language-models)。
 
-^(2) 然而，正如[Delip Rao 指出的](https://oreil.ly/mOM3V)，Meena 是否*打算*讲冷笑话是一个微妙的问题。
+² 然而，正如[Delip Rao 指出的](https://oreil.ly/mOM3V)，Meena 是否*打算*讲冷笑话是一个微妙的问题。
 
-^(3) 如果你的机器内存不足，你可以通过将`model_name = "gpt-xl"`替换为`model_name = "gpt"`来加载一个较小的 GPT-2 版本。
+³ 如果你的机器内存不足，你可以通过将`model_name = "gpt-xl"`替换为`model_name = "gpt"`来加载一个较小的 GPT-2 版本。
 
-^(4) N.S. Keskar 等人，[“CTRL: A Conditional Transformer Language Model for Controllable Generation”](https://arxiv.org/abs/1909.05858)，（2019）。
+⁴ N.S. Keskar 等人，[“CTRL: A Conditional Transformer Language Model for Controllable Generation”](https://arxiv.org/abs/1909.05858)，（2019）。
 
-^(5) 如果你懂一些物理学，你可能会发现与[玻尔兹曼分布](https://oreil.ly/ZsMmx)有惊人的相似之处。
+⁵ 如果你懂一些物理学，你可能会发现与[玻尔兹曼分布](https://oreil.ly/ZsMmx)有惊人的相似之处。

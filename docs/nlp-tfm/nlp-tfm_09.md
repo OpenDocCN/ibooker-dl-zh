@@ -1,4 +1,4 @@
-# 第八章。使 transformers 在生产中更高效
+# 第八章：使 transformers 在生产中更高效
 
 在之前的章节中，您已经看到了 transformers 如何被微调以在各种任务上产生出色的结果。然而，在许多情况下，准确性（或者您正在优化的任何指标）是不够的；如果您的最先进模型太慢或太大，无法满足应用程序的业务需求，那么它就不是很有用。一个明显的替代方案是训练一个更快、更紧凑的模型，但模型容量的减少通常会伴随着性能的下降。那么当您需要一个快速、紧凑但高度准确的模型时，您该怎么办呢？
 
@@ -311,7 +311,7 @@ Accuracy on test set - 0.867
 
 ## 预训练的知识蒸馏
 
-知识蒸馏也可以在预训练期间使用，以创建一个通用的学生模型，随后可以在下游任务上进行精细调整。在这种情况下，教师是一个预训练的语言模型，如 BERT，它将其关于掩码语言建模的知识转移到学生身上。例如，在 DistilBERT 论文中，^(8)掩码语言建模损失<math alttext="upper L Subscript m l m"><msub><mi>L</mi> <mrow><mi>m</mi><mi>l</mi><mi>m</mi></mrow></msub></math>被知识蒸馏的一个项和余弦嵌入损失<math alttext="upper L Subscript c o s Baseline equals 1 minus cosine left-parenthesis h Subscript s Baseline comma h Subscript t Baseline right-parenthesis"><mrow><msub><mi>L</mi> <mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow></msub> <mo>=</mo> <mn>1</mn> <mo>-</mo> <mo form="prefix">cos</mo> <mrow><mo>(</mo> <msub><mi>h</mi> <mi>s</mi></msub> <mo>,</mo> <msub><mi>h</mi> <mi>t</mi></msub> <mo>)</mo></mrow></mrow></math>来对齐教师和学生之间的隐藏状态向量的方向：
+知识蒸馏也可以在预训练期间使用，以创建一个通用的学生模型，随后可以在下游任务上进行精细调整。在这种情况下，教师是一个预训练的语言模型，如 BERT，它将其关于掩码语言建模的知识转移到学生身上。例如，在 DistilBERT 论文中，⁸掩码语言建模损失<math alttext="upper L Subscript m l m"><msub><mi>L</mi> <mrow><mi>m</mi><mi>l</mi><mi>m</mi></mrow></msub></math>被知识蒸馏的一个项和余弦嵌入损失<math alttext="upper L Subscript c o s Baseline equals 1 minus cosine left-parenthesis h Subscript s Baseline comma h Subscript t Baseline right-parenthesis"><mrow><msub><mi>L</mi> <mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow></msub> <mo>=</mo> <mn>1</mn> <mo>-</mo> <mo form="prefix">cos</mo> <mrow><mo>(</mo> <msub><mi>h</mi> <mi>s</mi></msub> <mo>,</mo> <msub><mi>h</mi> <mi>t</mi></msub> <mo>)</mo></mrow></mrow></math>来对齐教师和学生之间的隐藏状态向量的方向：
 
 <math alttext="upper L Subscript normal upper D normal i normal s normal t normal i normal l normal upper B normal upper E normal upper R normal upper T Baseline equals alpha upper L Subscript m l m Baseline plus beta upper L Subscript upper K upper D Baseline plus gamma upper L Subscript c o s" display="block"><mrow><msub><mi>L</mi> <mi>DistilBERT</mi></msub> <mo>=</mo> <mi>α</mi> <msub><mi>L</mi> <mrow><mi>m</mi><mi>l</mi><mi>m</mi></mrow></msub> <mo>+</mo> <mi>β</mi> <msub><mi>L</mi> <mrow><mi>K</mi><mi>D</mi></mrow></msub> <mo>+</mo> <mi>γ</mi> <msub><mi>L</mi> <mrow><mi>c</mi><mi>o</mi><mi>s</mi></mrow></msub></mrow></math>
 
@@ -378,7 +378,7 @@ class DistillationTrainer(Trainer):
 
 ## 选择一个好的学生初始化
 
-现在我们有了自定义的训练器，您可能会问的第一个问题是，我们应该为学生选择哪个预训练语言模型？一般来说，我们应该为学生选择一个较小的模型，以减少延迟和内存占用。从文献中得出的一个很好的经验法则是，当老师和学生是相同的*模型类型*时，知识蒸馏效果最好。^(9)这样做的一个可能原因是，不同的模型类型，比如 BERT 和 RoBERTa，可能具有不同的输出嵌入空间，这会妨碍学生模仿老师的能力。在我们的案例研究中，老师是 BERT，因此 DistilBERT 是一个自然的候选，因为它的参数少了 40%，并且已经在下游任务中取得了良好的结果。
+现在我们有了自定义的训练器，您可能会问的第一个问题是，我们应该为学生选择哪个预训练语言模型？一般来说，我们应该为学生选择一个较小的模型，以减少延迟和内存占用。从文献中得出的一个很好的经验法则是，当老师和学生是相同的*模型类型*时，知识蒸馏效果最好。⁹这样做的一个可能原因是，不同的模型类型，比如 BERT 和 RoBERTa，可能具有不同的输出嵌入空间，这会妨碍学生模仿老师的能力。在我们的案例研究中，老师是 BERT，因此 DistilBERT 是一个自然的候选，因为它的参数少了 40%，并且已经在下游任务中取得了良好的结果。
 
 首先，我们需要对我们的查询进行标记化和编码，因此让我们实例化来自 DistilBERT 的标记器，并创建一个简单的`tokenize_text()`函数来处理预处理：
 
@@ -395,7 +395,7 @@ clinc_enc = clinc.map(tokenize_text, batched=True, remove_columns=["text"])
 clinc_enc = clinc_enc.rename_column("intent", "labels")
 ```
 
-在这里，我们已经删除了`text`列，因为我们不再需要它，我们还将`intent`列重命名为`labels`，以便训练器可以自动检测到它。^(10)
+在这里，我们已经删除了`text`列，因为我们不再需要它，我们还将`intent`列重命名为`labels`，以便训练器可以自动检测到它。¹⁰
 
 现在我们已经处理了我们的文本，接下来我们需要做的是为我们的`DistillationTrainer`定义超参数和`compute_metrics()`函数。我们还将把所有的模型推送到 Hugging Face Hub，所以让我们首先登录到我们的账户：
 
@@ -416,7 +416,7 @@ def compute_metrics(pred):
 
 在这个函数中，序列建模头部的预测以 logits 的形式出现，因此我们使用`np.argmax()`函数找到最有信心的类别预测，并将其与地面真相标签进行比较。
 
-接下来我们需要定义训练参数。为了热身，我们将设置<math alttext="alpha equals 1"><mrow><mi>α</mi> <mo>=</mo> <mn>1</mn></mrow></math>，以查看 DistilBERT 在没有来自教师的任何信号的情况下的表现。^(11)然后我们将我们的微调模型推送到一个名为`distilbert-base-uncased-finetuned-clinc`的新存储库，所以我们只需要在`DistillationTrainingArguments`的`output_dir`参数中指定它：
+接下来我们需要定义训练参数。为了热身，我们将设置<math alttext="alpha equals 1"><mrow><mi>α</mi> <mo>=</mo> <mn>1</mn></mrow></math>，以查看 DistilBERT 在没有来自教师的任何信号的情况下的表现。¹¹然后我们将我们的微调模型推送到一个名为`distilbert-base-uncased-finetuned-clinc`的新存储库，所以我们只需要在`DistillationTrainingArguments`的`output_dir`参数中指定它：
 
 ```py
 batch_size = 48
@@ -557,7 +557,7 @@ plot_metrics(perf_metrics, optim_type)
 
 ## 使用 Optuna 找到良好的超参数
 
-为了找到<math alttext="alpha"><mi>α</mi></math>和*T*的良好值，我们可以在 2D 参数空间上进行网格搜索。但一个更好的选择是使用*Optuna*，^(12)这是一个专为这种任务设计的优化框架。Optuna 通过多次*trials*优化目标函数来制定搜索问题。例如，假设我们希望最小化 Rosenbrock 的[“香蕉函数”](https://oreil.ly/hPk8h)：
+为了找到<math alttext="alpha"><mi>α</mi></math>和*T*的良好值，我们可以在 2D 参数空间上进行网格搜索。但一个更好的选择是使用*Optuna*，¹²这是一个专为这种任务设计的优化框架。Optuna 通过多次*trials*优化目标函数来制定搜索问题。例如，假设我们希望最小化 Rosenbrock 的[“香蕉函数”](https://oreil.ly/hPk8h)：
 
 <math alttext="f left-parenthesis x comma y right-parenthesis equals left-parenthesis 1 minus x right-parenthesis squared plus 100 left-parenthesis y minus x squared right-parenthesis squared" display="block"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>,</mo> <mi>y</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mrow><mo>(</mo><mn>1</mn><mo>-</mo><mi>x</mi><mo>)</mo></mrow> <mn>2</mn></msup> <mo>+</mo> <mn>100</mn> <msup><mrow><mo>(</mo><mi>y</mi><mo>-</mo><msup><mi>x</mi> <mn>2</mn></msup> <mo>)</mo></mrow> <mn>2</mn></msup></mrow></math>
 
@@ -698,13 +698,13 @@ plot_metrics(perf_metrics, optim_type)
 
 <math alttext="f equals left-parenthesis StartFraction f Subscript normal m normal a normal x Baseline minus f Subscript normal m normal i normal n Baseline Over q Subscript normal m normal a normal x Baseline minus q Subscript normal m normal i normal n Baseline EndFraction right-parenthesis left-parenthesis q minus upper Z right-parenthesis equals upper S left-parenthesis q minus upper Z right-parenthesis" display="block"><mrow><mi>f</mi> <mo>=</mo> <mfenced open="(" close=")"><mfrac><mrow><msub><mi>f</mi> <mi>max</mi></msub> <mo>-</mo><msub><mi>f</mi> <mi>min</mi></msub></mrow> <mrow><msub><mi>q</mi> <mi>max</mi></msub> <mo>-</mo><msub><mi>q</mi> <mi>min</mi></msub></mrow></mfrac></mfenced> <mrow><mo>(</mo> <mi>q</mi> <mo>-</mo> <mi>Z</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>S</mi> <mrow><mo>(</mo> <mi>q</mi> <mo>-</mo> <mi>Z</mi> <mo>)</mo></mrow></mrow></math>
 
-缩放因子<math alttext="upper S"><mi>S</mi></math>是一个正的浮点数，常数<math alttext="upper Z"><mi>Z</mi></math>与<math alttext="q"><mi>q</mi></math>具有相同的类型，被称为*零点*，因为它对应于浮点值<math alttext="f equals 0"><mrow><mi>f</mi> <mo>=</mo> <mn>0</mn></mrow></math>的量化值。请注意，映射需要是*仿射*的，这样当我们将定点数反量化为浮点数时，我们会得到浮点数。^(13) 转换的示例显示在图 8-6 中。
+缩放因子<math alttext="upper S"><mi>S</mi></math>是一个正的浮点数，常数<math alttext="upper Z"><mi>Z</mi></math>与<math alttext="q"><mi>q</mi></math>具有相同的类型，被称为*零点*，因为它对应于浮点值<math alttext="f equals 0"><mrow><mi>f</mi> <mo>=</mo> <mn>0</mn></mrow></math>的量化值。请注意，映射需要是*仿射*的，这样当我们将定点数反量化为浮点数时，我们会得到浮点数。¹³ 转换的示例显示在图 8-6 中。
 
 ![将浮点数映射为 8 位整数](img/nlpt_0806.png)
 
 ###### 图 8-6。将浮点数量化为无符号 8 位整数（由 Manas Sahni 提供）
 
-现在，变压器（以及深度神经网络更普遍地）成为量化的主要候选对象的一个主要原因是权重和激活倾向于在相对较小的范围内取值。这意味着我们不必将所有可能的 FP32 数字范围压缩到 INT8 表示的 256 个数字中。为了看到这一点，让我们从我们精简模型中挑选出一个注意力权重矩阵，并绘制值的频率分布：
+现在，Transformer（以及深度神经网络更普遍地）成为量化的主要候选对象的一个主要原因是权重和激活倾向于在相对较小的范围内取值。这意味着我们不必将所有可能的 FP32 数字范围压缩到 INT8 表示的 256 个数字中。为了看到这一点，让我们从我们精简模型中挑选出一个注意力权重矩阵，并绘制值的频率分布：
 
 ```py
 import matplotlib.pyplot as plt
@@ -762,9 +762,9 @@ tensor([[ -5,  -8,   0,  ...,  -6,  -4,   8],
 
 图 8-7 中的图表清楚地显示了只映射一些权重值并对其余值进行四舍五入所引起的离散化。
 
-![量化对变压器权重的影响](img/nlpt_0807.png)
+![量化对 Transformer 权重的影响](img/nlpt_0807.png)
 
-###### 图 8-7。量化对变压器权重的影响
+###### 图 8-7。量化对 Transformer 权重的影响
 
 为了完成我们的小分析，让我们比较使用 FP32 和 INT8 值计算两个权重张量的乘法需要多长时间。对于 FP32 张量，我们可以使用 PyTorch 的`@`运算符进行相乘：
 
@@ -814,7 +814,7 @@ sys.getsizeof(weights.storage()) / sys.getsizeof(quantized_weights.storage())
 3.999633833760527
 ```
 
-对于一个大规模的变压器，实际的压缩率取决于哪些层被量化（正如我们将在下一节看到的，通常只有线性层被量化）。
+对于一个大规模的 Transformer，实际的压缩率取决于哪些层被量化（正如我们将在下一节看到的，通常只有线性层被量化）。
 
 那么量化有什么问题？改变模型中所有计算的精度会在模型的计算图中的每个点引入小的扰动，这可能会影响模型的性能。量化模型有几种方法，各有利弊。对于深度神经网络，通常有三种主要的量化方法：
 
@@ -875,7 +875,7 @@ plot_metrics(perf_metrics, optim_type)
 
 # 使用 ONNX 和 ONNX Runtime 优化推断
 
-[ONNX](https://onnx.ai)是一个开放标准，定义了一组通用的操作符和一种通用的文件格式，用于在各种框架中表示深度学习模型，包括 PyTorch 和 TensorFlow。^(14)当模型导出为 ONNX 格式时，这些操作符用于构建一个计算图（通常称为*中间表示*），表示数据通过神经网络的流动。例如，BERT-base 的这样一个图示例显示在图 8-8 中，其中每个节点接收一些输入，应用操作如`Add`或`Squeeze`，然后将输出馈送到下一组节点。
+[ONNX](https://onnx.ai)是一个开放标准，定义了一组通用的操作符和一种通用的文件格式，用于在各种框架中表示深度学习模型，包括 PyTorch 和 TensorFlow。¹⁴当模型导出为 ONNX 格式时，这些操作符用于构建一个计算图（通常称为*中间表示*），表示数据通过神经网络的流动。例如，BERT-base 的这样一个图示例显示在图 8-8 中，其中每个节点接收一些输入，应用操作如`Add`或`Squeeze`，然后将输出馈送到下一组节点。
 
 ![ONNX 图示例](img/nlpt_0808.png)
 
@@ -883,7 +883,7 @@ plot_metrics(perf_metrics, optim_type)
 
 通过公开具有标准化操作符和数据类型的图，ONNX 使得在不同框架之间切换变得容易。例如，在 PyTorch 中训练的模型可以导出为 ONNX 格式，然后在 TensorFlow 中导入（反之亦然）。
 
-当 ONNX 与专用加速器如[ONNX Runtime](https://onnxruntime.ai)或 ORT 配合使用时，它的优势就显现出来了。^(15)ORT 通过操作符融合和常量折叠等技术提供了优化 ONNX 图的工具，^(16)并定义了一个接口，允许您在不同类型的硬件上运行模型。这是一个强大的抽象。图 8-9 显示了 ONNX 和 ORT 生态系统的高级架构。
+当 ONNX 与专用加速器如[ONNX Runtime](https://onnxruntime.ai)或 ORT 配合使用时，它的优势就显现出来了。¹⁵ORT 通过操作符融合和常量折叠等技术提供了优化 ONNX 图的工具，¹⁶并定义了一个接口，允许您在不同类型的硬件上运行模型。这是一个强大的抽象。图 8-9 显示了 ONNX 和 ORT 生态系统的高级架构。
 
 ![ONNX 和 ONNX Runtime 生态系统的架构](img/nlpt_0809.png)
 
@@ -1079,7 +1079,7 @@ plot_metrics(perf_metrics, optim_type)
 
 与 PyTorch 量化获得的模型相比，ORT 量化已经将模型大小和延迟减少了约 30%（蒸馏+量化 blob）。其中一个原因是 PyTorch 只优化`nn.Linear`模块，而 ONNX 还量化了嵌入层。从图中我们还可以看到，将 ORT 量化应用于我们的蒸馏模型与我们的 BERT 基线相比，提供了近三倍的增益！
 
-这结束了我们对加速变压器进行推断的技术的分析。我们已经看到，诸如量化之类的方法通过降低表示的精度来减小模型大小。另一种减小大小的策略是彻底删除一些权重。这种技术称为*权重修剪*，并且是下一节的重点。
+这结束了我们对加速 Transformer 进行推断的技术的分析。我们已经看到，诸如量化之类的方法通过降低表示的精度来减小模型大小。另一种减小大小的策略是彻底删除一些权重。这种技术称为*权重修剪*，并且是下一节的重点。
 
 # 使用权重修剪使模型更稀疏
 
@@ -1117,7 +1117,7 @@ plot_metrics(perf_metrics, optim_type)
 
 顾名思义，幅度剪枝根据权重的幅度计算得分 <math alttext="bold upper S equals left-parenthesis bar upper W Subscript i j Baseline bar right-parenthesis Subscript 1 less-than-or-equal-to j comma j less-than-or-equal-to n"><mrow><mi>𝐒</mi> <mo>=</mo> <msub><mfenced separators="" open="(" close=")"><mo>∣</mo> <msub><mi>W</mi> <mrow><mi>i</mi><mi>j</mi></mrow></msub> <mo>∣</mo></mfenced> <mrow><mn>1</mn><mo>≤</mo><mi>j</mi><mo>,</mo><mi>j</mi><mo>≤</mo><mi>n</mi></mrow></msub></mrow></math>，然后从 <math alttext="bold upper M equals normal upper T normal o normal p Subscript k Baseline left-parenthesis bold upper S right-parenthesis"><mrow><mi>𝐌</mi> <mo>=</mo> <msub><mi>Top</mi> <mi>k</mi></msub> <mrow><mo>(</mo> <mi>𝐒</mi> <mo>)</mo></mrow></mrow></math> 中得出掩码。在文献中，通常通过迭代的方式应用幅度剪枝，首先训练模型学习哪些连接是重要的，然后剪枝最不重要的权重。稀疏模型然后被重新训练，并且重复这个过程，直到达到期望的稀疏度。
 
-这种方法的一个缺点是计算需求量大：在每一步修剪中，我们都需要将模型训练到收敛。因此，通常最好逐渐增加初始稀疏度<math alttext="s Subscript i"><msub><mi>s</mi> <mi>i</mi></msub></math>（通常为零）到一定步数<math alttext="upper N"><mi>N</mi></math>后的最终值<math alttext="s Subscript f"><msub><mi>s</mi> <mi>f</mi></msub></math>。^(19)
+这种方法的一个缺点是计算需求量大：在每一步修剪中，我们都需要将模型训练到收敛。因此，通常最好逐渐增加初始稀疏度<math alttext="s Subscript i"><msub><mi>s</mi> <mi>i</mi></msub></math>（通常为零）到一定步数<math alttext="upper N"><mi>N</mi></math>后的最终值<math alttext="s Subscript f"><msub><mi>s</mi> <mi>f</mi></msub></math>。¹⁹
 
 <math alttext="s Subscript t Baseline equals s Subscript f Baseline plus left-parenthesis s Subscript i Baseline minus s Subscript f Baseline right-parenthesis left-parenthesis 1 minus StartFraction t minus t 0 Over upper N normal upper Delta t EndFraction right-parenthesis cubed normal f normal o normal r t element-of StartSet t 0 comma t 0 plus normal upper Delta t comma ellipsis comma t 0 plus upper N normal upper Delta t EndSet" display="block"><mrow><msub><mi>s</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>s</mi> <mi>f</mi></msub> <mo>+</mo> <mrow><mo>(</mo> <msub><mi>s</mi> <mi>i</mi></msub> <mo>-</mo> <msub><mi>s</mi> <mi>f</mi></msub> <mo>)</mo></mrow> <msup><mfenced separators="" open="(" close=")"><mn>1</mn> <mo>-</mo> <mfrac><mrow><mi>t</mi><mo>-</mo><msub><mi>t</mi> <mn>0</mn></msub></mrow> <mrow><mi>N</mi><mi>Δ</mi><mi>t</mi></mrow></mfrac></mfenced> <mn>3</mn></msup> <mi>for</mi> <mi>t</mi> <mo>∈</mo> <mrow><mo>{</mo> <msub><mi>t</mi> <mn>0</mn></msub> <mo>,</mo> <msub><mi>t</mi> <mn>0</mn></msub> <mo>+</mo> <mi>Δ</mi> <mi>t</mi> <mo>,</mo> <mo>...</mo> <mo>,</mo> <msub><mi>t</mi> <mn>0</mn></msub> <mo>+</mo> <mi>N</mi> <mi>Δ</mi> <mi>t</mi> <mo>}</mo></mrow></mrow></math>
 
@@ -1127,13 +1127,13 @@ plot_metrics(perf_metrics, optim_type)
 
 ###### 图 8-11。用于修剪的立方稀疏调度器。
 
-幅度修剪的一个问题是，它实际上是为纯监督学习而设计的，其中每个权重的重要性与手头的任务直接相关。相比之下，在迁移学习中，权重的重要性主要由预训练阶段确定，因此幅度修剪可能会移除对微调任务重要的连接。最近，Hugging Face 的研究人员提出了一种称为移动修剪的自适应方法——让我们来看一下。^(20)
+幅度修剪的一个问题是，它实际上是为纯监督学习而设计的，其中每个权重的重要性与手头的任务直接相关。相比之下，在迁移学习中，权重的重要性主要由预训练阶段确定，因此幅度修剪可能会移除对微调任务重要的连接。最近，Hugging Face 的研究人员提出了一种称为移动修剪的自适应方法——让我们来看一下。²⁰
 
 ### 移动修剪
 
 移动修剪背后的基本思想是*逐渐*在微调过程中移除权重，使模型逐渐变得*更稀疏*。关键的新颖之处在于，在微调过程中，权重和分数都是可学习的。因此，与幅度修剪直接从权重派生（如幅度修剪）不同，移动修剪中的分数是任意的，并且通过梯度下降学习，就像任何其他神经网络参数一样。这意味着在反向传播中，我们还要跟踪损失<math alttext="upper L"><mi>L</mi></math>相对于分数<math alttext="upper S Subscript i j"><msub><mi>S</mi> <mrow><mi>i</mi><mi>j</mi></mrow></msub></math>的梯度。
 
-一旦学习了分数，就很容易使用<math alttext="bold upper M equals normal upper T normal o normal p Subscript k Baseline left-parenthesis bold upper S right-parenthesis"><mrow><mi>𝐌</mi> <mo>=</mo> <msub><mi>Top</mi> <mi>k</mi></msub> <mrow><mo>(</mo> <mi>𝐒</mi> <mo>)</mo></mrow></mrow></math>生成二进制掩码。^(21)
+一旦学习了分数，就很容易使用<math alttext="bold upper M equals normal upper T normal o normal p Subscript k Baseline left-parenthesis bold upper S right-parenthesis"><mrow><mi>𝐌</mi> <mo>=</mo> <msub><mi>Top</mi> <mi>k</mi></msub> <mrow><mo>(</mo> <mi>𝐒</mi> <mo>)</mo></mrow></mrow></math>生成二进制掩码。²¹
 
 运动剪枝背后的直觉是，“移动”离零最远的权重是最重要的。换句话说，正权重在精细调整期间增加（负权重相反），这相当于说分数随着权重远离零而增加。如图 8-12 所示，这种行为与幅值剪枝不同，后者选择离零最远的权重作为最重要的权重。
 
@@ -1151,52 +1151,52 @@ plot_metrics(perf_metrics, optim_type)
 
 # 结论
 
-我们已经看到，优化变压器以部署到生产环境中涉及沿两个维度的压缩：延迟和内存占用。从经过精细调整的模型开始，我们应用了蒸馏、量化和 ORT 优化，显著减少了这两者。特别是，我们发现量化和 ORT 中的转换给出了最大的收益，而付出的努力最小。
+我们已经看到，优化 Transformer 以部署到生产环境中涉及沿两个维度的压缩：延迟和内存占用。从经过精细调整的模型开始，我们应用了蒸馏、量化和 ORT 优化，显著减少了这两者。特别是，我们发现量化和 ORT 中的转换给出了最大的收益，而付出的努力最小。
 
-尽管剪枝是减少变压器模型存储大小的有效策略，但当前的硬件并未针对稀疏矩阵运算进行优化，这限制了这种技术的实用性。然而，这是一个活跃的研究领域，到本书上市时，许多这些限制可能已经得到解决。
+尽管剪枝是减少 Transformer 模型存储大小的有效策略，但当前的硬件并未针对稀疏矩阵运算进行优化，这限制了这种技术的实用性。然而，这是一个活跃的研究领域，到本书上市时，许多这些限制可能已经得到解决。
 
 那么接下来呢？本章中的所有技术都可以应用到其他任务中，比如问答、命名实体识别或语言建模。如果您发现自己难以满足延迟要求，或者您的模型占用了所有的计算预算，我们建议尝试其中之一。
 
 在下一章中，我们将摆脱性能优化，探讨每个数据科学家的噩梦：处理少量或没有标签的情况。
 
-^(1) S. Larson 等人，[“意图分类和超出范围预测的评估数据集”](https://arxiv.org/abs/1909.02027)，（2019 年）。
+¹ S. Larson 等人，[“意图分类和超出范围预测的评估数据集”](https://arxiv.org/abs/1909.02027)，（2019 年）。
 
-^(2) 正如 Emmanuel Ameisen 在*构建机器学习驱动的应用*（O'Reilly）中所描述的，业务或产品指标是*最*重要的考虑因素。毕竟，如果您的模型不能解决业务关心的问题，那么它的准确性就无关紧要。在本章中，我们将假设您已经为应用程序定义了重要的指标，并专注于优化模型指标。
+² 正如 Emmanuel Ameisen 在*构建机器学习驱动的应用*（O'Reilly）中所描述的，业务或产品指标是*最*重要的考虑因素。毕竟，如果您的模型不能解决业务关心的问题，那么它的准确性就无关紧要。在本章中，我们将假设您已经为应用程序定义了重要的指标，并专注于优化模型指标。
 
-^(3) C. Buciluă等人，“模型压缩”，*第 12 届 ACM SIGKDD 国际知识发现和数据挖掘会议论文集*（2006 年 8 月）：535-541，[*https://doi.org/10.1145/1150402.1150464*](https://doi.org/10.1145/1150402.1150464)。
+³ C. Buciluă等人，“模型压缩”，*第 12 届 ACM SIGKDD 国际知识发现和数据挖掘会议论文集*（2006 年 8 月）：535-541，[*https://doi.org/10.1145/1150402.1150464*](https://doi.org/10.1145/1150402.1150464)。
 
-^(4) G. Hinton, O. Vinyals 和 J. Dean，[“蒸馏神经网络中的知识”](https://arxiv.org/abs/1503.02531)，（2015 年）。
+⁴ G. Hinton, O. Vinyals 和 J. Dean，[“蒸馏神经网络中的知识”](https://arxiv.org/abs/1503.02531)，（2015 年）。
 
-^(5) W. Fedus, B. Zoph, and N. Shazeer，[“Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity”](https://arxiv.org/abs/2101.03961)，(2021)。
+⁵ W. Fedus, B. Zoph, and N. Shazeer，[“Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity”](https://arxiv.org/abs/2101.03961)，(2021)。
 
-^(6) Geoff Hinton 在一次[演讲](https://oreil.ly/OkHGp)中创造了这个术语，用来指代软化概率揭示了教师的隐藏知识的观察。
+⁶ Geoff Hinton 在一次[演讲](https://oreil.ly/OkHGp)中创造了这个术语，用来指代软化概率揭示了教师的隐藏知识的观察。
 
-^(7) 我们在第五章中也遇到了与文本生成相关的温度。
+⁷ 我们在第五章中也遇到了与文本生成相关的温度。
 
-^(8) V. Sanh 等人，[“DistilBERT, a Distilled Version of BERT: Smaller, Faster, Cheaper and Lighter”](https://arxiv.org/abs/1910.01108)，(2019)。
+⁸ V. Sanh 等人，[“DistilBERT, a Distilled Version of BERT: Smaller, Faster, Cheaper and Lighter”](https://arxiv.org/abs/1910.01108)，(2019)。
 
-^(9) Y. Kim and H. Awadalla，[“FastFormers: Highly Efficient Transformer Models for Natural Language Understanding”](https://arxiv.org/abs/2010.13382)，(2020)。
+⁹ Y. Kim and H. Awadalla，[“FastFormers: Highly Efficient Transformer Models for Natural Language Understanding”](https://arxiv.org/abs/2010.13382)，(2020)。
 
-^(10) 默认情况下，`Trainer` 在进行分类任务微调时会寻找名为 `labels` 的列。您还可以通过指定 `TrainingArguments` 的 `label_names` 参数来覆盖此行为。
+¹⁰ 默认情况下，`Trainer` 在进行分类任务微调时会寻找名为 `labels` 的列。您还可以通过指定 `TrainingArguments` 的 `label_names` 参数来覆盖此行为。
 
-^(11) 对通用的精炼语言模型进行微调的方法有时被称为“任务不可知”精炼。
+¹¹ 对通用的精炼语言模型进行微调的方法有时被称为“任务不可知”精炼。
 
-^(12) T. Akiba 等人，[“Optuna: A Next-Generation Hyperparameter Optimization Framework”](https://arxiv.org/abs/1907.10902)，(2019)。
+¹² T. Akiba 等人，[“Optuna: A Next-Generation Hyperparameter Optimization Framework”](https://arxiv.org/abs/1907.10902)，(2019)。
 
-^(13) 仿射映射只是神经网络线性层中你熟悉的 <math alttext="y equals upper A x plus b"><mrow><mi>y</mi> <mo>=</mo> <mi>A</mi> <mi>x</mi> <mo>+</mo> <mi>b</mi></mrow></math> 映射的一个花哨的名字。
+¹³ 仿射映射只是神经网络线性层中你熟悉的 <math alttext="y equals upper A x plus b"><mrow><mi>y</mi> <mo>=</mo> <mi>A</mi> <mi>x</mi> <mo>+</mo> <mi>b</mi></mrow></math> 映射的一个花哨的名字。
 
-^(14) 还有一个名为 ONNX-ML 的标准，专门为传统的机器学习模型（如随机森林）和 Scikit-learn 等框架设计。
+¹⁴ 还有一个名为 ONNX-ML 的标准，专门为传统的机器学习模型（如随机森林）和 Scikit-learn 等框架设计。
 
-^(15) 其他流行的加速器包括[NVIDIA 的 TensorRT](https://oreil.ly/HnNZx)和[Apache TVM](https://oreil.ly/7KUyt)。
+¹⁵ 其他流行的加速器包括[NVIDIA 的 TensorRT](https://oreil.ly/HnNZx)和[Apache TVM](https://oreil.ly/7KUyt)。
 
-^(16) 融合操作涉及将一个运算符（通常是激活函数）合并到另一个运算符中，以便它们可以一起执行。例如，假设我们想将激活函数 *f* 应用于矩阵乘积 *A* × *B*。通常，乘积的结果需要写回到 GPU 存储器，然后再计算激活函数。运算符融合允许我们一步计算 <math alttext="f left-parenthesis upper A times upper B right-parenthesis"><mrow><mi>f</mi> <mo>(</mo> <mi>A</mi> <mo>×</mo> <mi>B</mi> <mo>)</mo></mrow></math>。常量折叠是指在编译时评估常量表达式，而不是在运行时。
+¹⁶ 融合操作涉及将一个运算符（通常是激活函数）合并到另一个运算符中，以便它们可以一起执行。例如，假设我们想将激活函数 *f* 应用于矩阵乘积 *A* × *B*。通常，乘积的结果需要写回到 GPU 存储器，然后再计算激活函数。运算符融合允许我们一步计算 <math alttext="f left-parenthesis upper A times upper B right-parenthesis"><mrow><mi>f</mi> <mo>(</mo> <mi>A</mi> <mo>×</mo> <mi>B</mi> <mo>)</mo></mrow></math>。常量折叠是指在编译时评估常量表达式，而不是在运行时。
 
-^(17) B. Hassibi and D. Stork，“Second Order Derivatives for Network Pruning: Optimal Brain Surgeon,” *Proceedings of the 5th International Conference on Neural Information Processing Systems* (November 1992): 164–171，[*https://papers.nips.cc/paper/1992/hash/303ed4c69846ab36c2904d3ba8573050-Abstract.html*](https://papers.nips.cc/paper/1992/hash/303ed4c69846ab36c2904d3ba8573050-Abstract.html)。
+¹⁷ B. Hassibi and D. Stork，“Second Order Derivatives for Network Pruning: Optimal Brain Surgeon,” *Proceedings of the 5th International Conference on Neural Information Processing Systems* (November 1992): 164–171，[*https://papers.nips.cc/paper/1992/hash/303ed4c69846ab36c2904d3ba8573050-Abstract.html*](https://papers.nips.cc/paper/1992/hash/303ed4c69846ab36c2904d3ba8573050-Abstract.html)。
 
-^(18) S. Han 等人，[“Learning Both Weights and Connections for Efficient Neural Networks”](https://arxiv.org/abs/1506.02626)，(2015)。
+¹⁸ S. Han 等人，[“Learning Both Weights and Connections for Efficient Neural Networks”](https://arxiv.org/abs/1506.02626)，(2015)。
 
-^(19) M. Zhu and S. Gupta，[“To Prune, or Not to Prune: Exploring the Efficacy of Pruning for Model Compression”](https://arxiv.org/abs/1710.01878)，(2017)。
+¹⁹ M. Zhu and S. Gupta，[“To Prune, or Not to Prune: Exploring the Efficacy of Pruning for Model Compression”](https://arxiv.org/abs/1710.01878)，(2017)。
 
-^(20) V. Sanh, T. Wolf, and A.M. Rush，[“Movement Pruning: Adaptive Sparsity by Fine-Tuning”](https://arxiv.org/abs/2005.07683)，(2020)。
+²⁰ V. Sanh, T. Wolf, and A.M. Rush，[“Movement Pruning: Adaptive Sparsity by Fine-Tuning”](https://arxiv.org/abs/2005.07683)，(2020)。
 
-^(21) 还有一种“软”版本的移动修剪，其中不是选择权重的前<math alttext="k"><mi>k</mi></math> %，而是使用全局阈值<math alttext="tau"><mi>τ</mi></math>来定义二进制掩码：<math alttext="bold upper M equals left-parenthesis bold upper S greater-than tau right-parenthesis"><mrow><mi>𝐌</mi> <mo>=</mo> <mo>(</mo> <mi>𝐒</mi> <mo>></mo> <mi>τ</mi> <mo>)</mo></mrow></math>。
+²¹ 还有一种“软”版本的移动修剪，其中不是选择权重的前<math alttext="k"><mi>k</mi></math> %，而是使用全局阈值<math alttext="tau"><mi>τ</mi></math>来定义二进制掩码：<math alttext="bold upper M equals left-parenthesis bold upper S greater-than tau right-parenthesis"><mrow><mi>𝐌</mi> <mo>=</mo> <mo>(</mo> <mi>𝐒</mi> <mo>></mo> <mi>τ</mi> <mo>)</mo></mrow></math>。

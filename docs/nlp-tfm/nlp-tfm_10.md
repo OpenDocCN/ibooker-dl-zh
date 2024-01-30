@@ -1,4 +1,4 @@
-# 第九章。处理少量或没有标签
+# 第九章：处理少量或没有标签
 
 有一个问题深深地植根在每个数据科学家的脑海中，通常是他们在新项目开始时首先问的事情：是否有任何标记的数据？往往情况是“没有”或“有一点”，然后客户期望你的团队的高级机器学习模型仍然能够表现良好。由于在非常小的数据集上训练模型通常不会产生良好的结果，一个明显的解决方案是标注更多的数据。然而，这需要时间，而且可能非常昂贵，特别是如果每个标注都需要领域专业知识来验证。
 
@@ -22,7 +22,7 @@
 
 3. 你有未标记的数据吗？
 
-如果你只有少量标记的样本，如果你可以访问大量未标记的数据，这将非常有帮助。如果你可以访问未标记的数据，你可以在训练分类器之前使用它来微调语言模型，或者你可以使用更复杂的方法，如无监督数据增强（UDA）或不确定性感知的自我训练（UST）。^(1) 如果你没有任何未标记的数据可用，你就没有标注更多数据的选择。在这种情况下，你可以使用少样本学习，或者使用预训练语言模型的嵌入来执行最近邻搜索。
+如果你只有少量标记的样本，如果你可以访问大量未标记的数据，这将非常有帮助。如果你可以访问未标记的数据，你可以在训练分类器之前使用它来微调语言模型，或者你可以使用更复杂的方法，如无监督数据增强（UDA）或不确定性感知的自我训练（UST）。¹ 如果你没有任何未标记的数据可用，你就没有标注更多数据的选择。在这种情况下，你可以使用少样本学习，或者使用预训练语言模型的嵌入来执行最近邻搜索。
 
 在本章中，我们将通过解决许多支持团队面临的常见问题来逐步走过这个决策树，这些团队使用像[Jira](https://oreil.ly/TVqZQ)或[GitHub](https://oreil.ly/e0Bd1)这样的问题跟踪器来帮助他们的用户：根据问题的描述为问题打标签。这些标签可能定义问题类型、导致问题的产品，或者负责处理报告问题的团队。自动化这个过程可以对生产力产生重大影响，并使支持团队能够专注于帮助他们的用户。作为一个运行的示例，我们将使用与一个流行的开源项目相关的 GitHub 问题：![nlpt_pin01](img/nlpt_pin01.png) Transformers！现在让我们来看看这些问题中包含了哪些信息，如何构建任务，以及如何获取数据。
 
@@ -455,7 +455,7 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Naive Bayes")
 
 ![](img/nlpt_09in02.png)
 
-请注意，我们在对数刻度上绘制样本数量。从图中我们可以看到，随着训练样本数量的增加，微观和宏观*F*[1]-分数都有所提高。由于每个切片可能具有不同的类分布，因此在训练样本很少的情况下，结果也稍微有些嘈杂。然而，这里重要的是趋势，所以现在让我们看看这些结果与基于变压器的方法相比如何！
+请注意，我们在对数刻度上绘制样本数量。从图中我们可以看到，随着训练样本数量的增加，微观和宏观*F*[1]-分数都有所提高。由于每个切片可能具有不同的类分布，因此在训练样本很少的情况下，结果也稍微有些嘈杂。然而，这里重要的是趋势，所以现在让我们看看这些结果与基于 Transformer 的方法相比如何！
 
 # 使用无标记数据
 
@@ -465,9 +465,9 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Naive Bayes")
 
 > “这一部分是关于主题[MASK]的。”
 
-由于这是数据集中自然出现的文本，模型应该能够合理地对文档的主题提出建议。^(2)
+由于这是数据集中自然出现的文本，模型应该能够合理地对文档的主题提出建议。²
 
-让我们通过以下玩具问题进一步说明这一点：假设你有两个孩子，一个喜欢有汽车的电影，而另一个更喜欢有动物的电影。不幸的是，他们已经看过你知道的所有电影，所以你想建立一个函数，告诉你一个新电影的主题是什么。自然地，你会转向变压器来完成这个任务。首先要尝试的是在`fill-mask`管道中加载 BERT-base，该管道使用屏蔽语言模型来预测屏蔽标记的内容：
+让我们通过以下玩具问题进一步说明这一点：假设你有两个孩子，一个喜欢有汽车的电影，而另一个更喜欢有动物的电影。不幸的是，他们已经看过你知道的所有电影，所以你想建立一个函数，告诉你一个新电影的主题是什么。自然地，你会转向 Transformer 来完成这个任务。首先要尝试的是在`fill-mask`管道中加载 BERT-base，该管道使用屏蔽语言模型来预测屏蔽标记的内容：
 
 ```py
 from transformers import pipeline
@@ -526,7 +526,7 @@ Token animals:  0.006%
 
 它确实可以！这只是一个简单的例子，如果我们想确保它运行良好，我们应该进行彻底的测试，但它说明了本章讨论的许多方法的关键思想：找到一种方法，使预训练模型适应另一个任务，而无需对其进行训练。在这种情况下，我们设置了一个提示，其中包含一个掩码，以便我们可以直接使用掩码语言模型进行分类。让我们看看是否可以通过调整一个在更接近文本分类的任务上进行了微调的模型来做得更好：*自然语言推理*（NLI）。
 
-使用掩码语言模型进行分类是一个不错的技巧，但是我们可以通过使用一个在更接近分类的任务上训练过的模型来做得更好。有一个称为*文本蕴涵*的巧妙代理任务符合要求。在文本蕴涵中，模型需要确定两个文本段落是否可能相互跟随或相互矛盾。模型通常是使用诸如多种体裁 NLI 语料库（MNLI）或跨语言 NLI 语料库（XNLI）等数据集进行蕴涵和矛盾的检测。^(3)
+使用掩码语言模型进行分类是一个不错的技巧，但是我们可以通过使用一个在更接近分类的任务上训练过的模型来做得更好。有一个称为*文本蕴涵*的巧妙代理任务符合要求。在文本蕴涵中，模型需要确定两个文本段落是否可能相互跟随或相互矛盾。模型通常是使用诸如多种体裁 NLI 语料库（MNLI）或跨语言 NLI 语料库（XNLI）等数据集进行蕴涵和矛盾的检测。³
 
 这些数据集中的每个样本由三部分组成：前提、假设和标签，标签可以是`蕴涵`、`中性`或`矛盾`中的一个。当假设文本在前提下必然为真时，分配`蕴涵`标签。当假设在前提下必然为假或不合适时，使用`矛盾`标签。如果这两种情况都不适用，则分配`中性`标签。参见表 9-1 中的示例。
 
@@ -756,7 +756,7 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Zero Shot")
 
 标记扰动
 
-给定训练集中的文本，随机选择并执行简单的转换，如随机同义词替换、单词插入、交换或删除。⁠^(4)
+给定训练集中的文本，随机选择并执行简单的转换，如随机同义词替换、单词插入、交换或删除。⁠⁴
 
 这些转换的示例显示在表 9-2 中。有关 NLP 的其他数据增强技术的详细列表，我们建议阅读 Amit Chaudhary 的博文[“NLP 中数据增强的视觉调查”](https://oreil.ly/j6euX)。
 
@@ -890,7 +890,7 @@ embs_valid = ds["valid"].map(embed_text, batched=True, batch_size=16)
 embs_test = ds["test"].map(embed_text, batched=True, batch_size=16)
 ```
 
-现在我们已经有了所有的嵌入，我们需要建立一个系统来搜索它们。我们可以编写一个函数，计算我们将查询的新文本嵌入与训练集中现有嵌入之间的余弦相似度。或者，我们可以使用![nlpt_pin01](img/nlpt_pin01.png)数据集中的内置结构，称为*FAISS 索引*。^(5)我们在第七章中已经遇到了 FAISS。您可以将其视为嵌入的搜索引擎，我们将在一分钟内更仔细地看看它是如何工作的。我们可以使用数据集的现有字段创建一个 FAISS 索引，使用`add_faiss_index()`，或者使用`add_faiss_index_from_external_arrays()`将新的嵌入加载到数据集中。让我们使用前一个函数将我们的训练嵌入添加到数据集中：
+现在我们已经有了所有的嵌入，我们需要建立一个系统来搜索它们。我们可以编写一个函数，计算我们将查询的新文本嵌入与训练集中现有嵌入之间的余弦相似度。或者，我们可以使用![nlpt_pin01](img/nlpt_pin01.png)数据集中的内置结构，称为*FAISS 索引*。⁵我们在第七章中已经遇到了 FAISS。您可以将其视为嵌入的搜索引擎，我们将在一分钟内更仔细地看看它是如何工作的。我们可以使用数据集的现有字段创建一个 FAISS 索引，使用`add_faiss_index()`，或者使用`add_faiss_index_from_external_arrays()`将新的嵌入加载到数据集中。让我们使用前一个函数将我们的训练嵌入添加到数据集中：
 
 ```py
 embs_train.add_faiss_index("embedding")
@@ -962,7 +962,7 @@ LABELS: ['new model']
 
 ```
 
-很好！这正是我们所希望的：通过嵌入查找得到的三个文档都具有相同的标签，我们已经可以从标题中看出它们都非常相似。查询以及检索到的文档都围绕着添加新的高效变压器模型。然而，问题仍然存在，*k*的最佳值是多少？同样，我们应该如何聚合检索到的文档的标签？例如，我们应该检索三个文档，并分配至少出现两次的所有标签吗？还是应该选择 20 个，并使用至少出现 5 次的所有标签？让我们系统地调查一下：我们将尝试几个*k*的值，然后使用一个辅助函数改变标签分配的阈值<mrow><mi>m</mi> <mo><</mo> <mi>k</mi></mrow>。我们将记录每个设置的宏和微性能，以便稍后决定哪个运行效果最好。我们可以使用`get_nearest_examples_batch()`函数，而不是循环遍历验证集中的每个样本，它接受一个查询的批处理：
+很好！这正是我们所希望的：通过嵌入查找得到的三个文档都具有相同的标签，我们已经可以从标题中看出它们都非常相似。查询以及检索到的文档都围绕着添加新的高效 Transformer 模型。然而，问题仍然存在，*k*的最佳值是多少？同样，我们应该如何聚合检索到的文档的标签？例如，我们应该检索三个文档，并分配至少出现两次的所有标签吗？还是应该选择 20 个，并使用至少出现 5 次的所有标签？让我们系统地调查一下：我们将尝试几个*k*的值，然后使用一个辅助函数改变标签分配的阈值<mrow><mi>m</mi> <mo><</mo> <mi>k</mi></mrow>。我们将记录每个设置的宏和微性能，以便稍后决定哪个运行效果最好。我们可以使用`get_nearest_examples_batch()`函数，而不是循环遍历验证集中的每个样本，它接受一个查询的批处理：
 
 ```py
 def get_sample_preds(sample, m):
@@ -1058,11 +1058,11 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Embedding")
 
 由于您实际上不需要在代码中更改任何内容，只需将模型检查点名称替换为测试另一个模型，一旦设置了评估管道，您可以快速尝试几个模型。
 
-现在让我们将这个简单的嵌入技巧与简单地微调我们拥有的有限数据的变压器进行比较。
+现在让我们将这个简单的嵌入技巧与简单地微调我们拥有的有限数据的 Transformer 进行比较。
 
-## 微调一个普通的变压器
+## 微调一个普通的 Transformer
 
-如果我们可以访问标记数据，我们也可以尝试做一件显而易见的事情：简单地微调预训练的变压器模型。在本节中，我们将使用标准的 BERT 检查点作为起点。稍后，我们将看到微调语言模型对性能的影响。
+如果我们可以访问标记数据，我们也可以尝试做一件显而易见的事情：简单地微调预训练的 Transformer 模型。在本节中，我们将使用标准的 BERT 检查点作为起点。稍后，我们将看到微调语言模型对性能的影响。
 
 ###### 提示
 
@@ -1170,11 +1170,11 @@ thanks =>
 """
 ```
 
-这有望促使模型预测单词“merci”的标记。我们已经在第六章中使用 GPT-2 进行摘要时看到，向文本中添加“TL;DR”提示模型生成摘要，而无需明确训练。GPT-3 论文的一个有趣发现是大型语言模型有效地从提示中学习示例的能力，因此，前面的翻译示例可以增加几个英语到德语的示例，这将使模型在这个任务上表现得更好。^(6)
+这有望促使模型预测单词“merci”的标记。我们已经在第六章中使用 GPT-2 进行摘要时看到，向文本中添加“TL;DR”提示模型生成摘要，而无需明确训练。GPT-3 论文的一个有趣发现是大型语言模型有效地从提示中学习示例的能力，因此，前面的翻译示例可以增加几个英语到德语的示例，这将使模型在这个任务上表现得更好。⁶
 
 此外，作者发现，模型规模越大，它们越擅长使用上下文示例，从而显著提高性能。尽管 GPT-3 大小的模型在生产中具有挑战性，但这是一个令人兴奋的新兴研究领域，人们已经构建了一些很酷的应用，比如自然语言 shell，其中命令以自然语言输入，并由 GPT-3 解析为 shell 命令。
 
-使用标记数据的另一种方法是创建提示和期望预测的示例，并继续在这些示例上训练语言模型。一种名为 ADAPET 的新方法使用了这种方法，并在各种任务上击败了 GPT-3，通过生成提示来调整模型。最近 Hugging Face 研究人员的工作表明，这种方法比微调自定义头部更节约数据。^(7)
+使用标记数据的另一种方法是创建提示和期望预测的示例，并继续在这些示例上训练语言模型。一种名为 ADAPET 的新方法使用了这种方法，并在各种任务上击败了 GPT-3，通过生成提示来调整模型。最近 Hugging Face 研究人员的工作表明，这种方法比微调自定义头部更节约数据。⁷
 
 在本节中，我们简要地讨论了利用我们拥有的少量标记示例的各种方法。通常情况下，除了标记的示例，我们还可以访问大量未标记的数据；在下一节中，我们将讨论如何充分利用这些数据。
 
@@ -1347,7 +1347,7 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Fine-tune (DA)")
 
 ![ust](img/nlpt_0906.png)
 
-###### 图 9-6\. UST 方法包括一个生成伪标签的教师和随后在这些标签上进行训练的学生；学生训练后成为教师，然后重复这个步骤（由 Subhabrata Mukherjee 提供）^(9)
+###### 图 9-6\. UST 方法包括一个生成伪标签的教师和随后在这些标签上进行训练的学生；学生训练后成为教师，然后重复这个步骤（由 Subhabrata Mukherjee 提供）⁹
 
 通过这种迭代方案，教师不断改进创建伪标签的能力，因此模型的性能得到了提高。最终，这种方法在几个百分点内接近使用数千个样本进行全面训练的模型，并且在几个数据集上甚至超过了 UDA。
 
@@ -1361,22 +1361,22 @@ plot_metrics(micro_scores, macro_scores, train_samples, "Fine-tune (DA)")
 
 这本书超出了 UDA 或 UST 等更复杂方法与获取更多数据之间的权衡范围。为了评估你的方法，至少在早期建立验证和测试集是有意义的。在每一步，你也可以收集更多的标记数据。通常标注几百个例子只需要几个小时或几天的工作，而且有许多工具可以帮助你做到这一点。根据你想要实现的目标，投入一些时间创建一个小而高质量的数据集可能比设计一个非常复杂的方法来弥补其不足更有意义。通过本章中我们提出的方法，你可以确保充分利用你宝贵的标记数据。
 
-在这里，我们已经涉足了低数据范畴，并且看到变压器模型即使只有一百个例子，仍然非常强大。在下一章中，我们将看到完全相反的情况：当我们有数百吉字节的数据和大量计算资源时，我们将会做些什么。我们将从头开始训练一个大型的变压器模型，让它为我们自动完成代码。
+在这里，我们已经涉足了低数据范畴，并且看到 Transformer 模型即使只有一百个例子，仍然非常强大。在下一章中，我们将看到完全相反的情况：当我们有数百吉字节的数据和大量计算资源时，我们将会做些什么。我们将从头开始训练一个大型的 Transformer 模型，让它为我们自动完成代码。
 
-^(1) Q. Xie et al., [“Unsupervised Data Augmentation for Consistency Training”](https://arxiv.org/abs/1904.12848), (2019); S. Mukherjee and A.H. Awadallah, [“Uncertainty-Aware Self-Training for Few-Shot Text Classification”](https://arxiv.org/abs/2006.15315), (2020).
+¹ Q. Xie et al., [“Unsupervised Data Augmentation for Consistency Training”](https://arxiv.org/abs/1904.12848), (2019); S. Mukherjee and A.H. Awadallah, [“Uncertainty-Aware Self-Training for Few-Shot Text Classification”](https://arxiv.org/abs/2006.15315), (2020).
 
-^(2) 我们感谢[Joe Davison](https://joeddav.github.io)向我们提出了这种方法。
+² 我们感谢[Joe Davison](https://joeddav.github.io)向我们提出了这种方法。
 
-^(3) A. Williams, N. Nangia, and S.R. Bowman, [“A Broad-Coverage Challenge Corpus for Sentence Understanding Through Inference”](https://arxiv.org/abs/1704.05426), (2018); A. Conneau et al., [“XNLI: Evaluating Cross-Lingual Sentence Representations”](https://arxiv.org/abs/1809.05053), (2018).
+³ A. Williams, N. Nangia, and S.R. Bowman, [“A Broad-Coverage Challenge Corpus for Sentence Understanding Through Inference”](https://arxiv.org/abs/1704.05426), (2018); A. Conneau et al., [“XNLI: Evaluating Cross-Lingual Sentence Representations”](https://arxiv.org/abs/1809.05053), (2018).
 
-^(4) J. Wei and K. Zou, [“EDA: Easy Data Augmentation Techniques for Boosting Performance on Text Classification Tasks”](https://arxiv.org/abs/1901.11196), (2019).
+⁴ J. Wei and K. Zou, [“EDA: Easy Data Augmentation Techniques for Boosting Performance on Text Classification Tasks”](https://arxiv.org/abs/1901.11196), (2019).
 
-^(5) J. Johnson, M. Douze, and H. Jégou, [“Billion-Scale Similarity Search with GPUs”](https://arxiv.org/abs/1702.08734), (2017).
+⁵ J. Johnson, M. Douze, and H. Jégou, [“Billion-Scale Similarity Search with GPUs”](https://arxiv.org/abs/1702.08734), (2017).
 
-^(6) T. Brown et al., [“Language Models Are Few-Shot Learners”](https://arxiv.org/abs/2005.14165), (2020).
+⁶ T. Brown et al., [“Language Models Are Few-Shot Learners”](https://arxiv.org/abs/2005.14165), (2020).
 
-^(7) D. Tam et al., [“Improving and Simplifying Pattern Exploiting Training”](https://arxiv.org/abs/2103.11955), (2021).
+⁷ D. Tam et al., [“Improving and Simplifying Pattern Exploiting Training”](https://arxiv.org/abs/2103.11955), (2021).
 
-^(8) T. Le Scao and A.M. Rush, [“How Many Data Points Is a Prompt Worth?”](https://arxiv.org/abs/2103.08493), (2021).
+⁸ T. Le Scao and A.M. Rush, [“How Many Data Points Is a Prompt Worth?”](https://arxiv.org/abs/2103.08493), (2021).
 
-^(9) S. Mukherjee and A.H. Awadallah, [“Uncertainty-Aware Self-Training for Few-Shot Text Classification”](https://arxiv.org/abs/2006.15315), (2020).
+⁹ S. Mukherjee and A.H. Awadallah, [“Uncertainty-Aware Self-Training for Few-Shot Text Classification”](https://arxiv.org/abs/2006.15315), (2020).

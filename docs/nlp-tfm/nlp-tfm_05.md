@@ -1,4 +1,4 @@
-# 第四章。多语言命名实体识别
+# 第四章：多语言命名实体识别
 
 到目前为止，在这本书中，我们已经应用 transformers 来解决英语语料库上的 NLP 任务 - 但是当你的文档是用希腊语、斯瓦希里语或克林贡语写的时候，你该怎么办呢？一种方法是在 Hugging Face Hub 上搜索合适的预训练语言模型，并在手头的任务上对其进行微调。然而，这些预训练模型往往只存在于像德语、俄语或普通话这样的“高资源”语言中，这些语言有大量的网络文本可用于预训练。另一个常见的挑战是当你的语料库是多语言的时候：在生产中维护多个单语模型对你或你的工程团队来说都不是什么乐趣。
 
@@ -14,7 +14,7 @@
 
 # The Dataset
 
-在本章中，我们将使用跨语言 TRansfer 多语言编码器（XTREME）基准的子集，称为 WikiANN 或 PAN-X。^(2) 这个数据集包括许多语言的维基百科文章，包括瑞士四种最常用的语言：德语（62.9%）、法语（22.9%）、意大利语（8.4%）和英语（5.9%）。每篇文章都以“内外开始”（IOB2）格式标注了`LOC`（位置）、`PER`（人物）和`ORG`（组织）标签。在这种格式中，`B-`前缀表示实体的开始，属于同一实体的连续标记被赋予`I-`前缀。`O`标签表示该标记不属于任何实体。例如，以下句子：
+在本章中，我们将使用跨语言 TRansfer 多语言编码器（XTREME）基准的子集，称为 WikiANN 或 PAN-X。² 这个数据集包括许多语言的维基百科文章，包括瑞士四种最常用的语言：德语（62.9%）、法语（22.9%）、意大利语（8.4%）和英语（5.9%）。每篇文章都以“内外开始”（IOB2）格式标注了`LOC`（位置）、`PER`（人物）和`ORG`（组织）标签。在这种格式中，`B-`前缀表示实体的开始，属于同一实体的连续标记被赋予`I-`前缀。`O`标签表示该标记不属于任何实体。例如，以下句子：
 
 > Jeff Dean 是 Google 在加利福尼亚的计算机科学家
 
@@ -182,13 +182,13 @@ pd.DataFrame.from_dict(split2freqs, orient="index")
 | 测试 | 2573 | 3180 | 3071 |
 | 训练 | 5366 | 6186 | 5810 |
 
-看起来很好 - `PER`、`LOC`和`ORG`频率的分布在每个拆分中大致相同，因此验证和测试集应该能够很好地衡量我们的 NER 标记器的泛化能力。接下来，让我们看一下一些流行的多语言变压器以及它们如何适应我们的 NER 任务。
+看起来很好 - `PER`、`LOC`和`ORG`频率的分布在每个拆分中大致相同，因此验证和测试集应该能够很好地衡量我们的 NER 标记器的泛化能力。接下来，让我们看一下一些流行的多语言 Transformer 以及它们如何适应我们的 NER 任务。
 
-# 多语言变压器
+# 多语言 Transformer
 
-多语言变压器涉及与其单语对应物相似的架构和训练程序，唯一的区别在于用于预训练的语料库包含许多语言的文档。这种方法的一个显著特点是，尽管没有接收到区分语言的明确信息，但由此产生的语言表示能够很好地*跨*语言进行泛化，适用于各种下游任务。在某些情况下，这种跨语言转移的能力可以产生与单语模型竞争的结果，从而避免了需要为每种语言训练一个模型的需求！
+多语言 Transformer 涉及与其单语对应物相似的架构和训练程序，唯一的区别在于用于预训练的语料库包含许多语言的文档。这种方法的一个显著特点是，尽管没有接收到区分语言的明确信息，但由此产生的语言表示能够很好地*跨*语言进行泛化，适用于各种下游任务。在某些情况下，这种跨语言转移的能力可以产生与单语模型竞争的结果，从而避免了需要为每种语言训练一个模型的需求！
 
-为了衡量 NER 的跨语言转移的进展，通常使用[CoNLL-2002](https://oreil.ly/nYd0o)和[CoNLL-2003](https://oreil.ly/sVESv)数据集作为英语、荷兰语、西班牙语和德语的基准。这个基准由用相同的`LOC`、`PER`和`ORG`类别注释的新闻文章组成，但它还包含一个额外的`MISC`标签，用于不属于前三组的其他实体。多语言变压器模型通常以三种不同的方式进行评估：
+为了衡量 NER 的跨语言转移的进展，通常使用[CoNLL-2002](https://oreil.ly/nYd0o)和[CoNLL-2003](https://oreil.ly/sVESv)数据集作为英语、荷兰语、西班牙语和德语的基准。这个基准由用相同的`LOC`、`PER`和`ORG`类别注释的新闻文章组成，但它还包含一个额外的`MISC`标签，用于不属于前三组的其他实体。多语言 Transformer 模型通常以三种不同的方式进行评估：
 
 `en`
 
@@ -202,11 +202,11 @@ pd.DataFrame.from_dict(split2freqs, orient="index")
 
 在所有训练数据上进行微调，以便在每种语言的测试集上进行评估。
 
-我们将采用类似的评估策略来进行我们的 NER 任务，但首先我们需要选择一个模型来评估。最早的多语言变压器之一是 mBERT，它使用与 BERT 相同的架构和预训练目标，但将许多语言的维基百科文章添加到预训练语料库中。从那时起，mBERT 已经被 XLM-RoBERTa（或简称 XLM-R）取代，因此这是我们将在本章中考虑的模型。
+我们将采用类似的评估策略来进行我们的 NER 任务，但首先我们需要选择一个模型来评估。最早的多语言 Transformer 之一是 mBERT，它使用与 BERT 相同的架构和预训练目标，但将许多语言的维基百科文章添加到预训练语料库中。从那时起，mBERT 已经被 XLM-RoBERTa（或简称 XLM-R）取代，因此这是我们将在本章中考虑的模型。
 
 正如我们在第三章中看到的，XLM-R 仅使用 MLM 作为 100 种语言的预训练目标，但与其前身相比，其预训练语料库的规模巨大：每种语言的维基百科转储和来自网络的 2.5 *terabytes*的 Common Crawl 数据。这个语料库的规模比早期模型使用的语料库大几个数量级，并为缅甸语和斯瓦希里语等低资源语言提供了显著的信号增强，因为这些语言只有少量的维基百科文章。
 
-模型名称中的 RoBERTa 指的是预训练方法与单语 RoBERTa 模型相同。RoBERTa 的开发人员在几个方面改进了 BERT，特别是通过完全删除下一个句子预测任务。^(3) XLM-R 还放弃了 XLM 中使用的语言嵌入，并使用 SentencePiece 直接对原始文本进行标记化。^(4) 除了其多语言性质之外，XLM-R 和 RoBERTa 之间的一个显著差异是各自词汇表的大小：25 万个标记与 5.5 万个标记！
+模型名称中的 RoBERTa 指的是预训练方法与单语 RoBERTa 模型相同。RoBERTa 的开发人员在几个方面改进了 BERT，特别是通过完全删除下一个句子预测任务。³ XLM-R 还放弃了 XLM 中使用的语言嵌入，并使用 SentencePiece 直接对原始文本进行标记化。⁴ 除了其多语言性质之外，XLM-R 和 RoBERTa 之间的一个显著差异是各自词汇表的大小：25 万个标记与 5.5 万个标记！
 
 XLM-R 是多语言 NLU 任务的一个很好的选择。在下一节中，我们将探讨它如何能够高效地在许多语言中进行标记化。
 
@@ -287,25 +287,25 @@ SentencePiece 分词器基于一种称为 Unigram 的子词分割类型，并将
 
 ###### 图 4-2。为序列分类微调基于编码器的 Transformer
 
-BERT 和其他仅编码器的变压器在 NER 方面采取了类似的方法，只是每个单独的输入标记的表示被馈送到相同的全连接层，以输出标记的实体。因此，NER 经常被构建为*标记分类*任务。该过程看起来像图 4-3 中的图表。
+BERT 和其他仅编码器的 Transformer 在 NER 方面采取了类似的方法，只是每个单独的输入标记的表示被馈送到相同的全连接层，以输出标记的实体。因此，NER 经常被构建为*标记分类*任务。该过程看起来像图 4-3 中的图表。
 
-变压器编码器的命名实体识别架构。宽线性层显示相同的线性层应用于所有隐藏状态。
+Transformer 编码器的命名实体识别架构。宽线性层显示相同的线性层应用于所有隐藏状态。
 
-###### 图 4-3。为命名实体识别微调基于编码器的变压器
+###### 图 4-3。为命名实体识别微调基于编码器的 Transformer
 
 到目前为止，一切顺利，但在标记分类任务中，我们应该如何处理子词？例如，图 4-3 中的第一个名字“Christa”被标记为子词“Chr”和“##ista”，那么应该分配`B-PER`标签给哪一个（或哪些）呢？
 
 在 BERT 论文中，作者将这个标签分配给第一个子词（在我们的例子中是“Chr”），并忽略后面的子词（“##ista”）。这是我们将在这里采用的约定，我们将用`IGN`表示被忽略的子词。我们稍后可以很容易地将第一个子词的预测标签传播到后续子词中的后处理步骤。我们也可以选择包括“##ista”子词的表示，通过分配一个`B-LOC`标签的副本，但这违反了 IOB2 格式。
 
-幸运的是，我们在 BERT 中看到的所有架构方面都适用于 XLM-R，因为它的架构基于 RoBERTa，与 BERT 相同！接下来，我们将看到​![nlpt_pin01](img/nlpt_pin01.png)变压器如何支持许多其他任务，只需进行轻微修改。
+幸运的是，我们在 BERT 中看到的所有架构方面都适用于 XLM-R，因为它的架构基于 RoBERTa，与 BERT 相同！接下来，我们将看到​![nlpt_pin01](img/nlpt_pin01.png)Transformer 如何支持许多其他任务，只需进行轻微修改。
 
-# 变压器模型类的解剖
+# Transformer 模型类的解剖
 
-变压器围绕着每种架构和任务都有专门的类进行组织。与不同任务相关的模型类根据`<ModelName>For<Task>`约定命名，或者在使用`AutoModel`类时为`AutoModelFor<Task>`。
+Transformer 围绕着每种架构和任务都有专门的类进行组织。与不同任务相关的模型类根据`<ModelName>For<Task>`约定命名，或者在使用`AutoModel`类时为`AutoModelFor<Task>`。
 
-然而，这种方法有其局限性，为了激励更深入地了解​![nlpt_pin01](img/nlpt_pin01.png)⁠变压器 API，考虑以下情景。假设你有一个解决 NLP 问题的好主意，这个问题一直在你脑海中挥之不去，你想用一个变压器模型来解决它。于是你和老板安排了一次会议，通过精心制作的 PowerPoint 演示文稿，你向老板提出，如果你能最终解决这个问题，你可以增加部门的收入。老板对你色彩丰富的演示和利润的谈话印象深刻，慷慨地同意给你一周的时间来构建一个概念验证。满意结果后，你立刻开始工作。你启动 GPU 并打开笔记本。你执行`from transformers import BertForTaskXY`（注意`TaskXY`是你想解决的虚构任务），当可怕的红色填满屏幕时，你的脸色变了：`ImportEr⁠ror:​ can⁠not import name *BertForTaskXY*`。哦，不，没有 BERT 模型适用于你的用例！如果你不得不自己实现整个模型，你怎么能在一周内完成项目？你应该从哪里开始呢？
+然而，这种方法有其局限性，为了激励更深入地了解​![nlpt_pin01](img/nlpt_pin01.png)⁠Transformer API，考虑以下情景。假设你有一个解决 NLP 问题的好主意，这个问题一直在你脑海中挥之不去，你想用一个 Transformer 模型来解决它。于是你和老板安排了一次会议，通过精心制作的 PowerPoint 演示文稿，你向老板提出，如果你能最终解决这个问题，你可以增加部门的收入。老板对你色彩丰富的演示和利润的谈话印象深刻，慷慨地同意给你一周的时间来构建一个概念验证。满意结果后，你立刻开始工作。你启动 GPU 并打开笔记本。你执行`from transformers import BertForTaskXY`（注意`TaskXY`是你想解决的虚构任务），当可怕的红色填满屏幕时，你的脸色变了：`ImportEr⁠ror:​ can⁠not import name *BertForTaskXY*`。哦，不，没有 BERT 模型适用于你的用例！如果你不得不自己实现整个模型，你怎么能在一周内完成项目？你应该从哪里开始呢？
 
-*不要惊慌！* ![nlpt_pin01](img/nlpt_pin01.png)变压器被设计为让您轻松扩展现有模型以适应您的特定用例。您可以加载预训练模型的权重，并且可以访问特定任务的辅助函数。这使您可以用非常少的开销为特定目标构建自定义模型。在本节中，我们将看到如何实现我们自己的自定义模型。
+*不要惊慌！* ![nlpt_pin01](img/nlpt_pin01.png)Transformer 被设计为让您轻松扩展现有模型以适应您的特定用例。您可以加载预训练模型的权重，并且可以访问特定任务的辅助函数。这使您可以用非常少的开销为特定目标构建自定义模型。在本节中，我们将看到如何实现我们自己的自定义模型。
 
 ## 主体和头部
 
@@ -718,7 +718,7 @@ tag_text(text_de, tags, trainer.model, xlmr_tokenizer)
 
 # 错误分析
 
-在我们深入探讨 XLM-R 的多语言方面之前，让我们花一分钟来调查我们模型的错误。正如我们在第二章中看到的，对模型进行彻底的错误分析是训练和调试变压器（以及机器学习模型一般）最重要的方面之一。有几种失败模式，其中模型看起来表现良好，而实际上它存在一些严重的缺陷。训练可能失败的例子包括：
+在我们深入探讨 XLM-R 的多语言方面之前，让我们花一分钟来调查我们模型的错误。正如我们在第二章中看到的，对模型进行彻底的错误分析是训练和调试 Transformer（以及机器学习模型一般）最重要的方面之一。有几种失败模式，其中模型看起来表现良好，而实际上它存在一些严重的缺陷。训练可能失败的例子包括：
 
 +   我们可能会意外地屏蔽太多的标记，也会屏蔽一些标签，以获得真正有希望的损失下降。
 
@@ -1232,18 +1232,18 @@ f1_scores_df
 
 # 结论
 
-在本章中，我们看到了如何使用一个在 100 种语言上预训练的单一变压器来处理多语言语料库上的 NLP 任务：XLM-R。尽管我们能够展示出，当只有少量标记示例可用于微调时，从德语到法语的跨语言转移是有竞争力的，但是如果目标语言与基础模型进行微调的语言显著不同，或者不是预训练期间使用的 100 种语言之一，通常不会出现良好的性能。像 MAD-X 这样的最新提议正是为这些低资源场景而设计的，而且由于 MAD-X 是建立在![nlpt_pin01](img/nlpt_pin01.png)变压器之上，您可以轻松地将本章中的代码适应它！^(6)
+在本章中，我们看到了如何使用一个在 100 种语言上预训练的单一 Transformer 来处理多语言语料库上的 NLP 任务：XLM-R。尽管我们能够展示出，当只有少量标记示例可用于微调时，从德语到法语的跨语言转移是有竞争力的，但是如果目标语言与基础模型进行微调的语言显著不同，或者不是预训练期间使用的 100 种语言之一，通常不会出现良好的性能。像 MAD-X 这样的最新提议正是为这些低资源场景而设计的，而且由于 MAD-X 是建立在![nlpt_pin01](img/nlpt_pin01.png)Transformer 之上，您可以轻松地将本章中的代码适应它！⁶
 
 到目前为止，我们已经研究了两个任务：序列分类和标记分类。这两者都属于自然语言理解的范畴，其中文本被合成为预测。在下一章中，我们将首次研究文本生成，其中模型的输入和输出都是文本。
 
-^(1) A. Conneau 等人，[“Unsupervised Cross-Lingual Representation Learning at Scale”](https://arxiv.org/abs/1911.02116)，（2019）。
+¹ A. Conneau 等人，[“Unsupervised Cross-Lingual Representation Learning at Scale”](https://arxiv.org/abs/1911.02116)，（2019）。
 
-^(2) J. Hu 等人，[“XTREME: A Massively Multilingual Multi-Task Benchmark for Evaluating Cross-Lingual Generalization”](https://arxiv.org/abs/2003.11080)，（2020）；X. Pan 等人，“跨语言姓名标记和链接 282 种语言”，*计算语言学协会第 55 届年会论文集* 1（2017 年 7 月）：1946-1958，[*http://dx.doi.org/10.18653/v1/P17-1178*](http://dx.doi.org/10.18653/v1/P17-1178)。
+² J. Hu 等人，[“XTREME: A Massively Multilingual Multi-Task Benchmark for Evaluating Cross-Lingual Generalization”](https://arxiv.org/abs/2003.11080)，（2020）；X. Pan 等人，“跨语言姓名标记和链接 282 种语言”，*计算语言学协会第 55 届年会论文集* 1（2017 年 7 月）：1946-1958，[*http://dx.doi.org/10.18653/v1/P17-1178*](http://dx.doi.org/10.18653/v1/P17-1178)。
 
-^(3) Y. Liu 等人，[“RoBERTa: A Robustly Optimized BERT Pretraining Approach”](https://arxiv.org/abs/1907.11692)，（2019）。
+³ Y. Liu 等人，[“RoBERTa: A Robustly Optimized BERT Pretraining Approach”](https://arxiv.org/abs/1907.11692)，（2019）。
 
-^(4) T. Kudo 和 J. Richardson，[“SentencePiece: A Simple and Language Independent Subword Tokenizer and Detokenizer for Neural Text Processing”](https://arxiv.org/abs/1808.06226)，（2018）。
+⁴ T. Kudo 和 J. Richardson，[“SentencePiece: A Simple and Language Independent Subword Tokenizer and Detokenizer for Neural Text Processing”](https://arxiv.org/abs/1808.06226)，（2018）。
 
-^(5) J. Devlin 等人，[“BERT: Pre-Training of Deep Bidirectional Transformers for Language Understanding”](https://arxiv.org/abs/1810.04805)，（2018）。
+⁵ J. Devlin 等人，[“BERT: Pre-Training of Deep Bidirectional Transformers for Language Understanding”](https://arxiv.org/abs/1810.04805)，（2018）。
 
-^(6) J. Pfeiffer 等人，[“MAD-X: An Adapter-Based Framework for Multi-Task Cross-Lingual Transfer”](https://arxiv.org/abs/2005.00052)，（2020）。
+⁶ J. Pfeiffer 等人，[“MAD-X: An Adapter-Based Framework for Multi-Task Cross-Lingual Transfer”](https://arxiv.org/abs/2005.00052)，（2020）。
