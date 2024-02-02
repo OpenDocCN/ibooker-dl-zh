@@ -144,13 +144,13 @@ input_txt = """In a shocking finding, scientist discovered \
 a herd of unicorns living in a remote, previously unexplored \
 valley, in the Andes Mountains. Even more surprising to the \
 researchers was the fact that the unicorns spoke perfect English.\n\n `"""`
-`input_ids` `=` `tokenizer``(``input_txt``,` `return_tensors``=``"pt"``)[``"input_ids"``]``.``to``(``device``)`
-`output_greedy` `=` `model``.``generate``(``input_ids``,` `max_length``=``max_length``,`
-                               `do_sample``=``False``)`
-`print``(``tokenizer``.``decode``(``output_greedy``[``0``]))`
+input_ids = tokenizer(input_txt, return_tensors="pt")["input_ids"].to(device)
+output_greedy = model.generate(input_ids, max_length=max_length,
+                               do_sample=False)
+print(tokenizer.decode(output_greedy[0]))
 ```
 
-```py`
+```py
 In a shocking finding, scientist discovered a herd of unicorns living in a
 remote, previously unexplored valley, in the Andes Mountains. Even more
 surprising to the researchers was the fact that the unicorns spoke perfect
