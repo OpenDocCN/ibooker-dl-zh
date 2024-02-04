@@ -94,7 +94,7 @@
 
 +   使用 TensorFlow 和 Keras 构建和训练神经网络
 
-+   最重要的神经网络架构：用于表格数据的前馈神经网络，用于计算机视觉的卷积网络，用于序列处理的循环网络和长短期记忆（LSTM）网络，用于自然语言处理的编码器-解码器和变压器（以及更多！），自动编码器，生成对抗网络（GANs）和扩散模型用于生成学习
++   最重要的神经网络架构：用于表格数据的前馈神经网络，用于计算机视觉的卷积网络，用于序列处理的循环网络和长短期记忆（LSTM）网络，用于自然语言处理的编码器-解码器和Transformer（以及更多！），自动编码器，生成对抗网络（GANs）和扩散模型用于生成学习
 
 +   训练深度神经网络的技术
 
@@ -118,7 +118,7 @@
 
 +   第二版引入了用于加载和预处理大型数据集的 Data API，用于规模训练和部署 TF 模型的分布策略 API，用于将模型投入生产的 TF Serving 和 Google Cloud AI Platform，以及（简要介绍）TF Transform，TFLite，TF Addons/Seq2Seq，TensorFlow.js 和 TF Agents。
 
-+   它还引入了许多其他 ML 主题，包括一个新的无监督学习章节，用于目标检测和语义分割的计算机视觉技术，使用卷积神经网络（CNN）处理序列，使用循环神经网络（RNN）、CNN 和变压器进行自然语言处理（NLP），GANs 等。
++   它还引入了许多其他 ML 主题，包括一个新的无监督学习章节，用于目标检测和语义分割的计算机视觉技术，使用卷积神经网络（CNN）处理序列，使用循环神经网络（RNN）、CNN 和Transformer进行自然语言处理（NLP），GANs 等。
 
 有关更多详细信息，请参阅[*https://homl.info/changes2*](https://homl.info/changes2)。
 
@@ -132,7 +132,7 @@
 
 +   第十五章现在分析芝加哥公共汽车和轨道乘客数据，而不是生成的时间序列，并介绍了 ARMA 模型及其变体。
 
-+   第十六章关于自然语言处理现在构建了一个英语到西班牙语的翻译模型，首先使用编码器-解码器 RNN，然后使用变压器模型。该章还涵盖了语言模型，如 Switch Transformers、DistilBERT、T5 和 PaLM（带有思维链提示）。此外，它介绍了视觉变压器（ViTs）并概述了一些基于变压器的视觉模型，如数据高效图像变压器（DeiTs）、Perceiver 和 DINO，以及一些大型多模态模型的简要概述，包括 CLIP、DALL·E、Flamingo 和 GATO。
++   第十六章关于自然语言处理现在构建了一个英语到西班牙语的翻译模型，首先使用编码器-解码器 RNN，然后使用Transformer模型。该章还涵盖了语言模型，如 Switch Transformers、DistilBERT、T5 和 PaLM（带有思维链提示）。此外，它介绍了视觉Transformer（ViTs）并概述了一些基于Transformer的视觉模型，如数据高效图像Transformer（DeiTs）、Perceiver 和 DINO，以及一些大型多模态模型的简要概述，包括 CLIP、DALL·E、Flamingo 和 GATO。
 
 +   第十七章关于生成学习现在引入了扩散模型，并展示了如何从头开始实现去噪扩散概率模型（DDPM）。
 
