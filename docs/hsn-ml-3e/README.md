@@ -1,4 +1,4 @@
-# Scikit、TensorFlow 和 Keras 机器学习实用指南
+# Scikit、TensorFlow 与 Keras 机器学习实用指南第三版
 
 > 原文：[Hands-On Machine Learning with Scikit-Learn, Keras, and TensorFlow](https://zh.annas-archive.org/md5/6b3baae86ec7cf1b4f4f9b8276ea0922)
 >
