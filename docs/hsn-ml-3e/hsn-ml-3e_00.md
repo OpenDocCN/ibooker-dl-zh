@@ -204,42 +204,6 @@
 
 此元素表示警告或注意事项。
 
-# O'Reilly 在线学习
-
-###### 注意
-
-40 多年来，[*O'Reilly Media*](https://oreilly.com)提供技术和商业培训、知识和见解，帮助公司取得成功。
-
-我们独特的专家和创新者网络通过书籍、文章和我们的在线学习平台分享他们的知识和专长。O'Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O'Reilly 和其他 200 多家出版商的大量文本和视频。有关更多信息，请访问[*https://oreilly.com*](https://oreilly.com)。
-
-# 如何联系我们
-
-请将有关本书的评论和问题发送至出版商：
-
-+   O'Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为本书创建了一个网页，列出勘误、示例和任何其他信息。您可以在[*https://homl.info/oreilly3*](https://homl.info/oreilly3)访问此页面。
-
-发送电子邮件至*bookquestions@oreilly.com*评论或询问有关本书的技术问题。
-
-有关我们的书籍和课程的新闻和信息，请访问[*https://oreilly.com*](https://oreilly.com)。
-
-在 LinkedIn 上找到我们：[*https://linkedin.com/company/oreilly-media*](https://linkedin.com/company/oreilly-media)
-
-在 Twitter 上关注我们：[*https://twitter.com/oreillymedia*](https://twitter.com/oreillymedia)
-
-在 YouTube 上观看我们：[*https://youtube.com/oreillymedia*](https://youtube.com/oreillymedia)
-
 # 致谢
 
 在我最疯狂的梦想中，我从未想象过这本书的第一版和第二版会获得如此庞大的读者群。我收到了许多读者的留言，许多人提出问题，一些人友善地指出勘误，大多数人给我寄来鼓励的话语。我无法表达我对所有这些读者的巨大支持的感激之情。非常感谢你们所有人！如果您在代码示例中发现错误（或者只是想提问），请毫不犹豫地在 GitHub 上[提交问题](https://homl.info/issues3)，或者如果您在文本中发现错误，请提交[勘误](https://homl.info/errata3)。一些读者还分享了这本书如何帮助他们找到第一份工作，或者如何帮助他们解决了他们正在处理的具体问题。我发现这样的反馈极具激励性。如果您觉得这本书有帮助，我会很高兴如果您能与我分享您的故事，无论是私下（例如通过[LinkedIn](https://linkedin.com/in/aurelien-geron)）还是公开（例如在 Twitter 上@ aureliengeron 发推文或撰写[亚马逊评论](https://homl.info/amazon3)）。
