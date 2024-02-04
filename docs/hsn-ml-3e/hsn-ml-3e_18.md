@@ -1172,7 +1172,7 @@ Hugging Face 还构建了一个 Datasets 库，您可以使用它轻松下载标
 
 这应该让您开始使用 Hugging Face 的生态系统。要了解更多信息，您可以前往[*https://huggingface.co/docs*](https://huggingface.co/docs)查看文档，其中包括许多教程笔记本、视频、完整 API 等。我还建议您查看 O'Reilly 图书[*使用 Hugging Face 构建自然语言处理应用的Transformer*](https://homl.info/hfbook)，作者是来自 Hugging Face 团队的 Lewis Tunstall、Leandro von Werra 和 Thomas Wolf。
 
-在下一章中，我们将讨论如何使用自动编码器以无监督的方式学习深度表示，并使用生成对抗网络来生成图像等！
+在下一章中，我们将讨论如何使用自编码器以无监督的方式学习深度表示，并使用生成对抗网络来生成图像等！
 
 # 练习
 
