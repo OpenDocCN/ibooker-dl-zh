@@ -1,4 +1,4 @@
-+   [Scikit、TensorFlow 和 Keras 机器学习实用指南](README.md)
++   [Sklearn、TensorFlow 和 Keras 机器学习实用指南](README.md)
 +   [前言](hsn-ml-3e_00.md)
 +   [第一部分：机器学习的基础知识](hsn-ml-3e_01.md)
 +   [第一章：机器学习的概览](hsn-ml-3e_02.md)
