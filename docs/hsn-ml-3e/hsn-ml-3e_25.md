@@ -1,4 +1,4 @@
-# 附录 D。TensorFlow 图
+# 附录 D：TensorFlow 图
 
 在本附录中，我们将探索由 TF 函数生成的图形（请参阅第十二章）。
 
