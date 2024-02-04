@@ -1,0 +1,2379 @@
+- en: Chapter 19\. Training and Deploying TensorFlow Models at Scale
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Once you have a beautiful model that makes amazing predictions, what do you
+    do with it? Well, you need to put it in production! This could be as simple as
+    running the model on a batch of data, and perhaps writing a script that runs this
+    model every night. However, it is often much more involved. Various parts of your
+    infrastructure may need to use this model on live data, in which case you will
+    probably want to wrap your model in a web service: this way, any part of your
+    infrastructure can query the model at any time using a simple REST API (or some
+    other protocol), as we discussed in [Chapter 2](ch02.html#project_chapter). But
+    as time passes, you’ll need to regularly retrain your model on fresh data and
+    push the updated version to production. You must handle model versioning, gracefully
+    transition from one model to the next, possibly roll back to the previous model
+    in case of problems, and perhaps run multiple different models in parallel to
+    perform *A/B experiments*.⁠^([1](ch19.html#idm45720162442960)) If your product
+    becomes successful, your service may start to get a large number of of queries
+    per second (QPS), and it must scale up to support the load. A great solution to
+    scale up your service, as you will see in this chapter, is to use TF Serving,
+    either on your own hardware infrastructure or via a cloud service such as Google
+    Vertex AI.⁠^([2](ch19.html#idm45720162441360)) It will take care of efficiently
+    serving your model, handle graceful model transitions, and more. If you use the
+    cloud platform you will also get many extra features, such as powerful monitoring
+    tools.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moreover, if you have a lot of training data and compute-intensive models, then
+    training time may be prohibitively long. If your product needs to adapt to changes
+    quickly, then a long training time can be a showstopper (e.g., think of a news
+    recommendation system promoting news from last week). Perhaps even more importantly,
+    a long training time will prevent you from experimenting with new ideas. In machine
+    learning (as in many other fields), it is hard to know in advance which ideas
+    will work, so you should try out as many as possible, as fast as possible. One
+    way to speed up training is to use hardware accelerators such as GPUs or TPUs.
+    To go even faster, you can train a model across multiple machines, each equipped
+    with multiple hardware accelerators. TensorFlow’s simple yet powerful distribution
+    strategies API makes this easy, as you will see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter we will look at how to deploy models, first using TF Serving,
+    then using Vertex AI. We will also take a quick look at deploying models to mobile
+    apps, embedded devices, and web apps. Then we will discuss how to speed up computations
+    using GPUs and how to train models across multiple devices and servers using the
+    distribution strategies API. Lastly, we will explore how to train models and fine-tune
+    their hyperparameters at scale using Vertex AI. That’s a lot of topics to discuss,
+    so let’s dive in!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Serving a TensorFlow Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Once you have trained a TensorFlow model, you can easily use it in any Python
+    code: if it’s a Keras model, just call its `predict()` method! But as your infrastructure
+    grows, there comes a point where it is preferable to wrap your model in a small
+    service whose sole role is to make predictions and have the rest of the infrastructure
+    query it (e.g., via a REST or gRPC API).⁠^([3](ch19.html#idm45720162435760)) This
+    decouples your model from the rest of the infrastructure, making it possible to
+    easily switch model versions or scale the service up as needed (independently
+    from the rest of your infrastructure), perform A/B experiments, and ensure that
+    all your software components rely on the same model versions. It also simplifies
+    testing and development, and more. You could create your own microservice using
+    any technology you want (e.g., using the Flask library), but why reinvent the
+    wheel when you can just use TF Serving?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using TensorFlow Serving
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: TF Serving is a very efficient, battle-tested model server, written in C++.
+    It can sustain a high load, serve multiple versions of your models and watch a
+    model repository to automatically deploy the latest versions, and more (see [Figure 19-1](#tf_serving_diagram)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1901](assets/mls3_1901.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-1\. TF Serving can serve multiple models and automatically deploy
+    the latest version of each model
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: So let’s suppose you have trained an MNIST model using Keras, and you want to
+    deploy it to TF Serving. The first thing you have to do is export this model to
+    the SavedModel format, introduced in [Chapter 10](ch10.html#ann_chapter).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exporting SavedModels
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'You already know how to save the model: just call `model.save()`. Now to version
+    the model, you just need to create a subdirectory for each model version. Easy!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: It’s usually a good idea to include all the preprocessing layers in the final
+    model you export so that it can ingest data in its natural form once it is deployed
+    to production. This avoids having to take care of preprocessing separately within
+    the application that uses the model. Bundling the preprocessing steps within the
+    model also makes it simpler to update them later on and limits the risk of mismatch
+    between a model and the preprocessing steps it requires.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since a SavedModel saves the computation graph, it can only be used with models
+    that are based exclusively on TensorFlow operations, excluding the `tf.py_function()`
+    operation, which wraps arbitrary Python code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'TensorFlow comes with a small `saved_model_cli` command-line interface to inspect
+    SavedModels. Let use it to inspect our exported model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'What does this output mean? Well, a SavedModel contains one or more *metagraphs*.
+    A metagraph is a computation graph plus some function signature definitions, including
+    their input and output names, types, and shapes. Each metagraph is identified
+    by a set of tags. For example, you may want to have a metagraph containing the
+    full computation graph, including the training operations: you would typically
+    tag this one as `"train"`. And you might have another metagraph containing a pruned
+    computation graph with only the prediction operations, including some GPU-specific
+    operations: this one might be tagged as `"serve", "gpu"`. You might want to have
+    other metagraphs as well. This can be done using TensorFlow’s low-level [SavedModel
+    API](https://homl.info/savedmodel). However, when you save a Keras model using
+    its `save()` method, it saves a single metagraph tagged as `"serve"`. Let’s inspect
+    this `"serve"` tag set:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This metagraph contains two signature definitions: an initialization function
+    called `"__saved_model_init_op"`, which you do not need to worry about, and a
+    default serving function called `"serving_default"`. When saving a Keras model,
+    the default serving function is the model’s `call()` method, which makes predictions,
+    as you already know. Let’s get more details about this serving function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that the function’s input is named `"flatten_input"`, and the output is
+    named `"dense_1"`. These correspond to the Keras model’s input and output layer
+    names. You can also see the type and shape of the input and output data. Looks
+    good!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you have a SavedModel, the next step is to install TF Serving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Installing and starting TensorFlow Serving
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'There are many ways to install TF Serving: using the system’s package manager,
+    using a Docker image,⁠^([4](ch19.html#idm45720162234880)) installing from source,
+    and more. Since Colab runs on Ubuntu, we can use Ubuntu’s `apt` package manager
+    like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code starts by adding TensorFlow’s package repository to Ubuntu’s list
+    of package sources. Then it downloads TensorFlow’s public GPG key and adds it
+    to the package manager’s key list so it can verify TensorFlow’s package signatures.
+    Next, it uses `apt` to install the `tensorflow-model-server` package. Lastly,
+    it installs the `tensorflow-serving-api` library, which we will need to communicate
+    with the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we want to start the server. The command will require the absolute path
+    of the base model directory (i.e., the path to `my_mnist_model`, not `0001`),
+    so let’s save that to the `MODEL_DIR` environment variable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can then start the server:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: In Jupyter or Colab, the `%%bash --bg` magic command executes the cell as a
+    bash script, running it in the background. The `>my_server.log 2>&1` part redirects
+    the standard output and standard error to the *my_server.log* file. And that’s
+    it! TF Serving is now running in the background, and its logs are saved to *my_server.log*.
+    It loaded our MNIST model (version 1), and it is now waiting for gRPC and REST
+    requests, respectively, on ports 8500 and 8501.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that the server is up and running, let’s query it, first using the REST
+    API, then the gRPC API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Querying TF Serving through the REST API
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s start by creating the query. It must contain the name of the function
+    signature you want to call, and of course the input data. Since the request must
+    use the JSON format, we have to convert the input images from a NumPy array to
+    a Python list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Note that the JSON format is 100% text-based. The request string looks like
+    this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s send this request to TF Serving via an HTTP POST request. This can
+    be done using the `requests` library (it is not part of Python’s standard library,
+    but it is preinstalled on Colab):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If all goes well, the response should be a dictionary containing a single `"predictions"`
+    key. The corresponding value is the list of predictions. This list is a Python
+    list, so let’s convert it to a NumPy array and round the floats it contains to
+    the second decimal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hurray, we have the predictions! The model is close to 100% confident that the
+    first image is a 7, 99% confident that the second image is a 2, and 97% confident
+    that the third image is a 1\. That’s correct.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The REST API is nice and simple, and it works well when the input and output
+    data are not too large. Moreover, just about any client application can make REST
+    queries without additional dependencies, whereas other protocols are not always
+    so readily available. However, it is based on JSON, which is text-based and fairly
+    verbose. For example, we had to convert the NumPy array to a Python list, and
+    every float ended up represented as a string. This is very inefficient, both in
+    terms of serialization/deserialization time—we have to convert all the floats
+    to strings and back—and in terms of payload size: many floats end up being represented
+    using over 15 characters, which translates to over 120 bits for 32-bit floats!
+    This will result in high latency and bandwidth usage when transferring large NumPy
+    arrays.⁠^([6](ch19.html#idm45720161858608)) So, let’s see how to use gRPC instead.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When transferring large amounts of data, or when latency is important, it is
+    much better to use the gRPC API, if the client supports it, as it uses a compact
+    binary format and an efficient communication protocol based on HTTP/2 framing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Querying TF Serving through the gRPC API
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The gRPC API expects a serialized `PredictRequest` protocol buffer as input,
+    and it outputs a serialized `PredictResponse` protocol buffer. These protobufs
+    are part of the `tensorflow-serving-api` library, which we installed earlier.
+    First, let’s create the request:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code creates a `PredictRequest` protocol buffer and fills in the required
+    fields, including the model name (defined earlier), the signature name of the
+    function we want to call, and finally the input data, in the form of a `Tensor`
+    protocol buffer. The `tf.make_tensor_proto()` function creates a `Tensor` protocol
+    buffer based on the given tensor or NumPy array, in this case `X_new`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we’ll send the request to the server and get its response. For this,
+    we will need the `grpcio` library, which is preinstalled in Colab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The code is quite straightforward: after the imports, we create a gRPC communication
+    channel to *localhost* on TCP port 8500, then we create a gRPC service over this
+    channel and use it to send a request, with a 10-second timeout. Note that the
+    call is synchronous: it will block until it receives the response or when the
+    timeout period expires. In this example the channel is insecure (no encryption,
+    no authentication), but gRPC and TF Serving also support secure channels over
+    SSL/TLS.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, let’s convert the `PredictResponse` protocol buffer to a tensor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you run this code and print `y_proba.round(2)`, you will get the exact same
+    estimated class probabilities as earlier. And that’s all there is to it: in just
+    a few lines of code, you can now access your TensorFlow model remotely, using
+    either REST or gRPC.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deploying a new model version
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Now let’s create a new model version and export a SavedModel, this time to
+    the *my_mnist_model/0002* directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At regular intervals (the delay is configurable), TF Serving checks the model
+    directory for new model versions. If it finds one, it automatically handles the
+    transition gracefully: by default, it answers pending requests (if any) with the
+    previous model version, while handling new requests with the new version. As soon
+    as every pending request has been answered, the previous model version is unloaded.
+    You can see this at work in the TF Serving logs (in *my_server.log*):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If the SavedModel contains some example instances in the *assets/extra* directory,
+    you can configure TF Serving to run the new model on these instances before starting
+    to use it to serve requests. This is called *model warmup*: it will ensure that
+    everything is properly loaded, avoiding long response times for the first requests.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This approach offers a smooth transition, but it may use too much RAM—especially
+    GPU RAM, which is generally the most limited. In this case, you can configure
+    TF Serving so that it handles all pending requests with the previous model version
+    and unloads it before loading and using the new model version. This configuration
+    will avoid having two model versions loaded at the same time, but the service
+    will be unavailable for a short period.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, TF Serving makes it straightforward to deploy new models. Moreover,
+    if you discover that version 2 does not work as well as you expected, then rolling
+    back to version 1 is as simple as removing the *my_mnist_model/0002* directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Another great feature of TF Serving is its automatic batching capability, which
+    you can activate using the `--enable_batching` option upon startup. When TF Serving
+    receives multiple requests within a short period of time (the delay is configurable),
+    it will automatically batch them together before using the model. This offers
+    a significant performance boost by leveraging the power of the GPU. Once the model
+    returns the predictions, TF Serving dispatches each prediction to the right client.
+    You can trade a bit of latency for a greater throughput by increasing the batching
+    delay (see the `--batching_parameters_file` option).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you expect to get many queries per second, you will want to deploy TF Serving
+    on multiple servers and load-balance the queries (see [Figure 19-2](#tf_serving_load_balancing_diagram)).
+    This will require deploying and managing many TF Serving containers across these
+    servers. One way to handle that is to use a tool such as [Kubernetes](https://kubernetes.io),
+    which is an open source system for simplifying container orchestration across
+    many servers. If you do not want to purchase, maintain, and upgrade all the hardware
+    infrastructure, you will want to use virtual machines on a cloud platform such
+    as Amazon AWS, Microsoft Azure, Google Cloud Platform, IBM Cloud, Alibaba Cloud,
+    Oracle Cloud, or some other platform as a service (PaaS) offering. Managing all
+    the virtual machines, handling container orchestration (even with the help of
+    Kubernetes), taking care of TF Serving configuration, tuning and monitoring—all
+    of this can be a full-time job. Fortunately, some service providers can take care
+    of all this for you. In this chapter we will use Vertex AI: it’s the only platform
+    with TPUs today; it supports TensorFlow 2, Scikit-Learn, and XGBoost; and it offers
+    a nice suite of AI services. There are several other providers in this space that
+    are capable of serving TensorFlow models as well, though, such as Amazon AWS SageMaker
+    and Microsoft AI Platform, so make sure to check them out too.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1902](assets/mls3_1902.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-2\. Scaling up TF Serving with load balancing
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now let’s see how to serve our wonderful MNIST model on the cloud!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating a Prediction Service on Vertex AI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Vertex AI is a platform within Google Cloud Platform (GCP) that offers a wide
+    range of AI-related tools and services. You can upload datasets, get humans to
+    label them, store commonly used features in a feature store and use them for training
+    or in production, and train models across many GPU or TPU servers with automatic
+    hyperparameter tuning or model architecture search (AutoML). You can also manage
+    your trained models, use them to make batch predictions on large amounts of data,
+    schedule multiple jobs for your data workflows, serve your models via REST or
+    gRPC at scale, and experiment with your data and models within a hosted Jupyter
+    environment called the *Workbench*. There’s even a *Matching Engine* service that
+    lets you compare vectors very efficiently (i.e., approximate nearest neighbors).
+    GCP also includes other AI services, such as APIs for computer vision, translation,
+    speech-to-text, and more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we start, there’s a little bit of setup to take care of:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Log in to your Google account, and then go to the [Google Cloud Platform console](https://console.cloud.google.com)
+    (see [Figure 19-3](#gcp_screenshot)). If you don’t have a Google account, you’ll
+    have to create one.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'If it’s your first time using GCP, you’ll have to read and accept the terms
+    and conditions. New users are offered a free trial, including $300 worth of GCP
+    credit that you can use over the course of 90 days (as of May 2022). You’ll only
+    need a small portion of that to pay for the services you’ll use in this chapter.
+    Upon signing up for a free trial, you’ll still need to create a payment profile
+    and enter your credit card number: it’s used for verification purposes—probably
+    to avoid people using the free trial multiple times—but you won’t be billed for
+    the first $300, and after that you’ll only be charged if you opt in by upgrading
+    to a paid account.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![mls3 1903](assets/mls3_1903.png)'
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+- en: Figure 19-3\. Google Cloud Platform console
+  prefs:
+  - PREF_IND
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you have used GCP before and your free trial has expired, then the services
+    you will use in this chapter will cost you some money. It shouldn’t be too much,
+    especially if you remember to turn off the services when you don’t need them anymore.
+    Make sure you understand and agree to the pricing conditions before you run any
+    service. I hereby decline any responsibility if services end up costing more than
+    you expected! Also make sure your billing account is active. To check, open the
+    ☰ navigation menu at the top left and click Billing, then make sure you have set
+    up a payment method and that the billing account is active.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Every resource in GCP belongs to a *project*. This includes all the virtual
+    machines you may use, the files you store, and the training jobs you run. When
+    you create an account, GCP automatically creates a project for you, called “My
+    First Project”. If you want, you can change its display name by going to the project
+    settings: in the ☰ navigation menu, select “IAM and admin → Settings”, change
+    the project’s display name, and click SAVE. Note that the project also has a unique
+    ID and number. You can choose the project ID when you create a project, but you
+    cannot change it later. The project number is automatically generated and cannot
+    be changed. If you want to create a new project, click the project name at the
+    top of the page, then click NEW PROJECT and enter the project name. You can also
+    click EDIT to set the project ID. Make sure billing is active for this new project
+    so that service fees can be billed (to your free credits, if any).'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_IND
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Always set an alarm to remind yourself to turn services off when you know you
+    will only need them for a few hours, or else you might leave them running for
+    days or months, incurring potentially significant costs.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: Now that you have a GCP account and a project, and billing is activated, you
+    must activate the APIs you need. In the ☰ navigation menu, select “APIs and services”,
+    and make sure the Cloud Storage API is enabled. If needed, click + ENABLE APIS
+    AND SERVICES, find Cloud Storage, and enable it. Also enable the Vertex AI API.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'You could continue to do everything via the GCP console, but I recommend using
+    Python instead: this way you can write scripts to automate just about anything
+    you want with GCP, and it’s often more convenient than clicking your way through
+    menus and forms, especially for common tasks.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first thing you need to do before you can use any GCP service is to authenticate.
+    The simplest solution when using Colab is to execute the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The authentication process is based on [*OAuth 2.0*](https://oauth.net): a
+    pop-up window will ask you to confirm that you want the Colab notebook to access
+    your Google credentials. If you accept, you must select the same Google account
+    you used for GCP. Then you will be asked to confirm that you agree to give Colab
+    full access to all your data on Google Drive and in GCP. If you allow access,
+    only the current notebook will have access, and only until the Colab runtime expires.
+    Obviously, you should only accept this if you trust the code in the notebook.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you are *not* working with the official notebooks from [*https://github.com/ageron/handson-ml3*](https://github.com/ageron/handson-ml3),
+    then you should be extra careful: if the notebook’s author is mischievous, they
+    could include code to do whatever they want with your data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s create a Google Cloud Storage bucket to store our SavedModels (a
+    GCS *bucket* is a container for your data). For this we will use the `google-cloud-storage`
+    library, which is preinstalled in Colab. We first create a `Client` object, which
+    will serve as the interface with GCS, then we use it to create the bucket:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you want to reuse an existing bucket, replace the last line with `bucket
+    = storage_client.bucket(bucket_name)`. Make sure `location` is set to the bucket’s
+    region.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GCS uses a single worldwide namespace for buckets, so simple names like “machine-learning”
+    will most likely not be available. Make sure the bucket name conforms to DNS naming
+    conventions, as it may be used in DNS records. Moreover, bucket names are public,
+    so do not put anything private in the name. It is common to use your domain name,
+    your company name, or your project ID as a prefix to ensure uniqueness, or simply
+    use a random number as part of the name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can change the region if you want, but be sure to choose one that supports
+    GPUs. Also, you may want to consider the fact that prices vary greatly between
+    regions, some regions produce much more CO₂ than others, some regions do not support
+    all services, and using a single-region bucket improves performance. See [Google
+    Cloud’s list of regions](https://homl.info/regions) and [Vertex AI’s documentation
+    on locations](https://homl.info/locations) for more details. If you are unsure,
+    it might be best to stick with `"us-central1"`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, let’s upload the *my_mnist_model* directory to the new bucket. Files
+    in GCS are called *blobs* (or *objects*), and under the hood they are all just
+    placed in the bucket without any directory structure. Blob names can be arbitrary
+    Unicode strings, and they can even contain forward slashes (`/`). The GCP console
+    and other tools use these slashes to give the illusion that there are directories.
+    So, when we upload the *my_mnist_model* directory, we only care about the files,
+    not the directories:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This function works fine now, but it would be very slow if there were many
+    files to upload. It’s not too hard to speed it up tremendously by multithreading
+    it (see the notebook for an implementation). Alternatively, if you have the Google
+    Cloud CLI, then you can use following command instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, let’s tell Vertex AI about our MNIST model. To communicate with Vertex
+    AI, we can use the `google-cloud-aiplatform` library (it still uses the old AI
+    Platform name instead of Vertex AI). It’s not preinstalled in Colab, so we need
+    to install it. After that, we can import the library and initialize it—just to
+    specify some default values for the project ID and the location—then we can create
+    a new Vertex AI model: we specify a display name, the GCS path to our model (in
+    this case the version 0001), and the URL of the Docker container we want Vertex
+    AI to use to run this model. If you visit that URL and navigate up one level,
+    you will find other containers you can use. This one supports TensorFlow 2.8 with
+    a GPU:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s deploy this model so we can query it via a gRPC or REST API to make
+    predictions. For this we first need to create an *endpoint*. This is what client
+    applications connect to when they want to access a service. Then we need to deploy
+    our model to this endpoint:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code may take a few minutes to run, because Vertex AI needs to set up a
+    virtual machine. In this example, we use a fairly basic machine of type `n1-standard-4`
+    (see [*https://homl.info/machinetypes*](https://homl.info/machinetypes) for other
+    types). We also use a basic GPU of type `NVIDIA_TESLA_K80` (see [*https://homl.info/accelerators*](https://homl.info/accelerators)
+    for other types). If you selected another region than `"us-central1"`, then you
+    may need to change the machine type or the accelerator type to values that are
+    supported in that region (e.g., not all regions have Nvidia Tesla K80 GPUs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Google Cloud Platform enforces various GPU quotas, both worldwide and per region:
+    you cannot create thousands of GPU nodes without prior authorization from Google.
+    To check your quotas, open “IAM and admin → Quotas” in the GCP console. If some
+    quotas are too low (e.g., if you need more GPUs in a particular region), you can
+    ask for them to be increased; it often takes about 48 hours.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Vertex AI will initially spawn the minimum number of compute nodes (just one
+    in this case), and whenever the number of queries per second becomes too high,
+    it will spawn more nodes (up to the maximum number you defined, five in this case)
+    and will load-balance the queries between them. If the QPS rate goes down for
+    a while, Vertex AI will stop the extra compute nodes automatically. The cost is
+    therefore directly linked to the load, as well as the machine and accelerator
+    types you selected and the amount of data you store on GCS. This pricing model
+    is great for occasional users and for services with important usage spikes. It’s
+    also ideal for startups: the price remains low until the startup actually starts
+    up.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Congratulations, you have deployed your first model to the cloud! Now let’s
+    query this prediction service:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We first need to convert the images we want to classify to a Python list, as
+    we did earlier when we sent requests to TF Serving using the REST API. The response
+    object contains the predictions, represented as a Python list of lists of floats.
+    Let’s round them to two decimal places and convert them to a NumPy array:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Yes! We get the exact same predictions as earlier. We now have a nice prediction
+    service running on the cloud that we can query from anywhere securely, and which
+    can automatically scale up or down depending on the number of QPS. When you are
+    done using the endpoint, don’t forget to delete it, to avoid paying for nothing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now let’s see how to run a job on Vertex AI to make predictions on a potentially
+    very large batch of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running Batch Prediction Jobs on Vertex AI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If we have a large number of predictions to make, then instead of calling our
+    prediction service repeatedly, we can ask Vertex AI to run a prediction job for
+    us. This does not require an endpoint, only a model. For example, let’s run a
+    prediction job on the first 100 images of the test set, using our MNIST model.
+    For this, we first need to prepare the batch and upload it to GCS. One way to
+    do this is to create a file containing one instance per line, each formatted as
+    a JSON value—this format is called *JSON Lines*—then pass this file to Vertex
+    AI. So let’s create a JSON Lines file in a new directory, then upload this directory
+    to GCS:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we’re ready to launch the prediction job, specifying the job’s name, the
+    type and number of machines and accelerators to use, the GCS path to the JSON
+    Lines file we just created, and the path to the GCS directory where Vertex AI
+    will save the model’s predictions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For large batches, you can split the inputs into multiple JSON Lines files and
+    list them all via the `gcs_source` argument.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This will take a few minutes, mostly to spawn the compute nodes on Vertex AI.
+    Once this command completes, the predictions will be available in a set of files
+    named something like *prediction.results-00001-of-00002*. These files use the
+    JSON Lines format by default, and each value is a dictionary containing an instance
+    and its corresponding prediction (i.e., 10 probabilities). The instances are listed
+    in the same order as the inputs. The job also outputs *prediction-errors** files,
+    which can be useful for debugging if something goes wrong. We can iterate through
+    all these output files using `batch_prediction_job.iter_outputs()`, so let’s go
+    through all the predictions and store them in a `y_probas` array:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s see how good these predictions are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Nice, 98% accuracy!
+  prefs: []
+  type: TYPE_NORMAL
+- en: The JSON Lines format is the default, but when dealing with large instances
+    such as images, it is too verbose. Luckily, the `batch_predict()` method accepts
+    an `instances_format` argument that lets you choose another format if you want.
+    It defaults to `"jsonl"`, but you can change it to `"csv"`, `"tf-record"`, `"tf-record-gzip"`,
+    `"bigquery"`, or `"file-list"`. If you set it to `"file-list"`, then the `gcs_source`
+    argument should point to a text file containing one input filepath per line; for
+    instance, pointing to PNG image files. Vertex AI will read these files as binary,
+    encode them using Base64, and pass the resulting byte strings to the model. This
+    means that you must add a preprocessing layer in your model to parse the Base64
+    strings, using `tf.io.decode_base64()`. If the files are images, you must then
+    parse the result using a function like `tf.io.decode_image()` or `tf.io.decode_png()`,
+    as discussed in [Chapter 13](ch13.html#data_chapter).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When you’re finished using the model, you can delete it if you want, by running
+    `mnist_model.delete()`. You can also delete the directories you created in your
+    GCS bucket, optionally the bucket itself (if it’s empty), and the batch prediction
+    job:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: You now know how to deploy a model to Vertex AI, create a prediction service,
+    and run batch prediction jobs. But what if you want to deploy your model to a
+    mobile app instead? Or to an embedded device, such as a heating control system,
+    a fitness tracker, or a self-driving car?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deploying a Model to a Mobile or Embedded Device
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Machine learning models are not limited to running on big centralized servers
+    with multiple GPUs: they can run closer to the source of data (this is called
+    *edge computing*), for example in the user’s mobile device or in an embedded device.
+    There are many benefits to decentralizing the computations and moving them toward
+    the edge: it allows the device to be smart even when it’s not connected to the
+    internet, it reduces latency by not having to send data to a remote server and
+    reduces the load on the servers, and it may improve privacy, since the user’s
+    data can stay on the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, deploying models to the edge has its downsides too. The device’s computing
+    resources are generally tiny compared to a beefy multi-GPU server. A large model
+    may not fit in the device, it may use too much RAM and CPU, and it may take too
+    long to download. As a result, the application may become unresponsive, and the
+    device may heat up and quickly run out of battery. To avoid all this, you need
+    to make a lightweight and efficient model, without sacrificing too much of its
+    accuracy. The [TFLite](https://tensorflow.org/lite) library provides several tools⁠^([7](ch19.html#idm45720160648176))
+    to help you deploy your models to the edge, with three main objectives:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reduce the model size, to shorten download time and reduce RAM usage.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Reduce the amount of computations needed for each prediction, to reduce latency,
+    battery usage, and heating.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adapt the model to device-specific constraints.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To reduce the model size, TFLite’s model converter can take a SavedModel and
+    compress it to a much lighter format based on [FlatBuffers](https://google.github.io/flatbuffers).
+    This is an efficient cross-platform serialization library (a bit like protocol
+    buffers) initially created by Google for gaming. It is designed so you can load
+    FlatBuffers straight to RAM without any preprocessing: this reduces the loading
+    time and memory footprint. Once the model is loaded into a mobile or embedded
+    device, the TFLite interpreter will execute it to make predictions. Here is how
+    you can convert a SavedModel to a FlatBuffer and save it to a *.tflite* file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can also save a Keras model directly to a FlatBuffer using `tf.lite.TFLiteConverter.from_keras_model(model)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The converter also optimizes the model, both to shrink it and to reduce its
+    latency. It prunes all the operations that are not needed to make predictions
+    (such as training operations), and it optimizes computations whenever possible;
+    for example, 3 × *a* + 4 ×_ a_ + 5 × *a* will be converted to 12 × *a*. Addtionally,
+    it tries to fuse operations whenever possible. For example, if possible, batch
+    normalization layers end up folded into the previous layer’s addition and multiplication
+    operations. To get a good idea of how much TFLite can optimize a model, download
+    one of the [pretrained TFLite models](https://homl.info/litemodels), such as *Inception_V1_quant*
+    (click *tflite&pb*), unzip the archive, then open the excellent [Netron graph
+    visualization tool](https://netron.app) and upload the *.pb* file to view the
+    original model. It’s a big, complex graph, right? Next, open the optimized *.tflite*
+    model and marvel at its beauty!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another way you can reduce the model size—other than simply using smaller neural
+    network architectures—is by using smaller bit-widths: for example, if you use
+    half-floats (16 bits) rather than regular floats (32 bits), the model size will
+    shrink by a factor of 2, at the cost of a (generally small) accuracy drop. Moreover,
+    training will be faster, and you will use roughly half the amount of GPU RAM.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'TFLite’s converter can go further than that, by quantizing the model weights
+    down to fixed-point, 8-bit integers! This leads to a fourfold size reduction compared
+    to using 32-bit floats. The simplest approach is called *post-training quantization*:
+    it just quantizes the weights after training, using a fairly basic but efficient
+    symmetrical quantization technique. It finds the maximum absolute weight value,
+    *m*, then it maps the floating-point range –*m* to +*m* to the fixed-point (integer)
+    range –127 to +127\. For example, if the weights range from –1.5 to +0.8, then
+    the bytes –127, 0, and +127 will correspond to the floats –1.5, 0.0, and +1.5,
+    respectively (see [Figure 19-5](#quantization_diagram)). Note that 0.0 always
+    maps to 0 when using symmetrical quantization. Also note that the byte values
+    +68 to +127 will not be used in this example, since they map to floats greater
+    than +0.8.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1905](assets/mls3_1905.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-5\. From 32-bit floats to 8-bit integers, using symmetrical quantization
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To perform this post-training quantization, simply add `DEFAULT` to the list
+    of converter optimizations before calling the `convert()` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This technique dramatically reduces the model’s size, which makes it much faster
+    to download, and uses less storage space. At runtime the quantized weights get
+    converted back to floats before they are used. These recovered floats are not
+    perfectly identical to the original floats, but they’re not too far off, so the
+    accuracy loss is usually acceptable. To avoid recomputing the float values all
+    the time, which would severely slow down the model, TFLite caches them: unfortunately,
+    this means that this technique does not reduce RAM usage, and it doesn’t speed
+    up the model either. It’s mostly useful to reduce the application’s size.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most effective way to reduce latency and power consumption is to also quantize
+    the activations so that the computations can be done entirely with integers, without
+    the need for any floating-point operations. Even when using the same bit-width
+    (e.g., 32-bit integers instead of 32-bit floats), integer computations use less
+    CPU cycles, consume less energy, and produce less heat. And if you also reduce
+    the bit-width (e.g., down to 8-bit integers), you can get huge speedups. Moreover,
+    some neural network accelerator devices—such as Google’s Edge TPU—can only process
+    integers, so full quantization of both weights and activations is compulsory.
+    This can be done post-training; it requires a calibration step to find the maximum
+    absolute value of the activations, so you need to provide a representative sample
+    of training data to TFLite (it does not need to be huge), and it will process
+    the data through the model and measure the activation statistics required for
+    quantization. This step is typically fast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main problem with quantization is that it loses a bit of accuracy: it is
+    similar to adding noise to the weights and activations. If the accuracy drop is
+    too severe, then you may need to use *quantization-aware training*. This means
+    adding fake quantization operations to the model so it can learn to ignore the
+    quantization noise during training; the final weights will then be more robust
+    to quantization. Moreover, the calibration step can be taken care of automatically
+    during training, which simplifies the whole process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I have explained the core concepts of TFLite, but going all the way to coding
+    a mobile or embedded application woud require a dedicated book. Fortunately, some
+    exist: if you want to learn more about building TensorFlow applications for mobile
+    and embedded devices, check out the O’Reilly books [*TinyML: Machine Learning
+    with TensorFlow on Arduino and Ultra-Low Power Micro-Controllers*](https://homl.info/tinyml),
+    by Pete Warden (former lead of the TFLite team) and Daniel Situnayake and [*AI
+    and Machine Learning for On-Device Development*](https://homl.info/ondevice),
+    by Laurence Moroney.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now what if you want to use your model in a website, running directly in the
+    user’s browser?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running a Model in a Web Page
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Running your machine learning model on the client side, in the user’s browser,
+    rather than on the server side can be useful in many scenarios, such as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When your web application is often used in situations where the user’s connectivity
+    is intermittent or slow (e.g., a website for hikers), so running the model directly
+    on the client side is the only way to make your website reliable.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When you need the model’s responses to be as fast as possible (e.g., for an
+    online game). Removing the need to query the server to make predictions will definitely
+    reduce the latency and make the website much more responsive.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When your web service makes predictions based on some private user data, and
+    you want to protect the user’s privacy by making the predictions on the client
+    side so that the private data never has to leave the user’s machine.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'For all these scenarios, you can use the [TensorFlow.js (TFJS) JavaScript library](https://tensorflow.org/js).
+    This library can load a TFLite model and make predictions directly in the user’s
+    browser. For example, the following JavaScript module imports the TFJS library,
+    downloads a pretrained MobileNet model, and uses this model to classify an image
+    and log the predictions. You can play with the code at [*https://homl.info/tfjscode*](https://homl.info/tfjscode),
+    using Glitch.com, a website that lets you build web apps in your browser for free;
+    click the PREVIEW button in the lower-right corner of the page to see the code
+    in action:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It’s even possible to turn this website into a *progressive web app* (PWA):
+    this is a website that respects a number of criteria⁠^([8](ch19.html#idm45720160353952))
+    that allow it to be viewed in any browser, and even installed as a standalone
+    app on a mobile device. For example, try visiting [*https://homl.info/tfjswpa*](https://homl.info/tfjswpa)
+    on a mobile device: most modern browsers will ask you whether you would like to
+    add TFJS Demo to your home screen. If you accept, you will see a new icon in your
+    list of applications. Clicking this icon will load the TFJS Demo website inside
+    its own window, just like a regular mobile app. A PWA can even be configured to
+    work offline, by using a *service worker*: this is a JavaScript module that runs
+    in its own separate thread in the browser and intercepts network requests, allowing
+    it to cache resources so the PWA can run faster, or even entirely offline. It
+    can also deliver push messages, run tasks in the background, and more. PWAs allow
+    you to manage a single code base for the web and for mobile devices. They also
+    make it easier to ensure that all users run the same version of your application.
+    You can play with this TFJS Demo’s PWA code on Glitch.com at [*https://homl.info/wpacode*](https://homl.info/wpacode).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Check out many more demos of machine learning models running in your browser
+    at [*https://tensorflow.org/js/demos*](https://tensorflow.org/js/demos).
+  prefs: []
+  type: TYPE_NORMAL
+- en: TFJS also supports training a model directly in your web browser! And it’s actually
+    pretty fast. If your computer has a GPU card, then TFJS can generally use it,
+    even if it’s not an Nvidia card. Indeed, TFJS will use WebGL when it’s available,
+    and since modern web browsers generally support a wide range of GPU cards, TFJS
+    actually supports more GPU cards than regular TensorFlow (which only supports
+    Nvidia cards).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a model in a user’s web browser can be especially useful to guarantee
+    that this user’s data remains private. A model can be trained centrally, and then
+    fine-tuned locally, in the browser, based on that user’s data. If you’re interested
+    in this topic, check out [*federated learning*](https://tensorflow.org/federated).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once again, doing justice to this topic would require a whole book. If you want
+    to learn more about TensorFlow.js, check out the O’reilly books [*Practical Deep
+    Learning for Cloud, Mobile, and Edge*](https://homl.info/tfjsbook), by Anirudh
+    Koul et al., or [*Learning TensorFlow.js*](https://homl.info/tfjsbook2), by Gant
+    Laborde.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you’ve seen how to deploy TensorFlow models to TF Serving, or to the
+    cloud with Vertex AI, or to mobile and embedded devices using TFLite, or to a
+    web browser using TFJS, let’s discuss how to use GPUs to speed up computations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using GPUs to Speed Up Computations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In [Chapter 11](ch11.html#deep_chapter) we looked at several techniques that
+    can considerably speed up training: better weight initialization, sophisticated
+    optimizers, and so on. But even with all of these techniques, training a large
+    neural network on a single machine with a single CPU can take hours, days, or
+    even weeks, depending on the task. Thanks to GPUs, this training time can be reduced
+    down to minutes or hours. Not only does this save an enormous amount of time,
+    but it also means that you can experiment with various models much more easily,
+    and frequently retrain your models on fresh data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the previous chapters, we used GPU-enabled runtimes on Google Colab. All
+    you have to do for this is select “Change runtime type” from the Runtime menu,
+    and choose the GPU accelerator type; TensorFlow automatically detects the GPU
+    and uses it to speed up computations, and the code is exactly the same as without
+    a GPU. Then, in this chapter you saw how to deploy your models to Vertex AI on
+    multiple GPU-enabled compute nodes: it’s just a matter of selecting the right
+    GPU-enabled Docker image when creating the Vertex AI model, and selecting the
+    desired GPU type when calling `endpoint.deploy()`. But what if you want to buy
+    your own GPU? And what if you want to distribute the computations across the CPU
+    and multiple GPU devices on a single machine (see [Figure 19-6](#multiple_devices_diagram))?
+    This is what we will discuss now, then later in this chapter we will discuss how
+    to distribute computations across multiple servers.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1906](assets/mls3_1906.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-6\. Executing a TensorFlow graph across multiple devices in parallel
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Getting Your Own GPU
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you know that you’ll be using a GPU heavily and for a long period of time,
+    then buying your own can make financial sense. You may also want to train your
+    models locally because you do not want to upload your data to the cloud. Or perhaps
+    you just want to buy a GPU card for gaming, and you’d like to use it for deep
+    learning as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you decide to purchase a GPU card, then take some time to make the right
+    choice. You will need to consider the amount of RAM you will need for your tasks
+    (e.g., typically at least 10 GB for image processing or NLP), the bandwidth (i.e.,
+    how fast you can send data into and out of the GPU), the number of cores, the
+    cooling system, etc. Tim Dettmers wrote an [excellent blog post](https://homl.info/66)
+    to help you choose: I encourage you to read it carefully. At the time of this
+    writing, TensorFlow only supports [Nvidia cards with CUDA Compute Capability 3.5+](https://homl.info/cudagpus)
+    (as well as Google’s TPUs, of course), but it may extend its support to other
+    manufacturers, so make sure to check [TensorFlow’s documentation](https://tensorflow.org/install)
+    to see what devices are supported today.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you go for an Nvidia GPU card, you will need to install the appropriate Nvidia
+    drivers and several Nvidia libraries.⁠^([9](ch19.html#idm45720160307664)) These
+    include the *Compute Unified Device Architecture* library (CUDA) Toolkit, which
+    allows developers to use CUDA-enabled GPUs for all sorts of computations (not
+    just graphics acceleration), and the *CUDA Deep Neural Network* library (cuDNN),
+    a GPU-accelerated library of common DNN computations such as activation layers,
+    normalization, forward and backward convolutions, and pooling (see [Chapter 14](ch14.html#cnn_chapter)).
+    cuDNN is part of Nvidia’s Deep Learning SDK. Note that you will need to create
+    an Nvidia developer account in order to download it. TensorFlow uses CUDA and
+    cuDNN to control the GPU cards and accelerate computations (see [Figure 19-7](#cuda_cudnn_diagram)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1907](assets/mls3_1907.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-7\. TensorFlow uses CUDA and cuDNN to control GPUs and boost DNNs
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Once you have installed the GPU card(s) and all the required drivers and libraries,
+    you can use the `nvidia-smi` command to check that everything is properly installed.
+    This command lists the available GPU cards, as well as all the processes running
+    on each card. In this example, it’s an Nvidia Tesla T4 GPU card with about 15
+    GB of available RAM, and there are no processes currently running on it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To check that TensorFlow actually sees your GPU, run the following commands
+    and make sure the result is not empty:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Managing the GPU RAM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'By default TensorFlow automatically grabs almost all the RAM in all available
+    GPUs the first time you run a computation. It does this to limit GPU RAM fragmentation.
+    This means that if you try to start a second TensorFlow program (or any program
+    that requires the GPU), it will quickly run out of RAM. This does not happen as
+    often as you might think, as you will most often have a single TensorFlow program
+    running on a machine: usually a training script, a TF Serving node, or a Jupyter
+    notebook. If you need to run multiple programs for some reason (e.g., to train
+    two different models in parallel on the same machine), then you will need to split
+    the GPU RAM between these processes more evenly.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you have multiple GPU cards on your machine, a simple solution is to assign
+    each of them to a single process. To do this, you can set the `CUDA_VISIBLE_DEVICES`
+    environment variable so that each process only sees the appropriate GPU card(s).
+    Also set the `CUDA_DEVICE_ORDER` environment variable to `PCI_BUS_ID` to ensure
+    that each ID always refers to the same GPU card. For example, if you have four
+    GPU cards, you could start two programs, assigning two GPUs to each of them, by
+    executing commands like the following in two separate terminal windows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Program 1 will then only see GPU cards 0 and 1, named `"/gpu:0"` and `"/gpu:1"`,
+    respectively, in TensorFlow, and program 2 will only see GPU cards 2 and 3, named
+    `"/gpu:1"` and `"/gpu:0"`, respectively (note the order). Everything will work
+    fine (see [Figure 19-8](#splitting_gpus_diagram)). Of course, you can also define
+    these environment variables in Python by setting `os.environ["CUDA_DEVICE_ORDER"]`
+    and `os.environ["CUDA_​VISI⁠BLE_DEVICES"]`, as long as you do so before using
+    TensorFlow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1908](assets/mls3_1908.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-8\. Each program gets two GPUs
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Another option is to tell TensorFlow to grab only a specific amount of GPU
+    RAM. This must be done immediately after importing TensorFlow. For example, to
+    make TensorFlow grab only 2 GiB of RAM on each GPU, you must create a *logical
+    GPU device* (sometimes called a *virtual GPU device*) for each physical GPU device
+    and set its memory limit to 2 GiB (i.e., 2,048 MiB):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s suppose you have four GPUs, each with at least 4 GiB of RAM: in this
+    case, two programs like this one can run in parallel, each using all four GPU
+    cards (see [Figure 19-9](#sharing_gpus_diagram)). If you run the `nvidia-smi`
+    command while both programs are running, you should see that each process holds
+    2 GiB of RAM on each card.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1909](assets/mls3_1909.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-9\. Each program gets all four GPUs, but with only 2 GiB of RAM on
+    each GPU
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Yet another option is to tell TensorFlow to grab memory only when it needs
+    it. Again, this must be done immediately after importing TensorFlow:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Another way to do this is to set the `TF_FORCE_GPU_ALLOW_GROWTH` environment
+    variable to `true`. With this option, TensorFlow will never release memory once
+    it has grabbed it (again, to avoid memory fragmentation), except of course when
+    the program ends. It can be harder to guarantee deterministic behavior using this
+    option (e.g., one program may crash because another program’s memory usage went
+    through the roof), so in production you’ll probably want to stick with one of
+    the previous options. However, there are some cases where it is very useful: for
+    example, when you use a machine to run multiple Jupyter notebooks, several of
+    which use TensorFlow. The `TF_FORCE_GPU_ALLOW_GROWTH` environment variable is
+    set to `true` in Colab runtimes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Lastly, in some cases you may want to split a GPU into two or more *logical
+    devices*. For example, this is useful if you only have one physical GPU—like in
+    a Colab runtime—but you want to test a multi-GPU algorithm. The following code
+    splits GPU #0 into two logical devices, with 2 GiB of RAM each (again, this must
+    be done immediately after importing TensorFlow):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'These two logical devices are called `"/gpu:0"` and `"/gpu:1"`, and you can
+    use them as if they were two normal GPUs. You can list all logical devices like
+    this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now let’s see how TensorFlow decides which devices it should use to place variables
+    and execute operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Placing Operations and Variables on Devices
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Keras and tf.data generally do a good job of placing operations and variables
+    where they belong, but you can also place operations and variables manually on
+    each device, if you want more control:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You generally want to place the data preprocessing operations on the CPU, and
+    place the neural network operations on the GPUs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GPUs usually have a fairly limited communication bandwidth, so it is important
+    to avoid unnecessary data transfers into and out of the GPUs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Adding more CPU RAM to a machine is simple and fairly cheap, so there’s usually
+    plenty of it, whereas the GPU RAM is baked into the GPU: it is an expensive and
+    thus limited resource, so if a variable is not needed in the next few training
+    steps, it should probably be placed on the CPU (e.g., datasets generally belong
+    on the CPU).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By default, all variables and all operations will be placed on the first GPU
+    (the one named `"/gpu:0"`), except for variables and operations that don’t have
+    a GPU kernel:⁠^([10](ch19.html#idm45720159934800)) these are placed on the CPU
+    (always named `"/cpu:0"`). A tensor or variable’s `device` attribute tells you
+    which device it was placed on:⁠^([11](ch19.html#idm45720159930608))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can safely ignore the prefix `/job:localhost/replica:0/task:0` for now;
+    we will discuss jobs, replicas, and tasks later in this chapter. As you can see,
+    the first variable was placed on GPU #0, which is the default device. However,
+    the second variable was placed on the CPU: this is because there are no GPU kernels
+    for integer variables, or for operations involving integer tensors, so TensorFlow
+    fell back to the CPU.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to place an operation on a different device than the default one,
+    use a `tf.device()` context:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The CPU is always treated as a single device (`"/cpu:0"`), even if your machine
+    has multiple CPU cores. Any operation placed on the CPU may run in parallel across
+    multiple cores if it has a multithreaded kernel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you explicitly try to place an operation or variable on a device that does
+    not exist or for which there is no kernel, then TensorFlow will silently fall
+    back to the device it would have chosen by default. This is useful when you want
+    to be able to run the same code on different machines that don’t have the same
+    number of GPUs. However, you can run `tf.config.set_soft_device_placement(False)`
+    if you prefer to get an exception.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, how exactly does TensorFlow execute operations across multiple devices?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parallel Execution Across Multiple Devices
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As we saw in [Chapter 12](ch12.html#tensorflow_chapter), one of the benefits
+    of using TF functions is parallelism. Let’s look at this a bit more closely. When
+    TensorFlow runs a TF function, it starts by analyzing its graph to find the list
+    of operations that need to be evaluated, and it counts how many dependencies each
+    of them has. TensorFlow then adds each operation with zero dependencies (i.e.,
+    each source operation) to the evaluation queue of this operation’s device (see
+    [Figure 19-10](#parallelization_diagram)). Once an operation has been evaluated,
+    the dependency counter of each operation that depends on it is decremented. Once
+    an operation’s dependency counter reaches zero, it is pushed to the evaluation
+    queue of its device. And once all the outputs have been computed, they are returned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1910](assets/mls3_1910.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-10\. Parallelized execution of a TensorFlow graph
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Operations in the CPU’s evaluation queue are dispatched to a thread pool called
+    the *inter-op thread pool*. If the CPU has multiple cores, then these operations
+    will effectively be evaluated in parallel. Some operations have multithreaded
+    CPU kernels: these kernels split their tasks into multiple suboperations, which
+    are placed in another evaluation queue and dispatched to a second thread pool
+    called the *intra-op thread pool* (shared by all multithreaded CPU kernels). In
+    short, multiple operations and suboperations may be evaluated in parallel on different
+    CPU cores.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the GPU, things are a bit simpler. Operations in a GPU’s evaluation queue
+    are evaluated sequentially. However, most operations have multithreaded GPU kernels,
+    typically implemented by libraries that TensorFlow depends on, such as CUDA and
+    cuDNN. These implementations have their own thread pools, and they typically exploit
+    as many GPU threads as they can (which is the reason why there is no need for
+    an inter-op thread pool in GPUs: each operation already floods most GPU threads).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, in [Figure 19-10](#parallelization_diagram), operations A, B,
+    and C are source ops, so they can immediately be evaluated. Operations A and B
+    are placed on the CPU, so they are sent to the CPU’s evaluation queue, then they
+    are dispatched to the inter-op thread pool and immediately evaluated in parallel.
+    Operation A happens to have a multithreaded kernel; its computations are split
+    into three parts, which are executed in parallel by the intra-op thread pool.
+    Operation C goes to GPU #0’s evaluation queue, and in this example its GPU kernel
+    happens to use cuDNN, which manages its own intra-op thread pool and runs the
+    operation across many GPU threads in parallel. Suppose C finishes first. The dependency
+    counters of D and E are decremented and they reach 0, so both operations are pushed
+    to GPU #0’s evaluation queue, and they are executed sequentially. Note that C
+    only gets evaluated once, even though both D and E depend on it. Suppose B finishes
+    next. Then F’s dependency counter is decremented from 4 to 3, and since that’s
+    not 0, it does not run yet. Once A, D, and E are finished, then F’s dependency
+    counter reaches 0, and it is pushed to the CPU’s evaluation queue and evaluated.
+    Finally, TensorFlow returns the requested outputs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An extra bit of magic that TensorFlow performs is when the TF function modifies
+    a stateful resource, such as a variable: it ensures that the order of execution
+    matches the order in the code, even if there is no explicit dependency between
+    the statements. For example, if your TF function contains `v.assign_add(1)` followed
+    by `v.assign(v * 2)`, TensorFlow will ensure that these operations are executed
+    in that order.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can control the number of threads in the inter-op thread pool by calling
+    `tf.config.threading.set_inter_op_parallelism_threads()`. To set the number of
+    intra-op threads, use `tf.config.threading.set_intra_op_parallelism_threads()`.
+    This is useful if you do not want TensorFlow to use all the CPU cores or if you
+    want it to be single-threaded.⁠^([12](ch19.html#idm45720159777008))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With that, you have all you need to run any operation on any device, and exploit
+    the power of your GPUs! Here are some of the things you could do:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You could train several models in parallel, each on its own GPU: just write
+    a training script for each model and run them in parallel, setting `CUDA_DEVICE_ORDER`
+    and `CUDA_VISIBLE_DEVICES` so that each script only sees a single GPU device.
+    This is great for hyperparameter tuning, as you can train in parallel multiple
+    models with different hyperparameters. If you have a single machine with two GPUs,
+    and it takes one hour to train one model on one GPU, then training two models
+    in parallel, each on its own dedicated GPU, will take just one hour. Simple!'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You could train a model on a single GPU and perform all the preprocessing in
+    parallel on the CPU, using the dataset’s `prefetch()` method⁠^([13](ch19.html#idm45720159772080))
+    to prepare the next few batches in advance so that they are ready when the GPU
+    needs them (see [Chapter 13](ch13.html#data_chapter)).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If your model takes two images as input and processes them using two CNNs before
+    joining their outputs,⁠^([14](ch19.html#idm45720159768848)) then it will probably
+    run much faster if you place each CNN on a different GPU.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can create an efficient ensemble: just place a different trained model
+    on each GPU so that you can get all the predictions much faster to produce the
+    ensemble’s final prediction.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: But what if you want to speed up training by using multiple GPUs?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training Models Across Multiple Devices
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are two main approaches to training a single model across multiple devices:
+    *model parallelism*, where the model is split across the devices, and *data parallelism*,
+    where the model is replicated across every device, and each replica is trained
+    on a different subset of the data. Let’s look at these two options.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Parallelism
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: So far we have trained each neural network on a single device. What if we want
+    to train a single neural network across multiple devices? This requires chopping
+    the model into separate chunks and running each chunk on a different device. Unfortunately,
+    such model parallelism turns out to be pretty tricky, and its effectiveness really
+    depends on the architecture of your neural network. For fully connected networks,
+    there is generally not much to be gained from this approach (see [Figure 19-11](#split_fully_connected_diagram)).
+    Intuitively, it may seem that an easy way to split the model is to place each
+    layer on a different device, but this does not work because each layer needs to
+    wait for the output of the previous layer before it can do anything. So perhaps
+    you can slice it vertically—for example, with the left half of each layer on one
+    device, and the right part on another device? This is slightly better, since both
+    halves of each layer can indeed work in parallel, but the problem is that each
+    half of the next layer requires the output of both halves, so there will be a
+    lot of cross-device communication (represented by the dashed arrows). This is
+    likely to completely cancel out the benefit of the parallel computation, since
+    cross-device communication is slow (and even more so when the devices are located
+    on different machines).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1911](assets/mls3_1911.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-11\. Splitting a fully connected neural network
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Some neural network architectures, such as convolutional neural networks (see
+    [Chapter 14](ch14.html#cnn_chapter)), contain layers that are only partially connected
+    to the lower layers, so it is much easier to distribute chunks across devices
+    in an efficient way ([Figure 19-12](#split_partially_connected_diagram)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1912](assets/mls3_1912.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-12\. Splitting a partially connected neural network
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Deep recurrent neural networks (see [Chapter 15](ch15.html#rnn_chapter)) can
+    be split a bit more efficiently across multiple GPUs. If you split the network
+    horizontally by placing each layer on a different device, and feed the network
+    with an input sequence to process, then at the first time step only one device
+    will be active (working on the sequence’s first value), at the second step two
+    will be active (the second layer will be handling the output of the first layer
+    for the first value, while the first layer will be handling the second value),
+    and by the time the signal propagates to the output layer, all devices will be
+    active simultaneously ([Figure 19-13](#split_rnn_network_diagram)). There is still
+    a lot of cross-device communication going on, but since each cell may be fairly
+    complex, the benefit of running multiple cells in parallel may (in theory) outweigh
+    the communication penalty. However, in practice a regular stack of `LSTM` layers
+    running on a single GPU actually runs much faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1913](assets/mls3_1913.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-13\. Splitting a deep recurrent neural network
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'In short, model parallelism may speed up running or training some types of
+    neural networks, but not all, and it requires special care and tuning, such as
+    making sure that devices that need to communicate the most run on the same machine.⁠^([15](ch19.html#idm45720159738736))
+    Next we’ll look at a much simpler and generally more efficient option: data parallelism.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data Parallelism
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Another way to parallelize the training of a neural network is to replicate
+    it on every device and run each training step simultaneously on all replicas,
+    using a different mini-batch for each. The gradients computed by each replica
+    are then averaged, and the result is used to update the model parameters. This
+    is called *data parallelism*, or sometimes *single program, multiple data* (SPMD).
+    There are many variants of this idea, so let’s look at the most important ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data parallelism using the mirrored strategy
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Arguably the simplest approach is to completely mirror all the model parameters
+    across all the GPUs and always apply the exact same parameter updates on every
+    GPU. This way, all replicas always remain perfectly identical. This is called
+    the *mirrored strategy*, and it turns out to be quite efficient, especially when
+    using a single machine (see [Figure 19-14](#mirrored_strategy_diagram)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1914](assets/mls3_1914.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-14\. Data parallelism using the mirrored strategy
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The tricky part when using this approach is to efficiently compute the mean
+    of all the gradients from all the GPUs and distribute the result across all the
+    GPUs. This can be done using an *AllReduce* algorithm, a class of algorithms where
+    multiple nodes collaborate to efficiently perform a *reduce operation* (such as
+    computing the mean, sum, and max), while ensuring that all nodes obtain the same
+    final result. Fortunately, there are off-the-shelf implementations of such algorithms,
+    as you will see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data parallelism with centralized parameters
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Another approach is to store the model parameters outside of the GPU devices
+    performing the computations (called *workers*); for example, on the CPU (see [Figure 19-15](#data_parallelism_diagram)).
+    In a distributed setup, you may place all the parameters on one or more CPU-only
+    servers called *parameter servers*, whose only role is to host and update the
+    parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1915](assets/mls3_1915.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-15\. Data parallelism with centralized parameters
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Whereas the mirrored strategy imposes synchronous weight updates across all
+    GPUs, this centralized approach allows either synchronous or asynchronous updates.
+    Let’s take a look at the pros and cons of both options.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Synchronous updates
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: With *synchronous updates*, the aggregator waits until all gradients are available
+    before it computes the average gradients and passes them to the optimizer, which
+    will update the model parameters. Once a replica has finished computing its gradients,
+    it must wait for the parameters to be updated before it can proceed to the next
+    mini-batch. The downside is that some devices may be slower than others, so the
+    fast devices will have to wait for the slow ones at every step, making the whole
+    process as slow as the slowest device. Moreover, the parameters will be copied
+    to every device almost at the same time (immediately after the gradients are applied),
+    which may saturate the parameter servers’ bandwidth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To reduce the waiting time at each step, you could ignore the gradients from
+    the slowest few replicas (typically ~10%). For example, you could run 20 replicas,
+    but only aggregate the gradients from the fastest 18 replicas at each step, and
+    just ignore the gradients from the last 2\. As soon as the parameters are updated,
+    the first 18 replicas can start working again immediately, without having to wait
+    for the 2 slowest replicas. This setup is generally described as having 18 replicas
+    plus 2 *spare replicas*.⁠^([16](ch19.html#idm45720159706016))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Asynchronous updates
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: With asynchronous updates, whenever a replica has finished computing the gradients,
+    the gradients are immediately used to update the model parameters. There is no
+    aggregation (it removes the “mean” step in [Figure 19-15](#data_parallelism_diagram))
+    and no synchronization. Replicas work independently of the other replicas. Since
+    there is no waiting for the other replicas, this approach runs more training steps
+    per minute. Moreover, although the parameters still need to be copied to every
+    device at every step, this happens at different times for each replica, so the
+    risk of bandwidth saturation is reduced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Data parallelism with asynchronous updates is an attractive choice because
+    of its simplicity, the absence of synchronization delay, and its better use of
+    the bandwidth. However, although it works reasonably well in practice, it is almost
+    surprising that it works at all! Indeed, by the time a replica has finished computing
+    the gradients based on some parameter values, these parameters will have been
+    updated several times by other replicas (on average *N* – 1 times, if there are
+    *N* replicas), and there is no guarantee that the computed gradients will still
+    be pointing in the right direction (see [Figure 19-16](#stale_gradients_diagram)).
+    When gradients are severely out of date, they are called *stale gradients*: they
+    can slow down convergence, introducing noise and wobble effects (the learning
+    curve may contain temporary oscillations), or they can even make the training
+    algorithm diverge.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1916](assets/mls3_1916.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-16\. Stale gradients when using asynchronous updates
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'There are a few ways you can reduce the effect of stale gradients:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reduce the learning rate.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Drop stale gradients or scale them down.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adjust the mini-batch size.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Start the first few epochs using just one replica (this is called the *warmup
+    phase*). Stale gradients tend to be more damaging at the beginning of training,
+    when gradients are typically large and the parameters have not settled into a
+    valley of the cost function yet, so different replicas may push the parameters
+    in quite different directions.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A [paper published by the Google Brain team](https://homl.info/68) in 2016⁠^([17](ch19.html#idm45720159687856))
+    benchmarked various approaches and found that using synchronous updates with a
+    few spare replicas was more efficient than using asynchronous updates, not only
+    converging faster but also producing a better model. However, this is still an
+    active area of research, so you should not rule out asynchronous updates just
+    yet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bandwidth saturation
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Whether you use synchronous or asynchronous updates, data parallelism with centralized
+    parameters still requires communicating the model parameters from the parameter
+    servers to every replica at the beginning of each training step, and the gradients
+    in the other direction at the end of each training step. Similarly, when using
+    the mirrored strategy, the gradients produced by each GPU will need to be shared
+    with every other GPU. Unfortunately, there often comes a point where adding an
+    extra GPU will not improve performance at all because the time spent moving the
+    data into and out of GPU RAM (and across the network in a distributed setup) will
+    outweigh the speedup obtained by splitting the computation load. At that point,
+    adding more GPUs will just worsen the bandwidth saturation and actually slow down
+    training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Saturation is more severe for large dense models, since they have a lot of
+    parameters and gradients to transfer. It is less severe for small models (but
+    the parallelization gain is limited) and for large sparse models, where the gradients
+    are typically mostly zeros and so can be communicated efficiently. Jeff Dean,
+    initiator and lead of the Google Brain project, [reported](https://homl.info/69)
+    typical speedups of 25–40× when distributing computations across 50 GPUs for dense
+    models, and a 300× speedup for sparser models trained across 500 GPUs. As you
+    can see, sparse models really do scale better. Here are a few concrete examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Neural machine translation: 6× speedup on 8 GPUs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Inception/ImageNet: 32× speedup on 50 GPUs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'RankBrain: 300× speedup on 500 GPUs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'There is plenty of research going on to alleviate the bandwidth saturation
+    issue, with the goal of allowing training to scale linearly with the number of
+    GPUs available. For example, a [2018 paper](https://homl.info/pipedream)⁠^([18](ch19.html#idm45720159675552))
+    by a team of researchers from Carnegie Mellon University, Stanford University,
+    and Microsoft Research proposed a system called *PipeDream* that managed to reduce
+    network communications by over 90%, making it possible to train large models across
+    many machines. They achieved this using a new technique called *pipeline parallelism*,
+    which combines model parallelism and data parallelism: the model is chopped into
+    consecutive parts, called *stages*, each of which is trained on a different machine.
+    This results in an asynchronous pipeline in which all machines work in parallel
+    with very little idle time. During training, each stage alternates one round of
+    forward propagation and one round of backpropagation (see [Figure 19-17](#pipedream_diagram)):
+    it pulls a mini-batch from its input queue, processes it, and sends the outputs
+    to the next stage’s input queue, then it pulls one mini-batch of gradients from
+    its gradient queue, backpropagates these gradients and updates its own model parameters,
+    and pushes the backpropagated gradients to the previous stage’s gradient queue.
+    It then repeats the whole process again and again. Each stage can also use regular
+    data parallelism (e.g., using the mirrored strategy), independently from the other
+    stages.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1917](assets/mls3_1917.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-17\. PipeDream’s pipeline parallelism
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'However, as it’s presented here, PipeDream would not work so well. To understand
+    why, consider mini-batch #5 in [Figure 19-17](#pipedream_diagram): when it went
+    through stage 1 during the forward pass, the gradients from mini-batch #4 had
+    not yet been backpropagated through that stage, but by the time #5’s gradients
+    flow back to stage 1, #4’s gradients will have been used to update the model parameters,
+    so #5’s gradients will be a bit stale. As we have seen, this can degrade training
+    speed and accuracy, and even make it diverge: the more stages there are, the worse
+    this problem becomes. The paper’s authors proposed methods to mitigate this issue,
+    though: for example, each stage saves weights during forward propagation and restores
+    them during backpropagation, to ensure that the same weights are used for both
+    the forward pass and the backward pass. This is called *weight stashing*. Thanks
+    to this, PipeDream demonstrates impressive scaling capability, well beyond simple
+    data parallelism.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The latest breakthrough in this field of research was published in a [2022
+    paper](https://homl.info/pathways)⁠^([19](ch19.html#idm45720159666736)) by Google
+    researchers: they developed a system called *Pathways* that uses automated model
+    parallelism, asynchronous gang scheduling, and other techniques to reach close
+    to 100% hardware utilization across thousands of TPUs! *Scheduling* means organizing
+    when and where each task must run, and *gang scheduling* means running related
+    tasks at the same time in parallel and close to each other to reduce the time
+    tasks have to wait for the others’ outputs. As we saw in [Chapter 16](ch16.html#nlp_chapter),
+    this system was used to train a massive language model across over 6,000 TPUs,
+    with close to 100% hardware utilization: that’s a mindblowing engineering feat.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'At the time of writing, Pathways is not public yet, but it’s likely that in
+    the near future you will be able to train huge models on Vertex AI using Pathways
+    or a similar system. In the meantime, to reduce the saturation problem, you’ll
+    probably want to use a few powerful GPUs rather than plenty of weak GPUs, and
+    if you need to train a model across multiple servers, you should group your GPUs
+    on few and very well interconnected servers. You can also try dropping the float
+    precision from 32 bits (`tf.float32`) to 16 bits (`tf.bfloat16`). This will cut
+    in half the amount of data to transfer, often without much impact on the convergence
+    rate or the model’s performance. Lastly, if you are using centralized parameters,
+    you can shard (split) the parameters across multiple parameter servers: adding
+    more parameter servers will reduce the network load on each server and limit the
+    risk of bandwidth saturation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: OK, now that we’ve gone through all the theory, let’s actually train a model
+    across multiple GPUs!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training at Scale Using the Distribution Strategies API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Luckily, TensorFlow comes with a very nice API that takes care of all the complexity
+    of distributing your model across multiple devices and machines: the *distribution
+    strategies API*. To train a Keras model across all available GPUs (on a single
+    machine, for now) using data parallelism with the mirrored strategy, just create
+    a `MirroredStrategy` object, call its `scope()` method to get a distribution context,
+    and wrap the creation and compilation of your model inside that context. Then
+    call the model’s `fit()` method normally:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Under the hood, Keras is distribution-aware, so in this `MirroredStrategy`
+    context it knows that it must replicate all variables and operations across all
+    available GPU devices. If you look at the model’s weights, they are of type `MirroredVariable`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that the `fit()` method will automatically split each training batch across
+    all the replicas, so it’s preferable to ensure that the batch size is divisible
+    by the number of replicas (i.e., the number of available GPUs) so that all replicas
+    get batches of the same size. And that’s all! Training will generally be significantly
+    faster than using a single device, and the code change was really minimal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you have finished training your model, you can use it to make predictions
+    efficiently: call the `predict()` method, and it will automatically split the
+    batch across all replicas, making predictions in parallel. Again, the batch size
+    must be divisible by the number of replicas. If you call the model’s `save()`
+    method, it will be saved as a regular model, *not* as a mirrored model with multiple
+    replicas. So when you load it, it will run like a regular model, on a single device:
+    by default on GPU #0, or on the CPU if there are no GPUs. If you want to load
+    a model and run it on all available devices, you must call `tf.keras.models.load_model()`
+    within a distribution context:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you only want to use a subset of all the available GPU devices, you can
+    pass the list to the `MirroredStrategy`’s constructor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: By default, the `MirroredStrategy` class uses the *NVIDIA Collective Communications
+    Library* (NCCL) for the AllReduce mean operation, but you can change it by setting
+    the `cross_device_ops` argument to an instance of the `tf.distribute.HierarchicalCopyAllReduce`
+    class, or an instance of the `tf.distribute.ReductionToOneDevice` class. The default
+    NCCL option is based on the `tf.distribute.NcclAllReduce` class, which is usually
+    faster, but this depends on the number and types of GPUs, so you may want to give
+    the alternatives a try.⁠^([20](ch19.html#idm45720159438096))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you want to try using data parallelism with centralized parameters, replace
+    the `MirroredStrategy` with the `CentralStorageStrategy`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can optionally set the `compute_devices` argument to specify the list of
+    devices you want to use as workers—by default it will use all available GPUs—and
+    you can optionally set the `parameter_device` argument to specify the device you
+    want to store the parameters on. By default it will use the CPU, or the GPU if
+    there is just one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now let’s see how to train a model across a cluster of TensorFlow servers!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a Model on a TensorFlow Cluster
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A *TensorFlow cluster* is a group of TensorFlow processes running in parallel,
+    usually on different machines, and talking to each other to complete some work—for
+    example, training or executing a neural network model. Each TF process in the
+    cluster is called a *task*, or a *TF server*. It has an IP address, a port, and
+    a type (also called its *role* or its *job*). The type can be either `"worker"`,
+    `"chief"`, `"ps"` (parameter server), or `"evaluator"`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each *worker* performs computations, usually on a machine with one or more GPUs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The *chief* performs computations as well (it is a worker), but it also handles
+    extra work such as writing TensorBoard logs or saving checkpoints. There is a
+    single chief in a cluster. If no chief is specified explicitly, then by convention
+    the first worker is the chief.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A *parameter server* only keeps track of variable values, and it is usually
+    on a CPU-only machine. This type of task is only used with the `ParameterServerStrategy`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An *evaluator* obviously takes care of evaluation. This type is not used often,
+    and when it’s used, there’s usually just one evaluator.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To start a TensorFlow cluster, you must first define its specification. This
+    means defining each task’s IP address, TCP port, and type. For example, the following
+    *cluster specification* defines a cluster with three tasks (two workers and one
+    parameter server; see [Figure 19-18](#cluster_diagram)). The cluster spec is a
+    dictionary with one key per job, and the values are lists of task addresses (*IP*:*port*):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: In general there will be a single task per machine, but as this example shows,
+    you can configure multiple tasks on the same machine if you want. In this case,
+    if they share the same GPUs, make sure the RAM is split appropriately, as discussed
+    earlier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: By default, every task in the cluster may communicate with every other task,
+    so make sure to configure your firewall to authorize all communications between
+    these machines on these ports (it’s usually simpler if you use the same port on
+    every machine).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![mls3 1918](assets/mls3_1918.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 19-18\. An example TensorFlow cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'When you start a task, you must give it the cluster spec, and you must also
+    tell it what its type and index are (e.g., worker #0). The simplest way to specify
+    everything at once (both the cluster spec and the current task’s type and index)
+    is to set the `TF_CONFIG` environment variable before starting TensorFlow. It
+    must be a JSON-encoded dictionary containing a cluster specification (under the
+    `"cluster"` key) and the type and index of the current task (under the `"task"`
+    key). For example, the following `TF_CONFIG` environment variable uses the cluster
+    we just defined and specifies that the task to start is worker #0:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In general you want to define the `TF_CONFIG` environment variable outside of
+    Python, so the code does not need to include the current task’s type and index
+    (this makes it possible to use the same code across all workers).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now let’s train a model on a cluster! We will start with the mirrored strategy.
+    First, you need to set the `TF_CONFIG` environment variable appropriately for
+    each task. There should be no parameter server (remove the `"ps"` key in the cluster
+    spec), and in general you will want a single worker per machine. Make extra sure
+    you set a different task index for each task. Finally, run the following script
+    on every worker:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s almost the same code you used earlier, except this time you are using
+    the `MultiWorkerMirroredStrategy`. When you start this script on the first workers,
+    they will remain blocked at the AllReduce step, but training will begin as soon
+    as the last worker starts up, and you will see them all advancing at exactly the
+    same rate since they synchronize at each step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When using the `MultiWorkerMirroredStrategy`, it’s important to ensure that
+    all workers do the same thing, including saving model checkpoints or writing TensorBoard
+    logs, even though you will only keep what the chief writes. This is because these
+    operations may need to run the AllReduce operations, so all workers must be in
+    sync.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are two AllReduce implementations for this distribution strategy: a ring
+    AllReduce algorithm based on gRPC for the network communications, and NCCL’s implementation.
+    The best algorithm to use depends on the number of workers, the number and types
+    of GPUs, and the network. By default, TensorFlow will apply some heuristics to
+    select the right algorithm for you, but you can force NCCL (or RING) like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you prefer to implement asynchronous data parallelism with parameter servers,
+    change the strategy to `ParameterServerStrategy`, add one or more parameter servers,
+    and configure `TF_CONFIG` appropriately for each task. Note that although the
+    workers will work asynchronously, the replicas on each worker will work synchronously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Lastly, if you have access to [TPUs on Google Cloud](https://cloud.google.com/tpu)—for
+    example, if you use Colab and you set the accelerator type to TPU—then you can
+    create a `TPUStrategy` like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: This needs to be run right after importing TensorFlow. You can then use this
+    strategy normally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you are a researcher, you may be eligible to use TPUs for free; see [*https://tensorflow.org/tfrc*](https://tensorflow.org/tfrc)
+    for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can now train models across multiple GPUs and multiple servers: give yourself
+    a pat on the back! If you want to train a very large model, however, you will
+    need many GPUs, across many servers, which will require either buying a lot of
+    hardware or managing a lot of cloud virtual machines. In many cases, it’s less
+    hassle and less expensive to use a cloud service that takes care of provisioning
+    and managing all this infrastructure for you, just when you need it. Let’s see
+    how to do that using Vertex AI.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running Large Training Jobs on Vertex AI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Vertex AI allows you to create custom training jobs with your own training
+    code. In fact, you can use almost the same training code as you would use on your
+    own TF cluster. The main thing you must change is where the chief should save
+    the model, the checkpoints, and the TensorBoard logs. Instead of saving the model
+    to a local directory, the chief must save it to GCS, using the path provided by
+    Vertex AI in the `AIP_MODEL_DIR` environment variable. For the model checkpoints
+    and TensorBoard logs, you should use the paths contained in the `AIP_CHECKPOINT_DIR`
+    and `AIP_TENSORBOARD_LOG_DIR` environment variables, respectively. Of course,
+    you must also make sure that the training data can be accessed from the virtual
+    machines, such as on GCS, or another GCP service like BigQuery, or directly from
+    the web. Lastly, Vertex AI sets the `"chief"` task type explicitly, so you should
+    identify the chief using `resolved.task_type == "chief"` instead of `resolved.task_id
+    == 0`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you place the training data on GCS, you can create a `tf.data.TextLineDataset`
+    or `tf.data.TFRecordDataset` to access it: just use the GCS paths as the filenames
+    (e.g., *gs://my_bucket/data/001.csv*). These datasets rely on the `tf.io.gfile`
+    package to access files: it supports both local files and GCS files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now you can create a custom training job on Vertex AI, based on this script.
+    You’ll need to specify the job name, the path to your training script, the Docker
+    image to use for training, the one to use for predictions (after training), any
+    additional Python libraries you may need, and lastly the bucket that Vertex AI
+    should use as a staging directory to store the training script. By default, that’s
+    also where the training script will save the trained model, as well as the TensorBoard
+    logs and model checkpoints (if any). Let’s create the job:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And now let’s run it on two workers, each with two GPUs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And that’s it: Vertex AI will provision the compute nodes you requested (within
+    your quotas), and it will run your training script across them. Once the job is
+    complete, the `run()` method will return a trained model that you can use exactly
+    like the one you created earlier: you can deploy it to an endpoint, or use it
+    to make batch predictions. If anything goes wrong during training, you can view
+    the logs in the GCP console: in the ☰ navigation menu, select Vertex AI → Training,
+    click on your training job, and click VIEW LOGS. Alternatively, you can click
+    the CUSTOM JOBS tab and copy the job’s ID (e.g., 1234), then select Logging from
+    the ☰ navigation menu and query `resource.labels.job_id=1234`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To visualize the training progress, just start TensorBoard and point its `--logdir`
+    to the GCS path of the logs. It will use *application default credentials*, which
+    you can set up using `gcloud auth application-default login`. Vertex AI also offers
+    hosted TensorBoard servers if you prefer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to try out a few hyperparameter values, one option is to run multiple
+    jobs. You can pass the hyperparameter values to your script as command-line arguments
+    by setting the `args` parameter when calling the `run()` method, or you can pass
+    them as environment variables using the `environment_variables` parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, if you want to run a large hyperparameter tuning job on the cloud,
+    a much better option is to use Vertex AI’s hyperparameter tuning service. Let’s
+    see how.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hyperparameter Tuning on Vertex AI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Vertex AI’s hyperparameter tuning service is based on a Bayesian optimization
+    algorithm, capable of quickly finding optimal combinations of hyperparameters.
+    To use it, you first need to create a training script that accepts hyperparameter
+    values as command-line arguments. For example, your script could use the `argparse`
+    standard library like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The hyperparameter tuning service will call your script multiple times, each
+    time with different hyperparameter values: each run is called a *trial*, and the
+    set of trials is called a *study*. Your training script must then use the given
+    hyperparameter values to build and compile a model. You can use a mirrored distribution
+    strategy if you want, in case each trial runs on a multi-GPU machine. Then the
+    script can load the dataset and train the model. For example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can use the `AIP_*` environment variables we mentioned earlier to determine
+    where to save the checkpoints, the TensorBoard logs, and the final model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Lastly, the script must report the model’s performance back to Vertex AI’s
+    hyperparameter tuning service, so it can decide which hyperparameters to try next.
+    For this, you must use the `hypertune` library, which is automatically installed
+    on Vertex AI training VMs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that your training script is ready, you need to define the type of machine
+    you would like to run it on. For this, you must define a custom job, which Vertex
+    AI will use as a template for each trial:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, you’re ready to create and run the hyperparameter tuning job:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, we tell Vertex AI to maximize the metric named `"accuracy"`: this name
+    must match the name of the metric reported by the training script. We also define
+    the search space, using a log scale for the learning rate and a linear (i.e.,
+    uniform) scale for the other hyperparameters. The hyperparameter names must match
+    the command-line arguments of the training script. Then we set the maximum number
+    of trials to 100, and the maximum number of trials running in parallel to 20\.
+    If you increase the number of parallel trials to (say) 60, the total search time
+    will be reduced significantly, by a factor of up to 3\. But the first 60 trials
+    will be started in parallel, so they will not benefit from the other trials’ feedback.
+    Therefore, you should increase the max number of trials to compensate—for example,
+    up to about 140.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This will take quite a while. Once the job is completed, you can fetch the
+    trial results using `hp_job.trials`. Each trial result is represented as a protobuf
+    object, containing the hyperparameter values and the resulting metrics. Let’s
+    find the best trial:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s look at this trial’s accuracy, and its hyperparameter values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s it! Now you can get this trial’s SavedModel, optionally train it a bit
+    more, and deploy it to production.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Vertex AI also includes an AutoML service, which completely takes care of finding
+    the right model architecture and training it for you. All you need to do is upload
+    your dataset to Vertex AI using a special format that depends on the type of dataset
+    (images, text, tabular, video, etc.), then create an AutoML training job, pointing
+    to the dataset and specifying the maximum number of compute hours you’re willing
+    to spend. See the notebook for an example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now you have all the tools and knowledge you need to create state-of-the-art
+    neural net architectures and train them at scale using various distribution strategies,
+    on your own infrastructure or on the cloud, and then deploy them anywhere. In
+    other words, you now have superpowers: use them well!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercises
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What does a SavedModel contain? How do you inspect its content?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: When should you use TF Serving? What are its main features? What are some tools
+    you can use to deploy it?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How do you deploy a model across multiple TF Serving instances?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: When should you use the gRPC API rather than the REST API to query a model served
+    by TF Serving?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are the different ways TFLite reduces a model’s size to make it run on
+    a mobile or embedded device?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is quantization-aware training, and why would you need it?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are model parallelism and data parallelism? Why is the latter generally
+    recommended?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: When training a model across multiple servers, what distribution strategies
+    can you use? How do you choose which one to use?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Train a model (any model you like) and deploy it to TF Serving or Google Vertex
+    AI. Write the client code to query it using the REST API or the gRPC API. Update
+    the model and deploy the new version. Your client code will now query the new
+    version. Roll back to the first version.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Train any model across multiple GPUs on the same machine using the `MirroredStrategy`
+    (if you do not have access to GPUs, you can use Google Colab with a GPU runtime
+    and create two logical GPUs). Train the model again using the `CentralStorageStrategy`
+    and compare the training time.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Fine-tune a model of your choice on Vertex AI, using either Keras Tuner or Vertex
+    AI’s hyperparameter tuning service.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Solutions to these exercises are available at the end of this chapter’s notebook,
+    at [*https://homl.info/colab3*](https://homl.info/colab3).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Thank You!
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Before we close the last chapter of this book, I would like to thank you for
+    reading it up to the last paragraph. I truly hope that you had as much fun reading
+    this book as I had writing it, and that it will be useful for your projects, big
+    or small.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you find errors, please send feedback. More generally, I would love to know
+    what you think, so please don’t hesitate to contact me via O’Reilly, through the
+    *ageron/handson-ml3* GitHub project, or on Twitter at @aureliengeron.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Going forward, my best advice to you is to practice and practice: try going
+    through all the exercises (if you have not done so already), play with the notebooks,
+    join Kaggle or some other ML community, watch ML courses, read papers, attend
+    conferences, and meet experts. Things move fast, so try to keep up to date. Several
+    YouTube channels regularly present deep learning papers in great detail, in a
+    very approachable way. I particularly recommend the channels by Yannic Kilcher,
+    Letitia Parcalabescu, and Xander Steenbrugge. For fascinating ML discussions and
+    higher-level insights, make sure to check out ML Street Talk, and Lex Fridman’s
+    channel. It also helps tremendously to have a concrete project to work on, whether
+    it is for work or for fun (ideally for both), so if there’s anything you have
+    always dreamed of building, give it a shot! Work incrementally; don’t shoot for
+    the moon right away, but stay focused on your project and build it piece by piece.
+    It will require patience and perseverance, but when you have a walking robot,
+    or a working chatbot, or whatever else you fancy building, it will be immensely
+    rewarding!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: My greatest hope is that this book will inspire you to build a wonderful ML
+    application that will benefit all of us. What will it be?
+  prefs: []
+  type: TYPE_NORMAL
+- en: —*Aurélien Géron*
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch19.html#idm45720162442960-marker)) An A/B experiment consists in testing
+    two different versions of your product on different subsets of users in order
+    to check which version works best and get other insights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch19.html#idm45720162441360-marker)) Google AI Platform (formerly known
+    as Google ML Engine) and Google AutoML merged in 2021 to form Google Vertex AI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch19.html#idm45720162435760-marker)) A REST (or RESTful) API is an API
+    that uses standard HTTP verbs, such as GET, POST, PUT, and DELETE, and uses JSON
+    inputs and outputs. The gRPC protocol is more complex but more efficient; data
+    is exchanged using protocol buffers (see [Chapter 13](ch13.html#data_chapter)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch19.html#idm45720162234880-marker)) If you are not familiar with Docker,
+    it allows you to easily download a set of applications packaged in a *Docker image*
+    (including all their dependencies and usually some good default configuration)
+    and then run them on your system using a *Docker engine*. When you run an image,
+    the engine creates a *Docker container* that keeps the applications well isolated
+    from your own system—but you can give it some limited access if you want. It is
+    similar to a virtual machine, but much faster and lighter, as the container relies
+    directly on the host’s kernel. This means that the image does not need to include
+    or run its own kernel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch19.html#idm45720162137552-marker)) There are also GPU images available,
+    and other installation options. For more details, please check out the official
+    [installation instructions](https://homl.info/tfserving).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch19.html#idm45720161858608-marker)) To be fair, this can be mitigated
+    by serializing the data first and encoding it to Base64 before creating the REST
+    request. Moreover, REST requests can be compressed using gzip, which reduces the
+    payload size significantly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch19.html#idm45720160648176-marker)) Also check out TensorFlow’s [Graph
+    Transform Tool](https://homl.info/tfgtt) for modifying and optimizing computational
+    graphs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch19.html#idm45720160353952-marker)) For example, a PWA must include icons
+    of various sizes for different mobile devices, it must be served via HTTPS, it
+    must include a manifest file containing metadata such as the name of the app and
+    the background color.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch19.html#idm45720160307664-marker)) Please check the TensorFlow docs
+    for detailed and up-to-date installation instructions, as they change quite often.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([10](ch19.html#idm45720159934800-marker)) As we saw in [Chapter 12](ch12.html#tensorflow_chapter),
+    a kernel is an operation’s implementation for a specific data type and device
+    type. For example, there is a GPU kernel for the `float32` `tf.matmul()` operation,
+    but there is no GPU kernel for `int32` `tf.matmul()`, only a CPU kernel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([11](ch19.html#idm45720159930608-marker)) You can also use `tf.debugging.set_log_device_placement(True)`
+    to log all device placements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([12](ch19.html#idm45720159777008-marker)) This can be useful if you want to
+    guarantee perfect reproducibility, as I explain in [this video](https://homl.info/repro),
+    based on TF 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([13](ch19.html#idm45720159772080-marker)) At the time of writing, it only
+    prefetches the data to the CPU RAM, but use `tf.data.experimental.pre⁠fetch​_to_device()`
+    to make it prefetch the data and push it to the device of your choice so that
+    the GPU does not waste time waiting for the data to be transferred.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([14](ch19.html#idm45720159768848-marker)) If the two CNNs are identical, then
+    it is called a *Siamese neural network*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([15](ch19.html#idm45720159738736-marker)) If you are interested in going further
+    with model parallelism, check out [Mesh TensorFlow](https://github.com/tensorflow/mesh).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([16](ch19.html#idm45720159706016-marker)) This name is slightly confusing
+    because it sounds like some replicas are special, doing nothing. In reality, all
+    replicas are equivalent: they all work hard to be among the fastest at each training
+    step, and the losers vary at every step (unless some devices are really slower
+    than others). However, it does mean that if one or two servers crash, training
+    will continue just fine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([17](ch19.html#idm45720159687856-marker)) Jianmin Chen et al., “Revisiting
+    Distributed Synchronous SGD”, arXiv preprint arXiv:1604.00981 (2016).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([18](ch19.html#idm45720159675552-marker)) Aaron Harlap et al., “PipeDream:
+    Fast and Efficient Pipeline Parallel DNN Training”, arXiv preprint arXiv:1806.03377
+    (2018).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([19](ch19.html#idm45720159666736-marker)) Paul Barham et al., “Pathways:
+    Asynchronous Distributed Dataflow for ML”, arXiv preprint arXiv:2203.12533 (2022).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([20](ch19.html#idm45720159438096-marker)) For more details on AllReduce algorithms,
+    read [Yuichiro Ueno’s post](https://homl.info/uenopost) on the technologies behind
+    deep learning and [Sylvain Jeaugey’s post](https://homl.info/ncclalgo) on massively
+    scaling deep learning training with NCCL.
+  prefs: []
+  type: TYPE_NORMAL
