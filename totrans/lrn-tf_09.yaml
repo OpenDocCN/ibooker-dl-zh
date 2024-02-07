@@ -1,0 +1,621 @@
+- en: Chapter 9\. Distributed TensorFlow
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we discuss the use of TensorFlow for distributed computing.
+    We start by briefly surveying the different approaches to distributing model training
+    in machine learning in general, and specifically for deep learning. We then introduce
+    the elements of TensorFlow designed to support distributed computing, and finally
+    put everything together with an end-to-end example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Computing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Distributed* *computing*, in the most general terms, entails the utilization
+    of more than one component in order to perform the desired computation or achieve
+    a goal. In our case, this means using multiple machines in order to speed up the
+    training of a deep learning model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The basic idea behind this is that by using more computing power, we should
+    be able to train the same model faster. This is indeed often the case, although
+    just how much faster depends on many factors (i.e., if you expect to use 10× resources
+    and get a 10× speedup, you are most likely going to be disappointed!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many ways to distribute computations in a machine learning setting.
+    You may want to utilize multiple devices, either on the same machine or across
+    a cluster. When training a single model, you may want to compute gradients across
+    a cluster to speed up training, either synchronously or asynchronously. A cluster
+    may also be used to train multiple models at the same time, or in order to search
+    for the optimal parameters for a single model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following subsections we map out these many aspects of parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where Does the Parallelization Take Place?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The first split in the classification of types of parallelization is the location.
+    Are we using multiple computing devices on a single machine or across a cluster?
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is becoming increasingly common to have powerful hardware with multiple devices
+    on a single machine. Cloud providers (such as Amazon Web Services) now offer this
+    sort of platform set up and ready to go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whether in the cloud or on premises, a cluster configuration affords more flexibility
+    in design and evolution, and the setup can grow way beyond what is currently feasible
+    with multiple devices on the same board (essentially, you can use a cluster of
+    arbitrary size).
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, while several devices on the same board can use shared memory,
+    the cluster approach introduces the time cost of communication between nodes.
+    This can become a limiting factor, when the amount of information that has to
+    be shared is large and communication is relatively slow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What Is the Goal of Parallelization?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The second split is the actual goal. Do we want to use more hardware to make
+    the same process faster, or in order to parallelize the training of multiple models?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The need to train multiple models often arises in development stages where a
+    choice needs to be made regarding either the models or the hyperparameters to
+    use. In this case it is common to run several options and choose the best-performing
+    one. It is natural to do so in parallel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Alternatively, when training a single (often large) model, a cluster may be
+    used in order to speed up training. In the most common approach, known as *data
+    parallelism*, the same model structure exists on each computation device separately,
+    and the data running through each copy is what is parallelized.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, when training a deep learning model with gradient descent, the
+    process is composed of the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compute the gradients for a batch of training examples.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Sum the gradients.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Apply an update to the model parameters accordingly.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Clearly, step 1 of this schema lends itself to parallelization. Simply use multiple
+    devices to compute the gradients (with respect to different training examples),
+    and then aggregate the results and sum them up in step 2, just as in the regular
+    case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Synchronous versus asynchronous data parallelism**'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the process just described, gradients from different training examples are
+    aggregated together, in order to make a single update to the model parameters.
+    This is what is known as *synchronous* training, since the summation step defines
+    a point where the flow has to wait for all of the nodes to complete the gradient
+    computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One case where it might be better to avoid this is when there are heterogeneous
+    computing resources being used together, since the synchronous option entails
+    waiting for the slowest of the nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The alternative, *asynchronous* option is to apply the update step independently
+    after each node finishes computing the gradients for the training examples it
+    was assigned.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TensorFlow Elements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section we go over the TensorFlow elements and concepts that are used
+    in parallel computations.  This is not a complete overview, and primarily serves
+    as an introduction to the parallel example that concludes this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: tf.app.flags
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We start with a mechanism that is completely unrelated to parallel computing,
+    but is essential for our example at the end of the chapter. Indeed, the `flags`
+    mechanism is heavily used in TensorFlow examples and deserves to be discussed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Essentially, `tf.app.flags` is a wrapper for the Python `argparse` module, which
+    is commonly used to process command-line arguments, with some extra and specific
+    functionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider, for instance, a Python command-line program with typical command-line
+    arguments:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The program *distribute.py* is passed the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This information is then extracted within the Python script, by using:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The arguments (both string and integer) are defined by the name in the command
+    line, a default value, and a description of the argument.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `flags` mechanism allows the following types of arguments:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`tf.app.flags.DEFINE_string` defines a string value.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`tf.app.flags.DEFINE_boolean` defines a Boolean value.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`tf.app.flags.DEFINE_float` defines a floating-point value.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`tf.app.flags.DEFINE_integer` defines an integer value.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Finally, `tf.app.flags.FLAGS` is a structure containing the values of all the
+    arguments parsed from the command-line input. The arguments are accessed as `FLAGS.arg`,
+    or via the dictionary `FLAGS.__flags` if necessary (it is, however, highly recommended
+    to use the first option—the way it was designed to be used).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clusters and Servers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'A TensorFlow cluster is simply a set of nodes (a.k.a. tasks) that participate
+    in parallel processing of a computation graph. Each task is defined by the network
+    address at which it may be accessed. For example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here we defined four local tasks (note that `localhost:*XXXX*` points to port
+    *XXXX* on the current machine, and in a multiple-computer setting the `localhost`
+    would be replaced by an IP address). The tasks are divided into a single *parameter
+    server* and three *workers*. The parameter server/worker assignments are referred
+    to as *jobs*. We further describe what each of these does during training later
+    on in the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each of the tasks must run a TensorFlow server, in order to both use local resources
+    for the actual computations and communicate with other tasks in the cluster to
+    facilitate parallelization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Building on the cluster definition, a server on the first worker node (i.e.,
+    `localhost:2223`) would be started by:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: The arguments received by `Server()` let it know its identity, as well as the
+    identities and addresses of the other members in the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once we have the clusters and servers in place, we build the computation graph
+    that will allow us to go forward with the parallel computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Replicating a Computational Graph Across Devices
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As mentioned previously, there is more than one way to perform parallel training. In
+    [“Device Placement”](#device_Placement), we briefly discuss how to directly place
+    operations on a specific task in a cluster. In the rest of this section we go
+    over what is necessary for between-graph replication.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Between-graph* *replication* refers to the common parallelization mode where
+    a separate but identical computation graph is built on each of the worker tasks.
+    During training, gradients are computed by each of the workers and combined by
+    the parameter server, which also keeps track of the current versions of the parameters,
+    and possibly other global elements of training (such as a global step counter,
+    etc.).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We use `tf.train.replica_device_setter()` in order to replicate the model (computation
+    graph) on each of the tasks. The `worker_device` argument should point to the
+    current task within the cluster. For instance, on the first worker we run this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The exception is the parameter server, on which we don’t build a computation
+    graph. In order for the process not to terminate, we use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: which will keep the parameter server alive for the duration of the parallel
+    computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Managed Sessions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In this section we cover the mechanism that we will later use for parallel
+    training of our model. First, we define a `Supervisor`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: As the name suggests, the `Supervisor` is used to supervise training, providing
+    some utilities necessary for the parallel setting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are four arguments passed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`is_chief` (Boolean)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There must be a single *chief*, which is the task responsible for initialization,
+    etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`logdir` (string)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where to store logs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`global_step`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A TensorFlow Variable that will hold the current global step during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`init_op`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A TensorFlow op for initializing the model, such as `tf.global_variables_initializer()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The actual session is then launched:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: At this point the chief will initialize variables, while all other tasks wait
+    for this to be completed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Device Placement
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The final TensorFlow mechanism we discuss in this section is *device placement*.
+    While the full extent of this topic is outside the scope of this chapter, the
+    overview would not be complete without a mention of this ability, which is mostly
+    useful when engineering advanced systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When operating in an environment with multiple computational devices (CPUs,
+    GPUs, or any combination of these), it may be useful to control where each operation
+    in the computational graph is going to take place. This may be done to better
+    utilize parallelism, exploit the different capabilities of different devices,
+    and overcome limitations such as memory limits on some devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Even when you do not explicitly choose device placement, TensorFlow will output
+    the placement used if required to. This is enabled while constructing the session:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In order to explicitly choose a device, we use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `'/gpu:0'` points TensorFlow to the first GPU on the system; likewise, we
+    could have used `'/cpu:0'` to place the op on the CPUs, or `'/gpu:X'` on a system
+    with multiple GPU devices, where `X` is the index of the GPU we would like to
+    use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, placement across a cluster is done by pointing to the specific task.
+    For instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will assign to the second `worker` task, as defined in the cluster specification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Placement across CPUs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By default, TensorFlow uses all the CPUs available on the system and handles
+    the threading internally. For this reason, the device placement `'/cpu:0'` is
+    the full CPU power, and `'/cpu:1'` doesn’t exist by default, even in a multiple-CPU
+    environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to manually assign to specific CPUs (which you would need a very good
+    reason to do—otherwise, let TensorFlow handle it), a session has to be defined
+    with the directive to separate the CPUs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here, we define two parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`inter_op_parallelism_threads=8`, meaning we allow eight threads for different
+    ops'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`intra_op_parallelism_threads=1`, indicating that each op gets a single thread'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These settings would make sense for an 8-CPU system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this section we put it all together with an end-to-end example of distributed
+    training of the MNIST CNN model we saw in [Chapter 4](ch04.html#convolutional_neural_networks).
+    We will use one parameter server and three worker tasks. In order to make it easily
+    reproducible, we will assume all the tasks are running locally on a single machine
+    (this is easily adapted to a multiple-machine setting by replacing `localhost`
+    with the IP address, as described earlier). As usual, we first present the full
+    code, and then break it down into elements and explain it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In order to run this distributed example, from four different terminals we
+    execute the four commands for dispatching each of the tasks (we will shortly explain
+    how exactly this happens):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Alternatively, the following will dispatch the four tasks automatically (depending
+    on the system you are using, the output may all go to a single terminal or to
+    four separate ones):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we go over the code in the preceding example and highlight where this
+    is different from the examples we have seen thus far in the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first block deals with imports and constants:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here we define:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`BATCH_SIZE`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The number of examples to use during training in each mini-batch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`TRAINING_STEPS`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The total number of mini-batches we will use during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PRINT_EVERY`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How often to print diagnostic information. Since in the distributed training
+    we use there is a single counter of the current step for all of the tasks, the
+    `print` at a certain step will happen only from a single task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`LOG_DIR`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The training supervisor will save logs and temporary information to this location.
+    Should be emptied between runs of the program, since old info could cause the
+    next session to crash.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we define the cluster, as discussed earlier in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We run all tasks locally. In order to use multiple computers, replace `localhost`
+    with the correct IP address. The ports 2222–2225 are also arbitrary, of course
+    (but naturally have to be distinct when using a single machine): you might as
+    well use the same port on all machines in a distributed setting.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the following, we use the `tf.app.flags` mechanism to define two parameters
+    that we will provide through the command line when we call the program on each
+    task:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The parameters are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`job_name`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This will be either `'ps'` for the single-parameter server, or `'worker'` for
+    each of the worker tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`task_index`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The index of the task in each of the types of jobs. The parameter server will
+    therefore use `task_index = 0`, and for the workers we will have `0`, `1`, and
+    `2`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we are ready to use the identity of the current task in the cluster we
+    defined in order to define the server for this current task. Note that this happens
+    on each of the four tasks that we run. Each one of the four tasks knows its identity
+    (`job_name`, `task_index`), as well as that of everybody else in the cluster (which
+    is provided by the first argument):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Before we start the actual training, we define our network and load the data
+    to be used. This is similar to what we have done in previous examples, so we will
+    not go into the details again here. We use TF-Slim for the sake of brevity:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The actual processing to do during training depends of the type of task. For
+    the parameter server, we want the mechanism to, well, serve parameters, for the
+    most part. This entails waiting for requests and processing them. This is all
+    it takes to achieve this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `.join()` method of the server will not terminate even when all other tasks
+    do, so this process will have to be killed externally once it is no longer needed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In each of the worker tasks, we define the same computation graph:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: We use `tf.train.replica_device_setter()` in order to specify this, meaning
+    that the TensorFlow Variables will be synchronized through the parameter server
+    (which is the mechanism that allows us to do the distributed computations).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `global_step` Variable will hold the total number of steps during training
+    across the tasks (each step index will occur only on a single task). This creates
+    a timeline so that we can always know where we are in the grand scheme, from each
+    of the tasks separately.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The rest of the code is the standard setup we have seen before in numerous examples
+    throughout the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we set up a `Supervisor` and a `managed_session`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is similar to the regular session we use throughout, except it is able
+    to handle some aspects of the distribution. The initialization of the Variables
+    will be done only in a single task (the chief designated via the `is_chief` argument;
+    in our case, this will be the first worker task). All other tasks will wait for
+    this to happen, then continue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With the session live, we run training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Every `PRINT_EVERY` steps, we print the current accuracy on the current mini-batch.
+    This will go to 100% pretty fast. For instance, the first two rows might be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we run the test accuracy:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that this will execute on each of the worker tasks, and thus the same exact
+    output will appear three times. In order to save on computation, we could have
+    run this in only a single task (for instance, in the first worker only).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we covered the main concepts pertaining to parallelization in
+    deep learning and machine learning in general, and concluded with an end-to-end
+    example of distributed training on a cluster with data parallelization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed training is a very important tool that is utilized both in order
+    to speed up training, and to train models that would otherwise be infeasible.
+    In the next chapter we introduce the serving capabilities of TensorFlow, allowing
+    trained models to be utilized in production environments.
+  prefs: []
+  type: TYPE_NORMAL

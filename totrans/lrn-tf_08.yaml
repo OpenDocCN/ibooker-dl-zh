@@ -1,0 +1,532 @@
+- en: Chapter 8\. Queues, Threads, and Reading Data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we introduce the use of queues and threads in TensorFlow, with
+    the main motivation of streamlining the process of reading input data. We show
+    how to write and read TFRecords, the efficient TensorFlow file format. We then
+    demonstrate queues, threads, and related functionalities, and connect all the
+    dots in a full working example of a multithreaded input pipeline for image data
+    that includes pre-processing, batching, and training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Input Pipeline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When dealing with small datasets that can be stored in memory, such as MNIST
+    images, it is reasonable to simply load all data into memory, then use feeding
+    to push data into a TensorFlow graph. For larger datasets, however, this can become
+    unwieldy. A natural paradigm for handling such cases is to keep the data on disk
+    and load chunks of it as needed (such as mini-batches for training), such that
+    the only limit is the size of your hard drive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition, in many cases in practice, a typical data pipeline often includes
+    steps such as reading input files with different formats, changing the shape or
+    structure of input, normalizing or doing other forms of pre-processing, and shuffling
+    the input, all before training has even started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Much of this process can trivially be decoupled and broken into modular components. Pre-processing,
+    for example, does not involve training, and thus naively inputs can be preprocessed
+    all at once and then fed to training. Since our training works on batches of examples
+    in any case, we could in principle handle batches of inputs on the fly, reading
+    them from disk, applying pre-processing, and then feeding them into the computational
+    graph for training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This approach, however, can be wasteful. Because pre-processing is independent
+    of training, waiting for each batch to be pre-processed would lead to severe I/O
+    latency, forcing each training step to (impatiently) wait for mini-batches of
+    data to be loaded and processed. A more scalable practice would be to prefetch
+    the data and use independent threads for loading and processing and for training.
+    But this practice, in turn, could become messy when working with many files kept
+    on disk that need to be repeatedly read and shuffled, and require a fair amount
+    of bookkeeping and technicalities to run seamlessly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s important to note that even without taking pre-processing into consideration,
+    using the standard feeding mechanism (with a `feed_dict`) we saw in previous chapters
+    is wasteful in itself. `feed_dict` does a single-threaded copy of data from the
+    Python runtime to the TensorFlow runtime, causing further latency and slowdowns. We
+    would like to avoid this by somehow reading data directly into native TensorFlow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make our lives easier (and faster), TensorFlow comes with a set of tools
+    to streamline this input-pipeline process. The main building blocks are a standard
+    TensorFlow file format, utilities for encoding and decoding this format, queues
+    of data, and multithreading.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will go over these key components one by one, exploring how they work and
+    building toward an end-to-end multithreaded input pipeline. We begin by introducing
+    TFRecords, the recommended file format for TensorFlow, which will come in useful
+    later on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TFRecords
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Datasets, of course, can come in many formats, sometimes even mixed (such as
+    images and audio files). It can often be convenient—and useful—to convert input
+    files into one unifying format, regardless of their original formats. TensorFlow’s
+    default, standard data format is the TFRecord. A TFRecord file is simply a binary
+    file, containing serialized input data. Serialization is based on protocol buffers
+    (*protobufs*), which in plain words convert data for storage by using a schema
+    describing the data structure, independently of what platform or language is being
+    used (much like XML).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our setting, using TFRecords (and protobufs/binary files in general) has
+    many advantages over just working with raw data files. This unified format allows
+    for a tidy way to organize input data, with all relevant attributes for an input
+    instance kept together, avoiding the need for many directories and subdirectories. TFRecord
+    files enable very fast processing. All data is kept in one block of memory, as
+    opposed to storing each input file separately, cutting the time needed to read
+    data from memory. It’s also important to note that TensorFlow comes with many
+    implementations and utilities optimized for TFRecords, making it well suited for
+    use as part of a multithreaded input pipeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing with TFRecordWriter
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We begin by writing our input files to TFRecord format, to allow us to work
+    with them (in other cases, we may already have the data stored in this format).
+    In this example we will convert MNIST images to this format, but the same ideas
+    carry on to other types of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we download the MNIST data to `save_dir`, using a utility function from
+    `tensorflow.contrib.learn`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our downloaded data includes train, test, and validation images, each in a
+    separate *split*. We go over each split, putting examples in a suitable format
+    and using `TFRecordWriter()` to write to disk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s break this code down to understand the different components.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We first instantiate a `TFRecordWriter` object, giving it the path corresponding
+    to the data split:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We then go over each image, converting it from a NumPy array to a byte string:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we convert images to their protobuf format. `tf.train.Example` is a structure
+    for storing our data.  An `Example` object contains a `Features` object, which
+    in turn contains a map from attribute name to a `Feature`. A `Feature` can contain
+    an `Int64List`, a `BytesList`, or a `FloatList` (not used here). For example,
+    here we encode the label of the image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And here is the encoding for the actual raw image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s take a look at what our saved data looks like. We do this with `tf.python_io.tf_record_iterator`,
+    an iterator that reads records from a TFRecords file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`serialized_img` is a byte string. To recover the structure we used when saving
+    the image to a TFRecord, we parse this byte string, allowing us to access all
+    the attributes we stored earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our image was saved as a byte string too, so we convert it back to a NumPy
+    array and reshape it back to a tensor with shape (28,28,1):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: This basic example should have given you a feel for TFRecords and how to write
+    and read them. In practice, we will typically want to read TFRecords into a queue
+    of prefetched data as part of a multithreaded process. In the next section, we
+    first introduce TensorFlow queues before showing how to use them with TFRecords.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Queues
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A TensorFlow queue is similar to an ordinary queue, allowing us to enqueue new
+    items, dequeue existing items, etc. The important difference from ordinary queues
+    is that, just like anything else in TensorFlow, the queue is part of a computational
+    graph. Its operations are symbolic as usual, and other nodes in the graph can
+    alter its state (much like with Variables). This can be slightly confusing at
+    first, so let’s walk through some examples to get acquainted with basic queue
+    functionalities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enqueuing and Dequeuing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Here we create a *first-in*, *first-out* (FIFO) queue of strings, with a maximal
+    number of 10 elements that can be stored in the queue. Since queues are part of
+    a computational graph, they are run within a session. In this example, we use
+    a `tf.InteractiveSession()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Behind the scenes, TensorFlow creates a memory buffer for storing the 10 items.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Just like any other operation in TensorFlow, to add items to the queue, we
+    create an op:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Since you are by now familiar with the concept of a computational graph in
+    TensorFlow, it should be no surprise that defining the `enque_op` does not add
+    anything to the queue—we need to run the op. So, if we look at the size of `queue1`
+    before running the op, we get this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After running the op, our queue now has one item populating it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s add some more items to `queue1`, and look at its size again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we dequeue items. Dequeuing too is an op, whose output evaluates to a
+    tensor corresponding to the dequeued item:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that if we were to run `x.eval()` one more time, on an empty queue, our
+    main thread would hang forever. As we will see later in this chapter, in practice
+    we use code that knows when to stop dequeuing and avoid hanging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another way to dequeue is by retrieving multiple items at once, with the `dequeue_many()`
+    operation. This op requires that we specify the shape of items in advance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here we fill the queue exactly as before, and then dequeue four items at once:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Multithreading
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A TensorFlow session is multithreaded—multiple threads can use the same session
+    and run ops in parallel. Individual ops have parallel implementations that are
+    used by default with multiple CPU cores or GPU threads. However, if a single call
+    to `sess.run()` does not make full use of the available resources, one can increase
+    throughput by making multiple parallel calls. For example, in a typical scenario,
+    we may have multiple threads apply pre-processing to images and push them into
+    a queue, while another thread pulls pre-processed images from the queue for training
+    (in the next chapter, we will discuss distributed training, which is conceptually
+    related, with important differences).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s walk our way through a few simple examples introducing threading in TensorFlow
+    and the natural interplay with queues, before connecting all the dots later on
+    in a full example with MNIST images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We start by creating a FIFO queue with capacity of 100 items, where each item
+    is a random float generated with `tf.random_normal()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note, again, that the `enque` op does not actually add the random numbers to
+    the queue (and they are not yet generated) prior to graph execution. Items will
+    be enqueued using the function `add()` we create that adds 10 items to the queue
+    by calling `sess.run()` multiple times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we create 10 threads, each running `add()` in parallel, thus each pushing
+    10 items to the queue, asynchronously. We could think (for now) of these random
+    numbers as training data being added into a queue:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We have created a list of threads, and now we execute them, printing the size
+    of the queue at short intervals as it grows from 0 to 100:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we dequeue 10 items at once with `dequeue_many()`, and examine the
+    results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Coordinator and QueueRunner
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In realistic scenarios (as we shall see later in this chapter), it can be more
+    complicated to run multiple threads effectively. Threads should be able to stop
+    properly (to avoid “zombie” threads, for example, or to close all threads together
+    when one fails), queues need to be closed after stopping, and there are other
+    technical but important issues that need to be addressed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TensorFlow comes equipped with tools to help us in this process. Key among them
+    are `tf.train.Coordinator`, for coordinating the termination of a set of threads,
+    and `tf.train.QueueRunner`, which streamlines the process of getting multiple
+    threads to enqueue data with seamless cooperation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: tf.train.Coordinator
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We first demonstrate how to use `tf.train.Coordinator` with a simple, toy example.
+    In the next section, we’ll see how to use it as part of a real input pipeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We use the code similar to that in the previous section, altering the `add()`
+    function and adding a coordinator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Any thread can call `coord.request_stop()` to get all other threads to stop. Threads
+    typically run loops that check whether to stop, using `coord.should_stop()`. Here,
+    we pass the thread index `i` to `add()`, and use a condition that is never satisfied
+    (`i==11`) to request a stop. Thus, our threads complete their job, adding the
+    full 100 items to the queue. However, if we were to alter `add()` as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'then thread `i=1` would use the coordinator to request all threads to stop,
+    stopping all enqueueing early:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: tf.train.QueueRunner and tf.RandomShuffleQueue
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: While we can create a number of threads that repeatedly run an enqueue op, it
+    is better practice to use the built-in `tf.train.QueueRunner`, which does exactly
+    that, while closing the queue upon an exception.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here we create a queue runner that will run four threads in parallel to enqueue
+    items:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that `qr.create_threads()` takes our session as an argument, along with
+    our coordinator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this example, we used a `tf.RandomShuffleQueue` rather than the FIFO queue.
+    A `RandomShuffleQueue` is simply a queue with a dequeue op that pops items in
+    random order. This is useful when training deep neural networks with stochastic
+    gradient-descent optimization, which requires shuffling the data. The `min_after_dequeue`
+    argument specifies the minimum number of items that will remain in the queue after
+    calling a dequeue op—a bigger number entails better mixing (random sampling),
+    but more memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Full Multithreaded Input Pipeline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We now put all the pieces together in a working example with MNIST images, from
+    writing data to TensorFlow’s efficient file format, through data loading and pre-processing,
+    to training a model. We do so by building on the queuing and multithreading functionality
+    demonstrated earlier, and along the way introduce some more useful components
+    for reading and processing data in TensorFlow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we write the MNIST data to TFRecords, with the same code we used at
+    the start of this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: tf.train.string_input_producer() and tf.TFRecordReader()
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '`tf.train.string_input_producer()` simply creates a `QueueRunner` behind the
+    scenes, outputting filename strings to a queue for our input pipeline. This filename
+    queue will be shared among multiple threads:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `num_epochs` argument tells `string_input_producer()` to produce each filename
+    string `num_epochs` times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we read files from this queue using `TFRecordReader()`, which takes a
+    queue of filenames and dequeues filename by filename off the `filename_queue`.
+    Internally, `TFRecordReader()` uses the state of the graph to keep track of the
+    location of the TFRecord being read, as it loads “chunk after chunk” of input
+    data from the disk:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: tf.train.shuffle_batch()
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We decode the raw byte string data, do (very) basic pre-processing to convert
+    pixel values to floats, and then shuffle the image instances and collect them
+    into `batch_size` batches with `tf.train.shuffle_batch()`, which internally uses
+    a `RandomShuffleQueue` and accumulates examples until it contains `batch_size`
+    + `min_after_dequeue` elements:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `capacity` and `min_after_dequeue` parameters are used in the same manner
+    as discussed previously. The mini-batches that are returned by `shuffle_batch()`
+    are the result of a `dequeue_many()` call on the `RandomShuffleQueue` that is
+    created internally.
+  prefs: []
+  type: TYPE_NORMAL
+- en: tf.train.start_queue_runners() and Wrapping Up
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We define our simple softmax classification model as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we create threads that enqueue data to queues by calling `tf.train.start_queue_runners()`.
+    Unlike other calls, this one is not symbolic and actually creates the threads
+    (and thus needs to be done after initialization):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s take a look at the list of created threads:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Having everything in place, we are now ready to run the multithreaded process,
+    from reading and pre-processing batches into a queue to training a model. It’s
+    important to note that we do not use the familiar `feed_dict` argument anymore—this
+    avoids data copies and offers speedups, as discussed earlier in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We train until a `tf.errors.OutOfRangeError` error is thrown, indicating that
+    queues are empty and we are done:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Future input pipeline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In mid-2017, the TensorFlow development team announced the Dataset API, a new
+    preliminary input pipeline abstraction offering some simplifications and speedups.
+    The concepts presented in this chapter, such as TFRecords and queues, are fundamental
+    and remain at the core of TensorFlow and its input pipeline process. TensorFlow
+    is still very much a work in progress, and exciting and important changes naturally
+    occur from time to time. See [the issue tracker](https://github.com/tensorflow/tensorflow/issues/7951)
+    for an ongoing discussion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we saw how to use queues and threads in TensorFlow, and how
+    to create a multithreaded input pipeline. This process can help increase throughput
+    and utilization of resources. In the next chapter, we take this a step forward
+    and show how to work in a distributed setting with TensorFlow, across multiple
+    devices and machines.
+  prefs: []
+  type: TYPE_NORMAL
