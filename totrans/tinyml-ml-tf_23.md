@@ -1,24 +1,24 @@
-# 附录B. 在Arduino上捕获音频
+# 附录 B. 在 Arduino 上捕获音频
 
-以下文本将从[第7章](ch07.xhtml#chapter_speech_wake_word_example)中唤醒词应用程序的音频捕获代码中走过。由于它与机器学习没有直接关系，所以作为附录提供。
+以下文本将从第七章中唤醒词应用程序的音频捕获代码中走过。由于它与机器学习没有直接关系，所以作为附录提供。
 
-Arduino Nano 33 BLE Sense具有内置麦克风。要从麦克风接收音频数据，我们可以注册一个回调函数，当有一块新的音频数据准备好时就会调用它。
+Arduino Nano 33 BLE Sense 具有内置麦克风。要从麦克风接收音频数据，我们可以注册一个回调函数，当有一块新的音频数据准备好时就会调用它。
 
 每次发生这种情况，我们将新数据块写入存储数据储备的*缓冲区*中。由于音频数据占用大量内存，缓冲区只能容纳一定量的数据。当缓冲区变满时，这些数据将被覆盖。
 
 每当我们的程序准备好运行推断时，它可以从该缓冲区中读取最近一秒钟的数据。只要新数据持续进入得比我们需要访问的快，缓冲区中总是会有足够的新数据进行预处理并馈入我们的模型。
 
-每个预处理和推断周期都很复杂，需要一些时间来完成。因此，在Arduino上我们每秒只能运行几次推断。这意味着我们的缓冲区很容易保持满状态。
+每个预处理和推断周期都很复杂，需要一些时间来完成。因此，在 Arduino 上我们每秒只能运行几次推断。这意味着我们的缓冲区很容易保持满状态。
 
-正如我们在[第7章](ch07.xhtml#chapter_speech_wake_word_example)中看到的，*audio_provider.h*实现了这两个函数：
+正如我们在第七章中看到的，*audio_provider.h*实现了这两个函数：
 
 +   `GetAudioSamples()`，提供指向一块原始音频数据的指针
 
 +   `LatestAudioTimestamp()`，返回最近捕获音频的时间戳
 
-实现这些功能的Arduino代码位于[*arduino/audio_provider.cc*](https://oreil.ly/Bfh4v)中。
+实现这些功能的 Arduino 代码位于[*arduino/audio_provider.cc*](https://oreil.ly/Bfh4v)中。
 
-在第一部分中，我们引入了一些依赖项。*PDM.h*库定义了我们将用来从麦克风获取数据的API。文件*micro_model_settings.h*包含了与我们模型数据需求相关的常量，这将帮助我们以正确的格式提供音频数据。
+在第一部分中，我们引入了一些依赖项。*PDM.h*库定义了我们将用来从麦克风获取数据的 API。文件*micro_model_settings.h*包含了与我们模型数据需求相关的常量，这将帮助我们以正确的格式提供音频数据。
 
 ```py
 #include "tensorflow/lite/micro/examples/micro_speech/
@@ -45,9 +45,9 @@ volatile int32_t g_latest_audio_timestamp = 0;
 }  // namespace
 ```
 
-布尔值`g_is_audio_initialized`用于跟踪麦克风是否已开始捕获音频。我们的音频捕获缓冲区由`g_audio_capture_buffer`定义，大小为`DEFAULT_PDM_BUFFER_SIZE`的16倍，这是在*PDM.h*中定义的一个常量，表示每次调用回调函数时从麦克风接收的音频量。拥有一个很大的缓冲区意味着如果程序因某种原因变慢，我们不太可能耗尽数据。
+布尔值`g_is_audio_initialized`用于跟踪麦克风是否已开始捕获音频。我们的音频捕获缓冲区由`g_audio_capture_buffer`定义，大小为`DEFAULT_PDM_BUFFER_SIZE`的 16 倍，这是在*PDM.h*中定义的一个常量，表示每次调用回调函数时从麦克风接收的音频量。拥有一个很大的缓冲区意味着如果程序因某种原因变慢，我们不太可能耗尽数据。
 
-除了音频捕获缓冲区，我们还保留一个输出音频缓冲区`g_audio_output_buffer`，当调用`GetAudioSamples()`时，我们将返回一个指向它的指针。它的长度是`kMaxAudioSampleSize`，这是来自*micro_model_settings.h*的一个常量，定义了我们的预处理代码一次可以处理的16位音频样本的数量。
+除了音频捕获缓冲区，我们还保留一个输出音频缓冲区`g_audio_output_buffer`，当调用`GetAudioSamples()`时，我们将返回一个指向它的指针。它的长度是`kMaxAudioSampleSize`，这是来自*micro_model_settings.h*的一个常量，定义了我们的预处理代码一次可以处理的 16 位音频样本的数量。
 
 最后，我们使用`g_latest_audio_timestamp`来跟踪我们最新音频样本所代表的时间。这不会与您手表上的时间匹配；它只是相对于音频捕获开始时的毫秒数。该变量声明为`volatile`，这意味着处理器不应尝试缓存其值。稍后我们会看到原因。
 
@@ -86,7 +86,7 @@ const int32_t time_in_ms =
     (number_of_samples / (kAudioSampleFrequency / 1000));
 ```
 
-每秒的音频样本数是`kAudioSampleFrequency`（这个常量在*micro_model_settings.h*中定义）。我们将这个数除以1,000得到每毫秒的样本数。
+每秒的音频样本数是`kAudioSampleFrequency`（这个常量在*micro_model_settings.h*中定义）。我们将这个数除以 1,000 得到每毫秒的样本数。
 
 接下来，我们将每个回调的样本数（`number_of_samples`）除以每毫秒的样本数以获取每个回调获得的数据的毫秒数：
 
@@ -103,7 +103,7 @@ const int32_t start_sample_offset =
     g_latest_audio_timestamp * (kAudioSampleFrequency / 1000);
 ```
 
-然而，我们的缓冲区没有足够的空间来存储每个捕获的样本。相反，它有16倍`DEFAULT_PDM_BUFFER_SIZE`的空间。一旦数据超过这个限制，我们就开始用新数据覆盖缓冲区。
+然而，我们的缓冲区没有足够的空间来存储每个捕获的样本。相反，它有 16 倍`DEFAULT_PDM_BUFFER_SIZE`的空间。一旦数据超过这个限制，我们就开始用新数据覆盖缓冲区。
 
 现在，我们有了我们新样本在*所有样本历史记录*中的索引。接下来，我们需要将其转换为实际缓冲区内样本的正确索引。为此，我们可以通过缓冲区长度除以历史索引并获取余数。这是使用模运算符（`%`）完成的：
 
@@ -153,7 +153,7 @@ TfLiteStatus InitAudioRecording(tflite::ErrorReporter* error_reporter) {
 
 接下来，使用`PDM.setGain()`来配置*增益*，定义麦克风音频应放大多少。我们指定增益为`20`，这是在一些实验之后选择的。
 
-最后，我们循环直到`g_latest_audio_timestamp`评估为true。因为它从`0`开始，这会阻止执行，直到回调捕获到一些音频，此时`g_latest_audio_timestamp`将具有非零值。
+最后，我们循环直到`g_latest_audio_timestamp`评估为 true。因为它从`0`开始，这会阻止执行，直到回调捕获到一些音频，此时`g_latest_audio_timestamp`将具有非零值。
 
 我们刚刚探讨的两个函数允许我们启动捕获音频的过程并将捕获的音频存储在缓冲区中。接下来的函数`GetAudioSamples()`为我们代码的其他部分（即特征提供者）提供了获取音频数据的机制：
 

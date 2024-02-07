@@ -1,6 +1,6 @@
-# 第19章。从头开始创建一个fastai学习器
+# 第十九章。从头开始创建一个 fastai 学习器
 
-这最后一章（除了结论和在线章节）将会有所不同。它包含的代码比以前的章节要多得多，而叙述要少得多。我们将介绍新的Python关键字和库，而不进行讨论。这一章的目的是为您开展一项重要的研究项目。您将看到，我们将从头开始实现fastai和PyTorch API的许多关键部分，仅建立在我们在[第17章](ch17.xhtml#chapter_foundations)中开发的组件上！这里的关键目标是最终拥有自己的`Learner`类和一些回调函数，足以训练一个模型在Imagenette上，包括我们学习的每个关键技术的示例。在构建`Learner`的过程中，我们将创建我们自己的`Module`、`Parameter`和并行`DataLoader`的版本，这样您就会对PyTorch类的功能有一个很好的了解。
+这最后一章（除了结论和在线章节）将会有所不同。它包含的代码比以前的章节要多得多，而叙述要少得多。我们将介绍新的 Python 关键字和库，而不进行讨论。这一章的目的是为您开展一项重要的研究项目。您将看到，我们将从头开始实现 fastai 和 PyTorch API 的许多关键部分，仅建立在我们在第十七章中开发的组件上！这里的关键目标是最终拥有自己的`Learner`类和一些回调函数，足以训练一个模型在 Imagenette 上，包括我们学习的每个关键技术的示例。在构建`Learner`的过程中，我们将创建我们自己的`Module`、`Parameter`和并行`DataLoader`的版本，这样您就会对 PyTorch 类的功能有一个很好的了解。
 
 本章末尾的问卷调查对于本章非常重要。这是我们将指导您探索许多有趣方向的地方，使用本章作为起点。我们建议您在计算机上跟着本章进行学习，并进行大量的实验、网络搜索和其他必要的工作，以了解发生了什么。在本书的其余部分，您已经积累了足够的技能和专业知识来做到这一点，所以我们相信您会做得很好！
 
@@ -8,7 +8,7 @@
 
 # 数据
 
-查看`untar_data`的源代码，看看它是如何工作的。我们将在这里使用它来访问Imagene的160像素版本，以在本章中使用：
+查看`untar_data`的源代码，看看它是如何工作的。我们将在这里使用它来访问 Imagene 的 160 像素版本，以在本章中使用：
 
 ```py
 path = untar_data(URLs.IMAGENETTE_160)
@@ -26,7 +26,7 @@ Path('/home/jhoward/.fastai/data/imagenette2-160/val/n03417042/n03417042_3752.JP
  > EG')
 ```
 
-或者我们可以使用Python的标准库`glob`来做同样的事情：
+或者我们可以使用 Python 的标准库`glob`来做同样的事情：
 
 ```py
 from glob import glob
@@ -39,16 +39,16 @@ Path('/home/jhoward/.fastai/data/imagenette2-160/val/n03417042/n03417042_3752.JP
  > EG')
 ```
 
-如果您查看`get_image_files`的源代码，您会发现它使用了Python的`os.walk`；这是一个比`glob`更快、更灵活的函数，所以一定要尝试一下。
+如果您查看`get_image_files`的源代码，您会发现它使用了 Python 的`os.walk`；这是一个比`glob`更快、更灵活的函数，所以一定要尝试一下。
 
-我们可以使用Python Imaging Library的`Image`类打开一张图片：
+我们可以使用 Python Imaging Library 的`Image`类打开一张图片：
 
 ```py
 im = Image.open(files[0])
 im
 ```
 
-![](Images/dlcf_19in01.png)
+![](img/dlcf_19in01.png)
 
 ```py
 im_t = tensor(im)
@@ -93,7 +93,7 @@ v2i = lbls.val2idx(); v2i
 
 ## 数据集
 
-在PyTorch中，`Dataset`可以是任何支持索引（`__getitem__`）和`len`的东西：
+在 PyTorch 中，`Dataset`可以是任何支持索引（`__getitem__`）和`len`的东西：
 
 ```py
 class Dataset:
@@ -133,7 +133,7 @@ x.shape,y
 show_image(x, title=lbls[y]);
 ```
 
-![](Images/dlcf_19in02.png)
+![](img/dlcf_19in02.png)
 
 正如您所看到的，我们的数据集返回独立变量和因变量作为元组，这正是我们需要的。我们需要将这些整合成一个小批量。通常，可以使用`torch.stack`来完成这个任务，这就是我们将在这里使用的方法：
 
@@ -154,7 +154,7 @@ x.shape,y
 (torch.Size([2, 64, 64, 3]), tensor([0, 0]))
 ```
 
-现在我们有了数据集和一个整合函数，我们准备创建`DataLoader`。我们将在这里添加两个东西：一个可选的`shuffle`用于训练集，以及一个`ProcessPoolExecutor`来并行进行预处理。并行数据加载器非常重要，因为打开和解码JPEG图像是一个缓慢的过程。一个CPU核心不足以快速解码图像以使现代GPU保持繁忙。这是我们的`DataLoader`类：
+现在我们有了数据集和一个整合函数，我们准备创建`DataLoader`。我们将在这里添加两个东西：一个可选的`shuffle`用于训练集，以及一个`ProcessPoolExecutor`来并行进行预处理。并行数据加载器非常重要，因为打开和解码 JPEG 图像是一个缓慢的过程。一个 CPU 核心不足以快速解码图像以使现代 GPU 保持繁忙。这是我们的`DataLoader`类：
 
 ```py
 class DataLoader:
@@ -185,7 +185,7 @@ xb.shape,yb.shape,len(train_dl)
 (torch.Size([128, 64, 64, 3]), torch.Size([128]), 74)
 ```
 
-这个数据加载器的速度不比PyTorch的慢，但它要简单得多。因此，如果您正在调试一个复杂的数据加载过程，不要害怕尝试手动操作，以帮助您准确地了解发生了什么。
+这个数据加载器的速度不比 PyTorch 的慢，但它要简单得多。因此，如果您正在调试一个复杂的数据加载过程，不要害怕尝试手动操作，以帮助您准确地了解发生了什么。
 
 对于归一化，我们需要图像统计数据。通常，可以在一个训练小批量上计算这些数据，因为这里不需要精度：
 
@@ -225,13 +225,13 @@ t.mean((0,2,3)),t.std((0,2,3))
 (tensor([0.3732, 0.4907, 0.5633]), tensor([1.0212, 1.0311, 1.0131]))
 ```
 
-这里`tfm_x`不仅仅应用`Normalize`，还将轴顺序从`NHWC`排列为`NCHW`（如果你需要提醒这些首字母缩写指的是什么，请参阅[第13章](ch13.xhtml#chapter_convolutions)）。PIL使用`HWC`轴顺序，我们不能在PyTorch中使用，因此需要这个`permute`。
+这里`tfm_x`不仅仅应用`Normalize`，还将轴顺序从`NHWC`排列为`NCHW`（如果你需要提醒这些首字母缩写指的是什么，请参阅第十三章）。PIL 使用`HWC`轴顺序，我们不能在 PyTorch 中使用，因此需要这个`permute`。
 
 这就是我们模型的数据所需的全部内容。现在我们需要模型本身！
 
-# Module和Parameter
+# Module 和 Parameter
 
-要创建一个模型，我们需要`Module`。要创建`Module`，我们需要`Parameter`，所以让我们从那里开始。回想一下，在[第8章](ch08.xhtml#chapter_collab)中我们说`Parameter`类“没有添加任何功能（除了自动调用`requires_grad_`）。它只用作一个‘标记’，以显示要包含在`parameters`中的内容。”这里有一个确切的定义：
+要创建一个模型，我们需要`Module`。要创建`Module`，我们需要`Parameter`，所以让我们从那里开始。回想一下，在第八章中我们说`Parameter`类“没有添加任何功能（除了自动调用`requires_grad_`）。它只用作一个‘标记’，以显示要包含在`parameters`中的内容。”这里有一个确切的定义：
 
 ```py
 class Parameter(Tensor):
@@ -239,7 +239,7 @@ class Parameter(Tensor):
     def __init__(self, *args, **kwargs): self.requires_grad_()
 ```
 
-这里的实现有点尴尬：我们必须定义特殊的`__new__` Python方法，并使用内部的PyTorch方法`_make_subclass`，因为在撰写本文时，PyTorch否则无法正确处理这种子类化或提供官方支持的API来执行此操作。也许在你阅读本文时，这个问题已经得到解决，所以请查看本书网站以获取更新的详细信息。
+这里的实现有点尴尬：我们必须定义特殊的`__new__` Python 方法，并使用内部的 PyTorch 方法`_make_subclass`，因为在撰写本文时，PyTorch 否则无法正确处理这种子类化或提供官方支持的 API 来执行此操作。也许在你阅读本文时，这个问题已经得到解决，所以请查看本书网站以获取更新的详细信息。
 
 我们的`Parameter`现在表现得就像一个张量，正如我们所希望的：
 
@@ -291,7 +291,7 @@ class Module:
 self.params + sum([m.parameters() for m in self.children], [])
 ```
 
-这意味着我们可以询问任何`Module`的参数，并且它将返回它们，包括所有子模块（递归地）。但是它是如何知道它的参数是什么的呢？这要归功于实现Python的特殊`__setattr__`方法，每当Python在类上设置属性时，它就会为我们调用。我们的实现包括这一行：
+这意味着我们可以询问任何`Module`的参数，并且它将返回它们，包括所有子模块（递归地）。但是它是如何知道它的参数是什么的呢？这要归功于实现 Python 的特殊`__setattr__`方法，每当 Python 在类上设置属性时，它就会为我们调用。我们的实现包括这一行：
 
 ```py
 if isinstance(v,Parameter): self.register_parameters(v)
@@ -299,7 +299,7 @@ if isinstance(v,Parameter): self.register_parameters(v)
 
 正如你所看到的，这是我们将新的`Parameter`类用作“标记”的地方——任何属于这个类的东西都会被添加到我们的`params`中。
 
-Python的`__call__`允许我们定义当我们的对象被视为函数时会发生什么；我们只需调用`forward`（这里不存在，所以子类需要添加）。在我们这样做之前，如果定义了钩子，我们将调用一个钩子。现在你可以看到PyTorch的钩子并没有做任何花哨的事情——它们只是调用任何已注册的钩子。
+Python 的`__call__`允许我们定义当我们的对象被视为函数时会发生什么；我们只需调用`forward`（这里不存在，所以子类需要添加）。在我们这样做之前，如果定义了钩子，我们将调用一个钩子。现在你可以看到 PyTorch 的钩子并没有做任何花哨的事情——它们只是调用任何已注册的钩子。
 
 除了这些功能之外，我们的`Module`还提供了`cuda`和`training`属性，我们很快会用到。
 
@@ -321,7 +321,7 @@ class ConvLayer(Module):
         return x
 ```
 
-我们不是从头开始实现`F.conv2d`，因为你应该已经在[第17章](ch17.xhtml#chapter_foundations)的问卷中使用`unfold`完成了这个任务。相反，我们只是创建了一个小类，将它与偏置和权重初始化一起包装起来。让我们检查它是否与`Module.parameters`正确工作：
+我们不是从头开始实现`F.conv2d`，因为你应该已经在第十七章的问卷中使用`unfold`完成了这个任务。相反，我们只是创建了一个小类，将它与偏置和权重初始化一起包装起来。让我们检查它是否与`Module.parameters`正确工作：
 
 ```py
 l = ConvLayer(3, 4)
@@ -389,7 +389,7 @@ len(t.parameters())
 4
 ```
 
-我们还应该发现，在这个类上调用`cuda`会将所有这些参数放在GPU上：
+我们还应该发现，在这个类上调用`cuda`会将所有这些参数放在 GPU 上：
 
 ```py
 t.cuda()
@@ -400,9 +400,9 @@ t.l.w.device
 device(type='cuda', index=5)
 ```
 
-现在我们可以使用这些部分来创建一个CNN。
+现在我们可以使用这些部分来创建一个 CNN。
 
-## 简单的CNN
+## 简单的 CNN
 
 正如我们所见，`Sequential`类使许多架构更容易实现，所以让我们创建一个：
 
@@ -422,16 +422,16 @@ class Sequential(Module):
 
 # 所有的代码都在这里
 
-请记住，我们在这里没有使用任何PyTorch模块的功能；我们正在自己定义一切。所以如果你不确定`register_modules`做什么，或者为什么需要它，再看看我们为`Module`编写的代码！
+请记住，我们在这里没有使用任何 PyTorch 模块的功能；我们正在自己定义一切。所以如果你不确定`register_modules`做什么，或者为什么需要它，再看看我们为`Module`编写的代码！
 
-我们可以创建一个简化的`AdaptivePool`，它只处理到1×1输出的池化，并且也将其展平，只需使用`mean`：
+我们可以创建一个简化的`AdaptivePool`，它只处理到 1×1 输出的池化，并且也将其展平，只需使用`mean`：
 
 ```py
 class AdaptivePool(Module):
     def forward(self, x): return x.mean((2,3))
 ```
 
-这就足够我们创建一个CNN了！
+这就足够我们创建一个 CNN 了！
 
 ```py
 def simple_cnn():
@@ -484,7 +484,7 @@ torch.Size([128, 10])
 def nll(input, target): return -input[range(target.shape[0]), target].mean()
 ```
 
-实际上，这里没有对数，因为我们使用与PyTorch相同的定义。这意味着我们需要将对数与softmax放在一起：
+实际上，这里没有对数，因为我们使用与 PyTorch 相同的定义。这意味着我们需要将对数与 softmax 放在一起：
 
 ```py
 def log_softmax(x): return (x.exp()/(x.exp().sum(-1,keepdim=True))).log()
@@ -509,9 +509,9 @@ tensor(2.5666, grad_fn=<NegBackward>)
 
 请注意公式
 
-<math alttext="log左括号分数a除以b右括号等于log左括号a右括号减去log左括号b右括号" display="block"><mrow><mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><mfrac><mi>a</mi> <mi>b</mi></mfrac></mfenced> <mo>=</mo> <mo form="prefix">log</mo> <mrow><mo>(</mo> <mi>a</mi> <mo>)</mo></mrow> <mo>-</mo> <mo form="prefix">log</mo> <mrow><mo>(</mo> <mi>b</mi> <mo>)</mo></mrow></mrow></math>
+<math alttext="log 左括号分数 a 除以 b 右括号等于 log 左括号 a 右括号减去 log 左括号 b 右括号" display="block"><mrow><mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><mfrac><mi>a</mi> <mi>b</mi></mfrac></mfenced> <mo>=</mo> <mo form="prefix">log</mo> <mrow><mo>(</mo> <mi>a</mi> <mo>)</mo></mrow> <mo>-</mo> <mo form="prefix">log</mo> <mrow><mo>(</mo> <mi>b</mi> <mo>)</mo></mrow></mrow></math>
 
-在计算对数softmax时，这给出了一个简化，之前定义为`(x.exp()/(x.exp().sum(-1))).log()`：
+在计算对数 softmax 时，这给出了一个简化，之前定义为`(x.exp()/(x.exp().sum(-1))).log()`：
 
 ```py
 def log_softmax(x): return x - x.exp().sum(-1,keepdim=True).log()
@@ -524,9 +524,9 @@ tensor(-1.2790, grad_fn=<SelectBackward>)
 
 然后，有一种更稳定的计算指数和的对数的方法，称为[*LogSumExp*技巧](https://oreil.ly/9UB0b)。这个想法是使用以下公式
 
-<math alttext="log左括号sigma-求和下标j等于1上标n上标e上标x上标j下标基准右括号等于log左括号e上标a基准sigma-求和下标j等于1上标n上标e上标x上标j下标减a基准右括号等于a加log左括号sigma-求和下标j等于1上标n上标e上标x上标j下标减a基准右括号" display="block"><mrow><mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <msub><mi>x</mi> <mi>j</mi></msub></msup></mfenced> <mo>=</mo> <mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><msup><mi>e</mi> <mi>a</mi></msup> <munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <mrow><msub><mi>x</mi> <mi>j</mi></msub> <mo>-</mo><mi>a</mi></mrow></msup></mfenced> <mo>=</mo> <mi>a</mi> <mo>+</mo> <mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <mrow><msub><mi>x</mi> <mi>j</mi></msub> <mo>-</mo><mi>a</mi></mrow></msup></mfenced></mrow></math>
+<math alttext="log 左括号 sigma-求和下标 j 等于 1 上标 n 上标 e 上标 x 上标 j 下标基准右括号等于 log 左括号 e 上标 a 基准 sigma-求和下标 j 等于 1 上标 n 上标 e 上标 x 上标 j 下标减 a 基准右括号等于 a 加 log 左括号 sigma-求和下标 j 等于 1 上标 n 上标 e 上标 x 上标 j 下标减 a 基准右括号" display="block"><mrow><mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <msub><mi>x</mi> <mi>j</mi></msub></msup></mfenced> <mo>=</mo> <mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><msup><mi>e</mi> <mi>a</mi></msup> <munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <mrow><msub><mi>x</mi> <mi>j</mi></msub> <mo>-</mo><mi>a</mi></mrow></msup></mfenced> <mo>=</mo> <mi>a</mi> <mo>+</mo> <mo form="prefix">log</mo> <mfenced separators="" open="(" close=")"><munderover><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></munderover> <msup><mi>e</mi> <mrow><msub><mi>x</mi> <mi>j</mi></msub> <mo>-</mo><mi>a</mi></mrow></msup></mfenced></mrow></math>
 
-其中*a*是<math alttext="x下标j"><msub><mi>x</mi> <mi>j</mi></msub></math>的最大值。
+其中*a*是<math alttext="x 下标 j"><msub><mi>x</mi> <mi>j</mi></msub></math>的最大值。
 
 以下是相同的代码：
 
@@ -580,7 +580,7 @@ def cross_entropy(preds, yb): return nll(log_softmax(preds), yb).mean()
 
 # 学习者
 
-我们有数据、模型和损失函数；在我们可以拟合模型之前，我们只需要另一件事，那就是优化器！这里是SGD：
+我们有数据、模型和损失函数；在我们可以拟合模型之前，我们只需要另一件事，那就是优化器！这里是 SGD：
 
 ```py
 class SGD:
@@ -651,9 +651,9 @@ class Learner:
 for self.epoch in range(n_epochs)
 ```
 
-并在每个epoch中分别调用`self.one_epoch`，然后`train=True`，然后`train=False`。然后`self.one_epoch`对`dls.train`或`dls.valid`中的每个批次调用`self.one_batch`，适当地（在将`DataLoader`包装在`fastprogress.progress_bar`之后）。最后，`self.one_batch`遵循我们在本书中看到的适合一个小批量的一系列步骤。
+并在每个 epoch 中分别调用`self.one_epoch`，然后`train=True`，然后`train=False`。然后`self.one_epoch`对`dls.train`或`dls.valid`中的每个批次调用`self.one_batch`，适当地（在将`DataLoader`包装在`fastprogress.progress_bar`之后）。最后，`self.one_batch`遵循我们在本书中看到的适合一个小批量的一系列步骤。
 
-在每个步骤之前和之后，`Learner`调用`self`，`self`调用`__call__`（这是标准的Python功能）。`__call__`在`self.cbs`中的每个回调上使用`getattr(cb,name)`，这是Python的内置函数，返回具有请求名称的属性（在本例中是一个方法）。因此，例如，`self('before_fit')`将为每个定义了该方法的回调调用`cb.before_fit()`。
+在每个步骤之前和之后，`Learner`调用`self`，`self`调用`__call__`（这是标准的 Python 功能）。`__call__`在`self.cbs`中的每个回调上使用`getattr(cb,name)`，这是 Python 的内置函数，返回具有请求名称的属性（在本例中是一个方法）。因此，例如，`self('before_fit')`将为每个定义了该方法的回调调用`cb.before_fit()`。
 
 正如您所看到的，`Learner`实际上只是使用了我们的标准训练循环，只是在适当的时候还调用了回调。所以让我们定义一些回调！
 
@@ -671,9 +671,9 @@ for cb in cbs: cb.learner = self
 class Callback(GetAttr): _default='learner'
 ```
 
-`GetAttr`是一个fastai类，为您实现了Python的标准`__getattr__`和`__dir__`方法，因此每当您尝试访问一个不存在的属性时，它会将请求传递给您定义为`_default`的内容。
+`GetAttr`是一个 fastai 类，为您实现了 Python 的标准`__getattr__`和`__dir__`方法，因此每当您尝试访问一个不存在的属性时，它会将请求传递给您定义为`_default`的内容。
 
-例如，我们希望在`fit`开始时自动将所有模型参数移动到GPU。我们可以通过将`before_fit`定义为`self.learner.model.cuda`来实现这一点；然而，由于`learner`是默认属性，并且我们让`SetupLearnerCB`继承自`Callback`（它继承自`GetAttr`），我们可以去掉`.learner`，只需调用`self.model.cuda`：
+例如，我们希望在`fit`开始时自动将所有模型参数移动到 GPU。我们可以通过将`before_fit`定义为`self.learner.model.cuda`来实现这一点；然而，由于`learner`是默认属性，并且我们让`SetupLearnerCB`继承自`Callback`（它继承自`GetAttr`），我们可以去掉`.learner`，只需调用`self.model.cuda`：
 
 ```py
 class SetupLearnerCB(Callback):
@@ -684,7 +684,7 @@ class SetupLearnerCB(Callback):
     def before_fit(self): self.model.cuda()
 ```
 
-在`SetupLearnerCB`中，我们还通过调用`to_device(self.batch)`将每个小批量移动到GPU（我们也可以使用更长的`to_device(self.learner.batch)`）。然而，请注意，在`self.learner.batch = tfm_x(xb),yb`这一行中，我们不能去掉`.learner`，因为这里我们是*设置*属性，而不是获取它。
+在`SetupLearnerCB`中，我们还通过调用`to_device(self.batch)`将每个小批量移动到 GPU（我们也可以使用更长的`to_device(self.learner.batch)`）。然而，请注意，在`self.learner.batch = tfm_x(xb),yb`这一行中，我们不能去掉`.learner`，因为这里我们是*设置*属性，而不是获取它。
 
 在尝试我们的`Learner`之前，让我们创建一个回调来跟踪和打印进度。否则，我们将无法真正知道它是否正常工作：
 
@@ -720,11 +720,11 @@ learn.fit(1)
 0 False 1.9942575636942674 0.2991082802547771
 ```
 
-惊人的是，我们可以用如此少的代码实现fastai的`Learner`中的所有关键思想！现在让我们添加一些学习率调度。
+惊人的是，我们可以用如此少的代码实现 fastai 的`Learner`中的所有关键思想！现在让我们添加一些学习率调度。
 
 ## 调度学习率
 
-如果我们想要获得良好的结果，我们将需要一个LR finder和1cycle训练。这两个都是*退火*回调，也就是说，它们在训练过程中逐渐改变超参数。这是`LRFinder`：
+如果我们想要获得良好的结果，我们将需要一个 LR finder 和 1cycle 训练。这两个都是*退火*回调，也就是说，它们在训练过程中逐渐改变超参数。这是`LRFinder`：
 
 ```py
 class LRFinder(Callback):
@@ -764,7 +764,7 @@ plt.plot(lrfind.lrs[:-2],lrfind.losses[:-2])
 plt.xscale('log')
 ```
 
-![](Images/dlcf_19in03.png)
+![](img/dlcf_19in03.png)
 
 现在我们可以定义我们的`OneCycle`训练回调：
 
@@ -790,7 +790,7 @@ class OneCycle(Callback):
         self.lrs.append(lr)
 ```
 
-我们将尝试一个LR为0.1：
+我们将尝试一个 LR 为 0.1：
 
 ```py
 onecyc = OneCycle(0.1)
@@ -809,11 +809,11 @@ learn.fit(8)
 plt.plot(onecyc.lrs);
 ```
 
-![](Images/dlcf_19in04.png)
+![](img/dlcf_19in04.png)
 
 # 结论
 
-我们已经通过在本章中重新实现它们来探索fastai库的关键概念。由于这本书大部分内容都是代码，您应该尝试通过查看书籍网站上相应的笔记本来进行实验。现在您已经了解了它是如何构建的，作为下一步，请务必查看fastai文档中的中级和高级教程，以了解如何自定义库的每一个部分。
+我们已经通过在本章中重新实现它们来探索 fastai 库的关键概念。由于这本书大部分内容都是代码，您应该尝试通过查看书籍网站上相应的笔记本来进行实验。现在您已经了解了它是如何构建的，作为下一步，请务必查看 fastai 文档中的中级和高级教程，以了解如何自定义库的每一个部分。
 
 # 问卷调查
 
@@ -823,7 +823,7 @@ plt.plot(onecyc.lrs);
 
 1.  什么是`glob`？
 
-1.  如何使用Python图像处理库打开图像？
+1.  如何使用 Python 图像处理库打开图像？
 
 1.  `L.map`是做什么的？
 
@@ -833,11 +833,11 @@ plt.plot(onecyc.lrs);
 
 1.  您需要实现哪些方法来创建自己的`Dataset`？
 
-1.  当我们从Imagenette打开图像时为什么要调用`convert`？
+1.  当我们从 Imagenette 打开图像时为什么要调用`convert`？
 
 1.  `~`是做什么的？它如何用于拆分训练和验证集？
 
-1.  `~`是否适用于`L`或`Tensor`类？NumPy数组、Python列表或Pandas DataFrames呢？
+1.  `~`是否适用于`L`或`Tensor`类？NumPy 数组、Python 列表或 Pandas DataFrames 呢？
 
 1.  什么是`ProcessPoolExecutor`？
 
@@ -851,7 +851,7 @@ plt.plot(onecyc.lrs);
 
 1.  什么是递归函数？它如何帮助我们定义`parameters`方法？
 
-1.  编写一个递归函数，返回斐波那契数列的前20个项目。
+1.  编写一个递归函数，返回斐波那契数列的前 20 个项目。
 
 1.  什么是`super`？
 
@@ -863,7 +863,7 @@ plt.plot(onecyc.lrs);
 
 1.  编写一个打印每个层激活形状的钩子。
 
-1.  什么是LogSumExp？
+1.  什么是 LogSumExp？
 
 1.  为什么`log_softmax`有用？
 
@@ -891,20 +891,20 @@ plt.plot(onecyc.lrs);
 
 ## 进一步研究
 
-1.  从头开始编写`resnet18`（如有需要，请参考[第14章](ch14.xhtml#chapter_resnet)），并在本章中使用`Learner`进行训练。
+1.  从头开始编写`resnet18`（如有需要，请参考第十四章），并在本章中使用`Learner`进行训练。
 
 1.  从头开始实现一个批归一化层，并在您的`resnet18`中使用它。
 
-1.  为本章编写一个Mixup回调。
+1.  为本章编写一个 Mixup 回调。
 
-1.  向SGD添加动量。
+1.  向 SGD 添加动量。
 
-1.  从fastai（或任何其他库）中挑选几个您感兴趣的特性，并使用本章中创建的对象实现它们。
+1.  从 fastai（或任何其他库）中挑选几个您感兴趣的特性，并使用本章中创建的对象实现它们。
 
-1.  选择一篇尚未在fastai或PyTorch中实现的研究论文，并使用本章中创建的对象进行实现。然后：
+1.  选择一篇尚未在 fastai 或 PyTorch 中实现的研究论文，并使用本章中创建的对象进行实现。然后：
 
-    +   将论文移植到fastai。
+    +   将论文移植到 fastai。
 
-    +   向fastai提交拉取请求，或创建自己的扩展模块并发布。
+    +   向 fastai 提交拉取请求，或创建自己的扩展模块并发布。
 
     提示：您可能会发现使用[`nbdev`](https://nbdev.fast.ai)来创建和部署您的软件包很有帮助。

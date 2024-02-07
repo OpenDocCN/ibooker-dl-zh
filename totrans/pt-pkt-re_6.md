@@ -1,20 +1,20 @@
-# 第6章。PyTorch加速和优化
+# 第六章。PyTorch 加速和优化
 
-在前几章中，您学习了如何使用PyTorch的内置功能，并通过创建自己的自定义组件来扩展这些功能，从而使您能够快速设计新模型和算法来训练它们。
+在前几章中，您学习了如何使用 PyTorch 的内置功能，并通过创建自己的自定义组件来扩展这些功能，从而使您能够快速设计新模型和算法来训练它们。
 
-然而，当处理非常大的数据集或更复杂的模型时，将模型训练在单个CPU或GPU上可能需要非常长的时间——可能需要几天甚至几周才能获得初步结果。训练时间更长可能会变得令人沮丧，特别是当您想要使用不同的超参数配置进行许多实验时。
+然而，当处理非常大的数据集或更复杂的模型时，将模型训练在单个 CPU 或 GPU 上可能需要非常长的时间——可能需要几天甚至几周才能获得初步结果。训练时间更长可能会变得令人沮丧，特别是当您想要使用不同的超参数配置进行许多实验时。
 
-在本章中，我们将探讨使用PyTorch加速和优化模型开发的最新技术。首先，我们将看看如何使用张量处理单元（TPU）而不是GPU设备，并考虑在使用TPU时可以提高性能的情况。接下来，我将向您展示如何使用PyTorch的内置功能进行并行处理和分布式训练。这将为跨多个GPU和多台机器训练模型提供一个快速参考，以便在更多硬件资源可用时快速扩展您的训练。在探索加速训练的方法之后，我们将看看如何使用高级技术（如超参数调整、量化和剪枝）来优化您的模型。
+在本章中，我们将探讨使用 PyTorch 加速和优化模型开发的最新技术。首先，我们将看看如何使用张量处理单元（TPU）而不是 GPU 设备，并考虑在使用 TPU 时可以提高性能的情况。接下来，我将向您展示如何使用 PyTorch 的内置功能进行并行处理和分布式训练。这将为跨多个 GPU 和多台机器训练模型提供一个快速参考，以便在更多硬件资源可用时快速扩展您的训练。在探索加速训练的方法之后，我们将看看如何使用高级技术（如超参数调整、量化和剪枝）来优化您的模型。
 
 本章还将提供参考代码，以便轻松入门，并提供我们使用的关键软件包和库的参考资料。一旦您创建了自己的模型和训练循环，您可以返回到本章获取有关如何加速和优化训练过程的提示。
 
-让我们开始探讨如何在TPU上运行您的模型。
+让我们开始探讨如何在 TPU 上运行您的模型。
 
-# 在TPU上的PyTorch
+# 在 TPU 上的 PyTorch
 
-随着深度学习和人工智能的不断部署，公司正在开发定制硬件芯片或ASIC，旨在优化硬件中的模型性能。谷歌开发了自己的用于神经网络加速的ASIC，称为TPU。由于TPU是为神经网络设计的，它没有GPU的一些缺点，GPU是为图形处理而设计的。谷歌的TPU现在可以作为谷歌云TPU的一部分供您使用。您还可以在Google Colab上运行TPU。
+随着深度学习和人工智能的不断部署，公司正在开发定制硬件芯片或 ASIC，旨在优化硬件中的模型性能。谷歌开发了自己的用于神经网络加速的 ASIC，称为 TPU。由于 TPU 是为神经网络设计的，它没有 GPU 的一些缺点，GPU 是为图形处理而设计的。谷歌的 TPU 现在可以作为谷歌云 TPU 的一部分供您使用。您还可以在 Google Colab 上运行 TPU。
 
-在前几章中，我向您展示了如何使用GPU测试和训练您的深度模型。如果您的用例符合以下条件，您应该继续使用CPU和GPU进行训练：
+在前几章中，我向您展示了如何使用 GPU 测试和训练您的深度模型。如果您的用例符合以下条件，您应该继续使用 CPU 和 GPU 进行训练：
 
 +   您有小型或中型模型以及小批量大小。
 
@@ -24,52 +24,52 @@
 
 +   您的计算经常是分支的或主要是逐元素完成的，或者您使用稀疏内存访问。
 
-+   您需要使用高精度。双精度不适合在TPU上使用。
++   您需要使用高精度。双精度不适合在 TPU 上使用。
 
-另一方面，有几个原因可能会导致您希望使用TPU而不是GPU进行训练。TPU在执行密集向量和矩阵计算方面非常快速。它们针对特定工作负载进行了优化。如果您的用例符合以下情况，您应该强烈考虑使用TPU：
+另一方面，有几个原因可能会导致您希望使用 TPU 而不是 GPU 进行训练。TPU 在执行密集向量和矩阵计算方面非常快速。它们针对特定工作负载进行了优化。如果您的用例符合以下情况，您应该强烈考虑使用 TPU：
 
 +   您的模型主要由矩阵计算组成。
 
 +   您的模型训练时间很长。
 
-+   您希望在TPU上运行整个训练循环的多次迭代。
++   您希望在 TPU 上运行整个训练循环的多次迭代。
 
-在TPU上运行与在CPU或GPU上运行非常相似。让我们回顾一下如何在GPU上训练模型的以下代码：
+在 TPU 上运行与在 CPU 或 GPU 上运行非常相似。让我们回顾一下如何在 GPU 上训练模型的以下代码：
 
 ```py
-device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")![1](Images/1.png)model.to(device)![2](Images/2.png)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)![3](Images/3.png)labels=labels.to(device)![3](Images/3.png)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()
+device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")![1](img/1.png)model.to(device)![2](img/2.png)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)![3](img/3.png)labels=labels.to(device)![3](img/3.png)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO1-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO1-1)
 
-如果有GPU可用，请将设备配置为GPU。
+如果有 GPU 可用，请将设备配置为 GPU。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO1-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO1-2)
 
 将模型发送到设备。
 
-[![3](Images/3.png)](#co_pytorch_acceleration_and_optimization_CO1-3)
+![3](img/#co_pytorch_acceleration_and_optimization_CO1-3)
 
-将输入和标签发送到GPU。
+将输入和标签发送到 GPU。
 
-换句话说，我们将模型、输入和标签移至GPU，其余工作由系统完成。在TPU上训练网络几乎与在GPU上训练相同，只是您需要使用*PyTorch/XLA*（加速线性代数）包，因为TPU目前不受PyTorch原生支持。
+换句话说，我们将模型、输入和标签移至 GPU，其余工作由系统完成。在 TPU 上训练网络几乎与在 GPU 上训练相同，只是您需要使用*PyTorch/XLA*（加速线性代数）包，因为 TPU 目前不受 PyTorch 原生支持。
 
-让我们在Google Colab上使用Cloud TPU训练我们的模型。打开一个新的Colab笔记本，并从运行时菜单中选择更改运行时类型。然后从“硬件加速器”下拉菜单中选择TPU，如[图6-1](#fig_colab_tpu)所示。Google Colab提供免费的Cloud TPU系统，包括远程CPU主机和每个具有两个核心的四个TPU芯片。
+让我们在 Google Colab 上使用 Cloud TPU 训练我们的模型。打开一个新的 Colab 笔记本，并从运行时菜单中选择更改运行时类型。然后从“硬件加速器”下拉菜单中选择 TPU，如图 6-1 所示。Google Colab 提供免费的 Cloud TPU 系统，包括远程 CPU 主机和每个具有两个核心的四个 TPU 芯片。
 
-![ptpr 0601](Images/ptpr_0601.png)
+![ptpr 0601](img/ptpr_0601.png)
 
-###### 图6-1。在Google Colab中使用TPU
+###### 图 6-1。在 Google Colab 中使用 TPU
 
-由于Colab默认未安装PyTorch/XLA，我们需要首先安装它，使用以下命令。这将安装最新的“夜间”版本，但如果需要，您可以选择其他版本：
+由于 Colab 默认未安装 PyTorch/XLA，我们需要首先安装它，使用以下命令。这将安装最新的“夜间”版本，但如果需要，您可以选择其他版本：
 
 ```py
 &#33;curl 'https://raw.githubusercontent.com/pytorch' \'/xla/master/contrib/scripts/env-setup.py'\
--opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ![1](Images/1.png)
+-opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ![1](img/1.png)
 ```
 
 <1>这些是打算在笔记本中运行的命令。在命令行上运行时，请省略“!”。
 
-安装PyTorch/XLA后，我们可以导入该软件包并将数据移动到TPU：
+安装 PyTorch/XLA 后，我们可以导入该软件包并将数据移动到 TPU：
 
 ```py
 import torch_xla.core.xla_model as xm
@@ -77,47 +77,47 @@ import torch_xla.core.xla_model as xm
 device = xm.xla_device()
 ```
 
-请注意，我们这里不使用`torch.cuda.is_available()`，因为它仅适用于GPU。不幸的是，TPU没有`is_available()`方法。如果您的环境未配置为TPU，您将收到错误消息。
+请注意，我们这里不使用`torch.cuda.is_available()`，因为它仅适用于 GPU。不幸的是，TPU 没有`is_available()`方法。如果您的环境未配置为 TPU，您将收到错误消息。
 
 设备设置完成后，其余代码完全相同：
 
 ```py
-model.to(device)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)labels=labels.to(device)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()print(output.device)![1](Images/1.png)# out: xla:1
+model.to(device)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)labels=labels.to(device)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()print(output.device)![1](img/1.png)# out: xla:1
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO2-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO2-1)
 
-如果Colab配置为TPU，您应该看到 `xla:1`。
+如果 Colab 配置为 TPU，您应该看到 `xla:1`。
 
-PyTorch/XLA是一个用于XLA操作的通用库，可能支持除TPU之外的其他专用ASIC。有关PyTorch/XLA的更多信息，请访问[PyTorch/XLA GitHub存储库](https://pytorch.tips/xla)。
+PyTorch/XLA 是一个用于 XLA 操作的通用库，可能支持除 TPU 之外的其他专用 ASIC。有关 PyTorch/XLA 的更多信息，请访问[PyTorch/XLA GitHub 存储库](https://pytorch.tips/xla)。
 
-在TPU上运行仍然存在许多限制，GPU支持更加普遍。因此，大多数PyTorch开发人员将首先使用单个GPU对其代码进行基准测试，然后再探索使用单个TPU或多个GPU加速其代码。
+在 TPU 上运行仍然存在许多限制，GPU 支持更加普遍。因此，大多数 PyTorch 开发人员将首先使用单个 GPU 对其代码进行基准测试，然后再探索使用单个 TPU 或多个 GPU 加速其代码。
 
-我们已经在本书的前面部分介绍了如何使用单个GPU。在下一节中，我将向您展示如何在具有多个GPU的机器上训练您的模型。
+我们已经在本书的前面部分介绍了如何使用单个 GPU。在下一节中，我将向您展示如何在具有多个 GPU 的机器上训练您的模型。
 
-# 在多个GPU上的PyTorch（单台机器）
+# 在多个 GPU 上的 PyTorch（单台机器）
 
-在加速训练和开发时，充分利用您可用的硬件资源非常重要。如果您有一台本地计算机或网络服务器可以访问多个GPU，本节将向您展示如何充分利用系统上的GPU。此外，您可能希望通过在单个实例上使用云GPU来扩展GPU资源。这通常是在考虑分布式训练方法之前的第一级扩展。
+在加速训练和开发时，充分利用您可用的硬件资源非常重要。如果您有一台本地计算机或网络服务器可以访问多个 GPU，本节将向您展示如何充分利用系统上的 GPU。此外，您可能希望通过在单个实例上使用云 GPU 来扩展 GPU 资源。这通常是在考虑分布式训练方法之前的第一级扩展。
 
-在多个GPU上运行代码通常称为*并行处理*。并行处理有两种方法：*数据*并行处理和*模型*并行处理。在数据并行处理期间，数据批次在多个GPU之间分割，而每个GPU运行模型的副本。在模型并行处理期间，模型在多个GPU之间分割，数据批次被管道传送到每个部分。
+在多个 GPU 上运行代码通常称为*并行处理*。并行处理有两种方法：*数据*并行处理和*模型*并行处理。在数据并行处理期间，数据批次在多个 GPU 之间分割，而每个 GPU 运行模型的副本。在模型并行处理期间，模型在多个 GPU 之间分割，数据批次被管道传送到每个部分。
 
-数据并行处理在实践中更常用。模型并行处理通常保留用于模型不适合单个GPU的情况。我将在本节中向您展示如何执行这两种类型的处理。
+数据并行处理在实践中更常用。模型并行处理通常保留用于模型不适合单个 GPU 的情况。我将在本节中向您展示如何执行这两种类型的处理。
 
 ## 数据并行处理
 
-[图6-2](#fig_data_parallel)说明了数据并行处理的工作原理。在此过程中，每个数据批次被分成*N*部分（*N*是主机上可用的GPU数量）。*N*通常是2的幂。每个GPU持有模型的副本，并且为批次的每个部分计算梯度和损失。在每次迭代结束时，梯度和损失被合并。这种方法适用于较大的批次大小和模型适合单个GPU的用例。
+图 6-2 说明了数据并行处理的工作原理。在此过程中，每个数据批次被分成*N*部分（*N*是主机上可用的 GPU 数量）。*N*通常是 2 的幂。每个 GPU 持有模型的副本，并且为批次的每个部分计算梯度和损失。在每次迭代结束时，梯度和损失被合并。这种方法适用于较大的批次大小和模型适合单个 GPU 的用例。
 
-PyTorch可以使用*单进程，多线程方法*或使用*多进程*方法来实现数据并行处理。单进程，多线程方法只需要一行额外的代码，但在许多情况下性能不佳。
+PyTorch 可以使用*单进程，多线程方法*或使用*多进程*方法来实现数据并行处理。单进程，多线程方法只需要一行额外的代码，但在许多情况下性能不佳。
 
-![ptpr 0602](Images/ptpr_0602.png)
+![ptpr 0602](img/ptpr_0602.png)
 
-###### 图6-2。数据并行处理
+###### 图 6-2。数据并行处理
 
-不幸的是，由于Python的全局解释器锁（GIL）在线程之间的争用、模型的每次迭代复制以及输入散布和输出收集引入的额外开销，多线程性能较差。您可能想尝试这种方法，因为它非常简单，但在大多数情况下，您可能会使用多进程方法。
+不幸的是，由于 Python 的全局解释器锁（GIL）在线程之间的争用、模型的每次迭代复制以及输入散布和输出收集引入的额外开销，多线程性能较差。您可能想尝试这种方法，因为它非常简单，但在大多数情况下，您可能会使用多进程方法。
 
-### 使用nn.DataParallel的多线程方法
+### 使用 nn.DataParallel 的多线程方法
 
-PyTorch的`nn`模块原生支持多线程的数据并行处理。您只需要在将模型发送到GPU之前将其包装在`nn.DataParallel`中，如下面的代码所示。在这里，我们假设您已经实例化了您的模型：
+PyTorch 的`nn`模块原生支持多线程的数据并行处理。您只需要在将模型发送到 GPU 之前将其包装在`nn.DataParallel`中，如下面的代码所示。在这里，我们假设您已经实例化了您的模型：
 
 ```py
 if torch.cuda.device_count() > 1:
@@ -129,13 +129,13 @@ if torch.cuda.device_count() > 1:
 model.to("cuda")
 ```
 
-首先，我们检查确保我们有多个GPU，然后我们使用`nn.DataParallel()`在将模型发送到GPU之前设置数据并行处理。
+首先，我们检查确保我们有多个 GPU，然后我们使用`nn.DataParallel()`在将模型发送到 GPU 之前设置数据并行处理。
 
-这种多线程方法是在多个GPU上运行的最简单方式；然而，多进程方法通常在单台机器上表现更好。此外，多进程方法也可以用于跨多台机器运行，我们将在本章后面看到。
+这种多线程方法是在多个 GPU 上运行的最简单方式；然而，多进程方法通常在单台机器上表现更好。此外，多进程方法也可以用于跨多台机器运行，我们将在本章后面看到。
 
-### 使用DDP的多进程方法（首选）
+### 使用 DDP 的多进程方法（首选）
 
-最好使用多进程方法在多个GPU上训练您的模型。PyTorch通过其`nn.parallel.DistributedDataProcessing`模块支持这一点。分布式数据处理（DDP）可以在单台机器上的多个进程或跨多台机器的多个进程中使用。我们将从单台机器开始。
+最好使用多进程方法在多个 GPU 上训练您的模型。PyTorch 通过其`nn.parallel.DistributedDataProcessing`模块支持这一点。分布式数据处理（DDP）可以在单台机器上的多个进程或跨多台机器的多个进程中使用。我们将从单台机器开始。
 
 有四个步骤需要修改您的代码：
 
@@ -143,11 +143,11 @@ model.to("cuda")
 
 1.  使用*torch.nn.to()*创建一个本地模型。
 
-1.  使用*torch.nn.parallel*将模型包装在DDP中。
+1.  使用*torch.nn.parallel*将模型包装在 DDP 中。
 
 1.  使用*torch.multiprocessing*生成进程。
 
-以下代码演示了如何将您的模型转换为DDP训练。我们将其分解为步骤。首先，导入必要的库：
+以下代码演示了如何将您的模型转换为 DDP 训练。我们将其分解为步骤。首先，导入必要的库：
 
 ```py
 import torch
@@ -162,32 +162,32 @@ from torch.nn.parallel \
 请注意，我们正在使用三个新库—*torch.distributed*、*torch.multiprocessing*和*torch.nn.parallel*。以下代码向您展示如何创建一个分布式训练循环：
 
 ```py
-defdist_training_loop(rank,world_size,dataloader,model,loss_fn,optimizer):dist.init_process_group("gloo",rank=rank,world_size=world_size)![1](Images/1.png)model=model.to(rank)![2](Images/2.png)ddp_model=DDP(model,device_ids=[rank])![3](Images/3.png)optimizer=optimizer(ddp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(rank)labels=labels.to(rank)![4](Images/4.png)optimizer.zero_grad()outputs=ddp_model(input)![5](Images/5.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()dist.destroy_process_group()
+defdist_training_loop(rank,world_size,dataloader,model,loss_fn,optimizer):dist.init_process_group("gloo",rank=rank,world_size=world_size)![1](img/1.png)model=model.to(rank)![2](img/2.png)ddp_model=DDP(model,device_ids=[rank])![3](img/3.png)optimizer=optimizer(ddp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(rank)labels=labels.to(rank)![4](img/4.png)optimizer.zero_grad()outputs=ddp_model(input)![5](img/5.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()dist.destroy_process_group()
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO3-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO3-1)
 
 使用`world_size`进程设置一个进程组。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO3-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO3-2)
 
-将模型移动到ID为`rank`的GPU。
+将模型移动到 ID 为`rank`的 GPU。
 
-[![3](Images/3.png)](#co_pytorch_acceleration_and_optimization_CO3-3)
+![3](img/#co_pytorch_acceleration_and_optimization_CO3-3)
 
-将模型包装在DDP中。
+将模型包装在 DDP 中。
 
-[![4](Images/4.png)](#co_pytorch_acceleration_and_optimization_CO3-4)
+![4](img/#co_pytorch_acceleration_and_optimization_CO3-4)
 
-将输入和标签移动到ID为`rank`的GPU。
+将输入和标签移动到 ID 为`rank`的 GPU。
 
-[![5](Images/5.png)](#co_pytorch_acceleration_and_optimization_CO3-5)
+![5](img/#co_pytorch_acceleration_and_optimization_CO3-5)
 
-调用DDP模型进行前向传递。
+调用 DDP 模型进行前向传递。
 
-DDP将模型状态从`rank0`进程广播到所有其他进程，因此我们不必担心不同进程具有具有不同初始化权重的模型。
+DDP 将模型状态从`rank0`进程广播到所有其他进程，因此我们不必担心不同进程具有具有不同初始化权重的模型。
 
-DDP处理了低级别的进程间通信，使您可以将模型视为本地模型。在反向传播过程中，当`loss.backward()`返回时，DDP会自动同步梯度并将同步的梯度张量放在`params.grad`中。
+DDP 处理了低级别的进程间通信，使您可以将模型视为本地模型。在反向传播过程中，当`loss.backward()`返回时，DDP 会自动同步梯度并将同步的梯度张量放在`params.grad`中。
 
 现在我们已经定义了进程，我们需要使用`spawn()`函数创建这些进程，如下面的代码所示：
 
@@ -200,19 +200,19 @@ if __name__=="__main__":
       join=True)
 ```
 
-在这里，我们将代码作为`main`运行，生成两个进程，每个进程都有自己的GPU。这就是如何在单台机器上的多个GPU上运行数据并行处理。
+在这里，我们将代码作为`main`运行，生成两个进程，每个进程都有自己的 GPU。这就是如何在单台机器上的多个 GPU 上运行数据并行处理。
 
 ###### 警告
 
-GPU设备不能在进程之间共享。
+GPU 设备不能在进程之间共享。
 
-如果您的模型不适合单个GPU或者使用较小的批量大小，您可以考虑使用模型并行处理而不是数据并行处理。接下来我们将看看这个。
+如果您的模型不适合单个 GPU 或者使用较小的批量大小，您可以考虑使用模型并行处理而不是数据并行处理。接下来我们将看看这个。
 
 ## 模型并行处理
 
-[图 6-3](#fig_model_parallel)展示了模型并行处理的工作原理。在这个过程中，模型被分割到同一台机器上的 *N* 个 GPU 中。如果我们按顺序处理数据批次，下一个 GPU 将始终等待前一个 GPU 完成，这违背了并行处理的目的。因此，我们需要对数据处理进行流水线处理，以便每个 GPU 在任何给定时刻都在运行。当我们对数据进行流水线处理时，只有前 *N* 个批次按顺序运行，然后每个后续运行会激活所有 GPU。
+图 6-3 展示了模型并行处理的工作原理。在这个过程中，模型被分割到同一台机器上的 *N* 个 GPU 中。如果我们按顺序处理数据批次，下一个 GPU 将始终等待前一个 GPU 完成，这违背了并行处理的目的。因此，我们需要对数据处理进行流水线处理，以便每个 GPU 在任何给定时刻都在运行。当我们对数据进行流水线处理时，只有前 *N* 个批次按顺序运行，然后每个后续运行会激活所有 GPU。
 
-![ptpr 0603](Images/ptpr_0603.png)
+![ptpr 0603](img/ptpr_0603.png)
 
 ###### 图 6-3\. 模型并行处理
 
@@ -221,24 +221,24 @@ GPU设备不能在进程之间共享。
 以下代码演示了 AlexNet 的双 GPU 实现：
 
 ```py
-classTwoGPUAlexNet(AlexNet):def__init__(self):super(ModelParallelAlexNet,self).__init__(num_classes=num_classes,*args,**kwargs)self.features.to('cuda:0')self.avgpool.to('cuda:0')self.classifier.to('cuda:1')self.split_size=split_sizedefforward(self,x):splits=iter(x.split(self.split_size,dim=0))s_next=next(splits)s_prev=self.seq1(s_next).to('cuda:1')ret=[]fors_nextinsplits:s_prev=self.seq2(s_prev)![1](Images/1.png)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))s_prev=self.seq1(s_next).to('cuda:1')![2](Images/2.png)s_prev=self.seq2(s_prev)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))returntorch.cat(ret)
+classTwoGPUAlexNet(AlexNet):def__init__(self):super(ModelParallelAlexNet,self).__init__(num_classes=num_classes,*args,**kwargs)self.features.to('cuda:0')self.avgpool.to('cuda:0')self.classifier.to('cuda:1')self.split_size=split_sizedefforward(self,x):splits=iter(x.split(self.split_size,dim=0))s_next=next(splits)s_prev=self.seq1(s_next).to('cuda:1')ret=[]fors_nextinsplits:s_prev=self.seq2(s_prev)![1](img/1.png)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))s_prev=self.seq1(s_next).to('cuda:1')![2](img/2.png)s_prev=self.seq2(s_prev)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))returntorch.cat(ret)
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO4-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO4-1)
 
 `s_prev` 在 `cuda:1` 上运行。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO4-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO4-2)
 
 `s_next` 在 `cuda:0` 上运行，可以与 `s_prev` 并行运行。
 
 因为我们从 `AlexNet` 类派生一个子类，我们继承了它的模型结构，所以不需要创建我们自己的层。相反，我们需要描述模型的哪些部分放在 GPU0 上，哪些部分放在 GPU1 上。然后我们需要在 `forward()` 方法中通过每个 GPU 管道传递数据来实现 GPU 流水线。当训练模型时，您需要将标签放在最后一个 GPU 上，如下面的代码所示：
 
 ```py
-model=TwoGPUAlexNet()loss_fn=nn.MSELoss()optimizer=optim.SGD(model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader;input=input.to("cuda:0")labels=labels.to("cuda:1")![1](Images/1.png)optimizer.zero_grad()outputs=model(input)loss_fn(outputs,labels).backward()optimizer.step()
+model=TwoGPUAlexNet()loss_fn=nn.MSELoss()optimizer=optim.SGD(model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader;input=input.to("cuda:0")labels=labels.to("cuda:1")![1](img/1.png)optimizer.zero_grad()outputs=model(input)loss_fn(outputs,labels).backward()optimizer.step()
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO5-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO5-1)
 
 将输入发送到 GPU0，将标签发送到 GPU1。
 
@@ -283,18 +283,18 @@ class Simple2GPUModel(nn.Module):
 以下代码显示了训练循环的更改：
 
 ```py
-defmodel_parallel_training(rank,world_size):print(f"Running DDP with a model parallel")setup(rank,world_size)# set up mp_model and devices for this processdev0=rank*2dev1=rank*2+1mp_model=Simple2GPUModel(dev0,dev1)ddp_mp_model=DDP(mp_model)![1](Images/1.png)loss_fn=nn.MSELoss()optimizer=optim.SGD(ddp_mp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(dev0),labels=labels,to(dev1)![2](Images/2.png)optimizer.zero_grad()outputs=ddp_mp_model(input)![3](Images/3.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()cleanup()
+defmodel_parallel_training(rank,world_size):print(f"Running DDP with a model parallel")setup(rank,world_size)# set up mp_model and devices for this processdev0=rank*2dev1=rank*2+1mp_model=Simple2GPUModel(dev0,dev1)ddp_mp_model=DDP(mp_model)![1](img/1.png)loss_fn=nn.MSELoss()optimizer=optim.SGD(ddp_mp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(dev0),labels=labels,to(dev1)![2](img/2.png)optimizer.zero_grad()outputs=ddp_mp_model(input)![3](img/3.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()cleanup()
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO6-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO6-1)
 
 将模型包装在 `DDP` 中。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO6-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO6-2)
 
 将输入和标签移动到适当的设备 ID。
 
-[![3](Images/3.png)](#co_pytorch_acceleration_and_optimization_CO6-3)
+![3](img/#co_pytorch_acceleration_and_optimization_CO6-3)
 
 输出在 `dev1` 上。
 
@@ -319,20 +319,20 @@ c10d 组件是一个用于在进程之间传输张量的通信库。c10d 被 DDP
 要在多台机器上运行，我们使用一个指定配置的启动脚本来运行 DDP。启动脚本包含在 `torch.distributed` 中，并且可以按照以下代码执行。假设您有两个节点，节点 0 和节点 1。节点 0 是主节点，IP 地址为 192.168.1.1，空闲端口为 1234。在节点 0 上，您将运行以下脚本：
 
 ```py
->>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=0![1](Images/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
+>>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=0![1](img/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO7-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO7-1)
 
 `node_rank` 被设置为节点 0。
 
 在节点 1 上，您将运行下一个脚本。请注意，此节点的等级是 `1`：
 
 ```py
->>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=1![1](Images/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
+>>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=1![1](img/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO8-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO8-1)
 
 `node_rank` 被设置为节点 1。
 
@@ -350,33 +350,33 @@ c10d 组件是一个用于在进程之间传输张量的通信库。c10d 被 DDP
 
 ## 超参数调整
 
-深度学习模型开发通常涉及选择许多用于设计模型和训练模型的变量。这些变量称为*超参数*，可以包括架构变体，如层数、层深度和核大小，以及可选阶段，如池化或批量归一化。超参数还可能包括损失函数或优化参数的变体，例如LR或权重衰减率。
+深度学习模型开发通常涉及选择许多用于设计模型和训练模型的变量。这些变量称为*超参数*，可以包括架构变体，如层数、层深度和核大小，以及可选阶段，如池化或批量归一化。超参数还可能包括损失函数或优化参数的变体，例如 LR 或权重衰减率。
 
-在这一部分，我将向您展示如何使用一个名为Ray Tune的包来管理您的超参数优化。研究人员通常会手动测试一小组超参数。然而，Ray Tune允许您配置您的超参数，并确定哪些设置对性能最佳。
+在这一部分，我将向您展示如何使用一个名为 Ray Tune 的包来管理您的超参数优化。研究人员通常会手动测试一小组超参数。然而，Ray Tune 允许您配置您的超参数，并确定哪些设置对性能最佳。
 
-Ray Tune支持最先进的超参数搜索算法和分布式训练。它不断更新新功能。让我们看看如何使用Ray Tune进行超参数调整。
+Ray Tune 支持最先进的超参数搜索算法和分布式训练。它不断更新新功能。让我们看看如何使用 Ray Tune 进行超参数调整。
 
-还记得我们在[第3章](ch03.xhtml#deep_learning_development_with_pytorch)中为图像分类训练的LeNet5模型吗？让我们尝试不同的模型配置和训练参数，看看我们是否可以使用超参数调整来改进我们的模型。
+还记得我们在第三章中为图像分类训练的 LeNet5 模型吗？让我们尝试不同的模型配置和训练参数，看看我们是否可以使用超参数调整来改进我们的模型。
 
-为了使用Ray Tune，我们需要对我们的模型进行以下更改：
+为了使用 Ray Tune，我们需要对我们的模型进行以下更改：
 
 1.  定义我们的超参数及其搜索空间。
 
 1.  编写一个函数来封装我们的训练循环。
 
-1.  运行Ray Tune超参数调整。
+1.  运行 Ray Tune 超参数调整。
 
 让我们重新定义我们的模型，以便我们可以配置全连接层中节点的数量，如下面的代码所示：
 
 ```py
-importtorch.nnasnnimporttorch.nn.functionalasFclassNet(nn.Module):def__init__(self,nodes_1=120,nodes_2=84):super(Net,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.pool=nn.MaxPool2d(2,2)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,nodes_1)![1](Images/1.png)self.fc2=nn.Linear(nodes_1,nodes_2)![2](Images/2.png)self.fc3=nn.Linear(nodes_2,10)defforward(self,x):x=self.pool(F.relu(self.conv1(x)))x=self.pool(F.relu(self.conv2(x)))x=x.view(-1,16*5*5)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnx
+importtorch.nnasnnimporttorch.nn.functionalasFclassNet(nn.Module):def__init__(self,nodes_1=120,nodes_2=84):super(Net,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.pool=nn.MaxPool2d(2,2)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,nodes_1)![1](img/1.png)self.fc2=nn.Linear(nodes_1,nodes_2)![2](img/2.png)self.fc3=nn.Linear(nodes_2,10)defforward(self,x):x=self.pool(F.relu(self.conv1(x)))x=self.pool(F.relu(self.conv2(x)))x=x.view(-1,16*5*5)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnx
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO9-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO9-1)
 
 配置`fc1`中的节点。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO9-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO9-2)
 
 配置`fc2`中的节点。
 
@@ -400,11 +400,11 @@ config = {
 
 在每次运行期间，这些参数的值是从指定的搜索空间中选择的。您可以使用方法`tune.sample_from()`和一个`lambda`函数来定义搜索空间，或者您可以使用内置的采样函数。在这种情况下，`layer_1`和`layer_2`分别使用`sample_from()`从`2`到`9`中随机选择一个值。
 
-`lr`和`batch_size`使用内置函数，其中`lr`被随机选择为从1e-4到1e-1的双精度数，`batch_size`被随机选择为`2`、`4`、`8`或`16`中的一个。
+`lr`和`batch_size`使用内置函数，其中`lr`被随机选择为从 1e-4 到 1e-1 的双精度数，`batch_size`被随机选择为`2`、`4`、`8`或`16`中的一个。
 
-接下来，我们需要将我们的训练循环封装到一个函数中，该函数以配置字典作为输入。这个训练循环函数将被Ray Tune调用。
+接下来，我们需要将我们的训练循环封装到一个函数中，该函数以配置字典作为输入。这个训练循环函数将被 Ray Tune 调用。
 
-在编写我们的训练循环之前，让我们定义一个函数来加载CIFAR-10数据，这样我们可以在训练期间重复使用来自同一目录的数据。下面的代码类似于我们在[第3章](ch03.xhtml#deep_learning_development_with_pytorch)中使用的数据加载代码：
+在编写我们的训练循环之前，让我们定义一个函数来加载 CIFAR-10 数据，这样我们可以在训练期间重复使用来自同一目录的数据。下面的代码类似于我们在第三章中使用的数据加载代码：
 
 ```py
 import torch
@@ -440,23 +440,23 @@ def load_data(data_dir="./data"):
 现在我们可以将训练循环封装成一个函数，*train_model()*，如下面的代码所示。这是一个大段的代码；但是，这应该对您来说很熟悉：
 
 ```py
-fromtorchimportoptimfromtorchimportnnfromtorch.utils.dataimportrandom_splitdeftrain_model(config):device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")model=Net(config['nodes_1'],config['nodes_2']).to(device=device)![1](Images/1.png)criterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),lr=config['lr'],momentum=0.9)![2](Images/2.png)trainset,testset=load_data()test_abs=int(len(trainset)*0.8)train_subset,val_subset=random_split(trainset,[test_abs,len(trainset)-test_abs])trainloader=torch.utils.data.DataLoader(train_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](Images/3.png)valloader=torch.utils.data.DataLoader(val_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](Images/3.png)forepochinrange(10):train_loss=0.0epoch_steps=0fordataintrainloader:inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()val_loss=0.0total=0correct=0fordatainvalloader:withtorch.no_grad():inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,predicted=torch.max(outputs.data,1)total+=labels.size(0)correct+=\
+fromtorchimportoptimfromtorchimportnnfromtorch.utils.dataimportrandom_splitdeftrain_model(config):device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")model=Net(config['nodes_1'],config['nodes_2']).to(device=device)![1](img/1.png)criterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),lr=config['lr'],momentum=0.9)![2](img/2.png)trainset,testset=load_data()test_abs=int(len(trainset)*0.8)train_subset,val_subset=random_split(trainset,[test_abs,len(trainset)-test_abs])trainloader=torch.utils.data.DataLoader(train_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](img/3.png)valloader=torch.utils.data.DataLoader(val_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](img/3.png)forepochinrange(10):train_loss=0.0epoch_steps=0fordataintrainloader:inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()val_loss=0.0total=0correct=0fordatainvalloader:withtorch.no_grad():inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,predicted=torch.max(outputs.data,1)total+=labels.size(0)correct+=\
 (predicted==labels).sum().item()loss=criterion(outputs,labels)val_loss+=loss.cpu().numpy()print(f'epoch: {epoch} ',f'train_loss: ',f'{train_loss/len(trainloader)}',f'val_loss: ',f'{val_loss/len(valloader)}',f'val_acc: {correct/total}')tune.report(loss=(val_loss/len(valloader)),accuracy=correct/total)
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO10-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO10-1)
 
 使模型层可配置。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO10-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO10-2)
 
 使学习率可配置。
 
-[![3](Images/3.png)](#co_pytorch_acceleration_and_optimization_CO10-3)
+![3](img/#co_pytorch_acceleration_and_optimization_CO10-3)
 
 使批量大小可配置。
 
-接下来我们想要运行Ray Tune，但首先我们需要确定我们想要使用的调度程序和报告程序。调度程序确定Ray Tune如何搜索和选择超参数，而报告程序指定我们希望如何查看结果。让我们在下面的代码中设置它们：
+接下来我们想要运行 Ray Tune，但首先我们需要确定我们想要使用的调度程序和报告程序。调度程序确定 Ray Tune 如何搜索和选择超参数，而报告程序指定我们希望如何查看结果。让我们在下面的代码中设置它们：
 
 ```py
 from ray.tune import CLIReporter
@@ -475,9 +475,9 @@ reporter = CLIReporter(
                     "training_iteration"])
 ```
 
-对于调度器，我们将使用异步连续减半算法（ASHA）进行超参数搜索，并指示它最小化损失。对于报告器，我们将配置一个CLI报告器，以便在每次运行时在CLI上报告损失、准确性、训练迭代和选择的超参数。
+对于调度器，我们将使用异步连续减半算法（ASHA）进行超参数搜索，并指示它最小化损失。对于报告器，我们将配置一个 CLI 报告器，以便在每次运行时在 CLI 上报告损失、准确性、训练迭代和选择的超参数。
 
-最后，我们可以使用以下代码中显示的`run()`方法运行Ray Tune：
+最后，我们可以使用以下代码中显示的`run()`方法运行 Ray Tune：
 
 ```py
 from functools import partial
@@ -493,7 +493,7 @@ result = tune.run(
 
 我们提供资源并指定配置。我们传入我们的配置字典，指定样本或运行的数量，并传入我们的`scheduler`和`reporter`函数。
 
-Ray Tune将报告结果。`get_best_trial()`方法返回一个包含有关最佳试验信息的对象。我们可以打印出产生最佳结果的超参数设置，如下面的代码所示：
+Ray Tune 将报告结果。`get_best_trial()`方法返回一个包含有关最佳试验信息的对象。我们可以打印出产生最佳结果的超参数设置，如下面的代码所示：
 
 ```py
 best_trial = result.get_best_trial(
@@ -508,33 +508,33 @@ print("Best trial final validation accuracy:",
           best_trial.last_result["accuracy"]))
 ```
 
-您可能会发现Ray Tune API的其他功能有用。[表6-1](#table_ray_tune_schedulers)列出了`tune.schedulers`中可用的调度器。
+您可能会发现 Ray Tune API 的其他功能有用。表 6-1 列出了`tune.schedulers`中可用的调度器。
 
-表6-1. Ray Tune调度器
+表 6-1. Ray Tune 调度器
 
 | 调度方法 | 描述 |
 | --- | --- |
 | ASHA | 运行异步连续减半算法的调度器 |
-| HyperBand | 运行HyperBand早停算法的调度器 |
+| HyperBand | 运行 HyperBand 早停算法的调度器 |
 | 中位数停止规则 | 基于中位数停止规则的调度器，如[“Google Vizier: A Service for Black-Box Optimization”](https://research.google.com/pubs/pub46180.html)中所述。 |
 | 基于人口的训练 | 基于人口训练算法的调度器 |
 | 基于人口的训练重放 | 重放人口训练运行的调度器 |
-| BOHB | 使用贝叶斯优化和HyperBand的调度器 |
+| BOHB | 使用贝叶斯优化和 HyperBand 的调度器 |
 | FIFOScheduler | 简单的调度器，按提交顺序运行试验 |
 | TrialScheduler | 基于试验的调度器 |
-| Shim实例化 | 基于提供的字符串的调度器 |
+| Shim 实例化 | 基于提供的字符串的调度器 |
 
-更多信息可以在[Ray Tune文档](https://pytorch.tips/ray)中找到。正如您所看到的，Ray Tune具有丰富的功能集，但也有其他支持PyTorch的超参数包。这些包括[Allegro Trains](https://pytorch.tips/allegro)和[Optuna](https://pytorch.tips/optuna)。
+更多信息可以在[Ray Tune 文档](https://pytorch.tips/ray)中找到。正如您所看到的，Ray Tune 具有丰富的功能集，但也有其他支持 PyTorch 的超参数包。这些包括[Allegro Trains](https://pytorch.tips/allegro)和[Optuna](https://pytorch.tips/optuna)。
 
-通过找到最佳设置，超参数调整可以显著提高NN模型的性能。接下来，我们将探讨另一种优化模型的技术：量化。
+通过找到最佳设置，超参数调整可以显著提高 NN 模型的性能。接下来，我们将探讨另一种优化模型的技术：量化。
 
 ## 量化
 
-NNs实现为计算图，它们的计算通常使用32位（或在某些情况下，64位）浮点数。然而，我们可以使我们的计算使用低精度数字，并通过应用量化仍然实现可比较的结果。
+NNs 实现为计算图，它们的计算通常使用 32 位（或在某些情况下，64 位）浮点数。然而，我们可以使我们的计算使用低精度数字，并通过应用量化仍然实现可比较的结果。
 
-*量化*是指使用低精度数据进行计算和访问内存的技术。这些技术可以减小模型大小，减少内存带宽，并由于内存带宽节省和使用int8算术进行更快的推断而执行更快的计算。
+*量化*是指使用低精度数据进行计算和访问内存的技术。这些技术可以减小模型大小，减少内存带宽，并由于内存带宽节省和使用 int8 算术进行更快的推断而执行更快的计算。
 
-一种快速的量化方法是将所有计算精度减半。让我们再次考虑我们的LeNet5模型示例，如下面的代码所示：
+一种快速的量化方法是将所有计算精度减半。让我们再次考虑我们的 LeNet5 模型示例，如下面的代码所示：
 
 ```py
 import torch
@@ -565,7 +565,7 @@ class LeNet5(nn.Module):
 model = LeNet5()
 ```
 
-默认情况下，所有计算和内存都实现为float32。我们可以使用以下代码检查模型参数的数据类型：
+默认情况下，所有计算和内存都实现为 float32。我们可以使用以下代码检查模型参数的数据类型：
 
 ```py
 for n, p in model.named_parameters():
@@ -584,7 +584,7 @@ for n, p in model.named_parameters():
 # fc3.bias :  torch.float32
 ```
 
-如预期，我们的数据类型是float32。然而，我们可以使用`half()`方法在一行代码中将模型减少到半精度：
+如预期，我们的数据类型是 float32。然而，我们可以使用`half()`方法在一行代码中将模型减少到半精度：
 
 ```py
 model = model.half()
@@ -605,15 +605,15 @@ for n, p in model.named_parameters():
 # fc3.bias :  torch.float16
 ```
 
-现在我们的计算和内存值是float16。使用`half()`通常是量化模型的一种快速简单方法。值得一试，看看性能是否适合您的用例。
+现在我们的计算和内存值是 float16。使用`half()`通常是量化模型的一种快速简单方法。值得一试，看看性能是否适合您的用例。
 
-然而，在许多情况下，我们不希望以相同方式量化每个计算，并且我们可能需要将量化超出float16值。对于这些其他情况，PyTorch提供了三种额外的量化模式：动态量化、训练后静态量化和量化感知训练（QAT）。
+然而，在许多情况下，我们不希望以相同方式量化每个计算，并且我们可能需要将量化超出 float16 值。对于这些其他情况，PyTorch 提供了三种额外的量化模式：动态量化、训练后静态量化和量化感知训练（QAT）。
 
-当权重的计算或内存带宽限制吞吐量时，使用动态量化。这通常适用于LSTM、RNN、双向编码器表示来自变压器（BERT）或变压器网络。当激活的内存带宽限制吞吐量时，通常适用于CNN的静态量化。当静态量化无法满足精度要求时，使用QAT。
+当权重的计算或内存带宽限制吞吐量时，使用动态量化。这通常适用于 LSTM、RNN、双向编码器表示来自变压器（BERT）或变压器网络。当激活的内存带宽限制吞吐量时，通常适用于 CNN 的静态量化。当静态量化无法满足精度要求时，使用 QAT。
 
-让我们为每种类型提供一些参考代码。所有类型将权重转换为int8。它们在处理激活和内存访问方面有所不同。
+让我们为每种类型提供一些参考代码。所有类型将权重转换为 int8。它们在处理激活和内存访问方面有所不同。
 
-*动态量化*是最简单的类型。它会将激活即时转换为int8。计算使用高效的int8值，但激活以浮点格式读取和写入内存。
+*动态量化*是最简单的类型。它会将激活即时转换为 int8。计算使用高效的 int8 值，但激活以浮点格式读取和写入内存。
 
 以下代码向您展示了如何使用动态量化量化模型：
 
@@ -631,7 +631,7 @@ quantized_model = \
 
 ###### 警告
 
-量化取决于用于运行量化模型的后端。目前，量化运算符仅在以下后端中支持CPU推断：x86（*fbgemm*）和ARM（`qnnpack`）。然而，量化感知训练在完全浮点数上进行，并且可以在GPU或CPU上运行。
+量化取决于用于运行量化模型的后端。目前，量化运算符仅在以下后端中支持 CPU 推断：x86（*fbgemm*）和 ARM（`qnnpack`）。然而，量化感知训练在完全浮点数上进行，并且可以在 GPU 或 CPU 上运行。
 
 *后训练静态量化*可通过观察训练期间不同激活的分布，并决定在推断时如何量化这些激活来进一步降低延迟。这种类型的量化允许我们在操作之间传递量化值，而无需在内存中来回转换浮点数和整数：
 
@@ -646,9 +646,9 @@ torch.quantization.convert(
     static_quant_model, inplace=True)
 ```
 
-后训练静态量化需要配置和训练以准备使用。我们配置后端以使用x86（`fbgemm`），并调用`torch.quantization.prepare`来插入观察器以校准模型并收集统计信息。然后我们将模型转换为量化版本。
+后训练静态量化需要配置和训练以准备使用。我们配置后端以使用 x86（`fbgemm`），并调用`torch.quantization.prepare`来插入观察器以校准模型并收集统计信息。然后我们将模型转换为量化版本。
 
-*量化感知训练*通常会产生最佳精度。在这种情况下，所有权重和激活在训练的前向和后向传递期间都被“伪量化”。浮点值四舍五入为int8等效值，但计算仍然以浮点数进行。也就是说，在训练期间进行量化时，权重调整是“知道”的。以下代码显示了如何使用QAT量化模型：
+*量化感知训练*通常会产生最佳精度。在这种情况下，所有权重和激活在训练的前向和后向传递期间都被“伪量化”。浮点值四舍五入为 int8 等效值，但计算仍然以浮点数进行。也就是说，在训练期间进行量化时，权重调整是“知道”的。以下代码显示了如何使用 QAT 量化模型：
 
 ```py
 qat_model = LeNet5()
@@ -663,7 +663,7 @@ torch.quantization.convert(
 
 再次，我们需要配置后端并准备模型，然后调用`convert()`来量化模型。
 
-PyTorch的量化功能正在不断发展，目前处于测试阶段。请参考[PyTorch文档](https://pytorch.tips/quantization)获取有关如何使用量化包的最新信息。
+PyTorch 的量化功能正在不断发展，目前处于测试阶段。请参考[PyTorch 文档](https://pytorch.tips/quantization)获取有关如何使用量化包的最新信息。
 
 ## 修剪
 
@@ -671,7 +671,7 @@ PyTorch的量化功能正在不断发展，目前处于测试阶段。请参考[
 
 ### 修剪模型示例
 
-修剪可以应用于`nn.module`。由于`nn.module`可能包含单个层、多个层或整个模型，因此可以将修剪应用于单个层、多个层或整个模型本身。让我们考虑我们的LeNet5模型示例：
+修剪可以应用于`nn.module`。由于`nn.module`可能包含单个层、多个层或整个模型，因此可以将修剪应用于单个层、多个层或整个模型本身。让我们考虑我们的 LeNet5 模型示例：
 
 ```py
 from torch import nn
@@ -699,7 +699,7 @@ class LeNet5(nn.Module):
         return x
 ```
 
-我们的LeNet5模型有五个子模块——`conv1`、`conv2`、`fc1`、`fc2`和`fc3`。模型参数包括其权重和偏差，可以使用`named_parameters()`方法显示。让我们看看`conv1`层的参数：
+我们的 LeNet5 模型有五个子模块——`conv1`、`conv2`、`fc1`、`fc2`和`fc3`。模型参数包括其权重和偏差，可以使用`named_parameters()`方法显示。让我们看看`conv1`层的参数：
 
 ```py
 device = torch.device("cuda" if
@@ -743,18 +743,18 @@ prune.random_unstructured(model.conv1,
 您可以以不同方式修剪模块和参数。例如，您可能希望按模块或层类型修剪，并将修剪应用于卷积层和线性层的方式不同。以下代码演示了一种方法： 
 
 ```py
-model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)![1](Images/1.png)elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)![2](Images/2.png)
+model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)![1](img/1.png)elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)![2](img/2.png)
 ```
 
-[![1](Images/1.png)](#co_pytorch_acceleration_and_optimization_CO11-1)
+![1](img/#co_pytorch_acceleration_and_optimization_CO11-1)
 
-通过30%修剪所有2D卷积层。
+通过 30%修剪所有 2D 卷积层。
 
-[![2](Images/2.png)](#co_pytorch_acceleration_and_optimization_CO11-2)
+![2](img/#co_pytorch_acceleration_and_optimization_CO11-2)
 
-通过50%修剪所有线性层。
+通过 50%修剪所有线性层。
 
-另一个使用修剪API的方法是应用*全局修剪*，即我们将修剪方法应用于整个模型。例如，我们可以全局修剪我们模型参数的25%，这可能会导致每个层的不同修剪率。以下代码演示了一种应用全局修剪的方法：
+另一个使用修剪 API 的方法是应用*全局修剪*，即我们将修剪方法应用于整个模型。例如，我们可以全局修剪我们模型参数的 25%，这可能会导致每个层的不同修剪率。以下代码演示了一种应用全局修剪的方法：
 
 ```py
 model = LeNet5().to(device)
@@ -773,13 +773,13 @@ prune.global_unstructured(
     amount=0.25)
 ```
 
-在这里我们修剪整个模型中所有参数的25%。
+在这里我们修剪整个模型中所有参数的 25%。
 
-### 修剪API
+### 修剪 API
 
-PyTorch在其`torch.nn.utils.prune`模块中提供了对修剪的内置支持。[表6-2](#table_pruning)列出了修剪API中可用的函数。
+PyTorch 在其`torch.nn.utils.prune`模块中提供了对修剪的内置支持。表 6-2 列出了修剪 API 中可用的函数。
 
-表6-2\. 修剪函数
+表 6-2\. 修剪函数
 
 | 函数 | 描述 |
 | --- | --- |
@@ -787,9 +787,9 @@ PyTorch在其`torch.nn.utils.prune`模块中提供了对修剪的内置支持。
 | `remove(*module*, *name*)` | 从模块中删除修剪重参数化和从前向钩子中删除修剪方法 |
 | `custom_from_mask(*module*, *name*, *mask*)` | 通过应用`mask`中的预先计算的掩码，修剪与`module`中名为`name`的参数对应的张量 |
 | `global_unstructured(*params*, *pruning_method*)` | 通过应用指定的`pruning_method`，全局修剪与`params`中所有参数对应的张量 |
-| `ln_structured(*module*, *name*, *amount*, *n*, *dim*)` | 通过移除指定`dim`上具有最低L`n`-范数的（当前未修剪的）通道，修剪与`module`中名为`name`的参数对应的张量中的指定`amount` |
+| `ln_structured(*module*, *name*, *amount*, *n*, *dim*)` | 通过移除指定`dim`上具有最低 L`n`-范数的（当前未修剪的）通道，修剪与`module`中名为`name`的参数对应的张量中的指定`amount` |
 | `random_structured(*module*, *name*, *amount*, *dim*)` | 通过随机选择指定`dim`上的通道，移除与`module`中名为`name`的参数对应的张量中的指定`amount`（当前未修剪的）通道 |
-| `l1_unstructured(*module*, *name*, *amount*)` | 通过移除具有最低L1-范数的指定`amount`（当前未修剪的）单元，修剪与`module`中名为`name`的参数对应的张量 |
+| `l1_unstructured(*module*, *name*, *amount*)` | 通过移除具有最低 L1-范数的指定`amount`（当前未修剪的）单元，修剪与`module`中名为`name`的参数对应的张量 |
 | `random_unstructured(*module*, *name*, *amount*)` | 通过随机选择指定`amount`的（当前未修剪的）单元，修剪与`module`中名为`name`的参数对应的张量 |
 
 ### 自定义修剪方法
@@ -821,4 +821,4 @@ my_unstructured(model.fc1, name='bias')
 
 您现在已经创建了自己的自定义修剪方法，并可以在本地或全局应用它。
 
-本章向您展示了如何使用PyTorch加速培训并优化模型。下一步是将您的模型和创新部署到世界上。在下一章中，您将学习如何将您的模型部署到云端、移动设备和边缘设备，并且我将提供一些参考代码来构建快速应用程序，展示您的设计。
+本章向您展示了如何使用 PyTorch 加速培训并优化模型。下一步是将您的模型和创新部署到世界上。在下一章中，您将学习如何将您的模型部署到云端、移动设备和边缘设备，并且我将提供一些参考代码来构建快速应用程序，展示您的设计。

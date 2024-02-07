@@ -1,26 +1,26 @@
-# 第4章. 神经网络开发参考设计
+# 第四章. 神经网络开发参考设计
 
-在上一章中，我们以高层次介绍了NN开发过程，并学习了如何在PyTorch中实现每个阶段。该章节中的示例侧重于使用CIFAR-10数据集和简单的全连接网络解决图像分类问题。CIFAR-10图像分类是一个很好的学术示例，用来说明NN开发过程，但在使用PyTorch开发深度学习模型时还有很多内容。
+在上一章中，我们以高层次介绍了 NN 开发过程，并学习了如何在 PyTorch 中实现每个阶段。该章节中的示例侧重于使用 CIFAR-10 数据集和简单的全连接网络解决图像分类问题。CIFAR-10 图像分类是一个很好的学术示例，用来说明 NN 开发过程，但在使用 PyTorch 开发深度学习模型时还有很多内容。
 
-本章介绍了一些用于PyTorch中NN开发的参考设计。参考设计是代码示例，您可以将其用作解决类似类型问题的参考。
+本章介绍了一些用于 PyTorch 中 NN 开发的参考设计。参考设计是代码示例，您可以将其用作解决类似类型问题的参考。
 
 确实，本章中的参考设计仅仅触及了深度学习的可能性表面；然而，我将尝试为您提供足够多样性的内容，以帮助您开发自己的解决方案。我们将使用三个示例来处理各种数据，设计不同的模型架构，并探索学习过程的其他方法。
 
-第一个示例使用PyTorch执行迁移学习，使用小数据集和预训练网络对蜜蜂和蚂蚁的图像进行分类。第二个示例使用PyTorch执行情感分析，使用文本数据训练一个NLP模型，预测电影评论的积极或消极情感。第三个示例使用PyTorch展示生成学习，通过训练生成对抗网络（GAN）生成服装的图像。
+第一个示例使用 PyTorch 执行迁移学习，使用小数据集和预训练网络对蜜蜂和蚂蚁的图像进行分类。第二个示例使用 PyTorch 执行情感分析，使用文本数据训练一个 NLP 模型，预测电影评论的积极或消极情感。第三个示例使用 PyTorch 展示生成学习，通过训练生成对抗网络（GAN）生成服装的图像。
 
-在每个示例中，我将提供PyTorch代码，以便您可以将本章作为快速参考，用于编写自己设计的代码。让我们开始看看PyTorch如何使用迁移学习解决计算机视觉问题。
+在每个示例中，我将提供 PyTorch 代码，以便您可以将本章作为快速参考，用于编写自己设计的代码。让我们开始看看 PyTorch 如何使用迁移学习解决计算机视觉问题。
 
 # 使用迁移学习进行图像分类
 
-图像分类的主题已经深入研究，许多著名的模型，如之前看到的AlexNet和VGG模型，都可以通过PyTorch轻松获得。然而，这些模型是使用ImageNet数据集进行训练的。虽然ImageNet包含1,000个不同的图像类别，但可能不包含您需要解决的图像分类问题的类别。
+图像分类的主题已经深入研究，许多著名的模型，如之前看到的 AlexNet 和 VGG 模型，都可以通过 PyTorch 轻松获得。然而，这些模型是使用 ImageNet 数据集进行训练的。虽然 ImageNet 包含 1,000 个不同的图像类别，但可能不包含您需要解决的图像分类问题的类别。
 
-在这种情况下，您可以应用*迁移学习*，这是一个过程，通过在一个更小的新图像数据集上微调预训练模型。在下一个示例中，我们将训练一个模型来对蜜蜂和蚂蚁的图像进行分类——这些类别不包含在ImageNet中。蜜蜂和蚂蚁看起来非常相似，很难区分。
+在这种情况下，您可以应用*迁移学习*，这是一个过程，通过在一个更小的新图像数据集上微调预训练模型。在下一个示例中，我们将训练一个模型来对蜜蜂和蚂蚁的图像进行分类——这些类别不包含在 ImageNet 中。蜜蜂和蚂蚁看起来非常相似，很难区分。
 
-为了训练我们的新分类器，我们将微调另一个著名的模型ResNet18，通过加载预训练模型并使用120张新的蜜蜂和蚂蚁的训练图像进行训练——与ImageNet中数百万张图像相比，这是一个更小的数据集。
+为了训练我们的新分类器，我们将微调另一个著名的模型 ResNet18，通过加载预训练模型并使用 120 张新的蜜蜂和蚂蚁的训练图像进行训练——与 ImageNet 中数百万张图像相比，这是一个更小的数据集。
 
 ## 数据处理
 
-让我们从加载数据，定义转换和配置数据加载器以进行批量采样开始。与之前一样，我们将利用Torchvision库中的函数来创建数据集，加载数据并应用数据转换。
+让我们从加载数据，定义转换和配置数据加载器以进行批量采样开始。与之前一样，我们将利用 Torchvision 库中的函数来创建数据集，加载数据并应用数据转换。
 
 首先让我们导入本示例所需的库：
 
@@ -85,7 +85,7 @@ val_dataset = datasets.ImageFolder(
             transform=val_transforms)
 ```
 
-在前面的代码中，我们使用ImageFolder数据集从我们的数据文件夹中提取图像，并将转换设置为我们之前定义的转换。接下来，我们为批量迭代定义我们的数据加载器：
+在前面的代码中，我们使用 ImageFolder 数据集从我们的数据文件夹中提取图像，并将转换设置为我们之前定义的转换。接下来，我们为批量迭代定义我们的数据加载器：
 
 ```py
 train_loader = torch.utils.data.DataLoader(
@@ -101,13 +101,13 @@ val_loader = torch.utils.data.DataLoader(
             num_workers=4)
 ```
 
-我们使用批量大小为4，并将`num_workers`设置为`4`以配置四个CPU进程来处理并行处理。
+我们使用批量大小为 4，并将`num_workers`设置为`4`以配置四个 CPU 进程来处理并行处理。
 
 现在我们已经准备好了训练和验证数据，我们可以设计我们的模型。
 
 ## 模型设计
 
-在这个例子中，我们将使用一个已经在ImageNet数据上进行了预训练的ResNet18模型。然而，ResNet18被设计用来检测1,000个类别，在我们的情况下，我们只需要2个类别——蜜蜂和蚂蚁。我们可以修改最后一层以检测2个类别，而不是1,000个，如下面的代码所示：
+在这个例子中，我们将使用一个已经在 ImageNet 数据上进行了预训练的 ResNet18 模型。然而，ResNet18 被设计用来检测 1,000 个类别，在我们的情况下，我们只需要 2 个类别——蜜蜂和蚂蚁。我们可以修改最后一层以检测 2 个类别，而不是 1,000 个，如下面的代码所示：
 
 ```py
 model = models.resnet18(pretrained=True)
@@ -123,15 +123,15 @@ print(model.fc)
 # Linear(in_features=512, out_features=2, bias=True)
 ```
 
-我们首先使用函数`torchvision.models.resnet18()`加载一个预训练的ResNet18模型。接下来，我们通过`model.fc.in_features`读取最后一层之前的特征数量。然后，我们通过直接将`model.fc`设置为具有两个输出的全连接层来更改最后一层。
+我们首先使用函数`torchvision.models.resnet18()`加载一个预训练的 ResNet18 模型。接下来，我们通过`model.fc.in_features`读取最后一层之前的特征数量。然后，我们通过直接将`model.fc`设置为具有两个输出的全连接层来更改最后一层。
 
 我们将使用预训练模型作为起点，并用新数据微调其参数。由于我们替换了最后的线性层，它的参数现在是随机初始化的。
 
-现在我们有一个ResNet18模型，所有权重都是在ImageNet图像上进行了预训练，除了最后一层。接下来，我们需要用蜜蜂和蚂蚁的图像训练我们的模型。
+现在我们有一个 ResNet18 模型，所有权重都是在 ImageNet 图像上进行了预训练，除了最后一层。接下来，我们需要用蜜蜂和蚂蚁的图像训练我们的模型。
 
 ###### 提示
 
-Torchvision为计算机视觉和图像处理提供了许多著名的预训练模型，包括以下内容：
+Torchvision 为计算机视觉和图像处理提供了许多著名的预训练模型，包括以下内容：
 
 +   AlexNet
 
@@ -164,49 +164,49 @@ Torchvision为计算机视觉和图像处理提供了许多著名的预训练模
 在微调我们的模型之前，让我们用以下代码配置我们的训练：
 
 ```py
-fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")![1](Images/1.png)model=model.to(device)criterion=nn.CrossEntropyLoss()![2](Images/2.png)optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)![3](Images/3.png)exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)![4](Images/4.png)
+fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")![1](img/1.png)model=model.to(device)criterion=nn.CrossEntropyLoss()![2](img/2.png)optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)![3](img/3.png)exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)![4](img/4.png)
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO1-1)
+![1](img/#co_neural_network_development_reference_designs_CO1-1)
 
-如果有的话，将模型移动到GPU上。
+如果有的话，将模型移动到 GPU 上。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO1-2)
+![2](img/#co_neural_network_development_reference_designs_CO1-2)
 
 定义我们的损失函数。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO1-3)
+![3](img/#co_neural_network_development_reference_designs_CO1-3)
 
 定义我们的优化器算法。
 
-[![4](Images/4.png)](#co_neural_network_development_reference_designs_CO1-4)
+![4](img/#co_neural_network_development_reference_designs_CO1-4)
 
 使用学习率调度器。
 
-代码应该看起来很熟悉，除了学习率调度器。在这里，我们将使用PyTorch中的调度器来在几个周期后调整SGD优化器的学习率。使用学习率调度器将帮助我们的神经网络在训练过程中更精确地调整权重。
+代码应该看起来很熟悉，除了学习率调度器。在这里，我们将使用 PyTorch 中的调度器来在几个周期后调整 SGD 优化器的学习率。使用学习率调度器将帮助我们的神经网络在训练过程中更精确地调整权重。
 
 以下代码展示了整个训练循环，包括验证：
 
 ```py
-num_epochs=25forepochinrange(num_epochs):model.train()![1](Images/1.png)running_loss=0.0running_corrects=0forinputs,labelsintrain_loader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)loss.backward()optimizer.step()running_loss+=loss.item()/inputs.size(0)running_corrects+=\
+num_epochs=25forepochinrange(num_epochs):model.train()![1](img/1.png)running_loss=0.0running_corrects=0forinputs,labelsintrain_loader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)loss.backward()optimizer.step()running_loss+=loss.item()/inputs.size(0)running_corrects+=\
 torch.sum(preds==labels.data)\
-/inputs.size(0)exp_lr_scheduler.step()![2](Images/2.png)train_epoch_loss=\
+/inputs.size(0)exp_lr_scheduler.step()![2](img/2.png)train_epoch_loss=\
 running_loss/len(train_loader)train_epoch_acc=\
-running_corrects/len(train_loader)model.eval()![3](Images/3.png)running_loss=0.0running_corrects=0forinputs,labelsinval_loader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)running_loss+=loss.item()/inputs.size(0)running_corrects+=\
+running_corrects/len(train_loader)model.eval()![3](img/3.png)running_loss=0.0running_corrects=0forinputs,labelsinval_loader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)running_loss+=loss.item()/inputs.size(0)running_corrects+=\
 torch.sum(preds==labels.data)\
 /inputs.size(0)epoch_loss=running_loss/len(val_loader)epoch_acc=\
 running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"" Val: Loss: {:.4f}"" Acc: {:.4f}".format(train_epoch_loss,train_epoch_acc,epoch_loss,epoch_acc))
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO2-1)
+![1](img/#co_neural_network_development_reference_designs_CO2-1)
 
 训练循环。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO2-2)
+![2](img/#co_neural_network_development_reference_designs_CO2-2)
 
 为下一个训练周期调整学习率的计划。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO2-3)
+![3](img/#co_neural_network_development_reference_designs_CO2-3)
 
 验证循环。
 
@@ -217,42 +217,42 @@ running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"
 让我们通过将模型保存到文件来测试我们的模型并部署它。为了测试我们的模型，我们将显示一批图像，并展示我们的模型如何对它们进行分类，如下面的代码所示：
 
 ```py
-importmatplotlib.pyplotaspltdefimshow(inp,title=None):![1](Images/1.png)inp=inp.numpy().transpose((1,2,0))![2](Images/2.png)mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean![3](Images/3.png)inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))![4](Images/4.png)out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))![5](Images/5.png)_,preds=torch.max(outputs,1)![6](Images/6.png)imshow(out,title=[class_names[x]forxinpreds])![7](Images/7.png)
+importmatplotlib.pyplotaspltdefimshow(inp,title=None):![1](img/1.png)inp=inp.numpy().transpose((1,2,0))![2](img/2.png)mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean![3](img/3.png)inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))![4](img/4.png)out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))![5](img/5.png)_,preds=torch.max(outputs,1)![6](img/6.png)imshow(out,title=[class_names[x]forxinpreds])![7](img/7.png)
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO3-1)
+![1](img/#co_neural_network_development_reference_designs_CO3-1)
 
 定义一个新的函数来绘制我们的张量图像。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO3-2)
+![2](img/#co_neural_network_development_reference_designs_CO3-2)
 
-切换从C × H × W到H × W × C的图像格式以进行绘图。
+切换从 C × H × W 到 H × W × C 的图像格式以进行绘图。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO3-3)
+![3](img/#co_neural_network_development_reference_designs_CO3-3)
 
 撤销我们在转换过程中进行的归一化，以便正确查看图像。
 
-[![4](Images/4.png)](#co_neural_network_development_reference_designs_CO3-4)
+![4](img/#co_neural_network_development_reference_designs_CO3-4)
 
 从我们的验证数据集中获取一批图像。
 
-[![5](Images/5.png)](#co_neural_network_development_reference_designs_CO3-5)
+![5](img/#co_neural_network_development_reference_designs_CO3-5)
 
-使用我们微调的ResNet18进行分类。
+使用我们微调的 ResNet18 进行分类。
 
-[![6](Images/6.png)](#co_neural_network_development_reference_designs_CO3-6)
+![6](img/#co_neural_network_development_reference_designs_CO3-6)
 
 选择“获胜”类别。
 
-[![7](Images/7.png)](#co_neural_network_development_reference_designs_CO3-7)
+![7](img/#co_neural_network_development_reference_designs_CO3-7)
 
 显示输入图像及其预测类别。
 
-由于我们有一个如此小的数据集，我们只需通过可视化输出来测试模型，以确保图像与标签匹配。[图4-1](#fig_bees_ants)展示了一个测试示例。由于`val_loader`将返回一个随机抽样的图像批次，您的结果会有所不同。
+由于我们有一个如此小的数据集，我们只需通过可视化输出来测试模型，以确保图像与标签匹配。图 4-1 展示了一个测试示例。由于`val_loader`将返回一个随机抽样的图像批次，您的结果会有所不同。
 
-![“图像分类结果”](Images/ptpr_0401.png)
+![“图像分类结果”](img/ptpr_0401.png)
 
-###### 图4-1。图像分类结果
+###### 图 4-1。图像分类结果
 
 完成后，我们保存模型：
 
@@ -262,19 +262,19 @@ torch.save(model.state_dict(), "./resnet18.pt")
 
 您可以将此参考设计用于迁移学习的其他情况，不仅限于图像分类，还包括其他类型的数据。只要您能找到一个合适的预训练模型，您就可以修改模型，并仅使用少量数据重新训练部分模型。
 
-这个例子是基于Sasank Chilamkurthy的["*计算机视觉迁移学习教程*"](https://pytorch.tips/transfer-learning-tutorial)。您可以在教程中找到更多细节。
+这个例子是基于 Sasank Chilamkurthy 的["*计算机视觉迁移学习教程*"](https://pytorch.tips/transfer-learning-tutorial)。您可以在教程中找到更多细节。
 
-接下来，我们将进入NLP领域，探索一个处理文本数据的参考设计。
+接下来，我们将进入 NLP 领域，探索一个处理文本数据的参考设计。
 
-# 使用Torchtext进行情感分析
+# 使用 Torchtext 进行情感分析
 
-另一个流行的深度学习应用是*情感分析*，人们通过对一段文本数据进行分类来判断情感。在这个例子中，我们将训练一个NN来预测一部电影评论是积极的还是消极的，使用著名的互联网电影数据库（IMDb）数据集。对IMDb数据进行情感分析是学习NLP的常见初学者示例。
+另一个流行的深度学习应用是*情感分析*，人们通过对一段文本数据进行分类来判断情感。在这个例子中，我们将训练一个 NN 来预测一部电影评论是积极的还是消极的，使用著名的互联网电影数据库（IMDb）数据集。对 IMDb 数据进行情感分析是学习 NLP 的常见初学者示例。
 
 ## 数据处理
 
-IMDb数据集包含来自IMDb的25,000条电影评论，这些评论被标记为情感（例如，积极或消极）。PyTorch项目包括一个名为*Torchtext*的库，提供了在文本数据上执行深度学习的便利功能。为了开始我们的示例参考设计，我们将使用Torchtext来加载和预处理IMDb数据集。
+IMDb 数据集包含来自 IMDb 的 25,000 条电影评论，这些评论被标记为情感（例如，积极或消极）。PyTorch 项目包括一个名为*Torchtext*的库，提供了在文本数据上执行深度学习的便利功能。为了开始我们的示例参考设计，我们将使用 Torchtext 来加载和预处理 IMDb 数据集。
 
-在加载数据集之前，我们将定义一个名为`generate_bigrams()`的函数，用于预处理我们的文本评论数据。我们将用于此示例的模型计算输入句子的*n*-gram，并将其附加到末尾。我们将使用bi-grams，即出现在句子中的单词或标记对。
+在加载数据集之前，我们将定义一个名为`generate_bigrams()`的函数，用于预处理我们的文本评论数据。我们将用于此示例的模型计算输入句子的*n*-gram，并将其附加到末尾。我们将使用 bi-grams，即出现在句子中的单词或标记对。
 
 以下代码展示了我们的预处理函数`generate_bigrams()`，并提供了它的工作示例：
 
@@ -292,22 +292,22 @@ generate_bigrams([
 #  'movie is', 'is awesome']
 ```
 
-现在我们已经定义了我们的预处理函数，我们可以构建我们的IMDb数据集，如下所示的代码：
+现在我们已经定义了我们的预处理函数，我们可以构建我们的 IMDb 数据集，如下所示的代码：
 
 ```py
-fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))![1](Images/1.png)train_dataset=list(train_iter)![2](Images/2.png)test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
-random_split(train_dataset,[num_train,len(train_dataset)-num_train])![3](Images/3.png)
+fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))![1](img/1.png)train_dataset=list(train_iter)![2](img/2.png)test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
+random_split(train_dataset,[num_train,len(train_dataset)-num_train])![3](img/3.png)
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO4-1)
+![1](img/#co_neural_network_development_reference_designs_CO4-1)
 
-从IMDb数据集加载数据。
+从 IMDb 数据集加载数据。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO4-2)
+![2](img/#co_neural_network_development_reference_designs_CO4-2)
 
 将迭代器重新定义为列表。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO4-3)
+![3](img/#co_neural_network_development_reference_designs_CO4-3)
 
 将训练数据分为两组，70%用于训练，30%用于验证。
 
@@ -315,7 +315,7 @@ random_split(train_dataset,[num_train,len(train_dataset)-num_train])![3](Images/
 
 ###### 警告
 
-在运行代码时，请确保您至少使用了Torchtext 0.9，因为Torchtext API在PyTorch 1.8中发生了重大变化。
+在运行代码时，请确保您至少使用了 Torchtext 0.9，因为 Torchtext API 在 PyTorch 1.8 中发生了重大变化。
 
 让我们快速查看数据：
 
@@ -331,36 +331,36 @@ print(train_data[data_index][0])
 
 print(train_data[data_index][1])
 # out: (your results may vary)
-# ['This', 'film', 'moved', 'me', 'beyond', ...
+# 'This', 'film', 'moved', 'me', 'beyond', ...
 ```
 
-如您所见，我们的数据集包括17,500条评论用于训练，7,500条用于验证，25,000条用于测试。我们还打印了第21条评论及其情感，如输出所示。拆分是随机抽样的，因此您的结果可能会有所不同。
+如您所见，我们的数据集包括 17,500 条评论用于训练，7,500 条用于验证，25,000 条用于测试。我们还打印了第 21 条评论及其情感，如输出所示。拆分是随机抽样的，因此您的结果可能会有所不同。
 
-接下来，我们需要将文本数据转换为数字数据，以便NN可以处理它。我们通过创建预处理函数和数据管道来实现这一点。数据管道将使用我们的`generate_bigrams()`函数、一个标记器和一个词汇表，如下所示的代码：
+接下来，我们需要将文本数据转换为数字数据，以便 NN 可以处理它。我们通过创建预处理函数和数据管道来实现这一点。数据管道将使用我们的`generate_bigrams()`函数、一个标记器和一个词汇表，如下所示的代码：
 
 ```py
-fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1](Images/1.png)counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))![2](Images/2.png)vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)![3](Images/3.png)
+fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))![2](img/2.png)vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)![3](img/3.png)
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO5-1)
+![1](img/#co_neural_network_development_reference_designs_CO5-1)
 
 定义我们的分词器（如何分割文本）。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO5-2)
+![2](img/#co_neural_network_development_reference_designs_CO5-2)
 
 列出我们训练数据中使用的所有标记，并计算每个标记出现的次数。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO5-3)
+![3](img/#co_neural_network_development_reference_designs_CO5-3)
 
 创建一个词汇表（可能标记的列表）并定义如何将标记转换为数字。
 
-在代码中，我们定义了将文本转换为张量的指令。对于评论文本，我们指定*spaCy*作为分词器。spaCy是一个流行的Python包，用于自然语言处理，并包含自己的分词器。分词器将文本分解为词和标点等组件。
+在代码中，我们定义了将文本转换为张量的指令。对于评论文本，我们指定*spaCy*作为分词器。spaCy 是一个流行的 Python 包，用于自然语言处理，并包含自己的分词器。分词器将文本分解为词和标点等组件。
 
-我们还创建了一个词汇表和一个嵌入。词汇表只是我们可以使用的一组单词。如果我们在电影评论中发现一个词不在词汇表中，我们将该词设置为一个特殊的单词“未知”。我们将我们的字典限制在25,000个单词，远远小于英语语言中的所有单词。
+我们还创建了一个词汇表和一个嵌入。词汇表只是我们可以使用的一组单词。如果我们在电影评论中发现一个词不在词汇表中，我们将该词设置为一个特殊的单词“未知”。我们将我们的字典限制在 25,000 个单词，远远小于英语语言中的所有单词。
 
-我们还指定了我们的词汇向量，这导致我们下载了一个名为GloVe（全局词向量表示）的预训练嵌入，具有100个维度。下载GloVe数据并创建词汇表可能需要几分钟。
+我们还指定了我们的词汇向量，这导致我们下载了一个名为 GloVe（全局词向量表示）的预训练嵌入，具有 100 个维度。下载 GloVe 数据并创建词汇表可能需要几分钟。
 
-嵌入是将单词或一系列单词映射到数值向量的方法。定义词汇表和嵌入是一个复杂的话题，超出了本书的范围。在这个例子中，我们将从训练数据中构建一个词汇表，并下载流行的预训练的GloVe嵌入。
+嵌入是将单词或一系列单词映射到数值向量的方法。定义词汇表和嵌入是一个复杂的话题，超出了本书的范围。在这个例子中，我们将从训练数据中构建一个词汇表，并下载流行的预训练的 GloVe 嵌入。
 
 现在我们已经定义了我们的分词器和词汇表，我们可以为评论和标签文本数据构建我们的数据管道，如以下代码所示：
 
@@ -377,7 +377,7 @@ print(label_pipeline('neg'))
 # out:
 ```
 
-我们使用`lambda`函数通过管道传递文本数据，以便PyTorch数据加载器可以将每个文本评论转换为一个100元素的向量。
+我们使用`lambda`函数通过管道传递文本数据，以便 PyTorch 数据加载器可以将每个文本评论转换为一个 100 元素的向量。
 
 现在我们已经定义了我们的数据集和预处理，我们可以创建我们的数据加载器。我们的数据加载器从数据集的采样中加载数据批次，并预处理数据，如以下代码所示：
 
@@ -438,15 +438,15 @@ test_dataloader = DataLoader(test_data,
 
 ```
 
-在代码中，我们将批处理大小设置为64，并在有GPU时使用。我们还定义了一个名为`collate_batch()`的整理函数，并将其传递给我们的数据加载器以执行我们的数据管道。
+在代码中，我们将批处理大小设置为 64，并在有 GPU 时使用。我们还定义了一个名为`collate_batch()`的整理函数，并将其传递给我们的数据加载器以执行我们的数据管道。
 
 现在我们已经配置了我们的管道和数据加载器，让我们定义我们的模型。
 
 ## 模型设计
 
-在这个例子中，我们将使用一种称为FastText的模型，该模型来自Armand Joulin等人的论文“高效文本分类的技巧袋”。虽然许多情感分析模型使用RNN，但这个模型使用了一种更简单的方法。
+在这个例子中，我们将使用一种称为 FastText 的模型，该模型来自 Armand Joulin 等人的论文“高效文本分类的技巧袋”。虽然许多情感分析模型使用 RNN，但这个模型使用了一种更简单的方法。
 
-以下代码实现了FastText模型：
+以下代码实现了 FastText 模型：
 
 ```py
 import torch.nn as nn
@@ -490,24 +490,24 @@ model = FastText(
 我们不会从头开始训练我们的嵌入层，而是使用预训练的嵌入来初始化层的权重。这个过程类似于我们在“使用迁移学习进行图像分类”示例中使用预训练权重的方式：
 
 ```py
-pretrained_embeddings=vocab.vectors![1](Images/1.png)model.embedding.weight.data.copy_(pretrained_embeddings)![2](Images/2.png)EMBEDDING_DIM=100unk_idx=vocab['<UNK>']![3](Images/3.png)pad_idx=vocab['<PAD>']model.embedding.weight.data[unk_idx]=\
-torch.zeros(EMBEDDING_DIM)![4](Images/4.png)model.embedding.weight.data[pad_idx]=\
+pretrained_embeddings=vocab.vectors![1](img/1.png)model.embedding.weight.data.copy_(pretrained_embeddings)![2](img/2.png)EMBEDDING_DIM=100unk_idx=vocab['<UNK>']![3](img/3.png)pad_idx=vocab['<PAD>']model.embedding.weight.data[unk_idx]=\
+torch.zeros(EMBEDDING_DIM)![4](img/4.png)model.embedding.weight.data[pad_idx]=\
 torch.zeros(EMBEDDING_DIM)
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO6-1)
+![1](img/#co_neural_network_development_reference_designs_CO6-1)
 
 从我们的词汇表中加载预训练的嵌入。
 
-[![2](Images/2.png)](#co_neural_network_development_reference_designs_CO6-2)
+![2](img/#co_neural_network_development_reference_designs_CO6-2)
 
 初始化嵌入层的权重。
 
-[![3](Images/3.png)](#co_neural_network_development_reference_designs_CO6-3)
+![3](img/#co_neural_network_development_reference_designs_CO6-3)
 
 将未知标记的嵌入权重初始化为零。
 
-[![4](Images/4.png)](#co_neural_network_development_reference_designs_CO6-4)
+![4](img/#co_neural_network_development_reference_designs_CO6-4)
 
 将填充标记的嵌入权重初始化为零。
 
@@ -527,7 +527,7 @@ model = model.to(device)
 criterion = criterion.to(device)
 ```
 
-在这个例子中，我们使用Adam优化器和`BCEWithLogitsLoss()`损失函数。Adam优化器是SGD的替代品，在处理稀疏或嘈杂梯度时表现更好。`BCEWithLogitsLoss()`函数通常用于二元分类。我们还将我们的模型移到GPU（如果可用）。
+在这个例子中，我们使用 Adam 优化器和`BCEWithLogitsLoss()`损失函数。Adam 优化器是 SGD 的替代品，在处理稀疏或嘈杂梯度时表现更好。`BCEWithLogitsLoss()`函数通常用于二元分类。我们还将我们的模型移到 GPU（如果可用）。
 
 接下来，我们运行我们的训练和验证循环，如下所示：
 
@@ -593,24 +593,24 @@ for epoch in range(5):
 # Epoch 4 Valid: Loss: 0.3781 Acc: 0.8675
 ```
 
-只需进行五次训练周期，我们应该看到验证准确率在85-90%左右。让我们看看我们的模型在测试数据集上的表现如何。
+只需进行五次训练周期，我们应该看到验证准确率在 85-90%左右。让我们看看我们的模型在测试数据集上的表现如何。
 
 ## 测试和部署
 
-早些时候，我们基于IMDb测试数据集构建了我们的`test_iterator`。请记住，测试数据集中的数据没有用于训练或验证。
+早些时候，我们基于 IMDb 测试数据集构建了我们的`test_iterator`。请记住，测试数据集中的数据没有用于训练或验证。
 
 我们的测试循环如下所示：
 
 ```py
-test_loss=0test_acc=0model.eval()![1](Images/1.png)withtorch.no_grad():![1](Images/1.png)forlabel,text,_intest_dataloader:predictions=model(text).squeeze(1)loss=criterion(predictions,label)rounded_preds=torch.round(torch.sigmoid(predictions))correct=\
+test_loss=0test_acc=0model.eval()![1](img/1.png)withtorch.no_grad():![1](img/1.png)forlabel,text,_intest_dataloader:predictions=model(text).squeeze(1)loss=criterion(predictions,label)rounded_preds=torch.round(torch.sigmoid(predictions))correct=\
 (rounded_preds==label).float()acc=correct.sum()/len(correct)test_loss+=loss.item()test_acc+=acc.item()print("Test: Loss: %.4f Acc: %.4f"%(test_loss/len(test_dataloader),test_acc/len(test_dataloader)))# out: (your results will vary)#   Test: Loss: 0.3821 Acc: 0.8599
 ```
 
-[![1](Images/1.png)](#co_neural_network_development_reference_designs_CO7-1)
+![1](img/#co_neural_network_development_reference_designs_CO7-1)
 
 对于这个模型来说并不是必需的，但是是一个好的实践。
 
-在前面的代码中，我们一次处理一个批次，并在整个测试数据集上累积准确率。您应该在测试集上获得85-90%的准确率。
+在前面的代码中，我们一次处理一个批次，并在整个测试数据集上累积准确率。您应该在测试集上获得 85-90%的准确率。
 
 接下来，我们将使用以下代码预测我们自己评论的情感：
 
@@ -636,7 +636,7 @@ print(sentiment)
 # out: 0.941755473613739
 ```
 
-接近0的结果对应于负面评论，而接近1的输出表示积极的评论。正如您所看到的，模型正确预测了样本评论的情感。尝试用一些您自己的电影评论来测试它！
+接近 0 的结果对应于负面评论，而接近 1 的输出表示积极的评论。正如您所看到的，模型正确预测了样本评论的情感。尝试用一些您自己的电影评论来测试它！
 
 最后，我们将保存我们的模型以供部署，如下所示：
 
@@ -644,21 +644,21 @@ print(sentiment)
 torch.save(model.state_dict(), 'fasttext-model.pt')
 ```
 
-在这个例子中，您学会了如何预处理文本数据并为情感分析设计了一个FastText模型。您还训练了模型，评估了其性能，并保存了模型以供部署。您可以使用这个设计模式和参考代码来解决自己工作中的其他情感分析问题。
+在这个例子中，您学会了如何预处理文本数据并为情感分析设计了一个 FastText 模型。您还训练了模型，评估了其性能，并保存了模型以供部署。您可以使用这个设计模式和参考代码来解决自己工作中的其他情感分析问题。
 
-这个例子是基于Ben Trevett的“更快的情感分析”教程。您可以在他的[PyTorch情感分析GitHub存储库](https://pytorch.tips/sentiment-tutorials)中找到更多详细信息和其他优秀的Torchtext教程。
+这个例子是基于 Ben Trevett 的“更快的情感分析”教程。您可以在他的[PyTorch 情感分析 GitHub 存储库](https://pytorch.tips/sentiment-tutorials)中找到更多详细信息和其他优秀的 Torchtext 教程。
 
-让我们继续我们的最终参考设计，我们将使用深度学习和PyTorch生成图像数据。
+让我们继续我们的最终参考设计，我们将使用深度学习和 PyTorch 生成图像数据。
 
-# 生成学习——使用DCGAN生成Fashion-MNIST图像
+# 生成学习——使用 DCGAN 生成 Fashion-MNIST 图像
 
 深度学习中最有趣的领域之一是*生成学习*，其中神经网络用于创建数据。有时，这些神经网络可以创建图像、音乐、文本和时间序列数据，以至于很难区分真实数据和生成数据之间的区别。生成学习用于创建不存在的人和地方的图像，增加图像分辨率，预测视频中的帧，增加数据集，生成新闻文章，以及转换艺术和音乐的风格。
 
-在这一部分，我将向您展示如何使用PyTorch进行生成学习。开发过程类似于先前的示例；然而，在这里，我们将使用一种无监督的方法，其中数据没有标记。
+在这一部分，我将向您展示如何使用 PyTorch 进行生成学习。开发过程类似于先前的示例；然而，在这里，我们将使用一种无监督的方法，其中数据没有标记。
 
-此外，我们将设计和训练一个GAN，这与先前示例中的模型和训练循环有很大不同。测试和评估GAN也涉及到稍微不同的过程。总体开发顺序与[第2章](ch02.xhtml#Chapter_2)中的过程一致，但每个部分都将是生成学习的独特部分。
+此外，我们将设计和训练一个 GAN，这与先前示例中的模型和训练循环有很大不同。测试和评估 GAN 也涉及到稍微不同的过程。总体开发顺序与第二章中的过程一致，但每个部分都将是生成学习的独特部分。
 
-在这个例子中，我们将训练一个GAN来生成类似于Fashion-MNIST数据集中使用的训练图像的图像。Fashion-MNIST是一个用于图像分类的流行学术数据集，包括服装的图像。让我们访问Fashion-MNIST数据，看看这些图像是什么样子，然后我们将根据我们看到的内容创建一些合成图像。
+在这个例子中，我们将训练一个 GAN 来生成类似于 Fashion-MNIST 数据集中使用的训练图像的图像。Fashion-MNIST 是一个用于图像分类的流行学术数据集，包括服装的图像。让我们访问 Fashion-MNIST 数据，看看这些图像是什么样子，然后我们将根据我们看到的内容创建一些合成图像。
 
 ## 数据处理
 
@@ -700,7 +700,7 @@ dataloader = DataLoader(
                 num_workers=8)
 ```
 
-这段代码应该对你来说很熟悉。我们再次使用Torchvision函数来定义转换、创建数据集，并设置一个数据加载器，该加载器将对数据集进行采样，应用转换，并为我们的模型返回一批图像。
+这段代码应该对你来说很熟悉。我们再次使用 Torchvision 函数来定义转换、创建数据集，并设置一个数据加载器，该加载器将对数据集进行采样，应用转换，并为我们的模型返回一批图像。
 
 我们可以使用以下代码显示一批图像：
 
@@ -713,25 +713,25 @@ grid_img = make_grid(data_batch, nrow=8)
 plt.imshow(grid_img.permute(1, 2, 0))
 ```
 
-Torchvision提供了一个很好的实用工具叫做`make_grid`来显示一组图像。[图4-2](#fig_fashion_mnist)展示了一个Fashion-MNIST图像的示例批次。
+Torchvision 提供了一个很好的实用工具叫做`make_grid`来显示一组图像。图 4-2 展示了一个 Fashion-MNIST 图像的示例批次。
 
-![“FashionMNIST Images”](Images/ptpr_0402.png)
+![“FashionMNIST Images”](img/ptpr_0402.png)
 
-###### 图4-2. Fashion-MNIST图像
+###### 图 4-2. Fashion-MNIST 图像
 
 让我们看看我们将用于数据生成任务的模型。
 
 ## 模型设计
 
-为了生成新的图像数据，我们将使用GAN。GAN模型的目标是基于训练数据的分布生成“假”数据。GAN通过两个不同的模块实现这一目标：生成器和鉴别器。
+为了生成新的图像数据，我们将使用 GAN。GAN 模型的目标是基于训练数据的分布生成“假”数据。GAN 通过两个不同的模块实现这一目标：生成器和鉴别器。
 
-生成器的工作是生成看起来真实的假图像。鉴别器的工作是正确识别图像是否为假的。尽管GAN的设计超出了本书的范围，但我将提供一个使用深度卷积GAN（DCGAN）的示例参考设计。
+生成器的工作是生成看起来真实的假图像。鉴别器的工作是正确识别图像是否为假的。尽管 GAN 的设计超出了本书的范围，但我将提供一个使用深度卷积 GAN（DCGAN）的示例参考设计。
 
 ###### 注意
 
-GAN首次在Ian Goodfellow等人于2014年发表的著名论文中描述，标题为[“生成对抗网络”](https://pytorch.tips/gan-paper)。Alec Radford等人在2015年的论文中提出了构建更稳定的卷积GAN的指导方针，标题为[“使用深度卷积生成对抗网络进行无监督表示学习”](https://pytorch.tips/dcgan-paper)。本例中使用的DCGAN在这篇论文中有描述。
+GAN 首次在 Ian Goodfellow 等人于 2014 年发表的著名论文中描述，标题为[“生成对抗网络”](https://pytorch.tips/gan-paper)。Alec Radford 等人在 2015 年的论文中提出了构建更稳定的卷积 GAN 的指导方针，标题为[“使用深度卷积生成对抗网络进行无监督表示学习”](https://pytorch.tips/dcgan-paper)。本例中使用的 DCGAN 在这篇论文中有描述。
 
-生成器被设计为从一个包含100个随机值的输入向量创建图像。以下是代码：
+生成器被设计为从一个包含 100 个随机值的输入向量创建图像。以下是代码：
 
 ```py
 import torch.nn as nn
@@ -767,7 +767,7 @@ class Generator(nn.Module):
 netG = Generator(CODING_SIZE).to(device)
 ```
 
-这个示例生成器使用2D卷积转置层与批量归一化和ReLU激活。这些层在`__init__()`函数中定义。它的工作方式类似于我们的图像分类模型，只是顺序相反。
+这个示例生成器使用 2D 卷积转置层与批量归一化和 ReLU 激活。这些层在`__init__()`函数中定义。它的工作方式类似于我们的图像分类模型，只是顺序相反。
 
 也就是说，它不是将图像缩小为较小的表示，而是从一个随机向量创建完整的图像。我们还将`Generator`模块实例化为`netG`。
 
@@ -800,9 +800,9 @@ class Discriminator(nn.Module):
 netD = Discriminator().to(device)
 ```
 
-鉴别器是一个二元分类网络，确定输入图像是真实的概率。这个示例鉴别器NN使用2D卷积层与批量归一化和泄漏ReLU激活函数。我们将`Discriminator`实例化为`netD`。
+鉴别器是一个二元分类网络，确定输入图像是真实的概率。这个示例鉴别器 NN 使用 2D 卷积层与批量归一化和泄漏 ReLU 激活函数。我们将`Discriminator`实例化为`netD`。
 
-DCGAN论文的作者发现，初始化权重有助于提高性能，如下所示的代码：
+DCGAN 论文的作者发现，初始化权重有助于提高性能，如下所示的代码：
 
 ```py
 def weights_init(m):
@@ -817,13 +817,13 @@ netG.apply(weights_init)
 netD.apply(weights_init)
 ```
 
-现在我们已经设计好了两个模块，我们可以设置并训练GAN。
+现在我们已经设计好了两个模块，我们可以设置并训练 GAN。
 
 ## 训练
 
-训练GAN比之前的训练示例要复杂一些。在每个时代中，我们将首先用真实数据批次训练鉴别器，然后使用生成器创建一个假批次，然后用生成的假数据批次训练鉴别器。最后，我们将训练生成器NN以生成更好的假数据。
+训练 GAN 比之前的训练示例要复杂一些。在每个时代中，我们将首先用真实数据批次训练鉴别器，然后使用生成器创建一个假批次，然后用生成的假数据批次训练鉴别器。最后，我们将训练生成器 NN 以生成更好的假数据。
 
-这是一个很好的例子，展示了PyTorch在创建自定义训练循环时的强大功能。它提供了灵活性，可以轻松开发和实现新的想法。
+这是一个很好的例子，展示了 PyTorch 在创建自定义训练循环时的强大功能。它提供了灵活性，可以轻松开发和实现新的想法。
 
 在开始训练之前，我们需要定义用于训练生成器和鉴别器的损失函数和优化器：
 
@@ -872,34 +872,34 @@ test_out_images = []
 现在我们可以执行训练循环。如果 GAN 是稳定的，随着更多时代的训练，它应该会改进。以下是训练循环的代码：
 
 ```py
-N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerate(dataloader):if(i%200==0):print(f'batch: {i} of {len(dataloader)}')# Train Discriminator with an all-real batch.netD.zero_grad()real_images=batch[0].to(device)*2.-1.output=netD(real_images).view(-1)![1](Images/1.png)errD_real=criterion(output,real_labels)D_x=output.mean().item()# Train Discriminator with an all-fake batch.noise=torch.randn((BATCH_SIZE,CODING_SIZE))noise=noise.view(-1,100,1,1).to(device)fake_images=netG(noise)output=netD(fake_images).view(-1)![2](Images/2.png)errD_fake=criterion(output,fake_labels)D_G_z1=output.mean().item()errD=errD_real+errD_fakeerrD.backward(retain_graph=True)![3](Images/3.png)optimizerD.step()# Train Generator to generate better fakes.netG.zero_grad()output=netD(fake_images).view(-1)![4](Images/4.png)errG=criterion(output,real_labels)![5](Images/5.png)errG.backward()![6](Images/6.png)D_G_z2=output.mean().item()optimizerG.step()# Save losses for plotting later.G_losses.append(errG.item())D_losses.append(errD.item())D_real.append(D_x)D_fake.append(D_G_z2)test_images=netG(z).to('cpu').detach()![7](Images/7.png)test_out_images.append(test_images)
+N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerate(dataloader):if(i%200==0):print(f'batch: {i} of {len(dataloader)}')# Train Discriminator with an all-real batch.netD.zero_grad()real_images=batch[0].to(device)*2.-1.output=netD(real_images).view(-1)![1](img/1.png)errD_real=criterion(output,real_labels)D_x=output.mean().item()# Train Discriminator with an all-fake batch.noise=torch.randn((BATCH_SIZE,CODING_SIZE))noise=noise.view(-1,100,1,1).to(device)fake_images=netG(noise)output=netD(fake_images).view(-1)![2](img/2.png)errD_fake=criterion(output,fake_labels)D_G_z1=output.mean().item()errD=errD_real+errD_fakeerrD.backward(retain_graph=True)![3](img/3.png)optimizerD.step()# Train Generator to generate better fakes.netG.zero_grad()output=netD(fake_images).view(-1)![4](img/4.png)errG=criterion(output,real_labels)![5](img/5.png)errG.backward()![6](img/6.png)D_G_z2=output.mean().item()optimizerG.step()# Save losses for plotting later.G_losses.append(errG.item())D_losses.append(errD.item())D_real.append(D_x)D_fake.append(D_G_z2)test_images=netG(z).to('cpu').detach()![7](img/7.png)test_out_images.append(test_images)
 ```
 
-![1](Images/1.png)
+![1](img/1.png)
 
 将真实图像传递给“鉴别器”。
 
-![2](Images/2.png)
+![2](img/2.png)
 
 将假图像传递给“鉴别器”。
 
-![3](Images/3.png)
+![3](img/3.png)
 
 运行反向传播并更新“鉴别器”。
 
-![4](Images/4.png)
+![4](img/4.png)
 
 将假图像传递给更新后的“鉴别器”。
 
-![5](Images/5.png)
+![5](img/5.png)
 
 “生成器”的损失基于“鉴别器”错误的情况。
 
-![6](Images/6.png)
+![6](img/6.png)
 
 运行反向传播并更新“生成器”。
 
-![7](Images/7.png)
+![7](img/7.png)
 
 创建一批图像并在每个时代后保存它们。
 
@@ -909,9 +909,9 @@ N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerat
 
 我们使用刚训练的鉴别器从相同的假数据计算输出，并计算生成器的损失或错误。利用这个损失，我们计算梯度并在生成器本身上应用反向传播。
 
-最后，我们将跟踪每个时代后的损失，以查看 GAN 的训练是否持续改进和稳定。[图 4-3](#fig_gan_curves) 显示了生成器和鉴别器在训练过程中的损失曲线。
+最后，我们将跟踪每个时代后的损失，以查看 GAN 的训练是否持续改进和稳定。图 4-3 显示了生成器和鉴别器在训练过程中的损失曲线。
 
-![“GAN 训练曲线”](Images/ptpr_0403.png)
+![“GAN 训练曲线”](img/ptpr_0403.png)
 
 ###### 图 4-3. GAN 训练曲线
 
@@ -919,40 +919,40 @@ N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerat
 
 总的来说，GAN 很难训练，学习率、beta 和其他优化器超参数可能会产生重大影响。
 
-让我们检查鉴别器在每个批次上所有时代的平均结果，如[图 4-4](#fig_d_results)所示。
+让我们检查鉴别器在每个批次上所有时代的平均结果，如图 4-4 所示。
 
-![“鉴别器结果”](Images/ptpr_0404.png)
+![“鉴别器结果”](img/ptpr_0404.png)
 
 ###### 图 4-4. 鉴别器结果
 
-如果 GAN 完美的话，鉴别器将无法正确识别假图像为假或真实图像为真，我们期望在这两种情况下平均误差为0.5。结果显示有些批次接近0.5，但我们肯定可以做得更好。
+如果 GAN 完美的话，鉴别器将无法正确识别假图像为假或真实图像为真，我们期望在这两种情况下平均误差为 0.5。结果显示有些批次接近 0.5，但我们肯定可以做得更好。
 
 现在我们已经训练了我们的网络，让我们看看它在创建服装的假图像方面表现如何。
 
 ## 测试和部署
 
-在监督学习中，我们通常留出一个未用于训练或验证模型的测试数据集。在生成式学习中，生成器没有生成标签。我们可以将生成的图像传递给Fashion-MNIST分类器，但除非我们手动标记输出，否则我们无法知道错误是由分类器还是GAN引起的。
+在监督学习中，我们通常留出一个未用于训练或验证模型的测试数据集。在生成式学习中，生成器没有生成标签。我们可以将生成的图像传递给 Fashion-MNIST 分类器，但除非我们手动标记输出，否则我们无法知道错误是由分类器还是 GAN 引起的。
 
-现在，让我们通过比较第一个时代的结果和最后一个时代生成的图像来测试和评估我们的GAN。我们为测试创建一个名为`z`的测试向量，并在我们的训练循环代码中使用每个时代末尾计算的生成器结果。
+现在，让我们通过比较第一个时代的结果和最后一个时代生成的图像来测试和评估我们的 GAN。我们为测试创建一个名为`z`的测试向量，并在我们的训练循环代码中使用每个时代末尾计算的生成器结果。
 
-[图4-5](#fig_fmnist_0)显示了第一个时代生成的图像，而[图4-6](#fig_fmnist_4)显示了仅训练五个时代后的结果。
+图 4-5 显示了第一个时代生成的图像，而图 4-6 显示了仅训练五个时代后的结果。
 
-![“生成器结果（第一个时代）”](Images/ptpr_0405.png)
+![“生成器结果（第一个时代）”](img/ptpr_0405.png)
 
-###### 图4-5. 生成器结果（第一个时代）
+###### 图 4-5. 生成器结果（第一个时代）
 
-![“生成器结果（最后一个时代）”](Images/ptpr_0406.png)
+![“生成器结果（最后一个时代）”](img/ptpr_0406.png)
 
-###### 图4-6. 生成器结果（最后一个时代）
+###### 图 4-6. 生成器结果（最后一个时代）
 
-您可以看到生成器有所改进。看看第二行末尾的靴子或第三行末尾的衬衫。我们的GAN并不完美，但在只经过五个时代后似乎有所改善。训练更多时代或改进我们的设计可能会产生更好的结果。
+您可以看到生成器有所改进。看看第二行末尾的靴子或第三行末尾的衬衫。我们的 GAN 并不完美，但在只经过五个时代后似乎有所改善。训练更多时代或改进我们的设计可能会产生更好的结果。
 
-最后，我们可以保存我们训练好的模型以供部署，并使用以下代码生成更多合成的Fashion-MNIST图像：
+最后，我们可以保存我们训练好的模型以供部署，并使用以下代码生成更多合成的 Fashion-MNIST 图像：
 
 ```py
 torch.save(netG.state_dict(), './gan.pt')
 ```
 
-我们通过设计和训练一个GAN来扩展了我们的PyTorch深度学习能力，在这个生成式学习参考设计中。您可以使用这个参考设计来创建和训练其他GAN模型，并测试它们生成新数据的性能。
+我们通过设计和训练一个 GAN 来扩展了我们的 PyTorch 深度学习能力，在这个生成式学习参考设计中。您可以使用这个参考设计来创建和训练其他 GAN 模型，并测试它们生成新数据的性能。
 
-在本章中，我们涵盖了更多示例，展示了使用PyTorch的各种数据处理、模型设计和训练方法，但是如果您有一个新颖的、创新的NN的惊人想法呢？或者如果您想出了一个新的优化算法或损失函数，以前没有人见过的呢？在下一章中，我将向您展示如何创建自己的自定义模块和函数，以便扩展您的深度学习研究并尝试新的想法。
+在本章中，我们涵盖了更多示例，展示了使用 PyTorch 的各种数据处理、模型设计和训练方法，但是如果您有一个新颖的、创新的 NN 的惊人想法呢？或者如果您想出了一个新的优化算法或损失函数，以前没有人见过的呢？在下一章中，我将向您展示如何创建自己的自定义模块和函数，以便扩展您的深度学习研究并尝试新的想法。

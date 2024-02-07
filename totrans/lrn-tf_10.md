@@ -1,18 +1,18 @@
-# 第10章。使用TensorFlow导出和提供模型
+# 第十章。使用 TensorFlow 导出和提供模型
 
-在本章中，我们将学习如何使用简单和高级的生产就绪方法保存和导出模型。对于后者，我们介绍了TensorFlow Serving，这是TensorFlow中最实用的用于创建生产环境的工具之一。我们将从快速概述两种简单的保存模型和变量的方法开始：首先是通过手动保存权重并重新分配它们，然后是使用`Saver`类创建训练检查点以及导出我们的模型。最后，我们将转向更高级的应用程序，通过使用TensorFlow Serving在服务器上部署我们的模型。
+在本章中，我们将学习如何使用简单和高级的生产就绪方法保存和导出模型。对于后者，我们介绍了 TensorFlow Serving，这是 TensorFlow 中最实用的用于创建生产环境的工具之一。我们将从快速概述两种简单的保存模型和变量的方法开始：首先是通过手动保存权重并重新分配它们，然后是使用`Saver`类创建训练检查点以及导出我们的模型。最后，我们将转向更高级的应用程序，通过使用 TensorFlow Serving 在服务器上部署我们的模型。
 
 # 保存和导出我们的模型
 
-到目前为止，我们已经学习了如何使用TensorFlow创建、训练和跟踪模型。现在我们将学习如何保存训练好的模型。保存当前权重状态对于明显的实际原因至关重要——我们不想每次都从头开始重新训练模型，我们也希望有一种方便的方式与他人分享我们模型的状态（就像我们在[第7章](ch07.html#tensorflow_abstractions_and_simplifications)中看到的预训练模型一样）。
+到目前为止，我们已经学习了如何使用 TensorFlow 创建、训练和跟踪模型。现在我们将学习如何保存训练好的模型。保存当前权重状态对于明显的实际原因至关重要——我们不想每次都从头开始重新训练模型，我们也希望有一种方便的方式与他人分享我们模型的状态（就像我们在第七章中看到的预训练模型一样）。
 
-在这一部分，我们将讨论保存和导出的基础知识。我们首先介绍了一种简单的保存和加载权重到文件的方法。然后我们将看到如何使用TensorFlow的`Saver`对象来保持序列化模型检查点，其中包含有关权重状态和构建图的信息。
+在这一部分，我们将讨论保存和导出的基础知识。我们首先介绍了一种简单的保存和加载权重到文件的方法。然后我们将看到如何使用 TensorFlow 的`Saver`对象来保持序列化模型检查点，其中包含有关权重状态和构建图的信息。
 
 ## 分配加载的权重
 
 在训练后重复使用权重的一个天真但实用的方法是将它们保存到文件中，稍后可以加载它们并重新分配给模型。
 
-让我们看一些例子。假设我们希望保存用于MNIST数据的基本softmax模型的权重，我们从会话中获取它们后，将权重表示为NumPy数组，并以我们选择的某种格式保存它们：
+让我们看一些例子。假设我们希望保存用于 MNIST 数据的基本 softmax 模型的权重，我们从会话中获取它们后，将权重表示为 NumPy 数组，并以我们选择的某种格式保存它们：
 
 ```py
 import numpy as np
@@ -51,7 +51,7 @@ Accuracy: 0.9199
 
 ```
 
-接下来，我们将执行相同的过程，但这次是针对[第4章](ch04.html#convolutional_neural_networks)中用于MNIST数据的CNN模型。在这里，我们有八组不同的权重：两个卷积层1和2的滤波器权重及其对应的偏置，以及两组全连接层的权重和偏置。我们将模型封装在一个类中，以便方便地保持这八个参数的更新列表。
+接下来，我们将执行相同的过程，但这次是针对第四章中用于 MNIST 数据的 CNN 模型。在这里，我们有八组不同的权重：两个卷积层 1 和 2 的滤波器权重及其对应的偏置，以及两组全连接层的权重和偏置。我们将模型封装在一个类中，以便方便地保持这八个参数的更新列表。
 
 我们还为要加载的权重添加了可选参数：
 
@@ -133,7 +133,7 @@ class simple_cnn:
 
 ```
 
-在这个例子中，模型已经训练好，并且权重已保存为`cnn_weights`。我们加载权重并将它们传递给我们的CNN对象。当我们在测试数据上运行模型时，它将使用预训练的权重：
+在这个例子中，模型已经训练好，并且权重已保存为`cnn_weights`。我们加载权重并将它们传递给我们的 CNN 对象。当我们在测试数据上运行模型时，它将使用预训练的权重：
 
 ```py
 x = tf.placeholder(tf.float32, shape=[None, 784])
@@ -183,13 +183,13 @@ test accuracy: 0.990100026131
 
 我们可以获得高准确度，而无需重新训练。
 
-## Saver类
+## Saver 类
 
-TensorFlow还有一个内置的类，我们可以用于与前面的示例相同的目的，提供额外有用的功能，我们很快就会看到。这个类被称为`Saver`类（在[第5章](ch05.html#text_i)中已经简要介绍过）。
+TensorFlow 还有一个内置的类，我们可以用于与前面的示例相同的目的，提供额外有用的功能，我们很快就会看到。这个类被称为`Saver`类（在第五章中已经简要介绍过）。
 
 `Saver`添加了操作，允许我们通过使用称为*检查点文件*的二进制文件保存和恢复模型的参数，将张量值映射到变量的名称。与前一节中使用的方法不同，这里我们不必跟踪我们的参数——`Saver`会自动为我们完成。
 
-使用`Saver`非常简单。我们首先通过`tf.train.Saver()`创建一个saver实例，指示我们希望保留多少最近的变量检查点，以及可选的保留它们的时间间隔。
+使用`Saver`非常简单。我们首先通过`tf.train.Saver()`创建一个 saver 实例，指示我们希望保留多少最近的变量检查点，以及可选的保留它们的时间间隔。
 
 例如，在下面的代码中，我们要求只保留最近的七个检查点，并且另外指定每半小时保留一个检查点（这对于性能和进展评估分析可能很有用）：
 
@@ -203,7 +203,7 @@ saver = tf.train.Saver(max_to_keep=7,
 
 接下来，我们使用`saver`实例的`.save()`方法保存检查点文件，传递会话参数、文件保存路径以及步数（`global_step`），它会自动连接到每个检查点文件的名称中，表示迭代次数。在训练模型时，这会创建不同步骤的多个检查点。
 
-在这个代码示例中，每50个训练迭代将在指定目录中保存一个文件：
+在这个代码示例中，每 50 个训练迭代将在指定目录中保存一个文件：
 
 ```py
 DIR="*`path/to/model`*"withtf.Session()assess:forstepinrange(1,NUM_STEPS+1):batch_xs,batch_ys=data.train.next_batch(MINIBATCH_SIZE)sess.run(gd_step,feed_dict={x:batch_xs,y_true:batch_ys})ifstep%50==0:saver.save(sess,os.path.join(DIR,"model"),global_step=step)
@@ -282,7 +282,7 @@ NotFoundError: Key W_1 not found in checkpoint
 
 到目前为止，在这两种方法中，我们需要重新创建图以重新分配恢复的参数。然而，`Saver`还允许我们恢复图而无需重建它，通过生成包含有关图的所有必要信息的*.meta*检查点文件。
 
-关于图的信息以及如何将保存的权重合并到其中（元信息）被称为`MetaGraphDef`。这些信息被序列化——转换为一个字符串——使用协议缓冲区（参见[“序列化和协议缓冲区”](#serial_proto_buff)），它包括几个部分。网络架构的信息保存在`graph_def`中。
+关于图的信息以及如何将保存的权重合并到其中（元信息）被称为`MetaGraphDef`。这些信息被序列化——转换为一个字符串——使用协议缓冲区（参见“序列化和协议缓冲区”），它包括几个部分。网络架构的信息保存在`graph_def`中。
 
 这里是图信息的文本序列化的一个小样本（更多关于序列化的内容将在后面介绍）：
 
@@ -323,7 +323,7 @@ graph_def {
 
 ```
 
-为了加载保存的图，我们使用`tf.train.import_meta_graph()`，传递我们想要的检查点文件的名称（带有*.meta*扩展名）。TensorFlow已经知道如何处理恢复的权重，因为这些信息也被保存了：
+为了加载保存的图，我们使用`tf.train.import_meta_graph()`，传递我们想要的检查点文件的名称（带有*.meta*扩展名）。TensorFlow 已经知道如何处理恢复的权重，因为这些信息也被保存了：
 
 ```py
 tf.reset_default_graph()DIR="*`path/to/model`*"withtf.Session()assess:saver=tf.train.import_meta_graph(os.path.join(DIR,"model_ckpt-1000.meta"))saver.restore(sess,os.path.join(DIR,"model_ckpt-1000"))ans=sess.run(accuracy,feed_dict={x:data.test.images,y_true:data.test.labels})print("Accuracy: {:.4}%".format(ans*100))
@@ -364,23 +364,23 @@ saver.export_meta_graph(os.path.join(DIR,"model_ckpt.meta")
 tf.reset_default_graph()DIR="*`path/to/model`*"withtf.Session()assess:sess.run(tf.global_variables_initializer())saver=tf.train.import_meta_graph(os.path.join(DIR,"model_ckpt.meta")saver.restore(sess,os.path.join(DIR,"model_ckpt-1000"))x=tf.get_collection('train_var')[0]y_true=tf.get_collection('train_var')[1]accuracy=tf.get_collection('train_var')[2]ans=sess.run(accuracy,feed_dict={x:data.test.images,y_true:data.test.labels})print("Accuracy: {:.4}%".format(ans*100))Out:Accuracy:91.4%
 ```
 
-在定义图形时，请考虑一旦图形已保存和恢复，您想要检索哪些变量/操作，例如前面示例中的准确性操作。在下一节中，当我们谈论Serving时，我们将看到它具有内置功能，可以引导导出的模型，而无需像我们在这里做的那样保存变量。
+在定义图形时，请考虑一旦图形已保存和恢复，您想要检索哪些变量/操作，例如前面示例中的准确性操作。在下一节中，当我们谈论 Serving 时，我们将看到它具有内置功能，可以引导导出的模型，而无需像我们在这里做的那样保存变量。
 
-# TensorFlow Serving简介
+# TensorFlow Serving 简介
 
-TensorFlow Serving是用C++编写的高性能服务框架，我们可以在生产环境中部署我们的模型。通过使客户端软件能够访问它并通过Serving的API传递输入，使我们的模型可以用于生产（[图10-1](#model_linked_to_external_app)）。当然，TensorFlow Serving旨在与TensorFlow模型无缝集成。Serving具有许多优化功能，可减少延迟并增加预测的吞吐量，适用于实时、大规模应用。这不仅仅是关于预测的可访问性和高效服务，还涉及灵活性——通常希望出于各种原因保持模型更新，例如获得额外的训练数据以改进模型，对网络架构进行更改等。
+TensorFlow Serving 是用 C++编写的高性能服务框架，我们可以在生产环境中部署我们的模型。通过使客户端软件能够访问它并通过 Serving 的 API 传递输入，使我们的模型可以用于生产（图 10-1）。当然，TensorFlow Serving 旨在与 TensorFlow 模型无缝集成。Serving 具有许多优化功能，可减少延迟并增加预测的吞吐量，适用于实时、大规模应用。这不仅仅是关于预测的可访问性和高效服务，还涉及灵活性——通常希望出于各种原因保持模型更新，例如获得额外的训练数据以改进模型，对网络架构进行更改等。
 
-![](assets/letf_1001.png)
+![](img/letf_1001.png)
 
-###### 图10-1。Serving将我们训练好的模型链接到外部应用程序，使客户端软件可以轻松访问。
+###### 图 10-1。Serving 将我们训练好的模型链接到外部应用程序，使客户端软件可以轻松访问。
 
 ## 概述
 
-假设我们运行一个语音识别服务，并且我们希望使用TensorFlow Serving部署我们的模型。除了优化服务外，对我们来说定期更新模型也很重要，因为我们获取更多数据或尝试新的网络架构。稍微更技术化一点，我们希望能够加载新模型并提供其输出，卸载旧模型，同时简化模型生命周期管理和版本策略。
+假设我们运行一个语音识别服务，并且我们希望使用 TensorFlow Serving 部署我们的模型。除了优化服务外，对我们来说定期更新模型也很重要，因为我们获取更多数据或尝试新的网络架构。稍微更技术化一点，我们希望能够加载新模型并提供其输出，卸载旧模型，同时简化模型生命周期管理和版本策略。
 
-一般来说，我们可以通过以下方式实现Serving。在Python中，我们定义模型并准备将其序列化，以便可以被负责加载、提供和管理版本的不同模块解析。Serving的核心“引擎”位于一个C++模块中，只有在我们希望控制Serving行为的特定调整和定制时才需要访问它。
+一般来说，我们可以通过以下方式实现 Serving。在 Python 中，我们定义模型并准备将其序列化，以便可以被负责加载、提供和管理版本的不同模块解析。Serving 的核心“引擎”位于一个 C++模块中，只有在我们希望控制 Serving 行为的特定调整和定制时才需要访问它。
 
-简而言之，这就是Serving架构的工作方式（[图10-2](#an_outline_of_the_serving_architecture)）：
+简而言之，这就是 Serving 架构的工作方式（图 10-2）：
 
 +   一个名为`Source`的模块通过监视插入的文件系统来识别需要加载的新模型，这些文件系统包含我们在创建时导出的模型及其相关信息。`Source`包括子模块，定期检查文件系统并确定最新相关的模型版本。
 
@@ -388,27 +388,27 @@ TensorFlow Serving是用C++编写的高性能服务框架，我们可以在生�
 
 +   最后，管理器提供了一个接口，供客户端访问可服务的内容。
 
-![](assets/letf_1002.png)
+![](img/letf_1002.png)
 
-###### 图10-2。Serving架构概述。
+###### 图 10-2。Serving 架构概述。
 
-Serving的设计特别之处在于它具有灵活和可扩展的特性。它支持构建各种插件来定制系统行为，同时使用其他核心组件的通用构建。
+Serving 的设计特别之处在于它具有灵活和可扩展的特性。它支持构建各种插件来定制系统行为，同时使用其他核心组件的通用构建。
 
-在下一节中，我们将使用Serving构建和部署一个TensorFlow模型，展示一些其关键功能和内部工作原理。在高级应用中，我们可能需要控制不同类型的优化和定制；例如，控制版本策略等。在本章中，我们将向您展示如何开始并理解Serving的基础知识，为生产就绪的部署奠定基础。
+在下一节中，我们将使用 Serving 构建和部署一个 TensorFlow 模型，展示一些其关键功能和内部工作原理。在高级应用中，我们可能需要控制不同类型的优化和定制；例如，控制版本策略等。在本章中，我们将向您展示如何开始并理解 Serving 的基础知识，为生产就绪的部署奠定基础。
 
 ## 安装
 
-Serving需要安装一些组件，包括一些第三方组件。安装可以从源代码或使用Docker进行，我们在这里使用Docker来让您快速开始。Docker容器将软件应用程序与运行所需的一切（例如代码、文件等）捆绑在一起。我们还使用Bazel，谷歌自己的构建工具，用于构建客户端和服务器软件。在本章中，我们只简要介绍了Bazel和Docker等工具背后的技术细节。更全面的描述出现在书末的[附录](app01.html#appendix)中。
+Serving 需要安装一些组件，包括一些第三方组件。安装可以从源代码或使用 Docker 进行，我们在这里使用 Docker 来让您快速开始。Docker 容器将软件应用程序与运行所需的一切（例如代码、文件等）捆绑在一起。我们还使用 Bazel，谷歌自己的构建工具，用于构建客户端和服务器软件。在本章中，我们只简要介绍了 Bazel 和 Docker 等工具背后的技术细节。更全面的描述出现在书末的附录中。
 
-### 安装Serving
+### 安装 Serving
 
-Docker安装说明可以在[ Docker网站](https://docs.docker.com/engine/installation/)上找到。
+Docker 安装说明可以在[ Docker 网站](https://docs.docker.com/engine/installation/)上找到。
 
-在这里，我们演示使用[Ubuntu](https://docs.docker.com/engine/installation/linux/ubuntu/)进行Docker设置。
+在这里，我们演示使用[Ubuntu](https://docs.docker.com/engine/installation/linux/ubuntu/)进行 Docker 设置。
 
-Docker容器是从本地Docker镜像创建的，该镜像是从dockerfile构建的，并封装了我们需要的一切（依赖安装、项目代码等）。一旦我们安装了Docker，我们需要[下载TensorFlow Serving的dockerfile](http://bit.ly/2t7ewMb)。
+Docker 容器是从本地 Docker 镜像创建的，该镜像是从 dockerfile 构建的，并封装了我们需要的一切（依赖安装、项目代码等）。一旦我们安装了 Docker，我们需要[下载 TensorFlow Serving 的 dockerfile](http://bit.ly/2t7ewMb)。
 
-这个dockerfile包含了构建TensorFlow Serving所需的所有依赖项。
+这个 dockerfile 包含了构建 TensorFlow Serving 所需的所有依赖项。
 
 首先，我们生成镜像，然后可以运行容器（这可能需要一些时间）：
 
@@ -427,11 +427,11 @@ docker run -v $HOME/docker_files:/host_files
 
 `docker run -it $USER/tensorflow-serving-devel`命令足以创建和运行容器，但我们对此命令进行了两次添加。
 
-首先，我们添加*-v $HOME/home_dir:/docker_dir*，其中`-v`（卷）表示请求共享文件系统，这样我们就可以方便地在Docker容器和主机之间传输文件。在这里，我们在主机上创建了共享文件夹*docker_files*，在我们的Docker容器上创建了*host_files*。另一种传输文件的方法是简单地使用命令`docker cp foo.txt *mycontainer*:/foo.txt`。第二个添加是`-p <*host port*>:<*container port*>`，这使得容器中的服务可以通过指定的端口暴露在任何地方。
+首先，我们添加*-v $HOME/home_dir:/docker_dir*，其中`-v`（卷）表示请求共享文件系统，这样我们就可以方便地在 Docker 容器和主机之间传输文件。在这里，我们在主机上创建了共享文件夹*docker_files*，在我们的 Docker 容器上创建了*host_files*。另一种传输文件的方法是简单地使用命令`docker cp foo.txt *mycontainer*:/foo.txt`。第二个添加是`-p <*host port*>:<*container port*>`，这使得容器中的服务可以通过指定的端口暴露在任何地方。
 
-一旦我们输入我们的`run`命令，一个容器将被创建和启动，并且一个终端将被打开。我们可以使用命令`docker ps -a`（在Docker终端之外）查看我们容器的状态。请注意，每次使用`docker run`命令时，我们都会创建另一个容器；要进入现有容器的终端，我们需要使用`docker exec -it <*container id*> bash`。
+一旦我们输入我们的`run`命令，一个容器将被创建和启动，并且一个终端将被打开。我们可以使用命令`docker ps -a`（在 Docker 终端之外）查看我们容器的状态。请注意，每次使用`docker run`命令时，我们都会创建另一个容器；要进入现有容器的终端，我们需要使用`docker exec -it <*container id*> bash`。
 
-最后，在打开的终端中，我们克隆并配置TensorFlow Serving：
+最后，在打开的终端中，我们克隆并配置 TensorFlow Serving：
 
 ```py
 git clone --recurse-submodules https://github.com/tensorflow/serving
@@ -443,15 +443,15 @@ cd serving/tensorflow
 
 ## 构建和导出
 
-现在Serving已经克隆并运行，我们可以开始探索其功能和如何使用它。克隆的TensorFlow Serving库是按照Bazel架构组织的。Bazel构建的源代码组织在一个工作区目录中，里面有一系列分组相关源文件的包。每个包都有一个*BUILD*文件，指定从该包内的文件构建的输出。
+现在 Serving 已经克隆并运行，我们可以开始探索其功能和如何使用它。克隆的 TensorFlow Serving 库是按照 Bazel 架构组织的。Bazel 构建的源代码组织在一个工作区目录中，里面有一系列分组相关源文件的包。每个包都有一个*BUILD*文件，指定从该包内的文件构建的输出。
 
 我们克隆库中的工作区位于*/serving*文件夹中，包含*WORKSPACE*文本文件和*/tensorflow_serving*包，稍后我们将返回到这里。
 
-现在我们转向查看处理训练和导出模型的Python脚本，并看看如何以一种适合进行Serving的方式导出我们的模型。
+现在我们转向查看处理训练和导出模型的 Python 脚本，并看看如何以一种适合进行 Serving 的方式导出我们的模型。
 
 ### 导出我们的模型
 
-与我们使用`Saver`类时一样，我们训练的模型将被序列化并导出到两个文件中：一个包含有关变量的信息，另一个包含有关图形和其他元数据的信息。正如我们很快将看到的，Serving需要特定的序列化格式和元数据，因此我们不能简单地使用`Saver`类，就像我们在本章开头看到的那样。
+与我们使用`Saver`类时一样，我们训练的模型将被序列化并导出到两个文件中：一个包含有关变量的信息，另一个包含有关图形和其他元数据的信息。正如我们很快将看到的，Serving 需要特定的序列化格式和元数据，因此我们不能简单地使用`Saver`类，就像我们在本章开头看到的那样。
 
 我们要采取的步骤如下：
 
@@ -552,7 +552,7 @@ builder.save()
 
 简而言之，将所有部分整合在一起，以准备在脚本执行时序列化和导出，我们将立即看到。
 
-以下是我们主要的 Python 模型脚本的最终代码，包括我们的模型（来自[第四章](ch04.html#convolutional_neural_networks)的 CNN 模型）：
+以下是我们主要的 Python 模型脚本的最终代码，包括我们的模型（来自第四章的 CNN 模型）：
 
 ```py
 import os
@@ -794,4 +794,4 @@ bazel-bin/tensorflow_serving/example/mnist_client
 
 # 总结
 
-本章讨论了如何保存、导出和提供模型，从简单保存和重新分配权重使用内置的`Saver`实用程序到用于生产的高级模型部署机制。本章的最后部分涉及TensorFlow Serving，这是一个非常好的工具，可以通过动态版本控制使我们的模型商业化准备就绪。Serving是一个功能丰富的实用程序，具有许多功能，我们强烈建议对掌握它感兴趣的读者在网上寻找更深入的技术资料。
+本章讨论了如何保存、导出和提供模型，从简单保存和重新分配权重使用内置的`Saver`实用程序到用于生产的高级模型部署机制。本章的最后部分涉及 TensorFlow Serving，这是一个非常好的工具，可以通过动态版本控制使我们的模型商业化准备就绪。Serving 是一个功能丰富的实用程序，具有许多功能，我们强烈建议对掌握它感兴趣的读者在网上寻找更深入的技术资料。

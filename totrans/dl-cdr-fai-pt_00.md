@@ -2,11 +2,11 @@
 
 深度学习是一项强大的新技术，我们认为它应该应用于许多学科。领域专家最有可能发现它的新应用，我们需要更多来自各个背景的人参与并开始使用它。
 
-这就是为什么Jeremy共同创立了fast.ai，通过免费在线课程和软件使深度学习更容易使用。Sylvain是Hugging Face的研究工程师。以前他是fast.ai的研究科学家，曾是一名数学和计算机科学教师，负责培养学生进入法国精英大学的计划。我们一起写这本书，希望尽可能多地将深度学习交到更多人手中。
+这就是为什么 Jeremy 共同创立了 fast.ai，通过免费在线课程和软件使深度学习更容易使用。Sylvain 是 Hugging Face 的研究工程师。以前他是 fast.ai 的研究科学家，曾是一名数学和计算机科学教师，负责培养学生进入法国精英大学的计划。我们一起写这本书，希望尽可能多地将深度学习交到更多人手中。
 
 # 这本书适合谁
 
-如果你是深度学习和机器学习的完全初学者，你在这里是最受欢迎的。我们唯一的期望是你已经知道如何编码，最好是用Python。
+如果你是深度学习和机器学习的完全初学者，你在这里是最受欢迎的。我们唯一的期望是你已经知道如何编码，最好是用 Python。
 
 # 没有经验？没问题！
 
@@ -16,17 +16,17 @@
 
 # 你需要知道什么
 
-正如我们之前所说，唯一的先决条件是你知道如何编码（一年的经验足够了），最好是用Python，并且你至少上过高中数学课程。现在记得多少并不重要；我们将根据需要进行复习。[可汗学院](https://www.khanacademy.org)有很多免费在线资源可以帮助你。
+正如我们之前所说，唯一的先决条件是你知道如何编码（一年的经验足够了），最好是用 Python，并且你至少上过高中数学课程。现在记得多少并不重要；我们将根据需要进行复习。[可汗学院](https://www.khanacademy.org)有很多免费在线资源可以帮助你。
 
 我们并不是说深度学习不需要高中水平以上的数学，但我们会教你（或指导你去学习）你在学习需要的主题时所需的基础知识。
 
 这本书从宏观角度开始，逐渐深入细节，所以你可能需要不时将其放在一边，去学习一些额外的主题（编码方式或一点数学）。这完全没问题，这也是我们希望这本书被阅读的方式。开始浏览它，并根据需要查阅额外资源。
 
-请注意，Kindle或其他电子阅读器用户可能需要双击图像才能查看完整大小的版本。
+请注意，Kindle 或其他电子阅读器用户可能需要双击图像才能查看完整大小的版本。
 
 # 在线资源
 
-本书中显示的所有代码示例都以Jupyter笔记本的形式在线提供（不用担心；你将在[第1章](ch01.xhtml#chapter_intro)中了解Jupyter是什么）。这是本书的交互版本，你可以实际执行代码并进行实验。有关更多信息，请查看[书籍网站](https://book.fast.ai)。该网站还包含有关设置我们提供的各种工具以及一些额外奖励章节的最新信息。
+本书中显示的所有代码示例都以 Jupyter 笔记本的形式在线提供（不用担心；你将在第一章中了解 Jupyter 是什么）。这是本书的交互版本，你可以实际执行代码并进行实验。有关更多信息，请查看[书籍网站](https://book.fast.ai)。该网站还包含有关设置我们提供的各种工具以及一些额外奖励章节的最新信息。
 
 # 你将学到什么
 
@@ -42,7 +42,7 @@
 
     +   协同过滤（例如电影推荐）
 
-+   如何将您的模型转化为Web应用程序
++   如何将您的模型转化为 Web 应用程序
 
 +   为什么以及深度学习模型如何工作，以及如何利用这些知识来提高模型的准确性、速度和可靠性
 
@@ -62,7 +62,7 @@
 
 +   随机初始化和迁移学习
 
-+   SGD，Momentum，Adam和其他优化器
++   SGD，Momentum，Adam 和其他优化器
 
 +   卷积
 
@@ -74,7 +74,7 @@
 
 +   权重衰减
 
-+   ResNet和DenseNet架构
++   ResNet 和 DenseNet 架构
 
 +   图像分类和回归
 
@@ -92,13 +92,13 @@
 
 如果您查看每章末尾，您会找到一个问卷调查。那是一个很好的地方，可以看到我们在每章中涵盖了什么，因为（我们希望！）到每章结束时，您将能够回答那里的所有问题。事实上，我们的一位审阅者（谢谢，Fred！）说他喜欢先阅读问卷调查，然后再阅读章节，这样他就知道要注意什么。
 
-# O’Reilly在线学习
+# O’Reilly 在线学习
 
 ###### 注意
 
-40多年来，[*O’Reilly Media*](http://oreilly.com)提供技术和商业培训、知识和见解，帮助公司取得成功。
+40 多年来，[*O’Reilly Media*](http://oreilly.com)提供技术和商业培训、知识和见解，帮助公司取得成功。
 
-我们独特的专家和创新者网络通过图书、文章和我们的在线学习平台分享他们的知识和专长。O’Reilly的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自O’Reilly和其他200多家出版商的大量文本和视频。有关更多信息，请访问[*http://oreilly.com*](http://oreilly.com)。
+我们独特的专家和创新者网络通过图书、文章和我们的在线学习平台分享他们的知识和专长。O’Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O’Reilly 和其他 200 多家出版商的大量文本和视频。有关更多信息，请访问[*http://oreilly.com*](http://oreilly.com)。
 
 # 如何联系我们
 
@@ -118,12 +118,12 @@
 
 我们为本书创建了一个网页，列出勘误、示例和任何额外信息。您可以在[*https://oreil.ly/deep-learning-for-coders*](https://oreil.ly/deep-learning-for-coders)访问此页面。
 
-发送电子邮件至[*bookquestions@oreilly.com*](mailto:bookquestions@oreilly.com)评论或询问有关本书的技术问题。
+发送电子邮件至*bookquestions@oreilly.com*评论或询问有关本书的技术问题。
 
 有关我们的图书和课程的新闻和信息，请访问[*http://oreilly.com*](http://oreilly.com)。
 
-在Facebook上找到我们：[*http://facebook.com/oreilly*](http://facebook.com/oreilly)
+在 Facebook 上找到我们：[*http://facebook.com/oreilly*](http://facebook.com/oreilly)
 
-在Twitter上关注我们：[*http://twitter.com/oreillymedia*](http://twitter.com/oreillymedia)
+在 Twitter 上关注我们：[*http://twitter.com/oreillymedia*](http://twitter.com/oreillymedia)
 
-在YouTube上观看我们：[*http://www.youtube.com/oreillymedia*](http://www.youtube.com/oreillymedia)
+在 YouTube 上观看我们：[*http://www.youtube.com/oreillymedia*](http://www.youtube.com/oreillymedia)

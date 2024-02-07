@@ -1,10 +1,10 @@
-# 第3章 引入张量
+# 第三章 引入张量
 
 > “哇！”
 > 
 > —基努·里维斯（《比尔和特德的冒险》）
 
-我们已经多次提到*张量*这个词，它是TensorFlow.js中的主要词汇，所以是时候了解这些结构是什么了。这一关键章节将让您亲身体验管理和加速数据的基本概念，这是教机器学习的核心。
+我们已经多次提到*张量*这个词，它是 TensorFlow.js 中的主要词汇，所以是时候了解这些结构是什么了。这一关键章节将让您亲身体验管理和加速数据的基本概念，这是教机器学习的核心。
 
 我们将：
 
@@ -20,27 +20,27 @@
 
 # 为什么要使用张量？
 
-我们生活在一个充满数据的世界中，我们都知道数据最终都是由1和0组成的。对于我们许多人来说，这似乎是一种魔法。你用手机拍照，就会生成一些复杂的二进制文件。然后，你上下滑动，我们的二进制文件在瞬间从JPG变成PNG。成千上万个未知的字节在微秒内生成和销毁，文件调整大小、重新格式化，对于你这些时髦的孩子，还有滤镜。你不能再被宠坏了。当你开始实际接触、感受和处理数据时，你必须告别无知的幸福。
+我们生活在一个充满数据的世界中，我们都知道数据最终都是由 1 和 0 组成的。对于我们许多人来说，这似乎是一种魔法。你用手机拍照，就会生成一些复杂的二进制文件。然后，你上下滑动，我们的二进制文件在瞬间从 JPG 变成 PNG。成千上万个未知的字节在微秒内生成和销毁，文件调整大小、重新格式化，对于你这些时髦的孩子，还有滤镜。你不能再被宠坏了。当你开始实际接触、感受和处理数据时，你必须告别无知的幸福。
 
-引用1998年电影《刀锋》中的一句台词：
+引用 1998 年电影《刀锋》中的一句台词：
 
 > “你最好醒醒。你生活的世界只是一层糖衣。下面还有另一个世界。”
 
-好吧，就像那样，但没有那么激烈。要训练一个人工智能，您需要确保您的数据是统一的，并且您需要理解和看到它。您不是在训练您的人工智能来统一解码PNG和JPG文件；您是在训练它对照片中实际内容的解码和模仿版本。
+好吧，就像那样，但没有那么激烈。要训练一个人工智能，您需要确保您的数据是统一的，并且您需要理解和看到它。您不是在训练您的人工智能来统一解码 PNG 和 JPG 文件；您是在训练它对照片中实际内容的解码和模仿版本。
 
-这意味着图像、音乐、统计数据以及您在TensorFlow.js模型中使用的任何其他内容都需要统一和优化的数据格式。理想情况下，我们的数据应该转换为数字容器，这些容器可以快速扩展，并直接与GPU或Web Assembly中的计算优化一起工作。您需要为我们的信息数据提供清晰简单的输入和输出。这些容器应该是无偏见的，可以容纳任何内容。欢迎来到张量的世界！
+这意味着图像、音乐、统计数据以及您在 TensorFlow.js 模型中使用的任何其他内容都需要统一和优化的数据格式。理想情况下，我们的数据应该转换为数字容器，这些容器可以快速扩展，并直接与 GPU 或 Web Assembly 中的计算优化一起工作。您需要为我们的信息数据提供清晰简单的输入和输出。这些容器应该是无偏见的，可以容纳任何内容。欢迎来到张量的世界！
 
 ###### 提示
 
-即使是最熟练的TensorFlow.js专家，理解张量的用途和属性也是一个持续的练习。虽然本章作为一个出色的介绍，但如果您在使用张量方面遇到困难，也不必感到懈怠。随着您的进步，本章可以作为一个参考。
+即使是最熟练的 TensorFlow.js 专家，理解张量的用途和属性也是一个持续的练习。虽然本章作为一个出色的介绍，但如果您在使用张量方面遇到困难，也不必感到懈怠。随着您的进步，本章可以作为一个参考。
 
 # 你好，张量
 
 张量是一种结构化类型的数据集合。将一切转换为数字对于一个框架来说并不新鲜，但意识到最终数据如何形成取决于您可能是一个新概念。
 
-正如[第1章](ch01.html#the_chapter_1)中提到的，所有数据都需要转化为数字，以便机器能够理解。张量是首选的信息格式，它们甚至为非数值类型提供了小的抽象。它们就像来自物理世界的电信号传输到我们人工智能大脑中一样。虽然没有规定数据应该如何结构化，但您需要保持一致以保持信号有序，这样我们的大脑就可以一遍又一遍地看到相同的模式。人们通常将他们的数据组织成组，比如数组和多维数组。
+正如第一章中提到的，所有数据都需要转化为数字，以便机器能够理解。张量是首选的信息格式，它们甚至为非数值类型提供了小的抽象。它们就像来自物理世界的电信号传输到我们人工智能大脑中一样。虽然没有规定数据应该如何结构化，但您需要保持一致以保持信号有序，这样我们的大脑就可以一遍又一遍地看到相同的模式。人们通常将他们的数据组织成组，比如数组和多维数组。
 
-但是张量是什么？从数学上定义，*张量*只是任意维度的一组结构化数值。最终，这将解决为计算准备好的数据的优化分组。这意味着，从数学角度来看，传统的JavaScript数组是一个张量，2D数组是一个张量，512D数组也是一个张量。TensorFlow.js张量是这些数学结构的具体体现，它们保存着加速信号，将数据输入和输出到机器学习模型中。
+但是张量是什么？从数学上定义，*张量*只是任意维度的一组结构化数值。最终，这将解决为计算准备好的数据的优化分组。这意味着，从数学角度来看，传统的 JavaScript 数组是一个张量，2D 数组是一个张量，512D 数组也是一个张量。TensorFlow.js 张量是这些数学结构的具体体现，它们保存着加速信号，将数据输入和输出到机器学习模型中。
 
 如果您熟悉 JavaScript 中的多维数组，您应该对张量的语法感到非常熟悉。当您向每个数组添加一个新维度时，通常会说您正在增加张量的 *秩*。
 
@@ -52,19 +52,19 @@
 
 您可以阅读或从头开始编写代码，甚至在基于浏览器的 `/tfjs` 解决方案中运行这些基础示例，该解决方案可在书籍源代码中找到。为简单起见，我们将避免重复设置这些示例所需的 `<script>` 或 `import` 标签，并简单地编写共享代码。
 
-要创建您的第一个张量，我们将保持简单，您将使用一个一维 JavaScript 数组构建它（[示例 3-1](#create_tensor_example)）。数组的语法和结构被应用到张量中。
+要创建您的第一个张量，我们将保持简单，您将使用一个一维 JavaScript 数组构建它（示例 3-1）。数组的语法和结构被应用到张量中。
 
 ##### 示例 3-1。创建您的第一个张量
 
 ```py
-// creating our first tensor constdataArray=[8,6,7,5,3,0,9]constfirst=tf.tensor(dataArray)![1](assets/1.png)// does the same thing constfirst_again=tf.tensor1d(dataArray)![2](assets/2.png)
+// creating our first tensor constdataArray=[8,6,7,5,3,0,9]constfirst=tf.tensor(dataArray)![1](img/1.png)// does the same thing constfirst_again=tf.tensor1d(dataArray)![2](img/2.png)
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO1-1)
+![1](img/#co_introducing_tensors_CO1-1)
 
 `tf.tensor` 如果传入一个一维数组，将创建一个一维张量。如果传入一个二维数组，将创建一个二维张量。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO1-2)
+![2](img/#co_introducing_tensors_CO1-2)
 
 `tf.tensor1d` 如果传入一个一维数组，将创建一个一维张量。如果传入一个二维数组，将报错。
 
@@ -74,31 +74,31 @@
 
 在本书中，我们将主要使用通用的 `tf.tensor`，但如果您发现自己深入进行复杂的项目，不要忘记您可以通过明确定义张量的期望维度来避免收到意外维度带来的困扰。
 
-额外说明，虽然 [示例 3-1](#create_tensor_example) 中的张量是一个自然数数组，但用于存储数字的默认数据类型是 Float32。浮点数（即带有小数点的数字，例如 2.71828）非常动态和令人印象深刻。它们通常可以处理您需要的大多数数字，并准备好接受之间的值。与 JavaScript 数组不同，张量的数据类型必须是同质的（全部相同类型）。这些类型只能是 `Float32`、`Int32`、布尔型、`complex64` 或字符串，不能混合使用。
+额外说明，虽然 示例 3-1 中的张量是一个自然数数组，但用于存储数字的默认数据类型是 Float32。浮点数（即带有小数点的数字，例如 2.71828）非常动态和令人印象深刻。它们通常可以处理您需要的大多数数字，并准备好接受之间的值。与 JavaScript 数组不同，张量的数据类型必须是同质的（全部相同类型）。这些类型只能是 `Float32`、`Int32`、布尔型、`complex64` 或字符串，不能混合使用。
 
 如果您希望强制创建的张量具有特定类型，请随时利用 `tf.tensor` 函数的第三个参数，该参数明确定义了张量的类型结构。
 
 ```py
-// creating a 'float32' tensor (the default) constfirst=tf.tensor([1.1,2.2,3.3],null,'float32')![1](assets/1.png)// an 'int32' tensor constfirst_again=tf.tensor([1,2,3],null,'int32')![2](assets/2.png)// inferred type for boolean constthe_truth=tf.tensor([true,false,false])![3](assets/3.png)// Guess what this does constguess=tf.tensor([true,false,false],null,'int32')![4](assets/4.png)// What about this? constguess_again=tf.tensor([1,3.141592654,false])![5](assets/5.png)
+// creating a 'float32' tensor (the default) constfirst=tf.tensor([1.1,2.2,3.3],null,'float32')![1](img/1.png)// an 'int32' tensor constfirst_again=tf.tensor([1,2,3],null,'int32')![2](img/2.png)// inferred type for boolean constthe_truth=tf.tensor([true,false,false])![3](img/3.png)// Guess what this does constguess=tf.tensor([true,false,false],null,'int32')![4](img/4.png)// What about this? constguess_again=tf.tensor([1,3.141592654,false])![5](img/5.png)
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO2-1)
+![1](img/#co_introducing_tensors_CO2-1)
 
 这个张量被创建为 `Float32` 张量。在这种情况下，第三个参数是多余的。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO2-2)
+![2](img/#co_introducing_tensors_CO2-2)
 
 生成的张量是 Int32 类型的，如果没有第三个参数，它将是一个 `Float32` 类型的。
 
-[![3](assets/3.png)](#co_introducing_tensors_CO2-3)
+![3](img/#co_introducing_tensors_CO2-3)
 
 生成的张量是一个布尔型张量。
 
-[![4](assets/4.png)](#co_introducing_tensors_CO2-4)
+![4](img/#co_introducing_tensors_CO2-4)
 
 生成的张量是一个 Int32 张量，布尔值被转换为 `0` 表示 false，`1` 表示 true。因此，变量 guess 包含数据 `[1, 0, 0]`。
 
-[![5](assets/5.png)](#co_introducing_tensors_CO2-5)
+![5](img/#co_introducing_tensors_CO2-5)
 
 您可能认为这个疯狂的数组会报错，但输入值中的每个值都会转换为相应的 `Float32`，生成的张量数据为 `[1, 3.1415927, 0]`。
 
@@ -107,48 +107,48 @@
 让我们应用我们所学到的知识：
 
 ```py
-constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](assets/1.png)// Whoopsie! try{constnope=tf.tensor1d([[1],[2]])![2](assets/2.png)}catch(e){console.log("That's a negative Ghost Rider")}console.log("Rank:",second.rank)![3](assets/3.png)console.log("Size:",second.size)![4](assets/4.png)console.log("Data Type:",second.dtype)![5](assets/5.png)
+constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](img/1.png)// Whoopsie! try{constnope=tf.tensor1d([[1],[2]])![2](img/2.png)}catch(e){console.log("That's a negative Ghost Rider")}console.log("Rank:",second.rank)![3](img/3.png)console.log("Size:",second.size)![4](img/4.png)console.log("Data Type:",second.dtype)![5](img/5.png)
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO3-1)
+![1](img/#co_introducing_tensors_CO3-1)
 
 这将创建一个成功的张量。您应该知道数据类型，维度和大小。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO3-2)
+![2](img/#co_introducing_tensors_CO3-2)
 
 由于您正在使用`tensor1d`创建一个秩为二的张量，这将导致`catch`运行并记录一条消息。
 
-[![3](assets/3.png)](#co_introducing_tensors_CO3-3)
+![3](img/#co_introducing_tensors_CO3-3)
 
 简单数组的秩为一，因此它将打印`1`。
 
-[![4](assets/4.png)](#co_introducing_tensors_CO3-4)
+![4](img/#co_introducing_tensors_CO3-4)
 
 大小是数组的长度，将打印`7`。
 
-[![5](assets/5.png)](#co_introducing_tensors_CO3-5)
+![5](img/#co_introducing_tensors_CO3-5)
 
 从数字数组的张量数据类型将打印`float32`。
 
-祝贺您创建了您的第一批张量！可以肯定地说，掌握张量是驯服TensorFlow.js数据的核心。这些结构化的值桶是将数据输入和输出机器学习的基础。
+祝贺您创建了您的第一批张量！可以肯定地说，掌握张量是驯服 TensorFlow.js 数据的核心。这些结构化的值桶是将数据输入和输出机器学习的基础。
 
 ## 数据练习的张量
 
-假设您想制作一个AI来玩井字游戏（对于我在池塘对岸的朋友来说，这是零和叉）。与数据一样，现在是时候喝杯咖啡或茶，思考将真实世界数据转换为张量数据的正确方法了。
+假设您想制作一个 AI 来玩井字游戏（对于我在池塘对岸的朋友来说，这是零和叉）。与数据一样，现在是时候喝杯咖啡或茶，思考将真实世界数据转换为张量数据的正确方法了。
 
-您可以存储游戏图像，教程字符串，或者只是游戏中的X和O。图像和教程可能会令人印象深刻，但现在，让我们只考虑存储游戏板状态的想法。只有九个可能的方框可供玩耍，因此九个值的简单数组应该代表棋盘的任何给定状态。
+您可以存储游戏图像，教程字符串，或者只是游戏中的 X 和 O。图像和教程可能会令人印象深刻，但现在，让我们只考虑存储游戏板状态的想法。只有九个可能的方框可供玩耍，因此九个值的简单数组应该代表棋盘的任何给定状态。
 
-值应该从左到右，从上到下读取吗？只要您保持一致，很少有关系。所有编码都是虚构的。但是，请记住张量解析为数字！这意味着虽然您可以存储字符串“X”和“O”，但它们最终还是会变成数字。让我们通过将它们映射到某种有意义的数字值来存储我们的X和O。这是否意味着您只需将其中一个分配为0，另一个分配为42？我相信您可以找到一个适当反映游戏状态的策略。
+值应该从左到右，从上到下读取吗？只要您保持一致，很少有关系。所有编码都是虚构的。但是，请记住张量解析为数字！这意味着虽然您可以存储字符串“X”和“O”，但它们最终还是会变成数字。让我们通过将它们映射到某种有意义的数字值来存储我们的 X 和 O。这是否意味着您只需将其中一个分配为 0，另一个分配为 42？我相信您可以找到一个适当反映游戏状态的策略。
 
-让我们评估一个活动游戏的状态作为练习。花点时间回顾一下正在进行中的比赛的网格，如[图3-1](#ttt_example)所示。如何将其转换为张量和数字？
+让我们评估一个活动游戏的状态作为练习。花点时间回顾一下正在进行中的比赛的网格，如图 3-1 所示。如何将其转换为张量和数字？
 
-![TicTacToe Game](assets/ltjs_0301.png)
+![TicTacToe Game](img/ltjs_0301.png)
 
-###### 图3-1。带有数据的游戏
+###### 图 3-1。带有数据的游戏
 
-也许这里显示的棋盘可以被读取并表示为一维张量。您可以从左到右，从上到下读取值。至于数字，让我们选择-1、0和1来表示任何一个方格的三个可能值。[表3-1](#value_number_table)显示了每个可能值的查找。
+也许这里显示的棋盘可以被读取并表示为一维张量。您可以从左到右，从上到下读取值。至于数字，让我们选择-1、0 和 1 来表示任何一个方格的三个可能值。表 3-1 显示了每个可能值的查找。
 
-表3-1。值到数字表
+表 3-1。值到数字表
 
 | 棋盘值 | 张量值 |
 | --- | --- |
@@ -156,19 +156,19 @@ constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](assets/1.png)// Whoopsie! try{const
 | O | -1 |
 | 空 | 0 |
 
-这将创建一个张量，如下所示：`[1, 0, 0, 0, -1, 0, 1, 0, 0]`。或者，它将创建一个2D张量，如下所示：`[[1, 0, 0],[0, -1, 0],[1, 0, 0]]`。
+这将创建一个张量，如下所示：`[1, 0, 0, 0, -1, 0, 1, 0, 0]`。或者，它将创建一个 2D 张量，如下所示：`[[1, 0, 0],[0, -1, 0],[1, 0, 0]]`。
 
 既然您有了一个目标，让我们编写一些代码将棋盘转换为张量。我们甚至将探索张量创建的附加参数。
 
 ```py
-// This code creates a 1D `Float32` tensor consta=tf.tensor([1,0,0,0,-1,0,1,0,0])// This code creates a 2D `Float32` tensor constb=tf.tensor([[1,0,0],[0,-1,0],[1,0,0]])// This does the same as the above but with a 1D input // array that is converted into a 2D `Float32` tensor constc=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3])![1](assets/1.png)// This code turns the 1D input array into a 2D Int32 tensor constd=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3],'int32')![2](assets/2.png)
+// This code creates a 1D `Float32` tensor consta=tf.tensor([1,0,0,0,-1,0,1,0,0])// This code creates a 2D `Float32` tensor constb=tf.tensor([[1,0,0],[0,-1,0],[1,0,0]])// This does the same as the above but with a 1D input // array that is converted into a 2D `Float32` tensor constc=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3])![1](img/1.png)// This code turns the 1D input array into a 2D Int32 tensor constd=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3],'int32')![2](img/2.png)
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO4-1)
+![1](img/#co_introducing_tensors_CO4-1)
 
-张量的第二个参数可以标识输入数据的期望形状。在这里，通过指定希望数据为3 x 3的秩二结构，将1D数组转换为2D张量。
+张量的第二个参数可以标识输入数据的期望形状。在这里，通过指定希望数据为 3 x 3 的秩二结构，将 1D 数组转换为 2D 张量。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO4-2)
+![2](img/#co_introducing_tensors_CO4-2)
 
 张量的第三个参数标识您想要在推断的数据类型上使用的数据类型。由于您正在存储整数，因此可以指定类型`int32`。但是，默认的`float32`类型的范围非常大，可以轻松处理我们的数字。
 
@@ -178,43 +178,43 @@ constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](assets/1.png)// Whoopsie! try{const
 
 # 巡回张量
 
-随着本书的进展，我们将深入研究张量，因此现在是时候花点时间讨论它们为什么如此重要了。如果不了解我们正在利用的计算的规模，很难理解离开熟悉的JavaScript变量和引擎去使用老旧的数学的好处。
+随着本书的进展，我们将深入研究张量，因此现在是时候花点时间讨论它们为什么如此重要了。如果不了解我们正在利用的计算的规模，很难理解离开熟悉的 JavaScript 变量和引擎去使用老旧的数学的好处。
 
 ## 张量提供速度
 
-现在你知道你可以制作张量并将数据表示为张量，那么进行这种转换有什么好处呢？我们已经提到，使用张量进行计算是由TensorFlow.js框架优化的。当你将JavaScript数字数组转换为张量时，你可以以极快的速度执行矩阵运算，但这到底意味着什么呢？
+现在你知道你可以制作张量并将数据表示为张量，那么进行这种转换有什么好处呢？我们已经提到，使用张量进行计算是由 TensorFlow.js 框架优化的。当你将 JavaScript 数字数组转换为张量时，你可以以极快的速度执行矩阵运算，但这到底意味着什么呢？
 
 计算机在进行单个计算方面表现出色，并且进行大量计算有其好处。张量被设计用于大量并行计算。如果你曾经手动执行过矩阵和向量计算，你就会开始意识到加速计算的好处。
 
 ## 张量提供直接访问
 
-即使没有机器学习，你仍然可以使用张量制作3D图形、内容推荐系统以及美丽的[迭代函数系统（IFSs）](https://oreil.ly/jjnvk)，比如[图3-2](#sierpinski)中所示的谢尔宾斯基三角形。
+即使没有机器学习，你仍然可以使用张量制作 3D 图形、内容推荐系统以及美丽的[迭代函数系统（IFSs）](https://oreil.ly/jjnvk)，比如图 3-2 中所示的谢尔宾斯基三角形。
 
-![谢尔宾斯基三角形](assets/ltjs_0302.png)
+![谢尔宾斯基三角形](img/ltjs_0302.png)
 
-###### 图3-2. IFS示例：谢尔宾斯基三角形
+###### 图 3-2. IFS 示例：谢尔宾斯基三角形
 
-有很多关于图像、声音、3D模型、视频等的库。它们都有一个共同点。尽管存在各种格式，但这些库会将数据以通用格式提供给你。张量就像那种原始、展开的数据格式，通过这种访问，你可以构建、读取或预测任何你想要的东西。
+有很多关于图像、声音、3D 模型、视频等的库。它们都有一个共同点。尽管存在各种格式，但这些库会将数据以通用格式提供给你。张量就像那种原始、展开的数据格式，通过这种访问，你可以构建、读取或预测任何你想要的东西。
 
-你甚至可以使用这些高级结构来修改图像数据（你将在[第4章](ch04.html#the_chapter_4)开始这样做）。在掌握了基础知识后，你将开始更多地享受张量函数。
+你甚至可以使用这些高级结构来修改图像数据（你将在第四章开始这样做）。在掌握了基础知识后，你将开始更多地享受张量函数。
 
 ## 张量批处理数据
 
 在数据领域，你可能会发现自己在循环处理大量数据并担心文本编辑器崩溃。张量被优化用于高速批处理。本章末尾的小项目只有四个用户，以保持简单，但任何生产环境都需要准备好处理数十万的数据。
 
-当你要求经过训练的模型在毫秒内执行类似人类操作的计算时，你将意识到张量的大部分好处。你将在[第5章](ch05.html#the_chapter_5)中早早看到这些例子。我们已经确定张量是令人印象深刻的结构，为JavaScript带来了大量加速和数学能力，因此你通常会在批处理中使用这种有益的结构。
+当你要求经过训练的模型在毫秒内执行类似人类操作的计算时，你将意识到张量的大部分好处。你将在第五章中早早看到这些例子。我们已经确定张量是令人印象深刻的结构，为 JavaScript 带来了大量加速和数学能力，因此你通常会在批处理中使用这种有益的结构。
 
 # 内存中的张量
 
-张量速度是有代价的。通常，当我们在JavaScript中完成一个变量时，当所有对该变量的引用完成时，内存会被干净地移除。这被称为*自动垃圾检测和收集*（AGDC），大多数JavaScript开发人员在不理解或关心这是如何工作的情况下就会发生。然而，你的张量并没有得到同样类型的自动关照。它们会在使用它们的变量被收集后继续存在。
+张量速度是有代价的。通常，当我们在 JavaScript 中完成一个变量时，当所有对该变量的引用完成时，内存会被干净地移除。这被称为*自动垃圾检测和收集*（AGDC），大多数 JavaScript 开发人员在不理解或关心这是如何工作的情况下就会发生。然而，你的张量并没有得到同样类型的自动关照。它们会在使用它们的变量被收集后继续存在。
 
 ## 释放张量
 
-由于张量在垃圾回收中幸存，它们的行为与标准JavaScript不同，必须手动进行核算和释放。即使在JavaScript中一个变量被垃圾回收，与之关联的张量仍然会在内存中被孤立。你可以使用`tf.memory()`来访问当前计数和大小。这个函数返回一个报告活动张量的对象。
+由于张量在垃圾回收中幸存，它们的行为与标准 JavaScript 不同，必须手动进行核算和释放。即使在 JavaScript 中一个变量被垃圾回收，与之关联的张量仍然会在内存中被孤立。你可以使用`tf.memory()`来访问当前计数和大小。这个函数返回一个报告活动张量的对象。
 
-[示例3-2](#source_memory_leak)中的代码展示了未收集的张量内存。
+示例 3-2 中的代码展示了未收集的张量内存。
 
-##### 示例3-2. 内存中遗留的张量
+##### 示例 3-2. 内存中遗留的张量
 
 ```py
 /* Check the number of tensors in memory
@@ -237,7 +237,7 @@ console.log(tf.memory().numTensors)
 console.log(tf.memory().numBytes)
 ```
 
-[示例3-2](#source_memory_leak)中的代码将在日志中打印以下内容：
+示例 3-2 中的代码将在日志中打印以下内容：
 
 ```py
 0
@@ -246,18 +246,18 @@ console.log(tf.memory().numBytes)
 12
 ```
 
-由于您已经知道张量用于处理大量加速数据，将这些庞大的块留在内存中是一个问题。通过一个小循环，您可能会泄漏整个计算机可用的RAM和GPU。
+由于您已经知道张量用于处理大量加速数据，将这些庞大的块留在内存中是一个问题。通过一个小循环，您可能会泄漏整个计算机可用的 RAM 和 GPU。
 
 幸运的是，所有张量和模型都有一个 `.dispose()` 方法，可以从内存中清除张量。当您在张量上调用 `.dispose()` 时，`numTensors` 将减少您刚刚释放的张量数量。
 
-这意味着您必须以两种方式管理张量，产生四种可能的状态。[表3-2](#tensor_var_table)显示了当JavaScript变量和TensorFlow.js张量被创建和销毁时发生的所有组合。
+这意味着您必须以两种方式管理张量，产生四种可能的状态。表 3-2 显示了当 JavaScript 变量和 TensorFlow.js 张量被创建和销毁时发生的所有组合。
 
-表3-2. 张量状态
+表 3-2. 张量状态
 
 |  | 张量存活 | 张量已销毁 |
 | --- | --- | --- |
-| **JavaScript变量存活** | 此变量存活；您可以读取张量。 | 如果尝试使用此张量，将引发错误。 |
-| **JavaScript变量没有引用** | 这是一个内存泄漏。 | 这是一个正确销毁的张量。 |
+| **JavaScript 变量存活** | 此变量存活；您可以读取张量。 | 如果尝试使用此张量，将引发错误。 |
+| **JavaScript 变量没有引用** | 这是一个内存泄漏。 | 这是一个正确销毁的张量。 |
 
 简而言之，保持您的变量和张量处于活动状态以便访问它们，完成后处理张量并不要尝试访问它。
 
@@ -268,28 +268,28 @@ console.log(tf.memory().numBytes)
 您将很快习惯清理张量。确保学习以下代码，它将演示 `tidy()` 和 `keep()` 的使用：
 
 ```py
-// Start at zero tensors console.log('start',tf.memory().numTensors)letkeeper,chaser,seeker,beater// Now we'll create tensors inside a tidy tf.tidy(()=>{![1](assets/1.png)keeper=tf.tensor([1,2,3])chaser=tf.tensor([1,2,3])seeker=tf.tensor([1,2,3])beater=tf.tensor([1,2,3])// Now we're at four tensors in memory ![2](assets/2.png)console.log('inside tidy',tf.memory().numTensors)// protect a tensor
+// Start at zero tensors console.log('start',tf.memory().numTensors)letkeeper,chaser,seeker,beater// Now we'll create tensors inside a tidy tf.tidy(()=>{![1](img/1.png)keeper=tf.tensor([1,2,3])chaser=tf.tensor([1,2,3])seeker=tf.tensor([1,2,3])beater=tf.tensor([1,2,3])// Now we're at four tensors in memory ![2](img/2.png)console.log('inside tidy',tf.memory().numTensors)// protect a tensor
 tf.keep(keeper)// returned tensors survive
-returnchaser})// Down to two ![3](assets/3.png)console.log('after tidy',tf.memory().numTensors)keeper.dispose()![4](assets/4.png)chaser.dispose()![5](assets/5.png)// Back to zero console.log('end',tf.memory().numTensors)
+returnchaser})// Down to two ![3](img/3.png)console.log('after tidy',tf.memory().numTensors)keeper.dispose()![4](img/4.png)chaser.dispose()![5](img/5.png)// Back to zero console.log('end',tf.memory().numTensors)
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO6-1)
+![1](img/#co_introducing_tensors_CO6-1)
 
 `tidy` 方法接受一个同步函数，并监视在此封闭中创建的张量。您不能在此处使用异步函数或承诺。如果您需要任何异步操作，您将不得不显式调用 `.dispose`。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO6-2)
+![2](img/#co_introducing_tensors_CO6-2)
 
 所有四个张量都已有效加载到内存中。
 
-[![3](assets/3.png)](#co_introducing_tensors_CO6-3)
+![3](img/#co_introducing_tensors_CO6-3)
 
 即使您没有显式调用 `dispose`，`tidy` 已经正确销毁了创建的两个张量（那两个没有被保留或返回的张量）。如果您现在尝试访问它们，将会收到错误信息。
 
-[![4](assets/4.png)](#co_introducing_tensors_CO6-4)
+![4](img/#co_introducing_tensors_CO6-4)
 
 显式销毁您在 `tidy` 中使用 `tf.keep` 保存的张量。
 
-[![5](assets/5.png)](#co_introducing_tensors_CO6-5)
+![5](img/#co_introducing_tensors_CO6-5)
 
 显式销毁您从 `tidy` 返回的张量。
 
@@ -297,9 +297,9 @@ returnchaser})// Down to two ![3](assets/3.png)console.log('after tidy',tf.memor
 
 # 张量回家
 
-值得注意的是，您甚至可以在适当的情况下混合张量和JavaScript。[示例3-3](#mix_tensor_code)中的代码创建了一个张量的普通JavaScript数组。
+值得注意的是，您甚至可以在适当的情况下混合张量和 JavaScript。示例 3-3 中的代码创建了一个张量的普通 JavaScript 数组。
 
-##### 示例3-3. 混合JS和张量
+##### 示例 3-3. 混合 JS 和张量
 
 ```py
 const tensorArray = []
@@ -308,27 +308,27 @@ for (let i = 0; i < 10; i++) {
 }
 ```
 
-[示例3-3](#mix_tensor_code)的结果是一个包含10个张量的数组，值从`[0,0,0]`到`[9,9,9]`。与创建一个用于保存这些值的2D张量不同，您可以通过在数组中检索普通的JavaScript索引来轻松访问特定的张量。因此，如果您想要 `[4,4,4]`，您可以使用 `tensorArray[4]` 获取它。然后，您可以使用简单的 `tf.dispose(tensorArray)` 从内存中销毁整个集合。
+示例 3-3 的结果是一个包含 10 个张量的数组，值从`[0,0,0]`到`[9,9,9]`。与创建一个用于保存这些值的 2D 张量不同，您可以通过在数组中检索普通的 JavaScript 索引来轻松访问特定的张量。因此，如果您想要 `[4,4,4]`，您可以使用 `tensorArray[4]` 获取它。然后，您可以使用简单的 `tf.dispose(tensorArray)` 从内存中销毁整个集合。
 
-尘埃落定后，我们学会了如何创建和移除张量，但我们遗漏了一个关键部分，即张量将它们的数据返回给JavaScript。张量非常适用于大型计算和速度，但JavaScript也有其优势。使用JavaScript，您可以迭代，获取特定索引，或执行一系列NPM库计算，这在张量形式下要复杂得多。
+尘埃落定后，我们学会了如何创建和移除张量，但我们遗漏了一个关键部分，即张量将它们的数据返回给 JavaScript。张量非常适用于大型计算和速度，但 JavaScript 也有其优势。使用 JavaScript，您可以迭代，获取特定索引，或执行一系列 NPM 库计算，这在张量形式下要复杂得多。
 
-在使用张量进行计算并获得好处之后，可以肯定地说，您始终需要将这些数据的结果返回到JavaScript中。
+在使用张量进行计算并获得好处之后，可以肯定地说，您始终需要将这些数据的结果返回到 JavaScript 中。
 
 ## 检索张量数据
 
-如果您尝试将张量打印到控制台，您可以看到对象，但看不到底层数据值。要打印张量的数据，您可以调用张量的`.print()`方法，但这将直接将值发送到`console.log`而不是一个变量。查看张量的值对开发人员是有帮助的，但我们最终需要将这些值带入JavaScript变量中以便使用。
+如果您尝试将张量打印到控制台，您可以看到对象，但看不到底层数据值。要打印张量的数据，您可以调用张量的`.print()`方法，但这将直接将值发送到`console.log`而不是一个变量。查看张量的值对开发人员是有帮助的，但我们最终需要将这些值带入 JavaScript 变量中以便使用。
 
-有两种方法可以检索张量。每种方法都有一个同步方法和一个异步方法。首先，如果您希望数据以相同的多维数组结构传递，您可以使用`.array()`获得异步结果，或者简单地使用`.arraySync()`获得同步值。其次，如果您希望保持极高精度的值，并将其展平为1D类型化数组，您可以使用同步的`dataSync()`和异步方法`data()`。
+有两种方法可以检索张量。每种方法都有一个同步方法和一个异步方法。首先，如果您希望数据以相同的多维数组结构传递，您可以使用`.array()`获得异步结果，或者简单地使用`.arraySync()`获得同步值。其次，如果您希望保持极高精度的值，并将其展平为 1D 类型化数组，您可以使用同步的`dataSync()`和异步方法`data()`。
 
 以下代码探讨了使用先前描述的方法转换、打印和解析张量并进行张量操作的过程：
 
 ```py
-constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.tensor([[1,2,3],[4,5,6]])// this will show the structure but not the data console.log(snap)![1](assets/1.png)// this will print the data but not the tensor structure crackle.print()![2](assets/2.png)// Now let's go back to JavaScript console.log('Welcome Back Array!',pop.arraySync())![3](assets/3.png)console.log('Welcome Back Typed!',pop.dataSync())![4](assets/4.png)// clean up our remaining tensors! tf.dispose([snap,crackle,pop])
+constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.tensor([[1,2,3],[4,5,6]])// this will show the structure but not the data console.log(snap)![1](img/1.png)// this will print the data but not the tensor structure crackle.print()![2](img/2.png)// Now let's go back to JavaScript console.log('Welcome Back Array!',pop.arraySync())![3](img/3.png)console.log('Welcome Back Typed!',pop.dataSync())![4](img/4.png)// clean up our remaining tensors! tf.dispose([snap,crackle,pop])
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO7-1)
+![1](img/#co_introducing_tensors_CO7-1)
 
-这个日志显示了保存张量及其相关属性的JavaScript结构。您可以看到形状，`isDisposedInternal`为false，因为它尚未被处理，但这只是一个指向数据的指针，而不是包含数据。这个日志打印如下：
+这个日志显示了保存张量及其相关属性的 JavaScript 结构。您可以看到形状，`isDisposedInternal`为 false，因为它尚未被处理，但这只是一个指向数据的指针，而不是包含数据。这个日志打印如下：
 
 ```py
 {
@@ -347,7 +347,7 @@ constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.ten
 }
 ```
 
-[![2](assets/2.png)](#co_introducing_tensors_CO7-2)
+![2](img/#co_introducing_tensors_CO7-2)
 
 在张量上调用`.print`会直接将内部值的实际打印输出到控制台。这个日志打印如下：
 
@@ -356,9 +356,9 @@ Tensor
     [3.1415927]
 ```
 
-[![3](assets/3.png)](#co_introducing_tensors_CO7-3)
+![3](img/#co_introducing_tensors_CO7-3)
 
-`.arraySync`将2D张量的值作为2D JavaScript数组返回给我们。这个日志打印如下：
+`.arraySync`将 2D 张量的值作为 2D JavaScript 数组返回给我们。这个日志打印如下：
 
 ```py
 Welcome Back Array!
@@ -376,9 +376,9 @@ Welcome Back Array!
 ]
 ```
 
-[![4](assets/4.png)](#co_introducing_tensors_CO7-4)
+![4](img/#co_introducing_tensors_CO7-4)
 
-`.dataSync`给我们提供了2D张量的值作为一个1D [Float32Array](https://oreil.ly/ozV2H)对象，有效地将数据展平。记录一个类型化数组看起来像一个具有索引作为属性的对象。这个日志打印：
+`.dataSync`给我们提供了 2D 张量的值作为一个 1D [Float32Array](https://oreil.ly/ozV2H)对象，有效地将数据展平。记录一个类型化数组看起来像一个具有索引作为属性的对象。这个日志打印：
 
 ```py
 Welcome Back Typed!
@@ -392,7 +392,7 @@ Welcome Back Typed!
 }
 ```
 
-现在您知道如何管理张量了。您可以将任何JavaScript数据带入TensorFlow.js张量进行操作，然后在完成后将其清晰地带出来。
+现在您知道如何管理张量了。您可以将任何 JavaScript 数据带入 TensorFlow.js 张量进行操作，然后在完成后将其清晰地带出来。
 
 # 张量操作
 
@@ -400,13 +400,13 @@ Welcome Back Typed!
 
 ## 张量和数学
 
-假设您必须将一个数组的内容乘以另一个数组。在JavaScript中，您必须编写一些迭代代码。此外，如果您熟悉矩阵乘法，您会知道该代码并不像您最初想的那样简单。任何级别的开发人员都不应该为张量操作解决线性代数。
+假设您必须将一个数组的内容乘以另一个数组。在 JavaScript 中，您必须编写一些迭代代码。此外，如果您熟悉矩阵乘法，您会知道该代码并不像您最初想的那样简单。任何级别的开发人员都不应该为张量操作解决线性代数。
 
 还记得如何正确地相乘矩阵吗？我也忘了。
 
 <math><mrow><mfenced close="]" open="["><mtable><mtr><mtd><mn>91</mn></mtd> <mtd><mn>82</mn></mtd> <mtd><mn>13</mn></mtd></mtr> <mtr><mtd><mn>15</mn></mtd> <mtd><mn>23</mn></mtd> <mtd><mn>62</mn></m></mtr> <mtr><mtd><mn>25</mn></mtd> <mtd><mn>66</mn></m></mtd> <mtd><mn>63</mn></m></mtr></mtable></mfenced> <mi>X</mi> <mfenced close="]" open="["><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>23</mn></mtd> <mtd><mn>83</mn></mtd></mtr> <mtr><mtd><mn>33</mn></mtd> <mtd><mn>12</m></mtd> <mtd><mn>5</mn></m></mtr> <mtr><mtd><mn>7</mn></mtd> <mtd><mn>23</mn></mtd> <mtd><mn>61</mn></m></mtr></mtable></mfenced> <mo>=</mo> <mo>?</mo></mrow></math>
 
-将每个数字乘以相应位置并不像你们中的一些人可能想的那样简单；因为涉及到乘法和加法。计算左上角的值将是 91 x 1 + 82 x 33 + 13 x 7 = 2888。现在对新矩阵的每个索引重复八次这样的计算。计算这种简单乘法的JavaScript并不完全琐碎。
+将每个数字乘以相应位置并不像你们中的一些人可能想的那样简单；因为涉及到乘法和加法。计算左上角的值将是 91 x 1 + 82 x 33 + 13 x 7 = 2888。现在对新矩阵的每个索引重复八次这样的计算。计算这种简单乘法的 JavaScript 并不完全琐碎。
 
 张量具有数学上的好处。我不必编写任何代码来执行以前的计算。虽然编写自定义代码不会很复杂，但会是非优化和冗余的。有用的、可扩展的数学运算是内置的。TensorFlow.js 使线性代数对于张量等结构变得易于访问和优化。我可以用以下代码快速得到以前矩阵的答案：
 
@@ -426,7 +426,7 @@ Welcome Back Typed!
   tf.matMul(mat1, mat2).print()
 ```
 
-在[第二章](ch02.html#the_chapter_2)中，毒性检测器下载了用于每个分类计算的大量数字。在毫秒内处理这些大量计算的行为是张量背后的力量。虽然我们将继续扩展张量计算的好处，但 TensorFlow.js 的整个原因是这样一个大量计算的复杂性是框架的领域，而不是程序员的领域。
+在第二章中，毒性检测器下载了用于每个分类计算的大量数字。在毫秒内处理这些大量计算的行为是张量背后的力量。虽然我们将继续扩展张量计算的好处，但 TensorFlow.js 的整个原因是这样一个大量计算的复杂性是框架的领域，而不是程序员的领域。
 
 ## 推荐张量
 
@@ -453,32 +453,32 @@ Welcome Back Typed!
 以下是数据：
 
 ```py
-constusers=['Gant','Todd','Jed','Justin']![1](assets/1.png)constbands=[![2](assets/2.png)'Nirvana','Nine Inch Nails','Backstreet Boys','N Sync','Night Club','Apashe','STP']constfeatures=[![3](assets/3.png)'Grunge','Rock','Industrial','Boy Band','Dance','Techno']// User votes ![4](assets/4.png)constuser_votes=tf.tensor([[10,9,1,1,8,7,8],[6,8,2,2,0,10,0],[0,2,10,9,3,7,0],[7,4,2,3,6,5,5]])// Music Styles ![5](assets/5.png)constband_feats=tf.tensor([[1,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,1,0,0],[0,0,1,0,0,1],[0,0,1,0,0,1],[1,1,0,0,0,0]])
+constusers=['Gant','Todd','Jed','Justin']![1](img/1.png)constbands=![2'Nirvana','Nine Inch Nails','Backstreet Boys','N Sync','Night Club','Apashe','STP']constfeatures=![3'Grunge','Rock','Industrial','Boy Band','Dance','Techno']// User votes ![4](img/4.png)constuser_votes=tf.tensor([[10,9,1,1,8,7,8],[6,8,2,2,0,10,0],[0,2,10,9,3,7,0],[7,4,2,3,6,5,5]])// Music Styles ![5](img/5.png)constband_feats=tf.tensor([[1,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,1,0,0],[0,0,1,0,0,1],[0,0,1,0,0,1],[1,1,0,0,0,0]])
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO8-1)
+![1](img/#co_introducing_tensors_CO8-1)
 
 这四个名称标签只是简单地存储在一个普通的 JavaScript 数组中。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO8-2)
+![2](img/#co_introducing_tensors_CO8-2)
 
 你已经要求我们的用户对七支乐队进行评分。
 
-[![3](assets/3.png)](#co_introducing_tensors_CO8-3)
+![3](img/#co_introducing_tensors_CO8-3)
 
 一些简单的音乐流派可以用来描述我们的七支乐队，同样存储在一个 JavaScript 数组中。
 
-[![4](assets/4.png)](#co_introducing_tensors_CO8-4)
+![4](img/#co_introducing_tensors_CO8-4)
 
 这是我们的第一个张量，一个二级描述，每个用户的投票从`1`到`10`，其中“我不认识这支乐队”为`0`。
 
-[![5](assets/5.png)](#co_introducing_tensors_CO8-5)
+![5](img/#co_introducing_tensors_CO8-5)
 
 这个张量也是一个二维张量，用于识别与每个给定乐队匹配的流派。每行索引代表了可以分类为真/假的流派的编码。
 
-现在你已经拥有了张量中所需的所有数据。快速回顾一下，你可以看到信息的组织方式。通过阅读`user_votes`变量，你可以看到每个用户的投票。例如，你可以看到用户`0`，对应Gant，给Nirvana评了`10`分，Apashe评了`7`分，而Jed给了Backstreet Boys`10`分。
+现在你已经拥有了张量中所需的所有数据。快速回顾一下，你可以看到信息的组织方式。通过阅读`user_votes`变量，你可以看到每个用户的投票。例如，你可以看到用户`0`，对应 Gant，给 Nirvana 评了`10`分，Apashe 评了`7`分，而 Jed 给了 Backstreet Boys`10`分。
 
-`band_feats`变量将每个乐队映射到它们满足的流派。例如，索引`1`处的第二个乐队是Nine Inch Nails，对Grunge和工业音乐风格有积极评分。为了简单起见，你使用了每种流派的二进制`1`和`0`，但在这里也可以使用一种标准化的数字比例。换句话说，`[1, 1, 0, 0, 0, 0]`代表了Grunge和Rock对于第0个乐队，也就是Nirvana。
+`band_feats`变量将每个乐队映射到它们满足的流派。例如，索引`1`处的第二个乐队是 Nine Inch Nails，对 Grunge 和工业音乐风格有积极评分。为了简单起见，你使用了每种流派的二进制`1`和`0`，但在这里也可以使用一种标准化的数字比例。换句话说，`[1, 1, 0, 0, 0, 0]`代表了 Grunge 和 Rock 对于第 0 个乐队，也就是 Nirvana。
 
 接下来，你将根据他们的投票计算每个用户最喜欢的流派：
 
@@ -499,21 +499,21 @@ Tensor
      [16, 12, 15, 5 , 2 , 11]]
 ```
 
-这个张量显示了每个用户特征（在本例中是流派）的价值。用户`0`，对应Gant，其最高价值在索引`0`处为`27`，这意味着他们在调查数据中最喜欢的流派是Grunge。这些数据看起来相当不错。使用这个张量，你可以确定每个用户的喜好。
+这个张量显示了每个用户特征（在本例中是流派）的价值。用户`0`，对应 Gant，其最高价值在索引`0`处为`27`，这意味着他们在调查数据中最喜欢的流派是 Grunge。这些数据看起来相当不错。使用这个张量，你可以确定每个用户的喜好。
 
 虽然数据以张量形式存在，但你可以使用一个叫做`topk`的方法来帮助我们识别每个用户的前*k*个值。要获取前*k*个张量或者仅仅通过识别它们的索引来确定前*k*个值的位置，你可以调用带有所需张量和大小的函数`topk`。在这个练习中，你将把*k*设置为完整特征集大小。
 
-最后，让我们把这些数据带回JavaScript。编写这段代码可以这样写：
+最后，让我们把这些数据带回 JavaScript。编写这段代码可以这样写：
 
 ```py
-// Let's make them pretty consttop_user_features=tf.topk(user_feats,features.length)// Back to JavaScript consttop_genres=top_user_features.indices.arraySync()![1](assets/1.png)// print the results users.map((u,i)=>{constrankedCategories=top_genres[i].map(v=>features[v])![2](assets/2.png)console.log(u,rankedCategories)})
+// Let's make them pretty consttop_user_features=tf.topk(user_feats,features.length)// Back to JavaScript consttop_genres=top_user_features.indices.arraySync()![1](img/1.png)// print the results users.map((u,i)=>{constrankedCategories=top_genres[i].map(v=>features[v])![2](img/2.png)console.log(u,rankedCategories)})
 ```
 
-[![1](assets/1.png)](#co_introducing_tensors_CO9-1)
+![1](img/#co_introducing_tensors_CO9-1)
 
-你将索引张量返回到一个二维JavaScript数组以获取结果。
+你将索引张量返回到一个二维 JavaScript 数组以获取结果。
 
-[![2](assets/2.png)](#co_introducing_tensors_CO9-2)
+![2](img/#co_introducing_tensors_CO9-2)
 
 你正在将索引映射回音乐流派。
 
@@ -558,23 +558,23 @@ Justin
 ]
 ```
 
-在结果中，你可以看到Todd应该多听工业音乐，而Jed应该加强对男孩乐队的了解。两者都会对他们的推荐感到满意。
+在结果中，你可以看到 Todd 应该多听工业音乐，而 Jed 应该加强对男孩乐队的了解。两者都会对他们的推荐感到满意。
 
 ### 你刚刚做了什么？
 
-你成功地将数据加载到张量中，这样做是有意义的，然后你对整个集合应用了数学计算，而不是对每个人进行迭代式的处理。一旦你得到了答案，你对整个集合进行了排序，并将数据带回JavaScript进行推荐！
+你成功地将数据加载到张量中，这样做是有意义的，然后你对整个集合应用了数学计算，而不是对每个人进行迭代式的处理。一旦你得到了答案，你对整个集合进行了排序，并将数据带回 JavaScript 进行推荐！
 
 ### 你还能做更多吗？
 
-你可以做很多事情。从这里开始，你甚至可以使用每个用户投票中的0来确定用户从未听过的乐队，并按照最喜欢的流派顺序推荐给他们！有一种非常酷的数学方法可以做到这一点，但这有点超出了我们第一个张量练习的范围。不过，恭喜你实现了在线销售中最受欢迎和流行的功能之一！
+你可以做很多事情。从这里开始，你甚至可以使用每个用户投票中的 0 来确定用户从未听过的乐队，并按照最喜欢的流派顺序推荐给他们！有一种非常酷的数学方法可以做到这一点，但这有点超出了我们第一个张量练习的范围。不过，恭喜你实现了在线销售中最受欢迎和流行的功能之一！
 
 # 章节回顾
 
-在本章中，你不仅仅是浅尝辄止地了解了张量。你深入了解了TensorFlow.js的基本结构，并掌握了根本。你正在掌握在JavaScript中应用机器学习的方法。张量是一个贯穿所有机器学习框架和基础知识的概念。
+在本章中，你不仅仅是浅尝辄止地了解了张量。你深入了解了 TensorFlow.js 的基本结构，并掌握了根本。你正在掌握在 JavaScript 中应用机器学习的方法。张量是一个贯穿所有机器学习框架和基础知识的概念。
 
 ## 章节挑战：你有何特别之处？
 
-现在你不再是一个张量新手，你可以像专业人士一样管理张量，让我们尝试一个小练习来巩固你的技能。在撰写本文时，JavaScript没有内置的方法来清除数组中的重复项。虽然其他语言如Ruby已经有了`uniq`方法超过十年，JavaScript开发人员要么手动编写解决方案，要么导入像Lodash这样的流行库。为了好玩，让我们使用TensorFlow.js来解决唯一值的问题。作为一个学到的教训的练习，思考一下这个问题：
+现在你不再是一个张量新手，你可以像专业人士一样管理张量，让我们尝试一个小练习来巩固你的技能。在撰写本文时，JavaScript 没有内置的方法来清除数组中的重复项。虽然其他语言如 Ruby 已经有了`uniq`方法超过十年，JavaScript 开发人员要么手动编写解决方案，要么导入像 Lodash 这样的流行库。为了好玩，让我们使用 TensorFlow.js 来解决唯一值的问题。作为一个学到的教训的练习，思考一下这个问题：
 
 > 给定这个美国电话号码数组，删除重复项。
 
@@ -583,9 +583,9 @@ Justin
 const callMeMaybe = tf.tensor([8367677, 4209111, 4209111, 8675309, 8367677])
 ```
 
-确保您的答案是一个JavaScript数组。如果您在这个练习中遇到困难，可以查阅[TensorFlow.js在线文档](https://oreil.ly/9thOd)。搜索关键术语的文档将指引您正确方向。
+确保您的答案是一个 JavaScript 数组。如果您在这个练习中遇到困难，可以查阅[TensorFlow.js 在线文档](https://oreil.ly/9thOd)。搜索关键术语的文档将指引您正确方向。
 
-您可以在[附录B](app02.html#appendix_b)中找到这个挑战的答案。
+您可以在附录 B 中找到这个挑战的答案。
 
 ## 复习问题
 
@@ -629,4 +629,4 @@ const callMeMaybe = tf.tensor([8367677, 4209111, 4209111, 8675309, 8367677])
 
 1.  推荐引擎是什么？
 
-这些练习的解决方案可以在[附录A](app01.html#book_appendix)中找到。
+这些练习的解决方案可以在附录 A 中找到。
