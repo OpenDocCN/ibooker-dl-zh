@@ -1,0 +1,735 @@
+- en: Chapter 9\. Serving TensorFlow Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you’ve been reading the chapters in this book sequentially, you now know
+    a lot about how to handle the data engineering pipeline, build models, launch
+    training routines, checkpoint models at each epoch, and even score test data.
+    In all the examples thus far, these tasks have mostly been wrapped together for
+    didactic purposes. In this chapter, however, you’re going to learn more about
+    how to serve TensorFlow models based on the format in which they are saved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another important distinction between this chapter and previous chapters is
+    that here you will learn a coding pattern for handling data engineering for test
+    data. Previously, you saw that test data and training data are transformed at
+    the same runtime. As a machine learning engineer, though, you also have to think
+    about the scenarios where your model is deployed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Imagine that your model is loaded in a Python runtime and ready to go. You
+    have a batch of samples or a sample. What do you need to do to the input data
+    so that the model can accept it and return predictions? In other words: you have
+    a model and raw test data; how do you implement the logic of transforming the
+    raw data? In this chapter, you will learn about serving the model through a few
+    examples.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Serialization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'A TensorFlow model can be saved in two different native formats (without any
+    optimization): HDF5 (h5) or protobuf (pb). Both formats are standard data serialization
+    (saving) formats in Python and other programming languages to persist objects
+    or data structures; they are not specific to TensorFlow or even ML models. Before
+    TensorFlow 2.0, pb was the only native format available. With TensorFlow 2.0,
+    where the Keras API is the de facto high-level API going forward, h5 has become
+    an alternative to pb.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Today both formats may be used for deployment, especially in various public
+    cloud providers. This is because each cloud provider now has its own API that
+    wraps a model. As long as the model is saved in your workspace, you can reach
+    it through web services such as RESTful (Representational State Transfer) APIs,
+    which utilize HTTP methods to make a request over a network. Therefore, regardless
+    of format, your model is ready for serving through a RESTful API call from a client
+    program.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start with the image classification model you built with CIFAR-10 data
+    in the last chapter. If you haven’t worked your way through that chapter, use
+    the following code snippets to get an image classifier built and trained quickly.
+    (By the way, the code here was developed in Google Colab with one GPU.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Import all the necessary libraries first:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Load and normalize the images:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Define your image labels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Transform the raw images into a dataset. Since a partition for test images
+    is available, the following code separates out the first 500 images in that partition
+    for the validation dataset used at the end of each training epoch, and keeps the
+    remainder as a test dataset. All of the training images are converted to training
+    datasets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To make sure you know the sample size of each dataset, iterate through them
+    and display the sample size:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Define a distribution strategy for distributed training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see one GPU available:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now set the batch sizes for training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Apply the batches to each dataset and calculate the number of batches for each
+    training epoch before evaluating the model’s accuracy with the validation data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a function called `build_model` to define the model architecture and
+    compile it with the loss function for classification, optimizer, and metrics,
+    all within the distributed training strategy scope:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now create a model instance by invoking `build_model`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Define an alias for the file path and to save model checkpoints:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use a `print` statement to display the model name format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now set up your checkpoint directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The checkpoint directory will be set as a directory with the following pattern:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: In your current directory level, you will see a *myCIFAR10-20210319-214456*
+    directory containing weight files with the prefix *ckpt-{epoch}*, where *{epoch}*
+    is the epoch number.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, define a checkpoint object. Let’s save the model weights at the end of
+    an epoch only if the model performance on validation data is improved over the
+    previous epoch. Save the weights in the same directory (*myCIFAR10-20210319-214456*)
+    so that the latest saved checkpoint weights are from the best epoch. This saves
+    time, since you don’t need to determine which epoch presented the best model.
+    Make sure that both `save_weights_only` and `save_best_only` are set to True:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now pass the preceding checkpoint definition into a list, as required by the
+    `fit` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And launch the training process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Throughout the training routine, you can inspect the output. You’ll likely
+    see something similar to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, the highest validation accuracy occurs in epoch 9, where `val_accuracy`
+    is 0.7080.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Check the checkpoint directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You will see its contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Since the `myCheckpoint` object has `save_best_only` and `save_weights_only`
+    set to True, the last weight is `ckpt-9.data-00000-of-00001`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To programmatically locate the last weight file among all the saved weight
+    files from a single directory, you can use the `latest_checkpoint` function in
+    the `tf.train` API. Run the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is the expected output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This identifies the prefix to the last weight file. You can then load the best
+    weights to the model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now you have the best model, which can be saved in h5 or pb format. We’ll look
+    at h5 first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Saving a Model to h5 Format
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The high-level `tf.keras` API uses the `save` function as a means to save the
+    model in h5 format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Take a look at the directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You will see the model as an h5 file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the future, if you want to reload this model for scoring, simply use the
+    `load_model` function. (Make sure you also import all the libraries, as indicated
+    in the beginning of the section.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For quick scoring, use `test_dataset`, which you prepared at the same time
+    as `training_dataset`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It will produce results like these:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: There are 9,500 elements; each is an array of probabilities. The index of maximum
+    probability maps to the label in `CLASS_NAMES`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Saving a Model to pb Format
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To save the same model to pb format, you’ll use the `tf.saved_model.save` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Look at the contents in `SAVED_MODEL_PATH`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The contents should look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The weight file is in the variables directory. You can inspect it with this
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s what you’ll see (more or less):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that you’ve seen the folder structure when a model is saved as a protobuf,
+    let’s see how to load a model protobuf. In this case, you’ll need to load it from
+    the directory name, which is the directory that contains *saved_model.pb*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you take a closer look at the preceding commands, you will notice that just
+    as in model training, model loading is done within a distribute strategy scope.
+    If you are running a cloud TPU or GPU (as in the case of [Google Colab](https://oreil.ly/ZBYwr)),
+    set `experimental_io_device` to localhost, which is the node where you saved the
+    model. Then use `tf.keras.models.load_model` to load the directory that holds
+    *saved_model.pb*: in this case, it is `SAVED_MODEL_PATH`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now use the model `loaded_pb` to score `test_dataset`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You will see the same output as in the h5 model’s predictions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: Likewise, each inner bracket is a list of probabilities for a test image. The
+    index of maximum probability can be mapped to the correct entry in `CLASS_NAMES`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you’ve seen, the model in either h5 or pb format can be used for scoring
+    test data in dataset format. The model can also score test data in a NumPy array
+    format. Recall that `test_images[500:]` is the original NumPy test data format;
+    the subset starts at 500 images and goes on (for a total of 9,500 test images).
+    You can pass this NumPy array directly into the model for scoring:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You will see the same output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: Selecting the Model Format
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You have now seen how to score test data with both the h5 and pb model formats.
+    However, choosing which format to use depends on many things. Conceptually, the
+    h5 format is very easy to understand; it consists of a model skeleton and weights,
+    saved as a single file. This is very similar to how a `pickle` object or file
+    works: as long as you import the library, you can open the single file that contains
+    everything you need to reinstate the object (in this case, your model). This approach
+    is suitable for simple deployments, where a driver program running the Python
+    runtime can simply use `tf.keras.models.load_model` to load the model and run
+    it over the test data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, if the model has to be run with more complicated settings, then protobuf
+    format is a better choice. This is because the pb format is programming-language
+    agnostic: it can be read by many other programming languages besides Python, such
+    as Java, JavaScript, C, C++, and so forth. In fact, when you take the model to
+    production, you will use TensorFlow Serving to host the pb model to score test
+    data over the internet. In the next section, you will learn how TensorFlow Serving
+    works.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: TensorFlow Serving
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: TensorFlow Serving (TFS) is a framework specifically designed for running ML
+    models in a production environment. Since scoring test data over the internet
+    (or using Internet Protocol in a virtual private network) is arguably the most
+    common model-serving scenario, there needs to be an HTTP or HTTPS endpoint that
+    serves as the “front door” to the model. The client program, which will pass test
+    data to the model, needs to communicate with the model’s endpoint via HTTP. This
+    communication follows the style of the RESTful API, which specifies a set of rules
+    and formats for data sent over HTTP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TFS takes care of all the complexity here for you. Next you will see how to
+    run TFS to host this model in your local environment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running TensorFlow Serving with a Docker Image
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The easiest way to learn TFS is with a Docker image. If you need some background
+    on Docker and general container technology, take a look at [*Using Docker*](https://oreil.ly/FyJOH)
+    by Adrian Mouat (O’Reilly). [Chapter 1](ch01.xhtml#introduction_to_tensorflow_two)
+    provides a concise explanation of Docker containers, while [Chapter 2](ch02.xhtml#data_storage_and_ingestion)
+    shows you how to install a Docker engine and get it up and running in your local
+    node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Briefly, a Docker image is a lightweight, standalone, executable package of
+    software that includes everything needed to run an application: code, runtime,
+    system tools, system libraries, and settings. To run a Docker image, you need
+    a Docker engine. When you run a Docker image on a Docker engine, the image becomes
+    a [*container*](https://oreil.ly/V8KMi).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: For instructions on installing a Docker engine, take a look at the [Docker documentation](https://oreil.ly/77l6U).
+    There are versions available for macOS, Windows 10, and Linux. Choose the one
+    that works for your environment and follow the installation instructions. For
+    the examples and workflow in this chapter, my local system is running macOS Big
+    Sur version 11.2, and my Docker engine version is 3.0.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now make sure your Docker engine is up and running: launch it by double-clicking
+    its icon in your environment. When it’s running, you will see the Docker whale
+    icon in the top bar on a Mac, shown in [Figure 9-1](#docker_engine_running_status)
+    or in the notification area (lower right) on a PC.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Docker engine running status](Images/t2pr_0901.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-1\. Docker engine running status
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Once you have your Docker engine installed and running, download TFS’s Docker
+    image as a base, add the CIFAR-10 model to the base image, and then build a new
+    image. This new image will be served through an HTTP endpoint and a specific TCP/IP
+    port. A client program will send test data to this HTTP address and port.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make sure you save your model in pb format. This time, name it *001*. This directory
+    doesn’t have to be named *001*, but it does have to be numeric per TFS’s required
+    hierarchy and naming convention.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Continue with the notebook you made in the previous section, and save the model
+    in the local directory by using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will produce the following directory structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: For now, use the command terminal and navigate to the *models* directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that the Docker engine is running, you are ready to start pulling a TFS
+    image. Type the following command while in the *models* directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This command downloads a TFS image to your local Docker environment. Now run
+    the image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The preceding command launches a TFS image as a container named `serv_base_img`.
+    Run the following command to add the model you built to the base image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: It is natural to think of the *saved_model.pb* file as a reference for where
+    everything else is. Remember that *CIFAR10* is the local directory, two levels
+    up from the pb file. In between them is the directory *001*. Now *CIFAR10* is
+    copied into the base image as */models/cifar10*. Notice that in Docker, directory
+    names are all lowercase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, commit the change you made to the base image. Run the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now you can stop the base image; you don’t need it anymore:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s review what you’ve done so far. You have created a new Docker image by
+    adding your CIFAR-10 model to TFS, which is a base image. That model is now deployed
+    and running in the TFS container. Once you run the TFS container, the model is
+    live and ready to serve any client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To serve the TFS container that hosts your CIFAR-10 model, run the following
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is a relatively lengthy command. Let’s dissect it a bit.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, you map local port 8501 to the Docker engine’s port 8501\. There is nothing
+    magical about your local port number. If 8501 is in use in your local environment,
+    you can use a different port number—say, 8515\. If so, then the command would
+    be `-p 8515:8501`. Since the TFS container always runs on port 8501, the second
+    target in the preceding command is always 8501.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The source indicates that below the current directory (*$PWD*) there is a *CIFAR10*
+    directory, which is where the model is located. This model is named CIFAR10, and
+    the `tensorflow/serving` container is ready to take input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will see the output shown in [Figure 9-2](#command_terminal_running_a_custom_docker).
+    It indicates that you are running CIFAR10 model version 1, which is taken from
+    the directory named *001*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Command terminal running a custom Docker container](Images/t2pr_0902.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-2\. Command terminal running a custom Docker container
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Scoring Test Data with TensorFlow Serving
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Now that your TFS container is running with your model, you are ready to pass
+    test data to the model. This is done via an HTTP request. You may use another
+    Jupyter Notebook as a client that sends the NumPy array to TFS. The HTTP address
+    for TFS is *http://localhost:8501/v1/models/cifar10:predict*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the client code in a different Jupyter Notebook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Import all the necessary libraries:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Load test images and normalize the pixel value range to be between 0 and 1,
+    and then select the images. For simplicity, let’s only select 10 images; we’ll
+    use those that are between 500 and 510:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Convert the NumPy array `test_images` into JSON, a commonly used format for
+    data exchange between a client and a server over HTTP:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'You also need to define headers:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Now that you have wrapped your NumPy data with the appropriate format and headers,
+    you are ready to send the whole package to TFS.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Construct the entire package as an HTTP request:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Notice that you use the `post` method to solicit a response from TFS. TFS will
+    score `DATA` and return the results as `response`. This communication framework,
+    which uses a JSON request format and rules to establish and handle communication
+    between a client and a server, is also known as a RESTful API.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Take a look at what TFS has predicted:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The preceding command will decode the prediction to an array of probability:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: In the preceding code, you see the first and tenth test images. Each inner array
+    consists of 10 probability values, each of which maps to a `CLASS_NAME`.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'To map the maximum probability in each prediction back to a label, you need
+    to retrieve the values, shown earlier, from the Python dictionary `response`.
+    You can retrieve the values using the key name `predictions` via:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The labels for CIFAR-10 data are:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: '`CLASS_NAMES` is a list that holds the CIFAR-10 labels.'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Now convert `predictions_prob_list` to a NumPy array, then use `argmax` to
+    find the index for the maximum probability value:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Map each index (there are 10) to a CIFAR-10 label:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Your output should look something like this:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: This is how you decode the probability array back to labels.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: You have just run a TFS Docker container with your own image classification
+    model behind an HTTP endpoint. That container accepts input data as a JSON payload
+    in a `post` request. TFS unpacks the request body; extracts the JSON payload,
+    which contains the NumPy array; scores each array; and returns the results back
+    to the client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter showed you the basics of model persistence (saving) and model serving
+    (scoring). The TensorFlow model is flexible in that it takes advantage of the
+    simplicity offered by the `tf.keras` API to save the model as a single HDF5 file.
+    This format is easy to handle and share with others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For a serving framework that caters to a production environment, typically you
+    need to have a model hosted in a runtime, and that runtime needs to be accessible
+    via a web-based communication protocol such as HTTP. As it turns out, TFS provides
+    a framework that handles the HTTP request. All you need to do is copy your protobuf
+    model folder to a TFS base image and commit the change to the base image. Now
+    you have created a Docker image of your model, and you have the model running
+    behind TFS.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You learned how to use another runtime to create a correctly shaped numeric
+    array, wrap it around a JSON-format data payload, and send it using the `post`
+    command to the HTTP endpoint hosted by TFS for scoring.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This pretty much completes the knowledge loop of building, training, and serving
+    the model. In the next chapter, you will learn more practices for model tuning
+    and fairness.
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,890 @@
+- en: 'Chapter 10\. Improving the Modeling Experience: Fairness Evaluation and Hyperparameter
+    Tuning'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Getting ML models to work well is an iterative process. It requires many rounds
+    of tuning the model parameters, architectures, and training durations. While you
+    have to work with the data that’s available, of course, ideally you want the training
+    data to be balanced. In other words, it should contain an equal number of classes
+    or uniform distribution across ranges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why is this balance important? Because if any features in the data are skewed,
+    then the trained model will reproduce that skew. This is known as *model bias*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imagine that you’re training a model to recognize dogs. If there are 99 negative
+    cases and 1 positive case in your training images—that is, only one actual dog
+    image—then the model will simply predict a negative result every time, with a
+    99% chance of being correct. The model learns to minimize the errors it makes
+    during training, and the easiest way to do so is to produce a negative prediction—in
+    short, to guess “not a dog” every time. This is known as the data imbalance problem,
+    and it is prevalent in the real world; it’s also a complicated subject to which
+    I cannot do justice here. It requires many different approaches, including adding
+    synthetic data through a technique known as *data augmentation*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, I’ll introduce you to Fairness Indicators, a new tool (as of
+    this writing) to evaluate model bias. It is part of the TensorFlow Model Analysis
+    library and is available for Jupyter Notebooks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will also learn how to perform *hyperparameter tuning*. *Hyperparameters*
+    are variables in the model architecture and model training process. Sometimes
+    you want to experiment with different values or implementation choices, but you
+    don’t know which are best for your model. To find out, you’ll need to evaluate
+    model performance over many combinations of hyperparameters. I’ll show you a new
+    way of doing hyperparameter tuning using the Keras Tuner library. This library
+    works seamlessly with TensorFlow 2’s Keras API. It’s very flexible and easy to
+    set up as part of the training process. We’ll start by setting up Fairness Indicators
+    in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Model bias, and its real-life consequences, are well known. One of the most
+    notable examples of model bias is the COMPAS (Correctional Offender Management
+    Profiling for Alternative Sanctions) framework, which was used in US court systems
+    to predict recidivism. Because of the training data, the model [predicted twice
+    as many false positives](https://oreil.ly/1FdFy) for Black defendants as for white
+    defendants. If you are interested in learning more about fairness, take a look
+    at [*Practical Fairness* by Aileen Nielsen](https://oreil.ly/V3yjB) (O’Reilly,
+    2020) and [*AI Fairness* by Trisha Mahoney, Kush R. Varshney, and Michael Hind](https://oreil.ly/tpoTl)
+    (O’Reilly, 2020).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Fairness
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'You will need to install the TensorFlow Model Analysis library, which was not
+    a part of the regular TensorFlow distribution as of TensorFlow 2.4.1\. You can
+    download and install it via the `pip install` command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You will also need to install the `protobuf` library to parse your choice of
+    model metrics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: This library enables you to display and review model statistics on test data
+    so that you can detect any bias in the model’s prediction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To illustrate this, we will again use the *Titanic* dataset. In [Chapter 3](ch03.xhtml#data_preprocessing),
+    you used this dataset to build a model to predict passenger survival. This small
+    dataset contains several features about each passenger and is a good starting
+    point here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We see survival as a discrete outcome: someone either survived or did not.
+    However, for a model, what we really mean is the probability of survival based
+    on the given features of a passenger. Recall that the model you built is a logistic
+    regression model, and the output is a probability of an outcome that is binary
+    (survived or not). One [Google course](https://oreil.ly/8ciQJ) puts it this way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In order to map a logistic regression value to a binary category, you must define
+    a *classification threshold* (also called the *decision threshold*). A value above
+    that threshold indicates [a positive]; a value below indicates [a negative]. It
+    is tempting to assume that the classification threshold should always be 0.5,
+    but thresholds are problem-dependent, and are therefore values that you must tune.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: It is up to the user to decide the threshold. An intuitive way to understand
+    this is that a survival probability of 0.51 doesn’t guarantee survival; it still
+    implies a 49% chance of *not* surviving. Likewise, a survival probability of 0.49
+    is not zero. A good threshold is one that minimizes misclassification in both
+    directions. Therefore, the threshold is a user-determined parameter. Typically,
+    in your model training and testing process, you will try a few different threshold
+    values and see which one gives you the most correct classifications in the test
+    data. For this dataset, you might start with a list of different threshold values,
+    such as 0.1, 0.5, and 0.9\. For each threshold, a positive result—that is, a prediction
+    probability that falls above the threshold—indicates a prediction that this individual
+    survived.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Recall that the *Titanic* dataset looks like what is shown in [Figure 10-1](#titanic_dataset_for_training).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Titanic dataset for training](Images/t2pr_1001.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-1\. *Titanic* dataset for training
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Each row in [Figure 10-1](#titanic_dataset_for_training) represents a passenger
+    and several corresponding features. The model’s goal is to predict the value in
+    the “survived” column based on these features. In training data, this column is
+    binary, with 1 indicating the passenger survived and 0 indicating the passenger
+    did not survive. Data for testing is also provided by the *Titanic* dataset as
+    a separate partition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Training and Scoring
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s pick up where we left off after [“Preparing Tabular Data for Training”](ch03.xhtml#preparing_tabular_data_for_training),
+    in which you completed the model training. Run these import statements again before
+    you continue:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the model is trained (which you did in [Chapter 3](ch03.xhtml#data_preprocessing)),
+    you can use it to predict the survival probability of each passenger in the test
+    dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This command, `prediction_raw`, produces a NumPy array with a probability value
+    for each passenger:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s make this array into a Python list and append it as a new column
+    to the test dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: The new column, called “predicted,” is the last column. For visibility, you
+    might want to reorder the columns by moving this last column to be first, next
+    to the ground truth column, “survived.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now `test_df` looks like [Figure 10-2](#titanic_test_dataset_with_predictions_ap),
+    and we can easily compare the model’s predictions to the real-life outcomes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Titanic test dataset with predictions appended](Images/t2pr_1002.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-2\. *Titanic* test dataset with predictions appended
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Fairness Evaluation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To investigate the fairness of your model’s predictions, you need a good understanding
+    of your use case and the data you’ve used for training. Just looking at data alone
+    probably won’t give you enough context, background, or situational awareness to
+    investigate fairness or model bias. Therefore, it is paramount that you understand
+    the use case, the purpose of the model, who is using it, and the potential real-world
+    impact should the model get the prediction wrong.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The *Titanic* had three cabin classes: first class was the most expensive,
+    second class was in the middle, and third class, or steerage, was the least expensive
+    and in the lower decks. It is well documented that most passengers who survived
+    were female and in first-class cabins. We also know that gender and class played
+    an important role in the selection process for getting on the lifeboats. That
+    selection process prioritized women and children over men. Because this background
+    is so well known, this dataset is suitable as a didactic example to investigate
+    model bias.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When making predictions, as I mentioned in the introduction, a model inevitably
+    recapitulates any bias or imbalance in the training data. So an interesting question
+    to lead off our investigation would be this: how well does the model predict passenger
+    survival in different genders and classes?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s start with the following code block for `eval_config`, which defines
+    our investigation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#comarker1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `eval_config` object has to be formatted as a protobuf data type, which
+    is why you needed to import `text_format` to parse the definition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#comarker2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Specify `model_specs` to document the two columns that you want to compare:
+    “predicted” and “survived.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#comarker3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define the metrics for classification accuracy and the three thresholds for
+    assigning survival status based on survival probability.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#comarker4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is where you declare which features you want to use to investigate model
+    bias. `feature_keys` in `slicing_specs` holds a list of features to examine for
+    bias: in our case, “sex” and “class.” Since there are two unique values for sex
+    and three different classes, the fairness indicators will evaluate model bias
+    for six different interaction groups. If only one feature were listed, the fairness
+    indicators would evaluate bias on that feature alone.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#comarker5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All this information is wrapped inside `“““ ”””` triple double quotes, which
+    makes it a plain-text representation. This text string is merged into a `tfma.EvalConfig`
+    message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now define an output path to store the fairness indicator’s results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then run the model analysis routine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: From the preceding code, you can see that `test_df` is the test data, with prediction
+    added to it. You will use the `tfma.analyze_raw_data` function to perform the
+    fairness analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you are running this example in a local Jupyter Notebook, you need to enable
+    the Jupyter Notebook to display the Fairness Indicators GUI. In the next cell,
+    input the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you are using a Google Colab notebook, this step is not necessary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rendering Fairness Indicators
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now you are ready to take a look at your `eval_result`. Run this command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: You will see the Fairness Indicators interactive GUI in your notebook (see [Figure 10-3](#fairness_indicators_interactive_gui)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fairness Indicators interactive GUI](Images/t2pr_1003.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-3\. Fairness Indicators interactive GUI
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this figure, the metric of false-positive rate is selected.^([1](ch10.xhtml#ch10fn05))
+    In the context of the *Titanic* dataset, a *false positive* means that the model
+    predicted the passenger would survive, but in reality they did not.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at this GUI. In the left panel (as shown in [Figure 10-3](#fairness_indicators_interactive_gui)),
+    you have all the metrics available. In the right panel, you see a bar chart for
+    the selected metric. Feature combinations (sex and class) in the `slice_specs`
+    are indicated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At a threshold of 0.5 (where a probability greater than 0.5 is considered a
+    positive—that is, survival), the false-positive rate is high for male passengers
+    in first class and female passengers in second and third class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the table below the bar chart, you have a more detailed view of actual metric
+    and sample size (see [Figure 10-4](#the_fairness_indicators_dashboard_showin)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Fairness Indicators dashboard showing the false positive summary](Images/t2pr_1004.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-4\. The Fairness Indicators dashboard showing the false-positive summary
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Unsurprisingly, the model correctly predicts that all first-class female passengers
+    survived, as you can see from the ground truth (“survived”) column.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So why do second-class and third-class male passengers produce a false-positive
+    rate of 0? Let’s look at the actual outcome from `test_df` to understand why.
+    Execute the following command to select male passengers in second-class accommodations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then display `sel_df`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 10-5](#the_titanic_test_datasetapostrophes_seco) shows the resulting
+    list of all second-class male passengers. Let’s use it to look for false positives.
+    Is there any passenger in this group who did not survive (that is, the “survived”
+    column displays 0) for whom the model predicted a probability greater than the
+    threshold (0.5)? No. So Fairness Indicators states that the rate of false positives
+    is 0.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Titanic test dataset’s second-class male passengers](Images/t2pr_1005.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-5\. The *Titanic* test dataset’s second-class male passengers
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You may notice that some second-class male passengers did survive, yet the
+    model predicted their probability of survival as less than the threshold of 0.5\.
+    These are known as *false-negative* cases: they actually survived, but the model
+    predicted they didn’t. In short, they beat the odds! So let’s uncheck the false-positive
+    metric and check our false-negative metric to see what it looks like across gender
+    and class combinations (see [Figure 10-6](#the_titanic_test_datasetapostrophes_fals)).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see in [Figure 10-6](#the_titanic_test_datasetapostrophes_fals),
+    at the current threshold of 0.5, men and boys in second and third class have a
+    very high false-negative rate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Titanic test dataset’s false negative metric](Images/t2pr_1006.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-6\. The *Titanic* test dataset’s false-negative metric
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'This exercise makes it clear that the model exhibits bias with regard to gender
+    and class. The model performs best for first-class female passengers, which reflects
+    the obvious skew in the data: nearly all the first-class female passengers survived,
+    while everybody else’s chances are not so clear-cut. You can examine the training
+    data to confirm this skew with the following statement, which groups training
+    data by the “sex,” “class,” and “survived” columns:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will produce the summary shown in [Figure 10-7](#summary_of_survival_count_by_passenger_g).
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, of the 69 first-class female passengers, only two died. You
+    trained your model based on this data, so it is very easy for the model to learn
+    that as long as the class and sex indicators are first and female, it should predict
+    a high probability of survival. You can also see that female passengers in third
+    class, where 52 survived and 41 died, did not enjoy the same favorable outcome.
+    This is a classic case of an imbalanced data label (the “survived” column) leading
+    to model bias. Of all the possible gender–class combinations here, no other combination
+    has odds as good as those of female passengers in first class. This made it more
+    challenging for the model to get the prediction right.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Summary of survival count by passenger group in the Titanic training dataset](Images/t2pr_1007.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-7\. Summary of survival count by passenger group in the *Titanic*
+    training dataset
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When using Fairness Indicators, you can toggle the threshold drop-down box to
+    display metrics for the three different thresholds in the same bar chart, as shown
+    in [Figure 10-8](#fairness_indicators_displaying_metrics_f).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Fairness Indicators displaying metrics for all thresholds](Images/t2pr_1008.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-8\. Fairness Indicators displaying metrics for all thresholds
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For readability, each threshold is color coded. You can hover your cursor mouse
+    over a bar to ascertain the color assignment. This helps you interpret the impact
+    of different thresholds on each metric.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From this example, we can draw the following conclusions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Passenger features such as gender and cabin class (as a stand-in for socioeconomic
+    class) primarily determine the outcome.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The model is much more accurate for first- and second-class female passengers
+    than for any other groups, which strongly suggests that the model bias is driven
+    by gender and class.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Survival probability favors a certain gender and certain classes. This is known
+    as *data imbalance*, and it is consistent with historical accounts of what happened.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Interactions between features such as gender and class (called *feature cross*)
+    reveal a deeper level of model bias. Women and girls in the lowest (third) class
+    did not have a favorable survival outcome—neither in the training data and model
+    accuracy nor, tragically, in real life.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You may be tempted to try to tweak your model architecture or training strategies
+    when you see model bias. But the underlying problem here is the imbalance in the
+    training data, which reflects real-life unequal outcomes based on gender and class.
+    Without bringing about a more equitable outcome for the other gender and classes,
+    fixing the model architecture or training strategies is not going to create a
+    fair model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This example is a relatively simple one: the hypothesis here is that examining
+    gender and class may reveal model bias and is therefore worth investigating. Because
+    it is such a widely discussed historical event, most people have at least some
+    awareness of the context and events leading to the *Titanic* tragedy. However,
+    in many situations, formulating a hypothesis to investigate potential bias in
+    data will not be straightforward. Your data might not contain personal attributes
+    or personally identifiable information (PII), and you might not have the domain
+    knowledge or contextual understanding of where and how the training data was collected
+    and how this might affect the outcomes. Data scientists and ML model developers
+    should definitely collaborate with subject matter experts to contextualize their
+    training data. Sometimes, if model fairness is a primary concern, removing the
+    features in question is the best and most sensible option.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hyperparameter Tuning
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Hyperparameters* are values or attributes designated to control the model
+    training process. The idea is that you want to train the model with combinations
+    of these values and determine the best combinations. The only way to know which
+    combination is best is to try these values out, so you want an efficient way to
+    iterate all combinations and narrow down the choices to the best one. Hyperparameters
+    are often applied to model architecture, such as the number of nodes in a dense
+    layer of the deep-learning neural network. Hyperparameters can be applied to the
+    training routine, such as an optimizer that performs back propagation (which you
+    learned about in [Chapter 8](ch08.xhtml#distributed_training-id00013)) during
+    the training process. They can also be applied to the *learning rate*, which specifies
+    how much you want to update the model with incremental changes in weights and
+    bias, which in turn determines how big a step it is for back propagation to update
+    weights and bias during training. Taken together, hyperparameters can be numeric
+    (number of nodes, learning rate) or nonnumeric (name of optimizer).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As of TensorFlow distribution 2.4.1, the Keras Tuner library was not yet part
+    of the standard distribution. That means you’ll need to install it. You can run
+    this installation statement in your command terminal or Google Colab notebook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If running it within a Jupyter Notebook cell, use this version:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: The exclamation point (!) tells the Notebook cell to interpret this as a command
+    rather than as Python code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the installation is complete, you will import it as usual. Notice that
+    while the library name is hyphenated when you install it, the hyphen is not used
+    in the import statement:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'From the Keras Tuner’s perspective, hyperparameters have three data types:
+    integer, item choice (a list of discrete values or objects), and floating point.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Integer Lists as Hyperparameters
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'It’s easier to see how to use Keras Tuner through examples, so let’s say you
+    want to try different numbers of nodes in a dense layer. First you’ll define the
+    possible numbers, then pass that list to the dense layer’s definition:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding code, `hp.Int` defines an alias: `hp_node_count`. This alias
+    contains a list of integers (16, 24, and 32), which you pass to the `Dense` layer
+    as `units`. Your goal is to see which number works the best.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Item Choice as Hyperparameters
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Another way to set hyperparameters is to put all selections in a list as discrete
+    items, or choices. This is accomplished with the `hp.Choice` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is an example of specifying an activation function by names:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Floating-Point Values as Hyperparameters
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In many cases, you’ll want to try different decimal values in the training
+    routine. This is very common if you want to select a learning rate for the optimizer.
+    To do so, use this command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: End-to-End Hyperparameter Tuning
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Hyperparameter tuning is a time-consuming process. It involves trying multiple
+    combinations, with each combination trained to the same number of epochs. For
+    a “brute force” approach, you would have to loop (iterate) through each combination
+    of hyperparameters and *then* launch the training routine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The advantage of using Keras Tuner is its early-stop implementation: if a particular
+    combination doesn’t seem to improve the results, it will terminate the training
+    routine and move to the next combination. This helps reduce total training time.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, you’re going to see how to perform and optimize hyperparameter searches
+    using a strategy known as *hyperband search*. Hyperband search utilizes the principle
+    of successive reduction during training. In each loop through all hyperparameter
+    combinations, the algorithm ranks how well the model performed for all combinations
+    and discards the worse half of the parameter combinations. The better half of
+    combinations will receive more processor cores and memory in the next round. This
+    continues until the last combination remains, eliminating all but the best hyperparameter
+    combination.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It’s a bit like a [playoff bracket](https://oreil.ly/jq8Lb) in sports: each
+    round and each matchup eliminates the lower-seed team. In hyperband search, though,
+    the losing team is declared the loser *before the game completes*. This process
+    continues until the championship matchup, where the number-one seed team is the
+    eventual champion. This strategy is a lot less wasteful than the brute force approach,
+    where each combination is trained to its full epochs, since that eats up a lot
+    of training resources and time.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s apply what you’ve learned to the CIFAR-10 image classification dataset
+    you worked with in the previous chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Import Libraries and Load Data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'I recommend using a Google Colab notebook with a GPU to run the code in this
+    example. As of TensorFlow 2.4.1, the Keras Tuner is not yet a part of the TensorFlow
+    distribution, so in the Google Colab environment, you need to run a `pip install`
+    command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once it is installed, import it along with all the other libraries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It will show the current version of TensorFlow—in this case, 2.4.1\. Then load
+    and normalize images in one cell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now provide a list of labels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, convert the images to datasets by merging images and labels into tensors.
+    Split the test dataset into two groups—the first 500 images (for validation during
+    training), and everything else (for testing):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To ascertain the sample size of each dataset, execute the following commands:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should get something like the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, in order to take advantage of distributed training, define a `MirroredStrategy`
+    object to handle distributed training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In your Colab notebook, you should see the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now set up sample batch parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Shuffle and batch all datasets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now you can create a function to wrap the model architecture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: There are some major differences between this function and the one you saw in
+    [Chapter 9](ch09.xhtml#serving_tensorflow_models). The function now expects an
+    input object, `hp`. This means the function will be invoked by a hyperparameter
+    tuning object named `hp`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the model architecture, node count for the first layer `conv_1` is declared
+    for hyperparameter search by using `hp_node_count`. An activation function for
+    layer `dense_1` is also declared for hyperparameter search by using `hp_AF`. Finally,
+    the learning rate in `optimizer` is declared for hyperparameter search by `hp_LR`.
+    This function returns the model with hyperparameters declared.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, define an object (`tuner`) with `kt.Hyperband`, which takes the `build_model`
+    function as an input:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You pass the following inputs to define the `tuner` object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`hypermodel`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A function that defines the model architecture and optimizer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`objective`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A training metric used to evaluate model performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`max_epochs`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The maximum number of epochs for model training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`factor`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The reduction factor for epochs and the number of models in each bracket. Models
+    ranked in the top 1/factor are selected and advanced to the next round of training.
+    If the factor is 2, then the top half will advance to the next round. If the factor
+    is 4, then the top quarter will advance to the next round.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`directory`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The target directory to write results to, such as checkpoints for each model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`project_name`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The prefix for all files saved in the target directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here you can define an early stop to stop training if there is no improvement
+    in validation accuracy for five epochs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now you are ready to launch the search via the Hyperband algorithm. It will
+    print out the best hyperparameters when the search is complete:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, after the search, `best_hps` holds all the information about
+    the best hyperparameter values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When you run this example in a Colab notebook with a GPU, it usually takes
+    about 10 minutes to complete. Expect to see output that looks something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This output tells us that the best hyperparameters are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimal node count for layer `conv_1` is 24.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Optimal learning rate for `optimizer` is 0.0013005004751682134.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Optimal activation function choice for `dense_1` is “relu.”
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Now that you have the best hyperparameters, you need to formally train the
+    model with these values. The Keras Tuner has a high-level function called `hypermodel.build`
+    that makes this a single-command process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After that, set up the checkpoint directory as you did in [Chapter 9](ch09.xhtml#serving_tensorflow_models):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You’ll also set up the checkpoint the same way you did in [Chapter 9](ch09.xhtml#serving_tensorflow_models):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now it’s time to launch the model training process with the `best_hp_model`
+    object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the training is complete, load the model that has the highest validation
+    accuracy. With `save_best_only` set to True, the best model will be the one in
+    the latest checkpoint:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now `best_hp_model` is ready for serving. It is trained with the best hyperparameters
+    and the weights and bias are loaded from the best training epoch, which is the
+    one that yielded the highest validation accuracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you learned how to improve your model building and quality
+    assurance processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most frequent and important quality assurance concerns for ML models
+    is fairness. Fairness Indicators is a tool that can help you investigate model
+    bias across many different feature interactions and combinations. When evaluating
+    model fairness, you have to look for model bias in the training data. You also
+    need to rely on subject matter experts for context as you develop your hypothesis
+    to investigate any model bias. In the *Titanic* example this process is pretty
+    straightforward, because it is obvious that gender and class played important
+    roles in determining each individual’s chance for survival. However, in practice,
+    there are many other factors that complicate matters, including how the data was
+    collected and whether or not the context or conditions for data collection favored
+    one group within the sample source over others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the model building process, hyperparameter tuning is time consuming. In the
+    past, you had to iterate over each combination of potential hyperparameter values
+    to search for the best combination. With the Keras Tuner library, however, a relatively
+    advanced search algorithm known as Hyperband conducts searches efficiently using
+    a tournament-bracket style framework. In this framework, models trained on weak
+    hyperparameters are terminated and removed before the training epochs complete.
+    This reduces total search time and the best hyperparameters emerge as the winner.
+    All you need to do is formally train the same model with the winning combination.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this knowledge, you are now ready to elevate your TensorFlow model development
+    and testing skills to the next level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch10.xhtml#ch10fn05-marker)) If you need a refresher on classification
+    metrics, I suggest the succinct and useful review included in Google’s [*Machine
+    Learning Crash Course*](https://oreil.ly/yEEdm).
+  prefs: []
+  type: TYPE_NORMAL

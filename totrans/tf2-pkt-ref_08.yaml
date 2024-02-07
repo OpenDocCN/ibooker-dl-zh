@@ -1,0 +1,951 @@
+- en: Chapter 8\. Distributed Training
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Training a machine learning model may take a long time, especially if your training
+    dataset is huge or you are using a single machine to do the training. Even if
+    you have a GPU card at your disposal, it can still take weeks to train a complex
+    model such as ResNet50, a computer vision model with 50 convolution layers, trained
+    to classify objects into a thousand categories.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Reducing model training time requires a different approach. You already saw
+    some of the options available: in [Chapter 5](ch05.xhtml#data_pipelines_for_streaming_ingestion),
+    for example, you learned to leverage datasets in a data pipeline. Then there are
+    more powerful accelerators, such as GPUs and TPUs (which are exclusively available
+    in Google Cloud).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This chapter will cover a different way to train your model, known as *distributed
+    training*. Distributed training runs a model training process in parallel on a
+    cluster of devices, such as CPUs, GPUs, and TPUs, to speed up the training process.
+    (In this chapter, for the sake of concision, I will refer to hardware accelerators
+    such as GPUs, CPUs, and TPUs as *workers* or *devices*.) After you read this chapter,
+    you will know how to refactor your single-node training routine for distributed
+    training. (Every example you have seen in this book up to this point has been
+    single node: that is, they have all used a machine with one CPU to train the model.)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In distributed training, your model is trained by multiple independent processes.
+    You can think of each process as an independent training endeavor. Each process
+    runs the training routine on a separate device, using a subset (called a *shard*)
+    of the training data. This means that each process uses different training data.
+    As each process completes an epoch of training, it sends the results back to a
+    *master routine*, which collects and aggregates the results and then issues updates
+    to all of the processes. Each process then resumes training with the updated weights
+    and biases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we dive into the implementation code, let’s take a closer look at the
+    heart of distributed ML model training. We will start with the concept of data
+    parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data Parallelism
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The first thing you need to understand about distributed training is how training
+    data is handled. The predominant architecture in distributed training is known
+    as *data parallelism*. In this architecture, you run the same model and computation
+    logic on each worker. Each worker computes the loss and gradients using a shard
+    of data that is different from those of the other workers, then uses these gradients
+    to update the model parameters. The updated model in each individual worker is
+    then used in the next round of computation. This concept is illustrated in [Figure 8-1](#data_parallelism_architecture_left_paren).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Two common approaches are designed to update the model with these gradients:
+    asynchronous parameter servers and synchronous allreduce. We’ll look at each in
+    turn.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Data parallelism architecture (adapted from Distributed TensorFlow training
+    in Google I/O 2018 video)](Images/t2pr_0801.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-1\. Data parallelism architecture (Adapted from [Distributed TensorFlow
+    training](https://oreil.ly/beSob) in Google I/O 2018 video)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Asynchronous Parameter Server
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s look first at the *asynchronous parameter server* approach, shown in [Figure 8-2](#distributed_training_using_asynchronous).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Distributed training using asynchronous parameter servers (adapted from Distributed
+    TensorFlow training in Google I/O 2018 video)](Images/t2pr_0802.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-2\. Distributed training using asynchronous parameter servers. (Adapted
+    from [Distributed TensorFlow training](https://oreil.ly/beSob) in Google I/O 2018
+    video)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The devices labeled PS0 and PS1 in [Figure 8-2](#distributed_training_using_asynchronous)
+    are *parameter servers*; these servers hold the parameters of your model. Other
+    devices are designated as workers, as labeled in [Figure 8-2](#distributed_training_using_asynchronous).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The workers do the bulk of the computation. Each worker fetches the parameters
+    from the server, computes loss and gradients, and then sends the gradients back
+    to the parameter server, which uses them to update the model’s parameters. Each
+    worker does this independently, so this approach can be scaled up to use a large
+    number of workers. The advantage here is that if training workers are preempted
+    by high-priority production jobs, if there is asymmetry between the workers, or
+    if a machine goes down for maintenance, it doesn’t hurt your scaling, because
+    the workers are not waiting on each other.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, there is a downside: the workers can get out of sync. This can lead
+    to computing gradients on stale parameter values, which can delay model convergence
+    and therefore delay training toward the best model. With the recent popularity
+    and prevalence of hardware accelerators, this approach is implemented less frequently
+    than synchronous allreduce, which we’ll discuss next.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Synchronous Allreduce
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The *synchronous allreduce* approach has become more common as fast hardware
+    accelerators such as GPUs and TPUs have become more widely available.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a synchronous allreduce architecture (shown in [Figure 8-3](#distributed_training_using_a_synchronous)),
+    each worker holds a copy of the model’s parameters in its own memory. There are
+    no parameter servers. Instead, each worker computes the loss and gradients based
+    on a shard of training samples. Once that computation is complete, the workers
+    communicate among themselves to propagate the gradients and update the model parameters.
+    All workers are synchronized, which means the next round of computation begins
+    *only* when each worker has received the new gradients and updated the model parameters
+    in its memory accordingly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Distributed training using a synchronous allreduce architecture (Adapted
+    from Distributed TensorFlow training in Google I/O 2018 video)](Images/t2pr_0803.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-3\. Distributed training using a synchronous allreduce architecture
+    (adapted from [Distributed TensorFlow training](https://oreil.ly/beSob) in Google
+    I/O 2018 video)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: With these fast devices in a connected cluster, differences in processing time
+    between workers are not an issue. As a result, this approach usually leads to
+    a faster convergence on the best model than the asynchronous parameter server
+    architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Allreduce* is a type of algorithm that combines gradients across different
+    workers. This algorithm aggregates gradient values from different workers by,
+    for example, summing them and then copying them to different workers. Its implementation
+    can be very efficient as it reduces the overhead involved in synchronizing the
+    gradients. Many allreduce algorithm implementations are available, depending on
+    the types of communication available between workers and on the architecture’s
+    topology. A common implementation of this algorithm, known as *ring-allreduce*,
+    is shown in [Figure 8-4](#ring-allreduce_implementation_left_paren).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a ring-allreduce implementation, each worker sends its gradient to its successor
+    on the ring and receives a gradient from its predecessor. Eventually, each worker
+    receives a copy of the combined gradients. Ring-allreduce uses network bandwidth
+    optimally, because it uses both the upload and download bandwidth of each worker.
+    It’s fast whether working with multiple workers on a single machine or a small
+    number of machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Ring-allreduce implementation (adapted from Distributed TensorFlow training
+    in Google I/O 2018 video)](Images/t2pr_0804.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-4\. Ring-allreduce implementation (Adapted from [Distributed TensorFlow
+    training](https://oreil.ly/beSob) in Google I/O 2018 video)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now let’s see how you can do all this in TensorFlow. We’re going to focus on
+    scaling to multiple GPUs with a synchronous allreduce architecture. You’ll see
+    how easy it is to refactor your single-node training code for allreduce. That’s
+    because these high-level APIs handle a lot of the aforementioned complexity and
+    nuances of data parallelism for you, behind the scenes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the Class tf.distribute.MirroredStrategy
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The easiest way to implement distributed training is to use the `tf.distribute.MirroredStrategy`
+    class provided by TensorFlow. (For the details of various distributed training
+    strategies supported by TensorFlow, see [“Types of strategies” in the TensorFlow
+    documentation](https://oreil.ly/0jQed)). As you will see, implementing this class
+    requires only minimal changes in your source code, and you will still be able
+    to run in single-node mode, so you don’t have to worry about backward compatibility.
+    It also takes care of updating weights and biases, metrics, and model checkpoints
+    for you. Further, you don’t have to worry about how to split training data into
+    shards for each device. You don’t need to write code to handle retrieving or updating
+    parameters from each device. Nor do you need to worry about how to ensure that
+    gradients and losses across devices are aggregated correctly. The distribution
+    strategy does all of that for you.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll look briefly at a few code snippets that demonstrate the changes you
+    need to make in your training code for a case of one machine with multiple devices:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Create an object to handle distributed training. You can do this at the beginning
+    of the source code:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'The `strategy` object contains a property that holds the number of devices
+    available in the machine. You may use this command to show how many GPUs or TPUs
+    are at your disposal:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'If you are using a GPU cluster, such as through Databricks or a cloud provider’s
+    environment, you will see the number of GPUs to which you have access:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: Note that Google Colab only provides one GPU for each user.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: 'Wrap your model definition and loss function in a `strategy` scope. You just
+    need to make sure the model definition and compilation, including the loss function
+    of your choice, are encapsulated in a specific scope:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: These are the only two places you need to make code changes.
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: The `tf.distribute.MirroredStrategy` class is the workhorse behind the curtain.
+    As you have seen, the `strategy` object we created knows how many devices are
+    available. This information enables it to split the training data into different
+    shards and feed each shard into a particular device. Since the model architecture
+    is wrapped in this object’s scope, it is also held in each device’s memory. This
+    allows each device to run the training routine on the same model architecture,
+    minimize the same loss function, and update the gradients according to its specific
+    shard of training data. The model architecture and parameters are replicated,
+    or *mirrored*, across all devices. The `MirroredStrategy` class also implements
+    the ring-allreduce algorithm behind the scenes, so you don’t have to worry about
+    aggregating all the gradients from each device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The class is aware of your hardware settings and their potential for distributed
+    training, so there is no need for you to change your `model.fit` training routine
+    or data ingestion method. Saving model checkpoints and model summaries works the
+    same way as it does in single-node training, as we saw in [“ModelCheckpoint”](ch07.xhtml#modelcheckpoint).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting Up Distributed Training
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To try the distributed training examples in this chapter, you will need access
+    to multiple GPUs or TPUs. For simplicity, consider using one of the various commercial
+    platforms that offer GPU clusters, such as [Databricks](https://databricks.com)
+    and [Paperspace](https://www.paperspace.com). Other choices include major cloud
+    vendors, which offer a wide variety of platforms, from managed services to containers.
+    For the sake of simplicity and ease of availability, the examples in this chapter
+    are done in Databricks, a cloud-based compute vendor. It allows you to set up
+    a distributed compute cluster of either GPUs or CPUs to run heavy workloads that
+    a single-node machine cannot handle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While Databricks offers a free “community edition,” it does not provide access
+    to GPU clusters; for that you will need to [create a paid account](https://oreil.ly/byE1d).
+    Then you can associate Databricks with a cloud vendor of your choice and create
+    a GPU cluster with the configuration shown in [Figure 8-5](#setting_up_a_databricks_gpu_cluster).
+    My advice: once you’re done with your work, download your notebook and delete
+    the clusters you created.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Setting up a Databricks GPU cluster](Images/t2pr_0805.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-5\. Setting up a Databricks GPU cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You may notice in [Figure 8-5](#setting_up_a_databricks_gpu_cluster) that there
+    are Autopilot Options. The Enable autoscaling option will automatically scale
+    to more workers as needed, based on the workload. To save costs, I also set the
+    option for this cluster to terminate after 120 minutes of inactivity. (Note that
+    terminating the cluster does *not* mean you have deleted it. It remains and continues
+    incurring a small charge in your account until you delete it.) Once you complete
+    the configuration, click the Create Cluster button at the top. It usually takes
+    about 10 minutes to complete the process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, create a notebook ([Figure 8-6](#creating_a_notebook_in_the_databricks_en)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Creating a notebook in the Databricks environment](Images/t2pr_0806.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-6\. Creating a notebook in the Databricks environment
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Give your notebook a name, ensure the default language is set to Python, and
+    select the cluster that you just created ([Figure 8-7](#setting_up_your_notebook)).
+    Click the Create button to generate a blank notebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Setting up your notebook](Images/t2pr_0807.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-7\. Setting up your notebook
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now make sure your notebook is attached to the GPU cluster ([Figure 8-8](#attaching_your_notebook_to_an_active_clu)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Attaching your notebook to an active cluster](Images/t2pr_0808.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-8\. Attaching your notebook to an active cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now go ahead and start the GPU cluster. Then go to the Libraries tab and click
+    the Install New button, as shown in [Figure 8-9](#installing_libraries_in_a_databricks_clu).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Installing libraries in a Databricks cluster](Images/t2pr_0809.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-9\. Installing libraries in a Databricks cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When the Install Library prompt appears ([Figure 8-10](#installing_the_tensorflow-datasets_libra)),
+    select PyPl as the Library Source, and in the Package field type `**tensorflow-datasets**`,
+    and then click the Install button.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you have done this, you will be able to use TensorFlow’s dataset API to
+    work through the examples in this chapter. In the next section, you are going
+    to see how to use a Databricks notebook to try out distributed training with the
+    GPU cluster you just created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Installing the tensorflow-datasets library in a Databricks cluster](Images/t2pr_0810.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 8-10\. Installing the tensorflow-datasets library in a Databricks cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Using a GPU Cluster with tf.distribute.MirroredStrategy
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [Chapter 7](ch07.xhtml#monitoring_the_training_process-id00010), you used
+    the CIFAR-10 image dataset to build an image classifier with single-node training.
+    In this example, you will instead train a classifier using the distributed training
+    method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As usual, the first thing you need to do is import the necessary libraries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now is a good time to create a `MirroredStrategy` object to handle distributed
+    training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Your output should look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This shows that there are two GPUs. You can confirm this with the following
+    statement, as we did previously:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now load the training data and normalize each image pixel range to be between
+    0 and 1:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can define plain-text labels in a list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'These plain-text labels, from the [CIFAR-10 dataset](https://oreil.ly/fCvCX),
+    are in alphabetical order: “airplane” maps to the value 0 in `train_labels`, while
+    “truck” maps to 9.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since there is a separate partition for `test_images`, extract the first 500
+    images in `test_images` to use as validation images, while keeping the remainder
+    for testing. Also, to more efficiently using compute resources, convert these
+    images and labels from their native NumPy array format to the dataset format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: After you execute these commands, you’ll have all of the images in the formats
+    of training dataset, validation dataset, and test dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It would be nice to know your dataset’s size. To find out the sample size of
+    a TensorFlow dataset, convert it to a list, then find the length of the list using
+    the `len` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You can expect these results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, shuffle and batch the three datasets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Notice that `train_dataset` will be split into multiple batches, where each
+    batch contains `TRAIN_BATCH_SIZE` samples. Each training batch is fed to the model
+    during the training process to enable incremental updates to the weights and biases.
+    There is no need to create multiple batches for validation and testing: these
+    will be used as one batch, for the purposes of metrics logging and testing only.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, specify how often weight updates and validation should occur:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code means that after the model has seen `STEPS_PER_EPOCH` batches
+    of training data, it’s time to test it with the validation dataset, used as one
+    batch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now you need to wrap the model definition, model compilation, and loss function
+    inside the strategy scope:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The remaining sections are the same as what you did in [Chapter 7](ch07.xhtml#monitoring_the_training_process-id00010).
+    You can define the directory name pattern to checkpoint the model during the training
+    routine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding command specifies the directory path to be something like *./
+    myCIFAR10-20210302-014804/ckpt-{epoch}*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you define the checkpoint directory, simply pass the definition to `ModelCheckpoint`.
+    For simplicity, we’ll only save the checkpoint if an epoch of training improves
+    the model’s accuracy on validation data over a previous epoch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then wrap the definition around a list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now launch the training routine with the `fit` function, just like you have
+    done in our other examples throughout the book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In the preceding command, the `hist` object contains information about the
+    training results in a Python dictionary format. The property of interest in this
+    dictionary is the item `val_accuracy`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will display the validation accuracy from the first to the last epoch
+    of training. From this list, we can determine the epoch with the highest accuracy
+    in scoring the validation data. That’s the model you want to use for scoring:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Since you set the checkpoint to save the best model rather than every epoch,
+    a simpler alternative is to load the latest epoch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will give you the latest checkpoint under `checkpoint_dir`. Load the model
+    with the weights from that checkpoint as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Use the model loaded with the best weights to score the test data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Typical results look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: What you have seen is the easiest way to get started with distributed TensorFlow
+    model training. You learned how to create a cluster of GPUs from a commercial
+    vendor’s platform and how to refactor your single-node training code to a distributed
+    training routine. In addition, you learned about the essentials of distributed
+    machine learning and its different system architectures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, you will learn another way to implement distributed training.
+    You’ll be using an open source library known as Horovod, created by Uber, which
+    at its core also leverages the ring-allreduce algorithm. While this library requires
+    more refactoring, it may serve as another option for you, in case you would like
+    to compare the training time differences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Horovod API
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the preceding section, you learned how allreduce works. You also saw how
+    the `tf.distribute` API automates facets of distributed training for you behind
+    the scenes, so all you need to do is create a distributed training object and
+    wrap the training code around the object’s scope. In this section, you will learn
+    about Horovod, an older distributed training API that requires you to handle these
+    facets of distributed training in code. Since `tf.distribute` is popular and easy
+    to use, the Horovod API isn’t usually the first choice among programmers. The
+    purpose of presenting it here is to give you another option for distributed training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As in the previous section, we’ll use Databricks as the platform for learning
+    the basics of Horovod for distributed model training. If you followed my instructions,
+    you will have a cluster consisting of two GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To understand how the Horovod API works, there are two critical parameters
+    you need to know: each GPU’s identity and the number of processes for parallel
+    training. Each parameter is assigned to a Horovod environment variable, which
+    will be used in your code. In this particular case, you should have two GPUs.
+    Each will train on a shard of data, so there will be two training processes. You
+    can retrieve Horovod environment variables using the following functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rank
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rank denotes a GPU’s identity. If there are two GPUs, one GPU will be designated
+    a rank value of 0 and the other a rank value of 1\. And if there are more, the
+    designated rank values will be 2, 3, and so forth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Size
+  prefs: []
+  type: TYPE_NORMAL
+- en: Size denotes the total number of GPUs. If there are two, then Horovod’s scope
+    size is 2 and the training data will be split into two shards. Similarly, if there
+    are four GPUs, this value will be 4 and the data will be split into four shards.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You will see these two functions being used very often. You can refer to the
+    [Horovod documentation](https://oreil.ly/KC893) for more details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code Pattern for Implementing the Horovod API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Before I show the full source code for running Horovod in Databricks, let’s
+    take a look at how to run a Horovod training job. The general pattern for running
+    distributed training using Horovod in Databricks is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: With Databricks, you need to run Horovod distributed training according to the
+    preceding pattern. Basically, you create a `HorovodRunner` object called `hr`
+    that allocates two GPUs. This object then executes a `run` function, which distributes
+    a `train_hvd` function to each GPU. The `train_hvd` function is responsible for
+    executing data ingestion and training routines at each GPU. Also, `checkpoint_path`
+    is used to save the model at every training epoch, and `learning_rate` is used
+    during the back propagation step of the training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As training proceeds through each epoch, the model weights and biases are aggregated,
+    updated, and stored at the GPU ranked 0\. `learning_rate` is another parameter
+    designated by the Databricks driver and propagated to each GPU. Before you use
+    the preceding pattern, though, you need to organize and implement several functions,
+    which we’ll go through next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encapsulating the Model Architecture
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The job of Databricks’ main driver is to distribute training data and model
+    architecture blueprints to each GPU. Therefore, you need to wrap the model architecture
+    in a function. As `hr.run` is executed, the `train_hvd` function is executed at
+    each GPU. In `train_hvd`, a model architecture wrapper function such as this one
+    is invoked:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, this is the same model architecture you used in the previous
+    section, except it is wrapped as a function. The function will return the model
+    object to the execution process in each GPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encapsulating the Data Separation and Sharding Processes
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To ensure each GPU receives a shard of training data, you also need to wrap
+    the data processing steps as a function that can be passed into each GPU, just
+    as the model architecture is passed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an example, let’s use the same dataset, CIFAR-10, to illustrate how to ensure
+    that each GPU gets a different shard of training data. Take a look at the following
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice the input parameters `rank` and `size` in the function signature. `rank`
+    is defaulted to a value of 0, and `size` is defaulted to 1, so there is compatibility
+    with single-node training. In distributed training with more than one GPU, each
+    GPU will pass `hvd.rank` and `hvd.size` as inputs into this function. Since each
+    GPU’s identity is represented by `hvd.rank` through the double-colon (::) notation,
+    images and labels are sliced and sharded according to how many steps to skip from
+    one record to the next. As a result, the arrays returned by this function—`train_images`,
+    `train_labels`, `test_images`, and `test_labels`—are different for each GPU, depending
+    on its `hvd.rank`. (For a detailed explanation about NumPy array skipping and
+    slicing, see [this Colab notebook](https://oreil.ly/23bmZ).)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parameter Synchronization Among Workers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'It is important to initialize and synchronize the initial states of weights
+    and biases among all workers (devices) before starting the training. This is done
+    with a callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: This effectively broadcasts variable states from the 0-ranked GPU to all other
+    GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Error metrics for all workers need to be averaged between each training step.
+    This is done with another callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is also passed into a callback list during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It’s best to use a low learning rate early on and then switch to a preferred
+    learning rate after, say, the first five epochs, which you can do by specifying
+    the number of warm-up epochs with the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Also, include a way to reduce the learning rate during training when the model
+    metric stops improving:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, you’ll start to reduce the learning rate by a factor of 0.2
+    if there is no improvement in the model metric after 10 epochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To make things simpler, I recommend putting all these callbacks together as
+    a list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Model Checkpoint as a Callback
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As mentioned, after all workers complete an epoch of training, the model parameters
+    are saved as a checkpoint in the 0-ranked worker. This is done using the following
+    code snippet:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is necessary to prevent conflicts between workers, so that there is only
+    one version of truth when it comes to model performance and validation metrics.
+    As shown in the preceding code, with `save_best_only` set to True, the model and
+    trained parameters will be saved only if the validation metric in that epoch is
+    an improvement over the previous epoch. Therefore, not all epochs will result
+    in a model being saved, and you can be sure that the latest checkpoint is the
+    best model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Optimizer for Gradient Aggregation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The gradient computation is also distributed, as each worker does its own training
+    routine and calculates the gradient individually. You need to aggregate and then
+    average all the gradients from different workers, then apply the average to all
+    workers for the next step of training. This is accomplished with the following
+    code snippet:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, `hvd.DistributedOptimizer` wraps the single-node optimizer’s signature
+    in Horovod’s scope.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distributed Training Using the Horovod API
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now let’s take a look at a full implementation of distributed training using
+    the Horovod API in Databricks. This implementation uses the same dataset (CIFAR-10)
+    and model architecture you saw in [“Using the Class tf.distribute.MirroredStrategy”](#using_the_tfdotdistributedotmirroredstra):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: The preceding code will be executed at each worker. Each worker receives its
+    own `train_images`, `train_labels`, `test_images`, and `test_labels`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following code is a function that wraps the model architecture; it will
+    be built into each worker:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next is the main training function, `train_hvd`, which invokes the two functions
+    just shown. This function is rather lengthy, so I’ll explain it in blocks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Inside `train_hvd`, a Horovod object is created and initialized with the command
+    `hvd.init`. This function takes `checkpoint_path` and `learning_rate` as inputs
+    for the distributed training routine to store models at each epoch and set the
+    rate for gradient descent during the back propagation process. In the beginning,
+    all libraries are imported:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then you create and initialize a Horovod object and use it to access your workers’
+    configurations, so the data can be sharded properly later:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that you’ve created your `hvd` object, use it to provide worker identification
+    (`hvd.rank`) and the number of parallel processes (`hvd.size`) to the `get_dataset`
+    function, which will return the training and validation data in shards.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once you have these shards, convert them to a dataset so you can stream the
+    training data, just as you did in [“Using a GPU Cluster with tf.distribute.MirroredStrategy”](#using_a_gpu_cluster_with_tfdotdistribute):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Shuffle and batch the training and validation datasets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now define batch size, training steps, and training epochs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Create a model using the `get_model` function, set the optimizer, designate
+    a learning rate, and then compile the model with the proper loss function for
+    this classification task. Notice that the optimizer is wrapped by `DistributedOptimizer`
+    for distributed training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here you will create a callback list to synchronize variables across workers,
+    to aggregate and average gradients for synchronous updates, and to adjust the
+    learning rate according to epochs or training performance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, here is the callback for model checkpoints at each epoch. This callback
+    is only executed in the 0-ranked worker ( `hvd.rank() == 0` ):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now comes the final `fit` function that will launch the model training routine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: This concludes the `train_hvd` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next cell of your Databricks notebook, specify a checkpoint directory
+    for each epoch of training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`checkpoint_dir` will look something like */dbfs/ml/CIFAR10DistributedDemo/train/1615074200.2146788/*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next cell, go ahead and launch the distributed training routine:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: In the runner definition, `HorovodRunner(np=2)`, the number of processes is
+    specified as two per setup (see [“Setting Up Distributed Training”](#setting_up_distributed_training)),
+    which sets up two Standard_NC12 worker GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the training routine is complete, take a look at the checkpoint directories
+    using the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: Some checkpoints are skipped if there is no model improvement over previous
+    epochs. The latest checkpoint represents the model with the best validation metrics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, you learned what it takes for distributed model training to
+    work in an environment with multiple workers. With a data parallelism framework,
+    there are two major patterns for distributed training: asynchronous parameter
+    server and synchronous allreduce. Today synchronous allreduce is more popular
+    because of the general availability of high-performance accelerators.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You learned how to use a Databricks GPU cluster to perform two types of synchronous
+    allreduce APIs: TensorFlow’s own `tf.distribute` API and Uber’s Horovod API. The
+    TensorFlow option provides the most elegant and convenient use and requires the
+    least amount of code refactoring, whereas the Horovod API requires users to manually
+    handle data sharding, distribution pipelines, gradient aggregation and averaging,
+    and model checkpoints. Both options perform distributed training by ensuring that
+    each worker performs its own training, and then, at the end of each training step,
+    updating the gradients synchronously and consistently among all workers. This
+    is the hallmark of distributed training.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Congratulations—by working your way through this chapter, you learned how to
+    train a deep-learning model with a distributed data pipeline and distributed training
+    routine, using a cluster of GPUs in the cloud. In the next chapter, you will learn
+    how to serve a TensorFlow model for inferencing.
+  prefs: []
+  type: TYPE_NORMAL
