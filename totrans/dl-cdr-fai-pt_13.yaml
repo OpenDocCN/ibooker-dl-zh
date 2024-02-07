@@ -1,0 +1,1590 @@
+- en: 'Chapter 10\. NLP Deep Dive: RNNs'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In [Chapter 1](ch01.xhtml#chapter_intro), we saw that deep learning can be
+    used to get great results with natural language datasets. Our example relied on
+    using a pretrained language model and fine-tuning it to classify reviews. That
+    example highlighted a difference between transfer learning in NLP and computer
+    vision: in general, in NLP the pretrained model is trained on a different task.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What we call a *language model* is a model that has been trained to guess the
+    next word in a text (having read the ones before). This kind of task is called
+    *self-supervised learning*: we do not need to give labels to our model, just feed
+    it lots and lots of texts. It has a process to automatically get labels from the
+    data, and this task isn’t trivial: to properly guess the next word in a sentence,
+    the model will have to develop an understanding of the English (or other) language.
+    Self-supervised learning can also be used in other domains; for instance, see
+    [“Self-Supervised Learning and Computer Vision”](https://oreil.ly/ECjfJ) for an
+    introduction to vision applications. Self-supervised learning is not usually used
+    for the model that is trained directly, but instead is used for pretraining a
+    model used for transfer learning.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Jargon: Self-Supervised Learning'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Training a model using labels that are embedded in the independent variable,
+    rather than requiring external labels. For instance, training a model to predict
+    the next word in a text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The language model we used in [Chapter 1](ch01.xhtml#chapter_intro) to classify
+    IMDb reviews was pretrained on Wikipedia. We got great results by directly fine-tuning
+    this language model to a movie review classifier, but with one extra step, we
+    can do even better. The Wikipedia English is slightly different from the IMDb
+    English, so instead of jumping directly to the classifier, we could fine-tune
+    our pretrained language model to the IMDb corpus and then use *that* as the base
+    for our classifier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even if our language model knows the basics of the language we are using in
+    the task (e.g., our pretrained model is in English), it helps to get used to the
+    style of the corpus we are targeting. It may be more informal language, or more
+    technical, with new words to learn or different ways of composing sentences. In
+    the case of the IMDb dataset, there will be lots of names of movie directors and
+    actors, and often a less formal style of language than that seen in Wikipedia.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We already saw that with fastai, we can download a pretrained English language
+    model and use it to get state-of-the-art results for NLP classification. (We expect
+    pretrained models in many more languages to be available soon; they might well
+    be available by the time you are reading this book, in fact.) So, why are we learning
+    how to train a language model in detail?
+  prefs: []
+  type: TYPE_NORMAL
+- en: One reason, of course, is that it is helpful to understand the foundations of
+    the models that you are using. But there is another very practical reason, which
+    is that you get even better results if you fine-tune the (sequence-based) language
+    model prior to fine-tuning the classification model. For instance, for the IMDb
+    sentiment analysis task, the dataset includes 50,000 additional movie reviews
+    that do not have any positive or negative labels attached. Since there are 25,000
+    labeled reviews in the training set and 25,000 in the validation set, that makes
+    100,000 movie reviews altogether. We can use all of these reviews to fine-tune
+    the pretrained language model, which was trained only on Wikipedia articles; this
+    will result in a language model that is particularly good at predicting the next
+    word of a movie review.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is known as the Universal Language Model Fine-tuning (ULMFiT) approach.
+    The [paper introducing it](https://oreil.ly/rET-C) showed that this extra stage
+    of fine-tuning the language model, prior to transfer learning to a classification
+    task, resulted in significantly better predictions. Using this approach, we have
+    three stages for transfer learning in NLP, as summarized in [Figure 10-1](#ulmfit_process).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Diagram of the ULMFiT process](Images/dlcf_1001.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-1\. The ULMFiT process
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We’ll now explore how to apply a neural network to this language modeling problem,
+    using the concepts introduced in the preceding two chapters. But before reading
+    further, pause and think about how *you* would approach this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Text Preprocessing
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s not at all obvious how we’re going to use what we’ve learned so far to
+    build a language model. Sentences can be different lengths, and documents can
+    be long. So how can we predict the next word of a sentence using a neural network?
+    Let’s find out!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ve already seen how categorical variables can be used as independent variables
+    for a neural network. Here’s the approach we took for a single categorical variable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a list of all possible levels of that categorical variable (we’ll call
+    this list the *vocab*).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Replace each level with its index in the vocab.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Create an embedding matrix for this containing a row for each level (i.e., for
+    each item of the vocab).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Use this embedding matrix as the first layer of a neural network. (A dedicated
+    embedding matrix can take as inputs the raw vocab indexes created in step 2; this
+    is equivalent to, but faster and more efficient than, a matrix that takes as input
+    one-hot-encoded vectors representing the indexes.)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We can do nearly the same thing with text! What is new is the idea of a sequence.
+    First we concatenate all of the documents in our dataset into one big long string
+    and split it into words (or *tokens*), giving us a very long list of words. Our
+    independent variable will be the sequence of words starting with the first word
+    in our very long list and ending with the second to last, and our dependent variable
+    will be the sequence of words starting with the second word and ending with the
+    last word.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our vocab will consist of a mix of common words that are already in the vocabulary
+    of our pretrained model and new words specific to our corpus (cinematographic
+    terms or actor’s names, for instance). Our embedding matrix will be built accordingly:
+    for words that are in the vocabulary of our pretrained model, we will take the
+    corresponding row in the embedding matrix of the pretrained model; but for new
+    words, we won’t have anything, so we will just initialize the corresponding row
+    with a random vector.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each of the steps necessary to create a language model has jargon associated
+    with it from the world of natural language processing, and fastai and PyTorch
+    classes available to help. The steps are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tokenization
+  prefs: []
+  type: TYPE_NORMAL
+- en: Convert the text into a list of words (or characters, or substrings, depending
+    on the granularity of your model).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numericalization
+  prefs: []
+  type: TYPE_NORMAL
+- en: List all of the unique words that appear (the vocab), and convert each word
+    into a number by looking up its index in the vocab.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Language model data loader creation
+  prefs: []
+  type: TYPE_NORMAL
+- en: fastai provides an `LMDataLoader` class that automatically handles creating
+    a dependent variable that is offset from the independent variable by one token.
+    It also handles some important details, such as how to shuffle the training data
+    in such a way that the dependent and independent variables maintain their structure
+    as required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Language model creation
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We need a special kind of model that does something we haven’t seen before:
+    handles input lists that could be arbitrarily big or small. There are a number
+    of ways to do this; in this chapter, we will be using a *recurrent neural network*
+    (RNN). We will get to the details of RNNs in [Chapter 12](ch12.xhtml#chapter_nlp_dive),
+    but for now, you can think of it as just another deep neural network.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at how each step works in detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tokenization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When we said “convert the text into a list of words,” we left out a lot of details.
+    For instance, what do we do with punctuation? How do we deal with a word like
+    “don’t”? Is it one word or two? What about long medical or chemical words? Should
+    they be split into their separate pieces of meaning? How about hyphenated words?
+    What about languages like German and Polish, which can create really long words
+    from many, many pieces? What about languages like Japanese and Chinese that don’t
+    use bases at all, and don’t really have a well-defined idea of *word*?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Because there is no one correct answer to these questions, there is no one
+    approach to tokenization. There are three main approaches:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Word-based
+  prefs: []
+  type: TYPE_NORMAL
+- en: Split a sentence on spaces, as well as applying language-specific rules to try
+    to separate parts of meaning even when there are no spaces (such as turning “don’t”
+    into “do n’t”). Generally, punctuation marks are also split into separate tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Subword based
+  prefs: []
+  type: TYPE_NORMAL
+- en: Split words into smaller parts, based on the most commonly occurring substrings.
+    For instance, “occasion” might be tokenized as “o c ca sion”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Character-based
+  prefs: []
+  type: TYPE_NORMAL
+- en: Split a sentence into its individual characters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll look at word and subword tokenization here, and we’ll leave character-based
+    tokenization for you to implement in the questionnaire at the end of this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Jargon: Token'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One element of a list created by the tokenization process. It could be a word,
+    part of a word (a *subword*), or a single character.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Word Tokenization with fastai
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Rather than providing its own tokenizers, fastai provides a consistent interface
+    to a range of tokenizers in external libraries. Tokenization is an active field
+    of research, and new and improved tokenizers are coming out all the time, so the
+    defaults that fastai uses change too. However, the API and options shouldn’t change
+    too much, since fastai tries to maintain a consistent API even as the underlying
+    technology changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try it out with the IMDb dataset that we used in [Chapter 1](ch01.xhtml#chapter_intro):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We’ll need to grab the text files in order to try out a tokenizer. Just as
+    `get_image_files` (which we’ve used many times already), gets all the image files
+    in a path, `get_text_files` gets all the text files in a path. We can also optionally
+    pass `folders` to restrict the search to a particular list of subfolders:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s a review that we’ll tokenize (we’ll print just the start of it here
+    to save space):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we write this book, the default English word tokenizer for fastai uses a
+    library called *spaCy*. It has a sophisticated rules engine with special rules
+    for URLs, individual special English words, and much more. Rather than directly
+    using `SpacyTokenizer`, however, we’ll use `WordTokenizer`, since that will always
+    point to fastai’s current default word tokenizer (which may not necessarily be
+    spaCy, depending when you’re reading this).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try it out. We’ll use fastai’s `coll_repr(*collection*,*n*)` function
+    to display the results. This displays the first *`n`* items of *`collection`*,
+    along with the full size—it’s what `L` uses by default. Note that fastai’s tokenizers
+    take a collection of documents to tokenize, so we have to wrap `txt` in a list:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you see, spaCy has mainly just separated out the words and punctuation.
+    But it does something else here too: it has split “it’s” into “it” and “’s”. That
+    makes intuitive sense; these are separate words, really. Tokenization is a surprisingly
+    subtle task, when you think about all the little details that have to be handled.
+    Fortunately, spaCy handles these pretty well for us—for instance, here we see
+    that “.” is separated when it terminates a sentence, but not in an acronym or
+    number:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'fastai then adds some additional functionality to the tokenization process
+    with the `Tokenizer` class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice that there are now some tokens that start with the characters “xx”, which
+    is not a common word prefix in English. These are *special tokens*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, the first item in the list, `xxbos`, is a special token that indicates
+    the start of a new text (“BOS” is a standard NLP acronym that means “beginning
+    of stream”). By recognizing this start token, the model will be able to learn
+    it needs to “forget” what was said previously and focus on upcoming words.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These special tokens don’t come from spaCy directly. They are there because
+    fastai adds them by default, by applying a number of rules when processing text.
+    These rules are designed to make it easier for a model to recognize the important
+    parts of a sentence. In a sense, we are translating the original English language
+    sequence into a simplified tokenized language—a language that is designed to be
+    easy for a model to learn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For instance, the rules will replace a sequence of four exclamation points with
+    a single exclamation point, followed by a special *repeated character* token and
+    then the number four. In this way, the model’s embedding matrix can encode information
+    about general concepts such as repeated punctuation rather than requiring a separate
+    token for every number of repetitions of every punctuation mark. Similarly, a
+    capitalized word will be replaced with a special capitalization token, followed
+    by the lowercase version of the word. This way, the embedding matrix needs only
+    the lowercase versions of the words, saving compute and memory resources, but
+    can still learn the concept of capitalization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some of the main special tokens you’ll see:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`xxbos`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Indicates the beginning of a text (here, a review)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`xxmaj`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Indicates the next word begins with a capital (since we lowercased everything)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`xxunk`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Indicates the next word is unknown
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To see the rules that were used, you can check the default rules:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As always, you can look at the source code for each of them in a notebook by
+    typing the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here is a brief summary of what each does:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`fix_html`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Replaces special HTML characters with a readable version (IMDb reviews have
+    quite a few of these)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`replace_rep`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Replaces any character repeated three times or more with a special token for
+    repetition (`xxrep`), the number of times it’s repeated, then the character
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`replace_wrep`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Replaces any word repeated three times or more with a special token for word
+    repetition (`xxwrep`), the number of times it’s repeated, then the word
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`spec_add_spaces`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Adds spaces around / and #'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`rm_useless_spaces`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Removes all repetitions of the space character
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`replace_all_caps`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lowercases a word written in all caps and adds a special token for all caps
+    (`xxcap`) in front of it
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`replace_maj`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lowercases a capitalized word and adds a special token for capitalized (`xxmaj`)
+    in front of it
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`lowercase`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lowercases all text and adds a special token at the beginning (`xxbos`) and/or
+    the end (`xxeos`)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s take a look at a few of them in action:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now let’s take a look at how subword tokenization would work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Subword Tokenization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'In addition to the *word tokenization* approach seen in the preceding section,
+    another popular tokenization method is *subword tokenization*. Word tokenization
+    relies on an assumption that spaces provide a useful separation of components
+    of meaning in a sentence. However, this assumption is not always appropriate.
+    For instance, consider this sentence: 我的名字是郝杰瑞 (“My name is Jeremy Howard” in
+    Chinese). That’s not going to work very well with a word tokenizer, because there
+    are no spaces in it! Languages like Chinese and Japanese don’t use spaces, and
+    in fact they don’t even have a well-defined concept of a “word.” Other languages,
+    like Turkish and Hungarian, can add many subwords together without spaces, creating
+    very long words that include a lot of separate pieces of information.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To handle these cases, it’s generally best to use subword tokenization. This
+    proceeds in two steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analyze a corpus of documents to find the most commonly occurring groups of
+    letters. These become the vocab.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Tokenize the corpus using this vocab of *subword units*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Let’s look at an example. For our corpus, we’ll use the first 2,000 movie reviews:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We instantiate our tokenizer, passing in the size of the vocab we want to create,
+    and then we need to “train” it. That is, we need to have it read our documents
+    and find the common sequences of characters to create the vocab. This is done
+    with `setup`. As we’ll see shortly, `setup` is a special fastai method that is
+    called automatically in our usual data processing pipelines. Since we’re doing
+    everything manually at the moment, however, we have to call it ourselves. Here’s
+    a function that does these steps for a given vocab size and shows an example output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s try it out:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: When using fastai’s subword tokenizer, the special character `▁` represents
+    a space character in the original text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If we use a smaller vocab, each token will represent fewer characters, and
+    it will take more tokens to represent a sentence:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'On the other hand, if we use a larger vocab, most common English words will
+    end up in the vocab themselves, and we will not need as many to represent a sentence:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Picking a subword vocab size represents a compromise: a larger vocab means
+    fewer tokens per sentence, which means faster training, less memory, and less
+    state for the model to remember; but on the downside, it means larger embedding
+    matrices, which require more data to learn.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, subword tokenization provides a way to easily scale between character
+    tokenization (i.e., using a small subword vocab) and word tokenization (i.e., using
+    a large subword vocab), and handles every human language without needing language-specific
+    algorithms to be developed. It can even handle other “languages” such as genomic
+    sequences or MIDI music notation! For this reason, in the last year its popularity
+    has soared, and it seems likely to become the most common tokenization approach
+    (it may well already be, by the time you read this!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once our texts have been split into tokens, we need to convert them to numbers.
+    We’ll look at that next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numericalization with fastai
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '*Numericalization* is the process of mapping tokens to integers. The steps
+    are basically identical to those necessary to create a `Category` variable, such
+    as the dependent variable of digits in MNIST:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a list of all possible levels of that categorical variable (the vocab).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Replace each level with its index in the vocab.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Let’s take a look at this in action on the word-tokenized text we saw earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just as with `SubwordTokenizer`, we need to call `setup` on `Numericalize`;
+    this is how we create the vocab. That means we’ll need our tokenized corpus first.
+    Since tokenization takes a while, it’s done in parallel by fastai; but for this
+    manual walk-through, we’ll use a small subset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can pass this to `setup` to create our vocab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our special rules tokens appear first, and then every word appears once, in
+    frequency order. The defaults to `Numericalize` are `min_freq=3` and `max_vocab=60000`.
+    `max_vocab=60000` results in fastai replacing all words other than the most common
+    60,000 with a special *unknown word* token, `xxunk`. This is useful to avoid having
+    an overly large embedding matrix, since that can slow down training and use up
+    too much memory, and can also mean that there isn’t enough data to train useful
+    representations for rare words. However, this last issue is better handled by
+    setting `min_freq`; the default `min_freq=3` means that any word appearing fewer
+    than three times is replaced with `xxunk`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: fastai can also numericalize your dataset using a vocab that you provide, by
+    passing a list of words as the `vocab` parameter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once we’ve created our `Numericalize` object, we can use it as if it were a
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This time, our tokens have been converted to a tensor of integers that our
+    model can receive. We can check that they map back to the original text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that we have numbers, we need to put them in batches for our model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Putting Our Texts into Batches for a Language Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When dealing with images, we needed to resize them all to the same height and
+    width before grouping them together in a mini-batch so they could stack together
+    efficiently in a single tensor. Here it’s going to be a little different, because
+    one cannot simply resize text to a desired length. Also, we want our language
+    model to read text in order, so that it can efficiently predict what the next
+    word is. This means each new batch should begin precisely where the previous one
+    left off.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Suppose we have the following text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will go back over the example of classifying movie reviews
+    we studied in chapter 1 and dig deeper under the surface. First we will look at
+    the processing steps necessary to convert text into numbers and how to customize
+    it. By doing this, we’ll have another example of the PreProcessor used in the
+    data block API.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Then we will study how we build a language model and train it for a while.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'The tokenization process will add special tokens and deal with punctuation
+    to return this text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: xxbos xxmaj in this chapter , we will go back over the example of classifying
+    movie reviews we studied in chapter 1 and dig deeper under the surface . xxmaj
+    first we will look at the processing steps necessary to convert text into numbers
+    and how to customize it . xxmaj by doing this , we ‘ll have another example of
+    the preprocessor used in the data block xxup api . \n xxmaj then we will study
+    how we build a language model and train it for a while .
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'We now have 90 tokens, separated by spaces. Let’s say we want a batch size
+    of 6\. We need to break this text into 6 contiguous parts of length 15:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| xxbos | xxmaj | in | this | chapter | , | we | will | go | back | over |
+    the | example | of | classifying |'
+  prefs: []
+  type: TYPE_TB
+- en: '| movie | reviews | we | studied | in | chapter | 1 | and | dig | deeper |
+    under | the | surface | . | xxmaj |'
+  prefs: []
+  type: TYPE_TB
+- en: '| first | we | will | look | at | the | processing | steps | necessary | to
+    | convert | text | into | numbers | and |'
+  prefs: []
+  type: TYPE_TB
+- en: '| how | to | customize | it | . | xxmaj | by | doing | this | , | we | ‘ll
+    | have | another | example |'
+  prefs: []
+  type: TYPE_TB
+- en: '| of | the | preprocessor | used | in | the | data | block | xxup | api | .
+    | \n | xxmaj | then | we |'
+  prefs: []
+  type: TYPE_TB
+- en: '| will | study | how | we | build | a | language | model | and | train | it
+    | for | a | while | . |'
+  prefs: []
+  type: TYPE_TB
+- en: In a perfect world, we could then give this one batch to our model. But that
+    approach doesn’t scale, because outside this toy example, it’s unlikely that a
+    single batch containing all the tokens would fit in our GPU memory (here we have
+    90 tokens, but all the IMDb reviews together give several million).
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, we need to divide this array more finely into subarrays of a fixed sequence
+    length. It is important to maintain order within and across these subarrays, because
+    we will use a model that maintains a state so that it remembers what it read previously
+    when predicting what comes next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Going back to our previous example with 6 batches of length 15, if we chose
+    a sequence length of 5, that would mean we first feed the following array:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| xxbos | xxmaj | in | this | chapter |'
+  prefs: []
+  type: TYPE_TB
+- en: '| movie | reviews | we | studied | in |'
+  prefs: []
+  type: TYPE_TB
+- en: '| first | we | will | look | at |'
+  prefs: []
+  type: TYPE_TB
+- en: '| how | to | customize | it | . |'
+  prefs: []
+  type: TYPE_TB
+- en: '| of | the | preprocessor | used | in |'
+  prefs: []
+  type: TYPE_TB
+- en: '| will | study | how | we | build |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Then, this one:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| , | we | will | go | back |'
+  prefs: []
+  type: TYPE_TB
+- en: '| chapter | 1 | and | dig | deeper |'
+  prefs: []
+  type: TYPE_TB
+- en: '| the | processing | steps | necessary | to |'
+  prefs: []
+  type: TYPE_TB
+- en: '| xxmaj | by | doing | this | , |'
+  prefs: []
+  type: TYPE_TB
+- en: '| the | data | block | xxup | api |'
+  prefs: []
+  type: TYPE_TB
+- en: '| a | language | model | and | train |'
+  prefs: []
+  type: TYPE_TB
+- en: 'And finally:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| over | the | example | of | classifying |'
+  prefs: []
+  type: TYPE_TB
+- en: '| under | the | surface | . | xxmaj |'
+  prefs: []
+  type: TYPE_TB
+- en: '| convert | text | into | numbers | and |'
+  prefs: []
+  type: TYPE_TB
+- en: '| we | ‘ll | have | another | example |'
+  prefs: []
+  type: TYPE_TB
+- en: '| . | \n | xxmaj | then | we |'
+  prefs: []
+  type: TYPE_TB
+- en: '| it | for | a | while | . |'
+  prefs: []
+  type: TYPE_TB
+- en: Going back to our movie reviews dataset, the first step is to transform the
+    individual texts into a stream by concatenating them together. As with images,
+    it’s best to randomize the order of the inputs, so at the beginning of each epoch
+    we will shuffle the entries to make a new stream (we shuffle the order of the
+    documents, not the order of the words inside them, or the texts would not make
+    sense anymore!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We then cut this stream into a certain number of batches (which is our *batch
+    size*). For instance, if the stream has 50,000 tokens and we set a batch size
+    of 10, this will give us 10 mini-streams of 5,000 tokens. What is important is
+    that we preserve the order of the tokens (so from 1 to 5,000 for the first mini-stream,
+    then from 5,001 to 10,000…), because we want the model to read continuous rows
+    of text (as in the preceding example). An `xxbos` token is added at the start
+    of each text during preprocessing, so that the model knows when it reads the stream
+    when a new entry is beginning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So to recap, at every epoch we shuffle our collection of documents and concatenate
+    them into a stream of tokens. We then cut that stream into a batch of fixed-size
+    consecutive mini-streams. Our model will then read the mini-streams in order,
+    and thanks to an inner state, it will produce the same activation, whatever sequence
+    length we picked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is all done behind the scenes by the fastai library when we create an `LMDataLoader`.
+    We do this by first applying our `Numericalize` object to the tokenized texts
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'and then passing that to `LMDataLoader`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s confirm that this gives the expected results, by grabbing the first batch
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'and then looking at the first row of the independent variable, which should
+    be the start of the first text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The dependent variable is the same thing offset by one token:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: This concludes all the preprocessing steps we need to apply to our data. We
+    are now ready to train our text classifier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a Text Classifier
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'As we saw at the beginning of this chapter, there are two steps to training
+    a state-of-the-art text classifier using transfer learning: first we need to fine-tune
+    our language model pretrained on Wikipedia to the corpus of IMDb reviews, and
+    then we can use that model to train a classifier.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As usual, let’s start with assembling our data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Language Model Using DataBlock
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: fastai handles tokenization and numericalization automatically when `TextBlock`
+    is passed to `DataBlock`. All of the arguments that can be passed to `Tokenizer`
+    and `Numericalize` can also be passed to `TextBlock`. In the next chapter, we’ll
+    discuss the easiest ways to run each of these steps separately, to ease debugging,
+    but you can always just debug by running them manually on a subset of your data
+    as shown in the previous sections. And don’t forget about `DataBlock`’s handy
+    `summary` method, which is very useful for debugging data issues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s how we use `TextBlock` to create a language model, using fastai’s defaults:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: One thing that’s different from previous types we’ve used in `DataBlock` is
+    that we’re not just using the class directly (i.e., `TextBlock(...)`, but instead
+    are calling a *class method*. A class method is a Python method that, as the name
+    suggests, belongs to a *class* rather than an *object*. (Be sure to search online
+    for more information about class methods if you’re not familiar with them, since
+    they’re commonly used in many Python libraries and applications; we’ve used them
+    a few times previously in the book, but haven’t called attention to them.) The
+    reason that `TextBlock` is special is that setting up the numericalizer’s vocab
+    can take a long time (we have to read and tokenize every document to get the vocab).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To be as efficient as possible, fastai performs a few optimizations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It saves the tokenized documents in a temporary folder, so it doesn’t have to
+    tokenize them more than once.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: It runs multiple tokenization processes in parallel, to take advantage of your
+    computer’s CPUs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We need to tell `TextBlock` how to access the texts, so that it can do this
+    initial preprocessing—that’s what `from_folder` does.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`show_batch` then works in the usual way:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: '|  | text | text_ |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | xxbos xxmaj it ’s awesome ! xxmaj in xxmaj story xxmaj mode , your going
+    from punk to pro . xxmaj you have to complete goals that involve skating , driving
+    , and walking . xxmaj you create your own skater and give it a name , and you
+    can make it look stupid or realistic . xxmaj you are with your friend xxmaj eric
+    throughout the game until he betrays you and gets you kicked off of the skateboard
+    | xxmaj it ’s awesome ! xxmaj in xxmaj story xxmaj mode , your going from punk
+    to pro . xxmaj you have to complete goals that involve skating , driving , and
+    walking . xxmaj you create your own skater and give it a name , and you can make
+    it look stupid or realistic . xxmaj you are with your friend xxmaj eric throughout
+    the game until he betrays you and gets you kicked off of the skateboard xxunk
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | what xxmaj i ‘ve read , xxmaj death xxmaj bed is based on an actual dream
+    , xxmaj george xxmaj barry , the director , successfully transferred dream to
+    film , only a genius could accomplish such a task . \n\n xxmaj old mansions make
+    for good quality horror , as do portraits , not sure what to make of the killer
+    bed with its killer yellow liquid , quite a bizarre dream , indeed . xxmaj also
+    , this | xxmaj i ‘ve read , xxmaj death xxmaj bed is based on an actual dream
+    , xxmaj george xxmaj barry , the director , successfully transferred dream to
+    film , only a genius could accomplish such a task . \n\n xxmaj old mansions make
+    for good quality horror , as do portraits , not sure what to make of the killer
+    bed with its killer yellow liquid , quite a bizarre dream , indeed . xxmaj also
+    , this is |'
+  prefs: []
+  type: TYPE_TB
+- en: Now that our data is ready, we can fine-tune the pretrained language model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fine-Tuning the Language Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To convert the integer word indices into activations that we can use for our
+    neural network, we will use embeddings, just as we did for collaborative filtering
+    and tabular modeling. Then we’ll feed those embeddings into a *recurrent neural
+    network* (RNN), using an architecture called *AWD-LSTM* (we will show you how
+    to write such a model from scratch in [Chapter 12](ch12.xhtml#chapter_nlp_dive)).
+    As we discussed earlier, the embeddings in the pretrained model are merged with
+    random embeddings added for words that weren’t in the pretraining vocabulary.
+    This is handled automatically inside `language_model_learner`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The loss function used by default is cross-entropy loss, since we essentially
+    have a classification problem (the different categories being the words in our
+    vocab). The *perplexity* metric used here is often used in NLP for language models:
+    it is the exponential of the loss (i.e., `torch.exp(cross_entropy)`). We also
+    include the accuracy metric to see how many times our model is right when trying
+    to predict the next word, since cross entropy (as we’ve seen) is both hard to
+    interpret and tells us more about the model’s confidence than its accuracy.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s go back to the process diagram from the beginning of this chapter. The
+    first arrow has been completed for us and made available as a pretrained model
+    in fastai, and we’ve just built the `DataLoaders` and `Learner` for the second
+    stage. Now we’re ready to fine-tune our language model!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Diagram of the ULMFiT process](Images/dlcf_1001.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'It takes quite a while to train each epoch, so we’ll be saving the intermediate
+    model results during the training process. Since `fine_tune` doesn’t do that for
+    us, we’ll use `fit_one_cycle`. Just like `cnn_learner`, `language_model_learner`
+    automatically calls `freeze` when using a pretrained model (which is the default),
+    so this will train only the embeddings (the only part of the model that contains
+    randomly initialized weights—i.e., embeddings for words that are in our IMDb vocab,
+    but aren’t in the pretrained model vocab):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | perplexity | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 4.120048 | 3.912788 | 0.299565 | 50.038246 | 11:39 |'
+  prefs: []
+  type: TYPE_TB
+- en: This model takes a while to train, so it’s a good opportunity to talk about
+    saving intermediary results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Saving and Loading Models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You can easily save the state of your model like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This will create a file in *learn.path/models/* named *1epoch.pth*. If you
+    want to load your model in another machine after creating your `Learner` the same
+    way, or resume training later, you can load the content of this file as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the initial training has completed, we can continue fine-tuning the model
+    after unfreezing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | perplexity | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 3.893486 | 3.772820 | 0.317104 | 43.502548 | 12:37 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 3.820479 | 3.717197 | 0.323790 | 41.148880 | 12:30 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 3.735622 | 3.659760 | 0.330321 | 38.851997 | 12:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3 | 3.677086 | 3.624794 | 0.333960 | 37.516987 | 12:12 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4 | 3.636646 | 3.601300 | 0.337017 | 36.645859 | 12:05 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 5 | 3.553636 | 3.584241 | 0.339355 | 36.026001 | 12:04 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 6 | 3.507634 | 3.571892 | 0.341353 | 35.583862 | 12:08 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 7 | 3.444101 | 3.565988 | 0.342194 | 35.374371 | 12:08 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 8 | 3.398597 | 3.566283 | 0.342647 | 35.384815 | 12:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 9 | 3.375563 | 3.568166 | 0.342528 | 35.451500 | 12:05 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Once this is done, we save all of our model except the final layer that converts
+    activations to probabilities of picking each token in our vocabulary. The model
+    not including the final layer is called the *encoder*. We can save it with `save_encoder`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Jargon: Encoder'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The model not including the task-specific final layer(s). This term means much
+    the same thing as “body” when applied to vision CNNs, but “encoder” tends to be
+    more used for NLP and generative models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This completes the second stage of the text classification process: fine-tuning
+    the language model. We can now use it to fine-tune a classifier using the IMDb
+    sentiment labels. Before we move on to fine-tuning the classifier, however, let’s
+    quickly try something different: using our model to generate random reviews.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Text Generation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Because our model is trained to guess the next word of the sentence, we can
+    use it to write new reviews:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you can see, we add some randomness (we pick a random word based on the
+    probabilities returned by the model) so we don’t get exactly the same review twice.
+    Our model doesn’t have any programmed knowledge of the structure of a sentence
+    or grammar rules, yet it has clearly learned a lot about English sentences: we
+    can see it capitalizes properly (*I* is transformed to *i* because our rules require
+    two characters or more to consider a word as capitalized, so it’s normal to see
+    it lowercased) and is using consistent tense. The general review makes sense at
+    first glance, and it’s only if you read carefully that you can notice something
+    is a bit off. Not bad for a model trained in a couple of hours!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: But our end goal wasn’t to train a model to generate reviews, but to classify
+    them…so let’s use this model to do just that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating the Classifier DataLoaders
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We’re now moving from language model fine-tuning to classifier fine-tuning.
+    To re-cap, a language model predicts the next word of a document, so it doesn’t
+    need any external labels. A classifier, however, predicts an external label—in
+    the case of IMDb, it’s the sentiment of a document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This means that the structure of our `DataBlock` for NLP classification will
+    look very familiar. It’s nearly the same as we’ve seen for the many image classification
+    datasets we’ve worked with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just as with image classification, `show_batch` shows the dependent variable
+    (sentiment, in this case) with each independent variable (movie review text):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: '|  | text | category |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | xxbos i rate this movie with 3 skulls , only coz the girls knew how to
+    scream , this could ‘ve been a better movie , if actors were better , the twins
+    were xxup ok , i believed they were evil , but the eldest and youngest brother
+    , they sucked really bad , it seemed like they were reading the scripts instead
+    of acting them … . spoiler : if they ‘re vampire ’s why do they freeze the blood
+    ? vampires ca n’t drink frozen blood , the sister in the movie says let ’s drink
+    her while she is alive … .but then when they ‘re moving to another house , they
+    take on a cooler they ‘re frozen blood . end of spoiler \n\n it was a huge waste
+    of time , and that made me mad coz i read all the reviews of how | neg |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | xxbos i have read all of the xxmaj love xxmaj come xxmaj softly books
+    . xxmaj knowing full well that movies can not use all aspects of the book , but
+    generally they at least have the main point of the book . i was highly disappointed
+    in this movie . xxmaj the only thing that they have in this movie that is in the
+    book is that xxmaj missy ’s father comes to xxunk in the book both parents come
+    ) . xxmaj that is all . xxmaj the story line was so twisted and far fetch and
+    yes , sad , from the book , that i just could n’t enjoy it . xxmaj even if i did
+    n’t read the book it was too sad . i do know that xxmaj pioneer life was rough
+    , but the whole movie was a downer . xxmaj the rating | neg |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | xxbos xxmaj this , for lack of a better term , movie is lousy . xxmaj
+    where do i start … … \n\n xxmaj cinemaphotography - xxmaj this was , perhaps ,
+    the worst xxmaj i ‘ve seen this year . xxmaj it looked like the camera was being
+    tossed from camera man to camera man . xxmaj maybe they only had one camera .
+    xxmaj it gives you the sensation of being a volleyball . \n\n xxmaj there are
+    a bunch of scenes , haphazardly , thrown in with no continuity at all . xxmaj
+    when they did the '' split screen '' , it was absurd . xxmaj everything was squished
+    flat , it looked ridiculous . \n\n xxmaj the color tones were way off . xxmaj
+    these people need to learn how to balance a camera . xxmaj this '' movie '' is
+    poorly made , and | neg |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Looking at the `DataBlock` definition, every piece is familiar from previous
+    data blocks we’ve built, with two important exceptions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`TextBlock.from_folder` no longer has the `is_lm=True` parameter.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We pass the `vocab` we created for the language model fine-tuning.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The reason that we pass the `vocab` of the language model is to make sure we
+    use the same correspondence of token to index. Otherwise, the embeddings we learned
+    in our fine-tuned language model won’t make any sense to this model, and the fine-tuning
+    step won’t be of any use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By passing `is_lm=False` (or not passing `is_lm` at all, since it defaults
+    to `False`), we tell `TextBlock` that we have regular labeled data, rather than
+    using the next tokens as labels. There is one challenge we have to deal with,
+    however, which has to do with collating multiple documents into a mini-batch.
+    Let’s see with an example, by trying to create a mini-batch containing the first
+    10 documents. First we’ll numericalize them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s now look at how many tokens each of these 10 movie reviews has:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Remember, PyTorch `DataLoader`s need to collate all the items in a batch into
+    a single tensor, and a single tensor has a fixed shape (i.e., it has a particular
+    length on every axis, and all items must be consistent). This should sound familiar:
+    we had the same issue with images. In that case, we used cropping, padding, and/or
+    squishing to make all the inputs the same size. Cropping might not be a good idea
+    for documents, because it seems likely we’d remove some key information (having
+    said that, the same issue is true for images, and we use cropping there; data
+    augmentation hasn’t been well explored for NLP yet, so perhaps there are actually
+    opportunities to use cropping in NLP too!). You can’t really “squish” a document.
+    So that leaves padding!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will expand the shortest texts to make them all the same size. To do this,
+    we use a special padding token that will be ignored by our model. Additionally,
+    to avoid memory issues and improve performance, we will batch together texts that
+    are roughly the same lengths (with some shuffling for the training set). We do
+    this by (approximately, for the training set) sorting the documents by length
+    prior to each epoch. The result is that the documents collated into a single batch
+    will tend of be of similar lengths. We won’t pad every batch to the same size,
+    but will instead use the size of the largest document in each batch as the target
+    size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamically Resize Images
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It is possible to do something similar with images, which is especially useful
+    for irregularly sized rectangular images, but at the time of writing no library
+    provides good support for this yet, and there aren’t any papers covering it. It’s
+    something we’re planning to add to fastai soon, however, so keep an eye on the
+    book’s website; we’ll add information about this as soon as we have it working
+    well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The sorting and padding are automatically done by the data block API for us
+    when using a `TextBlock` with `is_lm=False`. (We don’t have this same issue for
+    language model data, since we concatenate all the documents together first and
+    then split them into equally sized sections.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can now create a model to classify our texts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The final step prior to training the classifier is to load the encoder from
+    our fine-tuned language model. We use `load_encoder` instead of `load` because
+    we have only pretrained weights available for the encoder; `load` by default raises
+    an exception if an incomplete model is loaded:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: Fine-Tuning the Classifier
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The last step is to train with discriminative learning rates and *gradual unfreezing*.
+    In computer vision, we often unfreeze the model all at once, but for NLP classifiers,
+    we find that unfreezing a few layers at a time makes a real difference:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 0.347427 | 0.184480 | 0.929320 | 00:33 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'In just one epoch, we get the same result as our training in [Chapter 1](ch01.xhtml#chapter_intro)—not
+    too bad! We can pass `-2` to `freeze_to` to freeze all except the last two parameter
+    groups:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 0.247763 | 0.171683 | 0.934640 | 00:37 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Then we can unfreeze a bit more and continue training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 0.193377 | 0.156696 | 0.941200 | 00:45 |'
+  prefs: []
+  type: TYPE_TB
+- en: And finally, the whole model!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 0.172888 | 0.153770 | 0.943120 | 01:01 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 0.161492 | 0.155567 | 0.942640 | 00:57 |'
+  prefs: []
+  type: TYPE_TB
+- en: We reached 94.3% accuracy, which was state-of-the-art performance just three
+    years ago. By training another model on all the texts read backward and averaging
+    the predictions of those two models, we can even get to 95.1% accuracy, which
+    was the state of the art introduced by the ULMFiT paper. It was beaten only a
+    few months ago, by fine-tuning a much bigger model and using expensive data augmentation
+    techniques (translating sentences in another language and back, using another
+    model for translation).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using a pretrained model let us build a fine-tuned language model that is pretty
+    powerful, to either generate fake reviews or help classify them. This is exciting
+    stuff, but it’s good to remember that this technology can also be used for malign
+    purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Disinformation and Language Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Even simple algorithms based on rules, before the days of widely available deep
+    learning language models, could be used to create fraudulent accounts and try
+    to influence policymakers. Jeff Kao, now a computational journalist at ProPublica,
+    analyzed the comments that were sent to the US Federal Communications Commission
+    (FCC) regarding a 2017 proposal to repeal net neutrality. In his article [“More
+    than a Million Pro-Repeal Net Neutrality Comments Were Likely Faked”](https://oreil.ly/ptq8B),
+    he reports how he discovered a large cluster of comments opposing net neutrality
+    that seemed to have been generated by some sort of Mad Libs–style mail merge.
+    In [Figure 10-2](#disinformation), the fake comments have been helpfully color-coded
+    by Kao to highlight their formulaic nature.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/dlcf_1002.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-2\. Comments received by the FCC during the net neutrality debate
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Kao estimated that “less than 800,000 of the 22M+ comments…could be considered
+    truly unique” and that “more than 99% of the truly unique comments were in favor
+    of keeping net neutrality.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given advances in language modeling that have occurred since 2017, such fraudulent
+    campaigns could be nearly impossible to catch now. You now have all the necessary
+    tools at your disposal to create a compelling language model—something that can
+    generate context-appropriate, believable text. It won’t necessarily be perfectly
+    accurate or correct, but it will be plausible. Think about what this technology
+    would mean when put together with the kinds of disinformation campaigns we have
+    learned about in recent years. Take a look at the Reddit dialogue shown in [Figure 10-3](#ethics_reddit),
+    where a language model based on OpenAI’s GPT-2 algorithm is having a conversation
+    with itself about whether the US government should cut defense spending.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![An algorithm talking to itself on Reddit](Images/dlcf_1003.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-3\. An algorithm talking to itself on Reddit
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this case, it was explained that an algorithm was being used to generate
+    the dialogue. But imagine what would happen if a bad actor decided to release
+    such an algorithm across social networks—they could do it slowly and carefully,
+    allowing the algorithm to gradually develop followers and trust over time. It
+    would not take many resources to have literally millions of accounts doing this.
+    In such a situation, we could easily imagine getting to a point where the vast
+    majority of discourse online was from bots, and nobody would have any idea that
+    it was happening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We are already starting to see examples of machine learning being used to generate
+    identities. For example, [Figure 10-4](#katie_jones) shows a LinkedIn profile
+    for Katie Jones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/dlcf_1004.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 10-4\. Katie Jones’s LinkedIn profile
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Katie Jones was connected on LinkedIn to several members of mainstream Washington
+    think tanks. But she didn’t exist. That image you see was autogenerated by a generative
+    adversarial network, and somebody named Katie Jones has not, in fact, graduated
+    from the Center for Strategic and International Studies.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many people assume or hope that algorithms will come to our defense here—that
+    we will develop classification algorithms that can automatically recognize autogenerated
+    content. The problem, however, is that this will always be an arms race, in which
+    better classification (or discriminator) algorithms can be used to create better
+    generation algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, we explored the last application covered out of the box by
+    the fastai library: text. We saw two types of models: language models that can
+    generate texts, and a classifier that determines whether a review is positive
+    or negative. To build a state-of-the art classifier, we used a pretrained language
+    model, fine-tuned it to the corpus of our task, then used its body (the encoder)
+    with a new head to do the classification.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we end this part of the book, we’ll take a look at how the fastai library
+    can help you assemble your data for your specific problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questionnaire
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What is self-supervised learning?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is a language model?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why is a language model considered self-supervised?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are self-supervised models usually used for?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why do we fine-tune language models?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are the three steps to create a state-of-the-art text classifier?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How do the 50,000 unlabeled movie reviews help create a better text classifier
+    for the IMDb dataset?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are the three steps to prepare your data for a language model?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is tokenization? Why do we need it?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Name three approaches to tokenization.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is `xxbos`?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: List four rules that fastai applies to text during tokenization.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why are repeated characters replaced with a token showing the number of repetitions
+    and the character that’s repeated?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is numericalization?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why might there be words that are replaced with the “unknown word” token?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: With a batch size of 64, the first row of the tensor representing the first
+    batch contains the first 64 tokens for the dataset. What does the second row of
+    that tensor contain? What does the first row of the second batch contain? (Careful—students
+    often get this one wrong! Be sure to check your answer on the book’s website.)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why do we need padding for text classification? Why don’t we need it for language
+    modeling?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What does an embedding matrix for NLP contain? What is its shape?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is perplexity?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why do we have to pass the vocabulary of the language model to the classifier
+    data block?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is gradual unfreezing?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why is text generation always likely to be ahead of automatic identification
+    of machine-generated texts?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further Research
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: See what you can learn about language models and disinformation. What are the
+    best language models today? Take a look at some of their outputs. Do you find
+    them convincing? How could a bad actor best use such a model to create conflict
+    and uncertainty?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Given the limitation that models are unlikely to be able to consistently recognize
+    machine-generated texts, what other approaches may be needed to handle large-scale
+    disinformation campaigns that leverage deep learning?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL

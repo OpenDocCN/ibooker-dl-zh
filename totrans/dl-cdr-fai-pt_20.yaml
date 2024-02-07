@@ -1,0 +1,1167 @@
+- en: Chapter 16\. The Training Process
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You now know how to create state-of-the-art architectures for computer vision,
+    natural image processing, tabular analysis, and collaborative filtering, and you
+    know how to train them quickly. So we’re done, right? Not quite yet. We still
+    have to explore a little bit more of the training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We explained in [Chapter 4](ch04.xhtml#chapter_mnist_basics) the basis of stochastic
+    gradient descent: pass a mini-batch to the model, compare it to our target with
+    the loss function, then compute the gradients of this loss function with regard
+    to each weight before updating the weights with the formula:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: We implemented this from scratch in a training loop, and saw that PyTorch provides
+    a simple `nn.SGD` class that does this calculation for each parameter for us.
+    In this chapter, we will build some faster optimizers, using a flexible foundation.
+    But that’s not all we might want to change in the training process. For any tweak
+    of the training loop, we will need a way to add some code to the basis of SGD.
+    The fastai library has a system of callbacks to do this, and we will teach you
+    all about it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start with standard SGD to get a baseline; then we will introduce the
+    most commonly used optimizers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Establishing a Baseline
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'First we’ll create a baseline using plain SGD and compare it to fastai’s default
+    optimizer. We’ll start by grabbing Imagenette with the same `get_data` we used
+    in [Chapter 14](ch14.xhtml#chapter_resnet):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We’ll create a ResNet-34 without pretraining and pass along any arguments received:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Here’s the default fastai optimizer, with the usual 3e-3 learning rate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 2.571932 | 2.685040 | 0.322548 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 1.904674 | 1.852589 | 0.437452 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 1.586909 | 1.374908 | 0.594904 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: 'Now let’s try plain SGD. We can pass `opt_func` (optimization function) to
+    `cnn_learner` to get fastai to use any optimizer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The first thing to look at is `lr_find`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](Images/dlcf_16in01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'It looks like we’ll need to use a higher learning rate than we normally use:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 2.969412 | 2.214596 | 0.242038 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 2.442730 | 1.845950 | 0.362548 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 2.157159 | 1.741143 | 0.408917 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: Because accelerating SGD with momentum is such a good idea, fastai does this
+    by default in `fit_one_cycle`, so we turn it off with `moms=(0,0,0)`. We’ll be
+    discussing momentum shortly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clearly, plain SGD isn’t training as fast as we’d like. So let’s learn some
+    tricks to get accelerated training!
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Generic Optimizer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'To build up our accelerated SGD tricks, we’ll need to start with a nice flexible
+    optimizer foundation. No library prior to fastai provided such a foundation, but
+    during fastai’s development, we realized that all the optimizer improvements we’d
+    seen in the academic literature could be handled using *optimizer callbacks*.
+    These are small pieces of code that we can compose, mix, and match in an optimizer
+    to build the optimizer step. They are called by fastai’s lightweight `Optimizer`
+    class. These are the definitions in `Optimizer` of the two key methods that we’ve
+    been using in this book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we saw when training an MNIST model from scratch, `zero_grad` just loops
+    through the parameters of the model and sets the gradients to zero. It also calls
+    `detach_`, which removes any history of gradient computation, since it won’t be
+    needed after `zero_grad`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The more interesting method is `step`, which loops through the callbacks (`cbs`)
+    and calls them to update the parameters (the `_update` function just calls `state.update`
+    if there’s anything returned by `cb`). As you can see, `Optimizer` doesn’t do
+    any SGD steps itself. Let’s see how we can add SGD to `Optimizer`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s an optimizer callback that does a single SGD step, by multiplying `-lr`
+    by the gradients and adding that to the parameter (when `Tensor.add_` in PyTorch
+    is passed two parameters, they are multiplied together before the addition):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can pass this to `Optimizer` using the `cbs` parameter; we’ll need to use
+    `partial` since `Learner` will call this function to create our optimizer later:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s see if this trains:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 2.730918 | 2.009971 | 0.332739 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 2.204893 | 1.747202 | 0.441529 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 1.875621 | 1.684515 | 0.445350 | 00:09 |'
+  prefs: []
+  type: TYPE_TB
+- en: It’s working! So that’s how we create SGD from scratch in fastai. Now let’s
+    see what this “momentum” is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Momentum
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As described in [Chapter 4](ch04.xhtml#chapter_mnist_basics), SGD can be thought
+    of as standing at the top of a mountain and working your way down by taking a
+    step in the direction of the steepest slope at each point in time. But what if
+    we have a ball rolling down the mountain? It won’t, at each given point, exactly
+    follow the direction of the gradient, as it will have *momentum*. A ball with
+    more momentum (for instance, a heavier ball) will skip over little bumps and holes,
+    and be more likely to get to the bottom of a bumpy mountain. A ping pong ball,
+    on the other hand, will get stuck in every little crevice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So how can we bring this idea over to SGD? We can use a moving average, instead
+    of only the current gradient, to make our step:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here `beta` is some number we choose that defines how much momentum to use.
+    If `beta` is 0, the first equation becomes `weight.avg = weight.grad`, so we end
+    up with plain SGD. But if it’s a number close to 1, the main direction chosen
+    is an average of the previous steps. (If you have done a bit of statistics, you
+    may recognize in the first equation an *exponentially weighted moving average*,
+    which is often used to denoise data and get the underlying tendency.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that we are writing `weight.avg` to highlight the fact that we need to
+    store the moving averages for each parameter of the model (they all their own
+    independent moving averages).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 16-1](#img_momentum) shows an example of noisy data for a single parameter
+    with the momentum curve plotted in red, and the gradients of the parameter plotted
+    in blue. The gradients increase, then decrease, and the momentum does a good job
+    of following the general trend without getting too influenced by noise.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Graph showing an example of momentum](Images/dlcf_1601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 16-1\. An example of momentum
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'It works particularly well if the loss function has narrow canyons we need
+    to navigate: vanilla SGD would send us bouncing from one side to the other, while
+    SGD with momentum will average those to roll smoothly down the side. The parameter
+    `beta` determines the strength of the momentum we are using: with a small `beta`,
+    we stay closer to the actual gradient values, whereas with a high `beta`, we will
+    mostly go in the direction of the average of the gradients and it will take a
+    while before any change in the gradients makes that trend move.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With a large `beta`, we might miss that the gradients have changed directions
+    and roll over a small local minima. This is a desired side effect: intuitively,
+    when we show a new input to our model, it will look like something in the training
+    set but won’t be *exactly* like it. It will correspond to a point in the loss
+    function that is close to the minimum we ended up with at the end of training,
+    but not exactly *at* that minimum. So, we would rather end up training in a wide
+    minimum, where nearby points have approximately the same loss (or if you prefer,
+    a point where the loss is as flat as possible). [Figure 16-2](#img_betas) shows
+    how the chart in [Figure 16-1](#img_momentum) varies as we change `beta`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Graph showing how the beta value imfluence momentum](Images/dlcf_1602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 16-2\. Momentum with different beta values
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can see in these examples that a `beta` that’s too high results in the overall
+    changes in gradient getting ignored. In SGD with momentum, a value of `beta` that
+    is often used is 0.9.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`fit_one_cycle` by default starts with a `beta` of 0.95, gradually adjusts
+    it to 0.85, and then gradually moves it back to 0.95 at the end of training. Let’s
+    see how our training goes with momentum added to plain SGD.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To add momentum to our optimizer, we’ll first need to keep track of the moving
+    average gradient, which we can do with another callback. When an optimizer callback
+    returns a `dict`, it is used to update the state of the optimizer and is passed
+    back to the optimizer on the next step. So this callback will keep track of the
+    gradient averages in a parameter called `grad_avg`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'To use it, we just have to replace `p.grad.data` with `grad_avg` in our step
+    function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`Learner` will automatically schedule `mom` and `lr`, so `fit_one_cycle` will
+    even work with our custom `Optimizer`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 2.856000 | 2.493429 | 0.246115 | 00:10 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 2.504205 | 2.463813 | 0.348280 | 00:10 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 2.187387 | 1.755670 | 0.418853 | 00:10 |'
+  prefs: []
+  type: TYPE_TB
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](Images/dlcf_16in02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We’re still not getting great results, so let’s see what else we can do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RMSProp
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'RMSProp is another variant of SGD introduced by Geoffrey Hinton in [Lecture
+    6e of his Coursera class “Neural Networks for Machine Learning”](https://oreil.ly/FVcIE).
+    The main difference from SGD is that it uses an adaptive learning rate: instead
+    of using the same learning rate for every parameter, each parameter gets its own
+    specific learning rate controlled by a global learning rate. That way, we can
+    speed up training by giving a higher learning rate to the weights that need to
+    change a lot, while the ones that are good enough get a lower learning rate.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How do we decide which parameters should have a high learning rate and which
+    should not? We can look at the gradients to get an idea. If a parameter’s gradients
+    have been close to zero for a while, that parameter will need a higher learning
+    rate because the loss is flat. On the other hand, if the gradients are all over
+    the place, we should probably be careful and pick a low learning rate to avoid
+    divergence. We can’t just average the gradients to see if they’re changing a lot,
+    because the average of a large positive and a large negative number is close to
+    zero. Instead, we can use the usual trick of either taking the absolute value
+    or the squared values (and then taking the square root after the mean).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once again, to determine the general tendency behind the noise, we will use
+    a moving average—specifically, the moving average of the gradients squared. Then
+    we will update the corresponding weight by using the current gradient (for the
+    direction) divided by the square root of this moving average (that way, if it’s
+    low, the effective learning rate will be higher, and if it’s high, the effective
+    learning rate will be lower):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `eps` (*epsilon*) is added for numerical stability (usually set at 1e-8),
+    and the default value for `alpha` is usually 0.99.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can add this to `Optimizer` by doing much the same thing we did for `avg_grad`,
+    but with an extra `**2`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And we can define our step function and optimizer as before:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s try it out:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '| epoch | train_loss | valid_loss | accuracy | time |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 0 | 2.766912 | 1.845900 | 0.402548 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1 | 2.194586 | 1.510269 | 0.504459 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2 | 1.869099 | 1.447939 | 0.544968 | 00:11 |'
+  prefs: []
+  type: TYPE_TB
+- en: Much better! Now we just have to bring these ideas together, and we have Adam,
+    fastai’s default optimizer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adam
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Adam mixes the ideas of SGD with momentum and RMSProp together: it uses the
+    moving average of the gradients as a direction and divides by the square root
+    of the moving average of the gradients squared to give an adaptive learning rate
+    to each parameter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is one other difference in how Adam calculates moving averages. It takes
+    the *unbiased* moving average, which is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: if we are the `i`-th iteration (starting at 0 as Python does). This divisor
+    of `1 - (beta**(i+1))` makes sure the unbiased average looks more like the gradients
+    at the beginning (since `beta < 1`, the denominator is very quickly close to 1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Putting everything together, our update step looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: As for RMSProp, `eps` is usually set to 1e-8, and the default for `(beta1,beta2)`
+    suggested by the literature is `(0.9,0.999)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In fastai, Adam is the default optimizer we use since it allows faster training,
+    but we’ve found that `beta2=0.99` is better suited to the type of schedule we
+    are using. `beta1` is the momentum parameter, which we specify with the argument
+    `moms` in our call to `fit_one_cycle`. As for `eps`, fastai uses a default of
+    1e-5\. `eps` is not just useful for numerical stability. A higher `eps` limits
+    the maximum value of the adjusted learning rate. To take an extreme example, if
+    `eps` is 1, then the adjusted learning will never be higher than the base learning
+    rate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Rather than show all the code for this in the book, we’ll let you look at the
+    optimizer notebook in fastai’s [*https://oreil.ly/*](https://oreil.ly/)*24_O[GitHub
+    repository] (browse the _nbs* folder and search for the notebook called *optimizer*).
+    You’ll see all the code we’ve shown so far, along with Adam and other optimizers,
+    and lots of examples and tests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One thing that changes when we go from SGD to Adam is the way we apply weight
+    decay, and it can have important consequences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decoupled Weight Decay
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Weight decay, which we’ve discussed in [Chapter 8](ch08.xhtml#chapter_collab),
+    is equivalent to (in the case of vanilla SGD) updating the parameters with the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The last part of that formula explains the name of this technique: each weight
+    is decayed by a factor of `lr * wd`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other name for weight decay is *L2 regularization*, which consists of adding
+    the sum of all squared weights to the loss (multiplied by the weight decay). As
+    we saw in [Chapter 8](ch08.xhtml#chapter_collab), this can be directly expressed
+    on the gradients:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: For SGD, those two formulas are equivalent. However, this equivalence holds
+    only for standard SGD because, as we’ve seen with momentum, RMSProp, or in Adam,
+    the update has some additional formulas around the gradient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most libraries use the second formulation, but it was pointed out in [“Decoupled
+    Weight Decay Regularization”](https://oreil.ly/w37Ac) by Ilya Loshchilov and Frank
+    Hutter that the first one is the only correct approach with the Adam optimizer
+    or momentum, which is why fastai makes it its default.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now you know everything that is hidden behind the line `learn.fit_one_cycle`!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizers are only one part of the training process, however. When you need
+    to change the training loop with fastai, you can’t directly change the code inside
+    the library. Instead, we have designed a system of callbacks to let you write
+    any tweaks you like in independent blocks that you can then mix and match.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Callbacks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Sometimes you need to change how things work a little bit. In fact, we have
+    already seen examples of this: Mixup, fp16 training, resetting the model after
+    each epoch for training RNNs, and so forth. How do we go about making these kinds
+    of tweaks to the training process?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ve seen the basic training loop, which, with the help of the `Optimizer`
+    class, looks like this for a single epoch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 16-3](#basic_loop) shows how to picture that.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Basic training loop](Images/dlcf_1603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 16-3\. Basic training loop
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The usual way for deep learning practitioners to customize the training loop
+    is to make a copy of an existing training loop, and then insert the code necessary
+    for their particular changes into it. This is how nearly all code that you find
+    online will look. But it has serious problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s not likely that some particular tweaked training loop is going to meet
+    your particular needs. Hundreds of changes can be made to a training loop, which
+    means there are billions and billions of possible permutations. You can’t just
+    copy one tweak from a training loop here, another from a training loop there,
+    and expect them all to work together. Each will be based on different assumptions
+    about the environment that it’s working in, use different naming conventions,
+    and expect the data to be in different formats.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We need a way to allow users to insert their own code at any part of the training
+    loop, but in a consistent and well-defined way. Computer scientists have already
+    come up with an elegant solution: the callback. A *callback* is a piece of code
+    that you write and inject into another piece of code at a predefined point. In
+    fact, callbacks have been used with deep learning training loops for years. The
+    problem is that in previous libraries, it was possible to inject code in only
+    a small subset of places where this may have been required—and, more importantly,
+    callbacks were not able to do all the things they needed to do.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In order to be just as flexible as manually copying and pasting a training loop
+    and directly inserting code into it, a callback must be able to read every possible
+    piece of information available in the training loop, modify all of it as needed,
+    and fully control when a batch, epoch, or even the whole training loop should
+    be terminated. fastai is the first library to provide all of this functionality.
+    It modifies the training loop so it looks like [Figure 16-4](#cb_loop).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Training loop with callbacks](Images/dlcf_1604.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 16-4\. Training loop with callbacks
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The effectiveness of this approach has been borne out over the last couple of
+    years—by using the fastai callback system, we were able to implement every single
+    new paper we tried and fulfill every user request for modifying the training loop.
+    The training loop itself has not required modifications. [Figure 16-5](#some_cbs)
+    shows just a few of the callbacks that have been added.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Some fastai callbacks](Images/dlcf_1605.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 16-5\. Some fastai callbacks
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This is important because it means that whatever ideas we have in our heads,
+    we can implement them. We need never dig into the source code of PyTorch or fastai
+    and hack together a one-off system to try out our ideas. And when we do implement
+    our own callbacks to develop our own ideas, we know that they will work together
+    with all of the other functionality provided by fastai—so we will get progress
+    bars, mixed-precision training, hyperparameter annealing, and so forth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another advantage is that it makes it easy to gradually remove or add functionality
+    and perform ablation studies. You just need to adjust the list of callbacks you
+    pass along to your fit function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an example, here is the fastai source code that is run for each batch of
+    the training loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: The calls of the form `self('...')` are where the callbacks are called. As you
+    see, this happens after every step. The callback will receive the entire state
+    of training and can also modify it. For instance, the input data and target labels
+    are in `self.xb` and `self.yb`, respectively; a callback can modify these to modify
+    the data the training loop sees. It can also modify `self.loss` or even the gradients.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s see how this works in practice by writing a callback.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating a Callback
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'When you want to write your own callback, the full list of available events
+    is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`begin_fit`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called before doing anything; ideal for initial setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`begin_epoch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the beginning of each epoch; useful for any behavior you need to reset
+    at each epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`begin_train`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the beginning of the training part of an epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`begin_batch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the beginning of each batch, just after drawing said batch. It can
+    be used to do any setup necessary for the batch (like hyperparameter scheduling)
+    or to change the input/target before it goes into the model (for instance, by
+    applying Mixup).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_pred`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called after computing the output of the model on the batch. It can be used
+    to change that output before it’s fed to the loss function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_loss`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called after the loss has been computed, but before the backward pass. It can
+    be used to add a penalty to the loss (AR or TAR in RNN training, for instance).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_backward`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called after the backward pass, but before the update of the parameters. It
+    can be used to make changes to the gradients before said update (via gradient
+    clipping, for instance).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_step`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called after the step and before the gradients are zeroed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_batch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the end of a batch, to perform any required cleanup before the next
+    one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_train`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the end of the training phase of an epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`begin_validate`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the beginning of the validation phase of an epoch; useful for any
+    setup needed specifically for validation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_validate`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the end of the validation part of an epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_epoch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the end of an epoch, for any cleanup before the next one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_fit`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Called at the end of training, for final cleanup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The elements of this list are available as attributes of the special variable
+    `event`, so you can just type `event.` and hit Tab in your notebook to see a list
+    of all the options
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s take a look at an example. Do you recall how in [Chapter 12](ch12.xhtml#chapter_nlp_dive)
+    we needed to ensure that our special `reset` method was called at the start of
+    training and validation for each epoch? We used the `ModelResetter` callback provided
+    by fastai to do this for us. But how does it work exactly? Here’s the full source
+    code for that class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Yes, that’s actually it! It just does what we said in the preceding paragraph:
+    after completing training or validation for an epoch, call a method named `reset`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Callbacks are often “short and sweet” like this one. In fact, let’s look at
+    one more. Here’s the fastai source for the callback that adds RNN regularization
+    (AR and TAR):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: Code It Yourself
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Go back and reread [“Activation Regularization and Temporal Activation Regularization”](ch12.xhtml#AR_and_TAR),
+    and then take another look at the code here. Make sure you understand what it’s
+    doing and why.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In both of these examples, notice how we can access attributes of the training
+    loop by directly checking `self.model` or `self.pred`. That’s because a `Callback`
+    will always try to get an attribute it doesn’t have inside the `Learner` associated
+    with it. These are shortcuts for `self.learn.model` or `self.learn.pred`. Note
+    that they work for reading attributes, but not for writing them, which is why
+    when `RNNRegularizer` changes the loss or the predictions, you see `self.learn.loss
+    =` or `self.learn.pred =`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When writing a callback, the following attributes of `Learner` are available:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`model`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model used for training/validation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`data`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The underlying `DataLoaders`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`loss_func`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The loss function used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`opt`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The optimizer used to update the model parameters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`opt_func`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The function used to create the optimizer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`cbs`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The list containing all the `Callback`s.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`dl`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The current `DataLoader` used for iteration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`x`/`xb`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last input drawn from `self.dl` (potentially modified by callbacks). `xb`
+    is always a tuple (potentially with one element), and `x` is detuplified. You
+    can assign only to `xb`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`y`/`yb`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last target drawn from `self.dl` (potentially modified by callbacks). `yb`
+    is always a tuple (potentially with one element), and `y` is detuplified. You
+    can assign only to `yb`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pred`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last predictions from `self.model` (potentially modified by callbacks).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`loss`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The last computed loss (potentially modified by callbacks).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`n_epoch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The number of epochs in this training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`n_iter`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The number of iterations in the current `self.dl`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`epoch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The current epoch index (from 0 to `n_epoch-1`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`iter`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The current iteration index in `self.dl` (from 0 to `n_iter-1`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following attributes are added by `TrainEvalCallback` and should be available
+    unless you went out of your way to remove that callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`train_iter`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The number of training iterations done since the beginning of this training
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pct_train`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The percentage of training iterations completed (from 0 to 1)
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`training`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A flag to indicate whether we’re in training mode
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following attribute is added by `Recorder` and should be available unless
+    you went out of your way to remove that callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`smooth_loss`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An exponentially averaged version of the training loss
+  prefs: []
+  type: TYPE_NORMAL
+- en: Callbacks can also interrupt any part of the training loop by using a system
+    of exceptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Callback Ordering and Exceptions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Sometimes callbacks need to be able to tell fastai to skip over a batch or
+    an epoch, or stop training altogether. For instance, consider `TerminateOnNaNCallback`.
+    This handy callback will automatically stop training anytime the loss becomes
+    infinite or `NaN` (*not a number*). Here’s the fastai source for this callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The line `raise CancelFitException` tells the training loop to interrupt training
+    at this point. The training loop catches this exception and does not run any further
+    training or validation. The callback control flow exceptions available are as
+    follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CancelFitException`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Skip the rest of this batch and go to `after_batch`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CancelEpochException`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Skip the rest of the training part of the epoch and go to `after_train`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CancelTrainException`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Skip the rest of the validation part of the epoch and go to `after_validate`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CancelValidException`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Skip the rest of this epoch and go to `after_epoch`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`CancelBatchException`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interrupt training and go to `after_fit`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can detect if one of those exceptions has occurred and add code that executes
+    right after with the following events:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_cancel_batch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reached immediately after a `CancelBatchException` before proceeding to `after_batch`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_cancel_train`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reached immediately after a `CancelTrainException` before proceeding to `after_epoch`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_cancel_valid`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reached immediately after a `CancelValidException` before proceeding to `after_epoch`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_cancel_epoch`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reached immediately after a `CancelEpochException` before proceeding to `after_epoch`
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`after_cancel_fit`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reached immediately after a `CancelFitException` before proceeding to `after_fit`
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sometimes callbacks need to be called in a particular order. For example, in
+    the case of `TerminateOnNaNCallback`, it’s important that `Recorder` runs its
+    `after_batch` after this callback, to avoid registering an `NaN` loss. You can
+    specify `run_before` (this callback must run before…) or `run_after` (this callback
+    must run after…) in your callback to ensure the ordering that you need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we took a close look at the training loop, exploring variants
+    of SGD and why they can be more powerful. At the time of writing, developing new
+    optimizers is an active area of research, so by the time you read this chapter,
+    there may be an addendum on the [book’s website](https://book.fast.ai) that presents
+    new variants. Be sure to check out how our general optimizer framework can help
+    you implement new optimizers quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also examined the powerful callback system that allows you to customize every
+    bit of the training loop by enabling you to inspect and modify any parameter you
+    like between each step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Questionnaire
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What is the equation for a step of SGD, in math or code (as you prefer)?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What do we pass to `cnn_learner` to use a nondefault optimizer?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are optimizer callbacks?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What does `zero_grad` do in an optimizer?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What does `step` do in an optimizer? How is it implemented in the general optimizer?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Rewrite `sgd_cb` to use the `+=` operator, instead of `add_`.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is momentum? Write out the equation.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What’s a physical analogy for momentum? How does it apply in our model training
+    settings?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What does a bigger value for momentum do to the gradients?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are the default values of momentum for 1cycle training?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What is RMSProp? Write out the equation.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What do the squared values of the gradients indicate?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How does Adam differ from momentum and RMSProp?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Write out the equation for Adam.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Calculate the values of `unbias_avg` and `w.avg` for a few batches of dummy
+    values.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What’s the impact of having a high `eps` in Adam?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Read through the optimizer notebook in fastai’s repo and execute it.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In what situations do dynamic learning rate methods like Adam change the behavior
+    of weight decay?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What are the four steps of a training loop?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Why is using callbacks better than writing a new training loop for each tweak
+    you want to add?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: What aspects of the design of fastai’s callback system make it as flexible as
+    copying and pasting bits of code?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How can you get the list of events available to you when writing a callback?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Write the `ModelResetter` callback (without peeking).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How can you access the necessary attributes of the training loop inside a callback?
+    When can you use or not use the shortcuts that go with them?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How can a callback influence the control flow of the training loop?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Write the `TerminateOnNaN` callback (without peeking, if possible).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: How do you make sure your callback runs after or before another callback?
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Further Research
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Look up the “Rectified Adam” paper, implement it using the general optimizer
+    framework, and try it out. Search for other recent optimizers that work well in
+    practice and pick one to implement.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Look at the mixed-precision callback inside the [documentation](https://docs.fast.ai).
+    Try to understand what each event and line of code does.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Implement your own version of the learning rate finder from scratch. Compare
+    it with fastai’s version.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Look at the source code of the callbacks that ship with fastai. See if you can
+    find one that’s similar to what you’re looking to do, to get some inspiration.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Foundations of Deep Learning: Wrap Up'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Congratulations—you have made it to the end of the “foundations of deep learning”
+    section of the book! You now understand how all of fastai’s applications and most
+    important architectures are built, and the recommended ways to train them—and
+    you have all the information you need to build these from scratch. While you probably
+    won’t need to create your own training loop or batchnorm layer, for instance,
+    knowing what is going on behind the scenes is very helpful for debugging, profiling,
+    and deploying your solutions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since you understand the foundations of fastai’s applications now, be sure to
+    spend some time digging through the source notebooks and running and experimenting
+    with parts of them. This will give you a better idea of exactly how everything
+    in fastai is developed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the next section, we will be looking even further under the covers: we’ll
+    explore how the actual forward and backward passes of a neural network are done,
+    and we will see what tools are at our disposal to get better performance. We will
+    then continue with a project that brings together all the material in the book,
+    which we will use to build a tool for interpreting convolutional neural networks.
+    Last but not least, we’ll finish by building fastai’s `Learner` class from scratch.'
+  prefs: []
+  type: TYPE_NORMAL
