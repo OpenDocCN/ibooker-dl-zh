@@ -1,0 +1,496 @@
+# 第5章。介绍模型
+
+> “他从哪里弄来那些美妙的玩具？”
+> 
+> —杰克·尼科尔森（*蝙蝠侠*）
+
+现在您已经进入大联盟。在[第2章](ch02.html#the_chapter_2)中，您访问了一个完全训练好的模型，但您根本不需要了解张量。在这里的[第5章](#the_chapter_5)，您将能够利用您的张量技能直接与您的模型一起工作，没有训练轮。
+
+最后，您将开始利用大多数机器学习的大脑。模型可能看起来像黑匣子。通常，它们期望特定的张量形状输入，并输出特定的张量形状。例如，假设您已经训练了一个狗或猫分类器。输入可能是一个32 x 32的3D RGB张量，输出可能是一个从零到一的单个张量值，表示预测。即使您不了解这种设备的内部工作原理，至少使用具有定义结构的模型应该是简单的。
+
+我们将：
+
++   利用训练好的模型来预测各种答案
+
++   识别我们现有张量操作技能的好处
+
++   了解谷歌的TFHub.dev托管
+
++   了解对象定位
+
++   学习如何叠加边界框以识别图像的某些方面
+
+本章将教您直接访问模型。您不会依赖于可爱的包装库来照顾。如果愿意，您甚至可以围绕现有的TensorFlow.js模型编写自己的包装库。掌握了本章的技能，您可以开始将突破性的机器学习模型应用于任何网站。
+
+# 加载模型
+
+我们知道我们需要将模型加载到内存中，最好是加载到像张量这样的GPU加速内存中，但是从哪里加载？作为一种祝福和诅咒，答案是“任何地方！”在软件中加载文件是很常见的，因此在TensorFlow.js中有各种答案。
+
+为了加剧这个问题，TensorFlow.js支持两种不同的模型格式。幸运的是，这些选项的组合并不复杂。您只需要知道需要哪种类型的模型以及从哪里访问它。
+
+目前，TensorFlow.js中有两种模型类型，每种类型都有其自己的优缺点。最简单且最可扩展的模型称为*层模型*。这种模型格式允许您检查、修改甚至拆解模型以进行调整。该格式非常适合重新调整和调整。另一种模型格式是*图模型*。图模型通常更加优化和计算效率更高。使用图模型的成本是模型更加“黑匣子”，由于其优化，更难以检查或修改。
+
+模型类型很简单。如果要加载层模型，您需要使用方法`loadLayersModel`，如果要加载GraphDef模型，则需要使用方法`loadGraphModel`。这两种模型类型各有利弊，但这超出了本章的范围。关键是加载所需模型类型几乎没有复杂性；只是一个问题是哪种类型，然后使用相应的方法。最重要的方面是第一个参数，即模型数据的位置。
+
+###### 提示
+
+在本书结束时，您将对层模型和图模型类型之间的关键差异有相当扎实的理解。每次引入一个模型时，请注意使用了哪种模型。
+
+本节解释了模型位置的多样性选项以及将它们绑定在一起的简单统一URI语法。
+
+## 通过公共URL加载模型
+
+使用公共URL加载模型是在TensorFlow.js中访问模型的最常见方法。正如您在[第2章](ch02.html#the_chapter_2)中记得的那样，当您加载毒性检测模型时，您从公共网络下载了文件的几个片段，每个片段大小为4 MB，可以缓存。模型知道要下载文件的位置。这是通过单个URL到单个文件完成的。最初请求的模型文件是一个简单的JavaScript对象表示（JSON）文件，随后的文件是从该JSON文件中识别出的神经网络的权重。
+
+从URL加载TensorFlow.js模型需要主动托管相邻的模型文件（相同的相对文件夹）。这意味着一旦您为模型的JSON文件提供路径，它通常会引用同一目录级别的连续文件中的权重。期望的结构如下：
+
+```py
+Site
+├─── Example Folder
+├─── index.html
+├─── Model Folder
+│   ├─── model.json
+│   └─── group1-shard1of3
+│   └─── group1-shard2of3
+│   └─── group1-shard3of3
+...
+```
+
+移动或拒绝访问这些额外文件将导致您的模型无法使用并出现错误。根据服务器环境的安全性和配置，这可能是一个难点。因此，您应始终验证每个文件是否具有适当的URL访问权限。
+
+###### 注意
+
+到目前为止，我们已经介绍了三种运行TensorFlow.js的主要方法。它们是简单的200 OK！托管、使用Parcel打包的NPM和使用Node.js托管的服务器。在我们告诉您如何为这些情况正确加载模型之前，您能否确定哪种方法会出现问题？
+
+200 OK！Chrome的Web服务器示例不会出现问题，因为文件夹中的所有内容都是无优化或安全性地托管的。Parcel为我们提供了一些功能，如转换、错误日志记录、HMR和捆绑。有了这些功能，我们的JSON和权重文件不会被传递到分发文件夹，也就是`dist`文件夹，除非进行一些调整。
+
+在Parcel.js 2.0中（在撰写本文时尚未正式发布），您将有更多选项用于静态文件，但目前，有一个简单的解决方案适用于我们将使用的Parcel 1.x。您可以安装一个名为`parcel-plugin-static-files-copy`的插件，以允许本地静态托管模型文件。本书相关存储库中使用的代码利用了这个插件。
+
+该插件通过有效地使放置在`static`目录中的任何文件从根URL公开访问。例如，放置在*static/model*中的*model.json*文件将可以作为*localhost:1234/model/model.json*访问。
+
+无论您使用哪种Web解决方案，都需要验证模型文件的安全性和捆绑是否适合您。对于未受保护的公共文件夹，只需将所有文件上传到像Amazon Web Services（AWS）和Simple Storage Service（S3）这样的服务即可。您需要使整个存储桶公开，或者每个相邻文件都必须明确公开。验证您可以访问JSON *和* BIN文件是很重要的。缺少或受限制的模型片段的错误消息令人困惑。您会看到一个`404`，但错误会继续到第二个更加难以理解的错误，就像[图5-1](#no_file)中所示的那样。
+
+![缺少bin文件的错误截图。](assets/ltjs_0501.png)
+
+###### 图5-1\. 错误：JSON可用但没有bin文件
+
+###### 提示
+
+Create React App是一个用于简单React网站的流行工具。如果您使用Create React App，`public`文件夹中的文件将默认从根URL访问。将`public`视为我们Parcel解决方案的`static`文件夹。两者都非常有效，并已经为模型托管进行了测试。
+
+## 从其他位置加载模型
+
+模型不必位于公共URL中。TensorFlow有方法允许您从[本地浏览器存储](https://oreil.ly/BHYc1)、[IndexedDB存储](https://oreil.ly/MHYA4)以及在Node.js中，本地文件系统访问模型文件。
+
+其中一个重要的好处是，您可以从公共URL加载的模型在本地缓存，以便您的应用程序可以脱机准备。其他原因包括速度、安全性，或者仅仅是因为您可以。
+
+### 浏览器文件
+
+本地浏览器存储和IndexedDB存储是两种用于保存指定页面的文件的Web API。与存储小数据片段（如单个变量）的cookie不同，`Window.localStorage`和IndexedDB API是客户端存储，能够处理文件等其他重要结构化数据跨浏览器会话。
+
+公共URL具有`http`和`https`方案；但是，这些方法在URI中使用不同的方案。要从本地存储加载模型，您将使用`localstorage://model-name` URI，要从IndexedDB加载模型，您将使用`indexeddb://model-name` URI。
+
+除了提供的方法外，您可以存储和检索TensorFlow.js模型的位置没有限制。归根结底，您只需要数据，因此您可以使用任何自定义的`IOHandler`加载模型。例如，甚至已经有[将模型完全转换为JSON文件的概念验证工作](https://github.com/infinitered/tfjs-runway)，权重已编码，因此您可以根据需要从任何位置调用`require`，甚至通过捆绑器。
+
+### 文件系统文件
+
+要访问文件系统中的文件，您需要使用一个具有权限获取所需文件的Node.js服务器。浏览器被沙箱化，目前无法使用此功能。
+
+幸运的是，这与以前的API类似。使用*file:*方案来标识给定文件的路径，就像这样：[*file://path/to/model.json*](file://path/to/model.json)。就像在浏览器示例中一样，辅助文件必须位于同一文件夹中并且可访问。
+
+# 我们第一个使用的模型
+
+现在您熟悉了将模型加载到内存的机制，您可以在项目中使用模型。当您在[第2章](ch02.html#the_chapter_2)中使用毒性模型时，这对您进行了自动化，但是现在，您熟悉了张量和模型访问，可以处理一个模型，而无需所有保护包代码。
+
+您需要一个简单的模型用于第一个示例。正如您所记得的，您在[第3章](ch03.html#the_chapter_3)中将井字棋棋盘编码为练习。让我们从您现有知识的基础上构建，不仅编码一个井字棋比赛，还将该信息传递到训练模型进行分析。训练模型将预测并返回最佳下一步的答案。
+
+本节的目标是询问AI模型推荐哪些移动，这些移动在[图5-2](#ttt_states)中有所说明。
+
+![三个示例游戏状态](assets/ltjs_0502.png)
+
+###### 图5-2。三个游戏状态
+
+这些游戏中的每一个处于不同的情况：
+
+情景A
+
+这是空白的，允许AI进行第一步。
+
+情景B
+
+现在轮到O走棋了，我们期望AI通过在右上角的方格中下棋来阻止潜在的失败。
+
+情景C
+
+现在轮到X走棋了，我们期望AI在顶部中间移动并取得胜利！
+
+让我们看看AI推荐什么，通过对这三种状态进行编码并打印模型的输出。
+
+## 加载、编码和询问模型
+
+您将使用简单的URL来加载模型。这个模型将是一个Layers模型。这意味着您将使用`tf.loadLayersModel`和路径到本地托管模型文件来加载。在本例中，模型文件将托管在*model/ttt_model.json*。
+
+###### 注意
+
+本示例的训练井字棋模型可以在本书的相关[GitHub](https://github.com/GantMan/learn-tfjs)中访问。JSON文件大小为2 KB，权重文件(*ttt_model.weights.bin*)大小为22 KB。对于一个井字棋求解器来说，这24 KB的负载并不算太大！
+
+为了转录游戏棋盘状态，编码会有一点差异。你需要告诉AI它是为哪个团队在玩。你还需要一个可以对X和O无动于衷的AI。因为情景B是在询问AI关于O而不是X的建议，我们需要一个灵活的编码系统。不要让X总是代表1，将AI分配为1，对手分配为-1。这样我们可以让AI处于玩X或O的情况。[表5-1](#tictactoe_value_table)显示了查找每种可能值的情况。
+
+表5-1\. 网格到数字的转换
+
+| 棋盘值 |  | 张量值 |
+| --- | --- | --- |
+| AI |  | 1 |
+| 对手 |  | -1 |
+| 空 |  | 0 |
+
+所有三个游戏需要被编码，然后堆叠成一个单一的张量传递给AI模型。然后模型提供三个答案，每种情况一个。
+
+这是完整的过程：
+
+1.  加载模型。
+
+1.  编码三个单独的游戏状态。
+
+1.  将状态堆叠成一个单一的张量。
+
+1.  要求模型打印结果。
+
+将输入堆叠到模型是一种常见的做法，可以让你的模型处理加速内存中的任意数量的预测。
+
+堆叠增加了结果的维度。在1D张量上执行这个操作会创建一个2D张量，依此类推。在这种情况下，你有三个用1D张量表示的棋盘状态，所以堆叠它们将创建一个`[3, 9]`的二阶张量。大多数模型支持对它们的输入进行堆叠或批处理，输出将类似地堆叠，并与输入索引匹配的答案。
+
+这段代码可以在GitHub仓库的[*chapter5/simple/simple-ttt-model*](https://oreil.ly/38zZx)找到，看起来是这样的：
+
+```py
+tf.ready().then(()=>{![1](assets/1.png)constmodelPath="model/ttt_model.json"![2](assets/2.png)tf.tidy(()=>{tf.loadLayersModel(modelPath).then(model=>{![3](assets/3.png)// Three board states
+constemptyBoard=tf.zeros([9])![4](assets/4.png)constbetterBlockMe=tf.tensor([-1,0,0,1,1,-1,0,0,-1])![5](assets/5.png)constgoForTheKill=tf.tensor([1,0,1,0,-1,-1,-1,0,1])![6](assets/6.png)// Stack states into a shape [3, 9]
+constmatches=tf.stack([emptyBoard,betterBlockMe,goForTheKill])![7](assets/7.png)constresult=model.predict(matches)![8](assets/8.png)// Log the results
+result.reshape([3,3,3]).print()![9](assets/9.png)})})})
+```
+
+[![1](assets/1.png)](#co_introducing_models_CO1-1)
+
+使用`tf.ready`，当TensorFlow.js准备好时解析。不需要DOM访问。
+
+[![2](assets/2.png)](#co_introducing_models_CO1-2)
+
+虽然模型是两个文件，但只需要识别JSON文件。它了解并加载任何额外的模型文件。
+
+[![3](assets/3.png)](#co_introducing_models_CO1-3)
+
+`loadLayersModel`模型解析为完全加载的模型。
+
+[![4](assets/4.png)](#co_introducing_models_CO1-4)
+
+一个空棋盘是九个零，代表情景A。
+
+[![5](assets/5.png)](#co_introducing_models_CO1-5)
+
+编码为X等于`-1`代表情景B。
+
+[![6](assets/6.png)](#co_introducing_models_CO1-6)
+
+编码为X等于`1`代表情景C。
+
+[![7](assets/7.png)](#co_introducing_models_CO1-7)
+
+使用`tf.stack`将三个1D张量组合成一个2D张量。
+
+[![8](assets/8.png)](#co_introducing_models_CO1-8)
+
+使用`.predict`来要求模型识别最佳的下一步。
+
+[![9](assets/9.png)](#co_introducing_models_CO1-9)
+
+原始输出将被形状化为`[3, 9]`，但这是一个很好的情况，通过重新塑造输出使其更易读。打印结果在三个3 x 3的网格中，这样我们可以像游戏棋盘一样阅读它们。
+
+###### 警告
+
+当使用`loadLayersModel`甚至`loadGraphModel`时，TensorFlow.js库依赖于`fetch` web API的存在。如果在Node.js中使用这种方法，你需要使用像[node-fetch](https://oreil.ly/rwPMW)这样的包来填充`fetch`。
+
+前述代码成功地将三场比赛转换为AI模型期望的张量格式，并通过模型的`predict()`方法运行这些值进行分析。结果将打印到控制台，并看起来像我们在[图5-3](#ttt_result)中看到的样子。
+
+![井字棋模型的结果](assets/ltjs_0503.png)
+
+###### 图5-3\. 我们代码生成的结果为[3, 3, 3]形状的张量
+
+这个神奇的方法是模型的`predict()`函数。该函数让模型知道为给定的输入生成输出预测。
+
+## 解释结果
+
+对于一些人来说，这个结果张量完全有意义，对于其他人，你可能需要一点上下文。结果再次是下一步最佳移动的概率。最高的数字获胜。
+
+为了得到一个正确的概率，答案需要相加得到100%，而它们确实相加得到了。让我们看看在这里显示的空井字棋板结果在情景1中：
+
+```py
+[
+  [0.2287459, 0.0000143, 0.2659601],
+  [0.0000982, 0.0041204, 0.0001773],
+  [0.2301052, 0.0000206, 0.270758 ]
+],
+```
+
+如果你像我这样傻乎乎地把这九个值输入到你的计算器（TI-84 Plus CE永远是我的最爱！），它们会相加得到数字1。这意味着每个对应的值都是该位置的百分比投票。我们可以看到四个角都有一个显著（接近25%）的结果。这是有道理的，因为在井字棋中，从一个角开始是最好的策略，其次是中间，它有次高的价值。
+
+因为底部右侧有27%的投票，这将是AI最有可能的移动。让我们看看AI在另一个情景中的表现。如果你还记得，在[图5-2](#ttt_states)的情景B中，AI需要移动到右上角来阻止。AI的结果张量在情景2中显示：
+
+```py
+[
+  [0.0011957, 0.0032045, 0.9908957],
+  [0.000263 , 0.0006491, 0.0000799],
+  [0.0010194, 0.0002893, 0.0024035],
+],
+```
+
+顶部右侧的值为99%，所以模型正确地阻止了给定的威胁。机器学习模型的一个有趣之处是其他移动仍然有值，包括已经被占据的空格。
+
+最后一个情景是一个编码的张量，用来查看模型是否能够获胜井字棋。预测批次的结果在情景3中显示：
+
+```py
+[
+  [0.0000056, 0.9867876, 0.0000028],
+  [0.0003809, 0.0001524, 0.0011258],
+  [0.0000328, 0.0114983, 0.0000139]
+],
+```
+
+结果是99%（四舍五入）确定顶部中间是最佳移动，这是正确的。其他移动甚至都不接近。所有三个预测结果似乎不仅是有效的移动，而且是给定状态下的正确移动。
+
+你已经成功地加载并与一个模型进行交互，让它提供结果。凭借你刚刚获得的技能，你可以编写自己的井字棋游戏应用。我想互联网上对井字棋游戏的需求不会很大，但如果提供了相同结构的训练模型，你可以使用AI制作各种游戏！
+
+###### 提示
+
+大多数模型都会有一些相关的文档，帮助你识别正确的输入和输出，但Layers模型有一些属性，如果需要帮助，你可以访问这些属性。期望的输入形状可以在`model.input.shape`中看到，输出可以在`model.outputShape`中看到。这些属性在Graph模型上不存在。
+
+## 清理棋盘后
+
+在这个例子中，TensorFlow.js模型被包装在一个`tidy`中，并且在代码完成后会自动释放内存。在大多数情况下，你不会这么快完成你的模型。重要的是要注意，你必须像处理张量一样调用`.dispose()`来处理模型。模型被加速处理方式相同，因此它们有相同的清理成本。
+
+重新加载网页通常会清除张量，但长时间运行的Node.js服务器将不得不监视和验证张量和模型是否被处理。
+
+# 我们的第一个TensorFlow Hub模型
+
+现在你已经正确地编码、加载和处理了少量数据通过一个自定义模型，你应该花一点时间挑战自己。在这一部分，你将加载一个规模更大的模型从TensorFlow Hub，并处理一张图片。井字棋是九个值的输入，而大多数图片是包含数千个值的张量。
+
+你将要加载的模型是目前最大和最令人印象深刻的模型之一，Inception v3。Inception模型是一个令人印象深刻的网络，最初在2015年创建。这第三个版本已经训练了数十万张图片。这个模型有91.02 MB，可以对1,001种不同的对象进行分类。来自[第2章](ch02.html#the_chapter_2)的Chapter Challenge中的MobileNet-wrapped NPM包很棒，但不像你即将使用的模型那样强大。
+
+## 探索TFHub
+
+Google 已经开始免费托管像 Inception v3 这样的模型在其自己的 CDN 上。对于这种大型模型大小的情况，拥有一个可靠且令人印象深刻的版本化 CDN 对于像我们经常为 JavaScript 做的模型非常有用。您可以在 [*https://tfhub.dev*](https://tfhub.dev) 上访问数百个经过训练并准备就绪的 TensorFlow 和 TensorFlow.js 模型。TensorFlow.js 有一种特殊的方式来识别您的模型是否托管在 TFHub 上；我们只需在确定了模型 URL 后，在配置中添加 `{ fromTFHub: true }`。
+
+当您浏览 TFHub 时，您可以看到各种发布者和每个模型的解释。这些解释很关键，因为正如我们已经确定的那样，模型对于输入和输出的期望是非常具体的。您可以在 [与 Inception v3 相关的 TFHub 页面](https://oreil.ly/Utstp) 上了解更多信息。这个模型是由 Google 构建的，提供的版本经过了广泛的训练。如果您渴望获取更多信息，不妨浏览一下 [关于该模型的发表论文](https://arxiv.org/abs/1512.00567)。
+
+在 TFHub 页面上，您可以获得使用模型的这两个关键见解。首先，预期的输入图片尺寸应为 299 x 299，值应为 `0-1`，并且应该像我们在之前的井字棋示例中一样进行批处理。其次，模型返回的结果是一个具有 1,001 个值的单维张量，最大的值最有可能（类似于井字棋返回的九个值）。这可能听起来有点混乱，但该页面使用了一些基于统计的术语来表达这一点：
+
+> 输出是一批 logits 向量。Logits 中的索引是原始训练中分类的 num_classes = 1001 个类。
+
+返回一个数值结果是有用的，但是像往常一样，我们需要将其映射回一个有用的标签。在井字棋中，我们将索引映射到棋盘上的位置，而在这种情况下，我们将值的索引映射到相应的标签，这些标签遵循相同的索引。TFHub 页面 [分享了一个 TXT 文件](https://oreil.ly/bzUeD)，其中包含了所有必要标签的正确顺序，您将使用这些标签创建一个数组来解释预测结果。
+
+## 连接 Inception v3
+
+现在您知道 Inception v3 模型可以对照片进行分类，并且您已经了解了输入和输出规范。这就像是井字棋问题的一个更大版本。然而，会有新的障碍。例如，打印 1,001 个数字并不会提供有用的信息。您需要使用 `topk` 将巨大的张量解析回一个有用的上下文中。
+
+以下代码可在 GitHub 仓库的 [*chapter5/simple/simple-tfhub*](https://oreil.ly/X7TpN) 文件夹中找到。该代码依赖于一个具有 `id` `mystery` 的神秘图片。理想情况下，AI 可以为我们解决这个谜题：
+
+```py
+
+tf.ready().then(()=>{constmodelPath="https://tfhub.dev/google/tfjs-model/imagenet/inception_v3/classification/3
+    /default/1";![1](assets/1.png)tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{![2](assets/2.png)constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// Inception v3 expects an image resized to 299x299
+constreadyfied=tf.image.resizeBilinear(myTensor,[299,299],true)![3](assets/3.png).div(255)![4](assets/4.png).reshape([1,299,299,3]);![5](assets/5.png)constresult=model.predict(readyfied);![6](assets/6.png)result.print();![7](assets/7.png)const{values,indices}=tf.topk(result,3);![8](assets/8.png)indices.print();![9](assets/9.png)// Let's hear those winners
+constwinners=indices.dataSync();console.log(`![10](assets/10.png) First place ${INCEPTION_CLASSES[winners[0]]},  Second place ${INCEPTION_CLASSES[winners[1]]},  Third place ${INCEPTION_CLASSES[winners[2]]}`);});});});
+```
+
+[![1](assets/1.png)](#comarker1)
+
+这是 Inception 模型的 TFHub 的 URL。
+
+[![2](assets/2.png)](#comarker2)
+
+加载图模型并将 `fromTFHub` 设置为 true。
+
+[![3](assets/3.png)](#comarker3)
+
+图片被调整为 299 x 299。
+
+[![4](assets/4.png)](#comarker4)
+
+将 `fromPixels` 的结果转换为介于 0 和 1 之间的值（对数据进行归一化）。
+
+[![5](assets/5.png)](#comarker5)
+
+将 3D 张量转换为单批次 4D 张量，就像模型期望的那样。
+
+[![6](assets/6.png)](#comarker6)
+
+对图片进行预测。
+
+[![7](assets/7.png)](#comarker7)
+
+打印内容太多被截断了。
+
+[![8](assets/8.png)](#comarker8)
+
+恢复前三个值作为我们的猜测。
+
+[![9](assets/9.png)](#comarker9)
+
+打印前三个预测索引。
+
+[![10](assets/10.png)](#comarker10)
+
+将索引映射到它们的标签并打印出来。`INCEPTION_CLASSES` 是一个标签数组，映射到模型输出。
+
+在本章的相关代码中，您会发现三幅图片，您可以将其设置为本节中的神秘图片。Inception v3 令人印象深刻地正确识别了所有三幅图片。查看 [图5-4](#tape_player) 中捕获的结果。
+
+![Inception正确识别磁带播放器](assets/ltjs_0504.png)
+
+###### 图5-4\. Inception v3图像的分类结果
+
+从照片中可以看出，Inception的第一个选择是“磁带播放器”，我认为这非常准确。其次，它看到了一个“磁带播放器”，老实说我不知道这和“磁带播放器”有什么不同，但我不是超级模型。最后，第三高的值是“收音机”，这就是我会说的。
+
+你通常不需要像这样的大型模型，但随着新模型被添加到TFHub，你知道你有选择。偶尔浏览现有模型。你会看到很多关于图像分类的模型。对图像进行分类是AI入门中比较令人印象深刻的任务之一，但为什么要止步于此呢？
+
+# 我们的第一个叠加模型
+
+到目前为止，你一直在处理简单的输出模型。井字棋识别你的下一步，Inception对照片进行分类，为了全面，你将在电影中展示AI的经典视觉效果，即在照片中识别物体的边界框。AI不是对整个照片进行分类，而是在照片中突出显示特定的边界框，就像[图5-5](#detection)中那样。
+
+![气球图像的边界框](assets/ltjs_0505.png)
+
+###### 图5-5\. 边界框叠加
+
+通常，模型的边界框输出相当复杂，因为它处理各种类别和重叠框。通常，模型会让你使用一些数学方法来正确清理结果。与其处理这些，不如专注于在TensorFlow.js中绘制预测输出中的单个矩形。有时这被称为*对象定位*。
+
+这个最终练习的模型将是一个宠物脸部检测器。该模型将尽力为我们提供一个边界坐标集，指示它认为宠物脸部位于何处。通常不难说服人们看可爱的狗和猫，但这个模型可能有各种应用。一旦你有了宠物脸部的位置，你可以使用这些数据来训练额外的模型，比如识别宠物或检查它们可爱的鼻子是否需要boop。你懂的...科学！
+
+## 定位模型
+
+这个模型是在一个名为[Oxford-IIIT宠物数据集](https://oreil.ly/Pz0D9)上训练的。这个小巧的、大约2MB的模型期望一个256 x 256的`Float32`输入RGB宠物图像，并输出四个数字来识别围绕宠物脸部的边界框。1D张量中的四个数字是左上角点和右下角点。
+
+这些点表示为0到1之间的值，作为图像的百分比。你可以使用模型结果信息定义一个矩形，如[图5-6](#result_points)所示。
+
+![4个值如何变成两个点的显示](assets/ltjs_0506.png)
+
+###### 图5-6\. 四个值变成两个点
+
+代码的开头将与之前的代码类似。你将首先将图像转换为张量，然后通过模型运行。以下代码可以在GitHub仓库的[*chapter5/simple/simple-object-localization*](https://oreil.ly/zkSfM)中找到。
+
+```py
+const petImage = document.getElementById("pet");
+const myTensor = tf.browser.fromPixels(petImage);
+// Model expects 256x256 0-1 value 3D tensor
+const readyfied = tf.image
+  .resizeNearestNeighbor(myTensor, [256, 256], true)
+  .div(255)
+  .reshape([1, 256, 256, 3]);
+
+const result = model.predict(readyfied);
+// Model returns top left and bottom right
+result.print();
+```
+
+## 标记检测
+
+现在你可以将结果坐标绘制为图像上的矩形。在TensorFlow.js中绘制检测是一个常见的任务。在图像上绘制张量结果的基本方法需要你将图像放在一个容器中，然后在图像上方放置一个绝对位置的画布。现在当你在画布上绘制时，你将在图像上绘制。^([1](ch05.html#idm45049246250312)) 从侧面看，布局将类似于[图5-7](#canvas_overlay)。
+
+![DOM的3D视图](assets/ltjs_0507.png)
+
+###### 图5-7\. 画布的堆叠视图
+
+对于这节课，CSS已经直接嵌入到HTML中以方便。图像和画布布局如下：
+
+```py
+<divstyle="position: relative; height: 80vh">![1](assets/1.png)<imgid="pet"src="/dog1.jpg"height="100%"/><canvasid="detection"style="position: absolute; left: 0;"><canvas/>![2](assets/2.png)</div>
+```
+
+[![1](assets/1.png)](#co_introducing_models_CO2-1)
+
+包含的`div`是相对定位的，并且锁定在页面高度的80%处。
+
+[![2](assets/2.png)](#co_introducing_models_CO2-2)
+
+画布以绝对位置放置在图像上。
+
+对于简单的矩形，您可以使用画布上下文的`strokeRect`方法。`strokeRect`方法不像模型返回的那样需要两个点。它需要一个起点，然后是宽度和高度。要将模型点转换为宽度和高度，您只需减去每个顶点以获得距离。[图5-8](#width_calculation)显示了这种计算的可视化表示。
+
+![计算宽度和高度的解释](assets/ltjs_0508.png)
+
+###### 图5-8。宽度和高度是X和Y之间的差异计算
+
+使用起点、覆盖矩形的宽度和高度，您可以用几行代码在画布上按比例绘制它。记住，张量输出是一个百分比，需要在每个维度上进行缩放。
+
+```py
+// Draw box on canvas constdetection=document.getElementById("detection");constimgWidth=petImage.width;constimgHeight=petImage.height;detection.width=imgWidth;![1](assets/1.png)detection.height=imgHeight;constbox=result.dataSync();![2](assets/2.png)conststartX=box[0]*imgWidth;![3](assets/3.png)conststartY=box[1]*imgHeight;constwidth=(box[2]-box[0])*imgWidth;![4](assets/4.png)constheight=(box[3]-box[1])*imgHeight;constctx=detection.getContext("2d");ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.strokeRect(startX,startY,width,height);![5](assets/5.png)
+```
+
+[![1](assets/1.png)](#co_introducing_models_CO3-1)
+
+使检测画布与其所覆盖的图像大小相同。
+
+[![2](assets/2.png)](#co_introducing_models_CO3-2)
+
+获取边界框结果。
+
+[![3](assets/3.png)](#co_introducing_models_CO3-3)
+
+将起点X和Y缩放回图像。
+
+[![4](assets/4.png)](#co_introducing_models_CO3-4)
+
+通过从X[1]减去X[2]来找到框的宽度，然后通过图像宽度进行缩放。Y[1]和Y[2]也是如此。
+
+[![5](assets/5.png)](#co_introducing_models_CO3-5)
+
+现在使用画布的2D上下文来绘制所需的矩形。
+
+结果是在给定点处完美放置的边界框。自己看看[图5-9](#pet_faces)。
+
+![识别宠物脸部位置](assets/ltjs_0509.png)
+
+###### 图5-9。宠物脸部定位
+
+在运行此项目时的一个误解可能是您经历的检测和绘制很慢。这是错误的。很明显，当页面加载时，边界框出现之前会有延迟；然而，您正在经历的延迟包括加载模型并将其加载到某种加速内存中（有时称为*模型预热*）。尽管这有点超出了本章的目标，但如果您调用`model.predict`并再次绘制，您会在微秒内看到结果。您在本节中创建的画布+TensorFlow.js结构可以轻松支持桌面计算机上每秒60帧以上。
+
+具有大量边界框和标签的模型使用类似的`strokeRect`调用来勾画识别对象的位置。有各种各样的模型，它们各自识别图像的各个方面。在TensorFlow.js世界中，修改画布以在图像上绘制信息的实践非常有用。
+
+# 章节回顾
+
+了解模型的输入和输出是关键。在本章中，您最终看到了数据的全部过程。您转换了输入，将其传递给经过训练的模型，并解释了结果。模型可以接受各种各样的输入并提供同样广泛的输出。现在，无论模型需要什么，您都有一些令人印象深刻的经验可以借鉴。
+
+## 章节挑战：可爱的脸
+
+想象一下，我们的宠物脸部定位是更大过程中的第一步。假设您正在识别宠物脸部，然后将宠物脸部传递给另一个模型，该模型将寻找舌头以查看宠物是否发热和喘气。通常会像这样在管道中组织多个模型，每个模型都调整到自己特定的目的。
+
+根据上一段代码中宠物脸部的位置，编写额外的代码来提取宠物的脸并为需要96 x 96图像输入的模型做准备。您的答案将是一个批量裁剪，如[图5-10](#pup_face)。
+
+![只有狗的脸](assets/ltjs_0510.png)
+
+###### 图5-10。目标[1, 96, 96, 3]张量，只包含脸部
+
+尽管这个练习是为了裁剪宠物的脸以供第二个模型使用，但它也可以很容易地成为一个“宠物匿名化器”，需要您模糊宠物的脸。浏览器中的人工智能应用是无限的。
+
+你可以在[附录 B](app02.html#appendix_b)中找到这个挑战的答案。
+
+## 复习问题
+
+让我们回顾一下你在本章编写的代码中学到的教训。花点时间回答以下问题：
+
+1.  在TensorFlow.js中可以加载哪些类型的模型？
+
+1.  你需要知道一个模型被分成了多少个碎片吗？
+
+1.  除了公共URL之外，还有哪些地方可以加载模型？
+
+1.  `loadLayersModel` 返回什么？
+
+1.  如何清除已加载模型的内存？
+
+1.  Inception v3模型的预期输入形状是什么？
+
+1.  使用哪个画布上下文方法可以绘制一个空矩形？
+
+1.  从TFHub加载模型时，你必须向加载方法传递哪个参数？
+
+这些问题的解决方案可以在[附录 A](app01.html#book_appendix)中找到。
+
+^([1](ch05.html#idm45049246250312-marker)) 你不一定要使用画布；如果你愿意，你可以移动一个DOM对象，但是画布提供了简单和复杂的动画，速度很快。
