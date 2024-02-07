@@ -1,0 +1,545 @@
+- en: Chapter 17\. Optimizing Model and Binary Size
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Whatever platform you choose, it’s likely that flash storage and RAM will be
+    very limited. Most embedded systems have less than 1 MB of read-only storage in
+    flash, and many have only tens of kilobytes. The same is true for memory: there’s
+    seldom more than 512 KB of static RAM (SRAM) available, and on low-end devices
+    that figure could be in the low single digits. The good news is that TensorFlow
+    Lite for Microcontrollers is designed to work with as little as 20 KB of flash
+    and 4 KB of SRAM, but you will need to design your application carefully and make
+    engineering trade-offs to keep the footprint low. This chapter covers some of
+    the approaches that you can use to monitor and control your memory and storage
+    requirements.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Your System’s Limits
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Most embedded systems have an architecture in which programs and other read-only
+    data are stored in flash memory, which is written to only when new executables
+    are uploaded. There’s usually also modifiable memory available, often using SRAM
+    technology. This is the same technology used for caches on larger CPUs, and it
+    gives fast access for low power consumption, but it’s limited in size. More advanced
+    microcontrollers can offer a second tier of modifiable memory, using a more power-hungry
+    but scalable technology like dynamic RAM (DRAM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll need to understand what potential platforms offer and what the trade-offs
+    are. For example, a chip that has a lot of secondary DRAM might be attractive
+    for its flexibility, but if enabling that extra memory blows past your power budget,
+    it might not be worth it. If you’re operating in the 1 mW-and-below power range
+    that this book focuses on it’s usually not possible to use anything beyond SRAM,
+    because larger memory approaches will consume too much energy. That means that
+    the two key metrics you’ll need to consider are how much flash read-only storage
+    is available and how much SRAM is available. These numbers should be listed in
+    the description of any chip you’re looking at. Hopefully you won’t even need to
+    dig as deeply as the datasheet [“Hardware Choice”](ch16.xhtml#hard_choice).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Estimating Memory Usage
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: When you have an idea of what your hardware options are, you need to develop
+    an understanding of what resources your software will need and what trade offs
+    you can make to control those requirements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flash Usage
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'You can usually determine exactly how much room you’ll need in flash by compiling
+    a complete executable, and then looking at the size of the resulting image. This
+    can be confusing, because the first artifact that the linker produces is often
+    an annotated version of the executable with debug symbols and section information,
+    in a format like ELF (which we discuss in more detail in [“Measuring Code Size”](#measuring_code_size).
+    The file you want to look at is the actual one that’s flashed to the device, often
+    produced by a tool like `objcopy`. The simplest equation for gauging the amount
+    of flash memory you need is the sum of the following factors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operating system size
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re using any kind of real-time operating system (RTOS), you’ll need space
+    in your executable to hold its code. This will usually be configurable depending
+    on which features you’re using, and the simplest way to estimate the footprint
+    is to build a sample “hello world” program with the features you need enabled.
+    If you look at the image file size, this will give you a baseline for how large
+    the OS program code is. Typical modules that can take up a lot of program space
+    include USB, WiFi, Bluetooth, and cellular radio stacks, so ensure that these
+    are enabled if you intend to use them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TensorFlow Lite for Microcontrollers code size
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ML framework needs space for the program logic to load and execute a neural
+    network model, including the operator implementations that run the core arithmetic.
+    Later in this chapter we discuss how to configure the framework to reduce the
+    size for particular applications, but to get started just compile one of the standard
+    unit tests (like [the `micro_speech` test](https://oreil.ly/7cafy)) that includes
+    the framework and look at the resulting image size for an estimate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model data size
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you don’t yet have a model trained, you can get a good estimate of the amount
+    of flash storage space it will need by counting its weights. For example, a fully
+    connected layer will have a number of weights equal to the size of its input vector
+    multiplied by the size of its output vector. For convolutional layers, it’s a
+    bit more complex; you’ll need to multiply the width and height of the filter box
+    by the number of input channels, and multiply this by the number of filters. You
+    also need to add on storage space for any bias vectors associated with each layer.
+    This can quickly become complex to calculate, so it can be easier just to create
+    a candidate model in TensorFlow and then export it to a TensorFlow Lite file.
+    This file will be directly mapped into flash, so its size will give you an exact
+    figure for how much space it will take up. You can also look at the number of
+    weights listed by [Keras’s `model.summary()` method](https://keras.io/models/about-keras-models).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We introduced quantization in [Chapter 4](ch04.xhtml#chapter_hello_world_training)
+    and discussed it further in [Chapter 15](ch15.xhtml#optimizing_latency), but it’s
+    worth a quick refresher in the context of model size. During training, weights
+    are usually stored as floating-point values, taking up 4-bytes each in memory.
+    Because space is such a constraint for mobile and embedded devices, TensorFlow
+    Lite supports compressing those values down to a single byte in a process called
+    *quantization*. It works by keeping track of the minimum and maximum values stored
+    in a float array, and then converting all the values linearly to the closest of
+    256 values equally spaced within that range. These codes are each stored in a
+    byte, and arithmetic operations can be performed on them with a minimal loss of
+    accuracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Application code size
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll need code to access sensor data, preprocess it to prepare it for the
+    neural network, and respond to the results. You might also need some other kinds
+    of user interface and business logic outside of the machine learning module. This
+    can be difficult to estimate, but you should at least try to understand whether
+    you’ll need any external libraries (for example, for fast Fourier transforms)
+    and calculate what their code space requirements will be.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RAM Usage
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Determining the amount of modifiable memory you’ll need can be more of a challenge
+    than understanding the storage requirements, because the amount of RAM used varies
+    over the life of your program. In a similar way to the process of estimating flash
+    requirements, you’ll need to look at the different layers of your software to
+    estimate the overall usage requirements:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operating system size
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most [RTOSs (like FreeRTOS)](https://www.freertos.org/FAQMem.html) document
+    how much RAM their different configuration options need, and you should be able
+    to use this information to plan the required size. You will need to watch for
+    modules that might require buffers—especially communication stacks like TCP/IP,
+    WiFi, or Bluetooth. These will need to be added to any core OS requirements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: TensorFlow Lite for Microcontrollers RAM size
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ML framework doesn’t have large memory needs for its core runtime and shouldn’t
+    require more than a few kilobytes of space in SRAM for its data structures. These
+    are allocated as part of the classes used for the interpreter, so whether your
+    application code creates these as global or local objects will determine whether
+    they’re on the stack or in general memory. We generally recommend creating them
+    as global or `static` objects, because the lack of space will usually cause an
+    error at linker time, whereas stack-allocated locals can cause a runtime crash
+    that’s more difficult to understand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model memory size
+  prefs: []
+  type: TYPE_NORMAL
+- en: When a neural network is executed, the results of one layer are fed into subsequent
+    operations and so must be kept around for some time. The lifetimes of these activation
+    layers vary depending on their position in the graph, and the memory size needed
+    for each is controlled by the shape of the array that a layer writes out. These
+    variations mean that it’s necessary to calculate a plan over time to fit all these
+    temporary buffers into as small an area of memory as possible. Currently this
+    is done when the model is first loaded by the interpreter, so if the arena is
+    not big enough, you’ll see an error on the console. If you see the difference
+    between the available memory and what’s required in the error message and increase
+    the arena by that amount, you should be able to run past that error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Application memory size
+  prefs: []
+  type: TYPE_NORMAL
+- en: Like the program size, memory usage for your application logic can be difficult
+    to calculate before it’s written. You can make some guesses about larger users
+    of memory, though, such as buffers that you’ll need for storing incoming sample
+    data, or areas of memory that libraries will need for preprocessing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ballpark Figures for Model Accuracy and Size on Different Problems
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s helpful to understand what the current state of the art is for different
+    kinds of problems in order to help you plan for what you might be able to achieve
+    for your application. Machine learning isn’t magic, and having a sense of its
+    limitations will help you make smart trade-offs as you’re building your product.
+    [Chapter 14](ch14.xhtml#designing_your_own_tinyml_applications), which examines
+    the design process, is a good place to begin developing your intuition, but you’ll
+    also need to think about how accuracy degrades as models are forced into tight
+    resource constraints. To help with that, here are a few examples of architectures
+    designed for embedded systems. If one of them is close to what you need to do,
+    it might help you to envision what you could achieve at the end of your model
+    creation process. Obviously your actual results it will depend a lot on your specific
+    product and environment, so use these as guidelines for planning and don’t rely
+    on being able to achieve exactly the same performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Speech Wake-Word Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The small (18 KB) model using 400,000 arithmetic operations that we covered
+    earlier as a code sample is able to achieve 85% top-one accuracy (see [“Establish
+    a Metric”](ch18.xhtml#establish_a_metric)) when distinguishing between four classes
+    of sound: silence, unknown words, “yes,” and “no.” This is the training evaluation
+    metric, which means it’s the result of presenting one-second clips and asking
+    the model to do a one-shot classification of its input. In practice, you’d usually
+    use the model on streaming audio, repeatedly predicting a result based on a one-second
+    window that’s incrementally moving forward in time, so the actual accuracy in
+    practical applications is lower than that figure might suggest. You should generally
+    think about an audio model this size as a first-stage gatekeeper in a larger cascade
+    of processing, so that its errors can be tolerated and dealt with by more complex
+    models.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As a rule of thumb, you might need a model with 300 to 400 KB of weights and
+    low-tens-of-millions of arithmetic operations to be able to detect a wake word
+    with acceptable enough accuracy to use in a voice interface. Unfortunately you’ll
+    also need a commercial-quality dataset to train on, given that there still aren’t
+    enough open repositories of labeled speech data available, but hopefully that
+    restriction will ease over time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accelerometer Predictive Maintenance Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: There are a wide range of different predictive maintenance problems, but one
+    of the simpler cases is detecting a bearing failure in a motor. This often appears
+    as distinctive shaking that can be spotted as patterns in accelerometer data.
+    A reasonable model to spot these patterns might require only a few thousand weights,
+    making it less than 10 KB in size, and a few hundred thousand arithmetic operations.
+    You could expect better than 95% accuracy at classifying these events with such
+    a model, and you can imagine scaling up the complexity of your model from there
+    to handle more difficult problems (such as detecting failures on a machine with
+    many moving parts or that’s traveling itself). Of course, the number of parameters
+    and operations would scale up, as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Person Presence Detection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Computer vision hasn’t been a common task on embedded platforms, so we’re still
+    figuring out what applications make sense. One common request we’ve heard is the
+    ability to detect when a person is nearby, to wake up a user interface or do other
+    more power-hungry processing that it’s not possible to leave running all the time.
+    We’ve tried to formally capture the requirements of this problem in the [Visual
+    Wake Word Challenge](https://oreil.ly/E8GoU), and the results show that you can
+    expect roughly 90% accuracy with binary classification of a small (96 × 96–pixel)
+    monochrome image if you use a 250 KB model and around 60 million arithmetic operations.
+    This is the baseline from using a scaled-down MobileNet v2 architecture (as described
+    earlier in the book), so we hope to see the accuracy improve as more researchers
+    tackle this specialized set of requirements, but it gives you a rough estimate
+    of how well you might be able to do on visual problems within a microcontroller’s
+    memory footprint. You might wonder how such a small model would do on the popular
+    ImageNet–1,000 category problem—it’s hard to say exactly because the final fully
+    connected layer for a thousand classes quickly takes up a hundred or more kilobytes
+    (the number of parameters is the embedding input multiplied by the class count),
+    but for a total size of around 500 KB, you could expect somewhere around 50% top-one
+    accuracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Choice
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In terms of optimizing model and binary size, we highly recommend starting with
+    an existing model. As we discuss in [Chapter 14](ch14.xhtml#designing_your_own_tinyml_applications),
+    the most fruitful area to invest in is data gathering and improvement rather than
+    tweaking architectures, and starting with a known model will let you focus on
+    data improvements as early as possible. Machine learning software on embedded
+    platforms is also still in its early stages, so using an existing model increases
+    the chances that its ops are supported and well-optimized on the devices you care
+    about. We’re hoping that the code samples accompanying this book will be good
+    starting points for a lot of different applications—we chose them to cover as
+    many different kinds of sensor input as we could—but if they don’t fit your use
+    cases you might be able to search for some alternatives online. If you can’t find
+    a size-optimized architecture that’s suitable, you can look into building your
+    own from scratch in the training environment of TensorFlow, but as Chapters [Chapter 13](ch13.xhtml#chapter_tensorflow_lite_for_microcontrollers)
+    and [Chapter 19](ch19.xhtml#ch19) discuss, it can be an involved process to successfully
+    port that onto a microcontroller.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reducing the Size of Your Executable
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Your model is likely to be one of the biggest consumers of read-only memory
+    in a microcontroller application, but you also must think about how much space
+    your compiled code takes. This constraint on code size is the reason that we can’t
+    just use an unmodified version of TensorFlow Lite when targeting embedded platforms:
+    it would take up many hundreds of kilobytes of flash memory. TensorFlow Lite for
+    Microcontrollers can compile down to as little as 20 KB, but this can require
+    you to make some changes to exclude the parts of the code that you don’t need
+    for your application.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Measuring Code Size
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Before you begin optimizing the size of your code, you need to know how big
+    it is. This can be a little tricky on embedded platforms because the output of
+    the building process is often a file that includes debugging and other information
+    that’s not transferred onto the embedded device and so shouldn’t count toward
+    the total size limit. On Arm and other modern toolchains this is often known as
+    an Executable and Linking Format (ELF) file, whether or not it has an *.elf* suffix.
+    If you’re on a Linux or macOS development machine, you can run the `file` command
+    to investigate the output of your toolchain; it will show you whether a file is
+    an ELF.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The better file to look at is what’s often known as the *bin*: the binary snapshot
+    of the code that’s actually uploaded to the flash storage of an embedded device.
+    This will usually be exactly the size of the read-only flash memory that will
+    be used, so you can use it to understand what the usage actually is. You can find
+    out its size by using a command line like `ls -l` or `dir` on the host, or even
+    inspecting it in a GUI file viewer. Not all toolchains automatically show you
+    this *bin* file, and it might not have any suffix, but it’s the file that you
+    download and drag onto your device through USB on Mbed, and with the gcc toolchain
+    you produce it by running something like `arm-none-eabi-objcopy app.elf app.bin
+    -O binary`. It’s not helpful to look at the *.o* intermediates, or even the *.a*
+    libraries that the build process produces, because they contain a lot of metadata
+    that doesn’t make it into the final code footprint, and a lot of the code might
+    be pruned as unused.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because we expect you to compile your model into your executable as a C data
+    array (since you can’t rely on a filesystem being present to load it from), the
+    binary size you see for any program including the model will contain the model
+    data. To understand how much space your actual code is taking, you’ll need to
+    subtract this model size from the binary file length. The model size should usually
+    be defined in the file that contains the C data array (like at the end of [*tiny_conv_micro_features_model_data.cc*](https://oreil.ly/Vknl2)),
+    so you can subtract that from the binary file size to understand the real code
+    footprint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How Much Space Is Tensorflow Lite for Microcontrollers Taking?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When you know your entire application’s code footprint size, you might want
+    to investigate how much space is being taken up by TensorFlow Lite. The simplest
+    way to test this is by commenting out all your calls to the framework (including
+    the creation of objects like `OpResolvers` and interpreters) and seeing how much
+    smaller the binary becomes. You should expect at least a 20 to 30 KB decrease,
+    so if you don’t see anything like that, you should double-check that you’ve caught
+    all the references. This should work because the linker will strip out any code
+    that you’re never calling, removing it from the footprint. This can be extended
+    to other modules of your code, too—as long as you ensure there are no references—to
+    help create a better understanding of where the space is going.
+  prefs: []
+  type: TYPE_NORMAL
+- en: OpResolver
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: TensorFlow Lite supports over a hundred operations, but it’s unlikely that you’ll
+    need all of them within a single model. The individual implementations of each
+    operation might take up only a few kilobytes, but the total quickly adds up with
+    so many available. Luckily, there is a built-in mechanism to remove the code footprint
+    of operations you don’t need.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When TensorFlow Lite loads a model, it searches for implementations of each
+    included op using the [`OpResolver` interface](https://oreil.ly/dfwOP). This is
+    a class you pass into the interpreter to load a model, and it contains the logic
+    to find the function pointers to an op’s implementation given the op definition.
+    The reason this exists is so that you can control which implementations are actually
+    linked in. For most of the sample code, you’ll see that we’re creating and passing
+    in an instance of the [`AllOpsResolver` class](https://oreil.ly/tbzg6). As we
+    discussed in [Chapter 5](ch05.xhtml#chapter_building_an_application), this implements
+    the `OpResolver` interface, and as the name implies, it has an entry for every
+    operation that’s supported in TensorFlow Lite for Microcontrollers. This is convenient
+    for getting started, because it means that you can load any supported model without
+    worrying about what operations it contains.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you get to the point of worrying about code size, however, you’ll want
+    to revisit this class. Instead of passing in an instance of `AllOpsResolver` in
+    your application’s main loop, copy the *all_ops_resolver.cc* and *.h* files into
+    your application and rename them to *my_app_resolver.cc* and *.h*, with the class
+    renamed to `MyAppResolver`. Inside the constructor of your class, remove all the
+    `AddBuiltin()` calls that apply to ops that you don’t use within your model. Unfortunately
+    we know of an easy automatic way to create the list of operations a model uses,
+    but the [Netron](https://oreil.ly/MKqF9) model viewer is a nice tool that can
+    help with the process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make sure that you replace the `AllOpsResolver` instance you were passing into
+    your interpreter with `MyAppResolver`. Now, as soon as you compile your app, you
+    should see the size noticeably shrink. The reason behind this change is that most
+    linkers automatically try to remove code that can’t be called (or *dead code*).
+    By removing the references that were in `AllOpsResolver`, you allow the linker
+    to determine that it can exclude all the op implementations that are no longer
+    listed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you use only a few ops, you don’t need to wrap registration in a new class,
+    like we do with the large `AllOpsResolver`. Instead, you can create an instance
+    of the `MicroMutableOpResolver` class and directly add the op registrations you
+    need. `MicroMutableOpResolver` implements the `OpResolver` interface, but has
+    additional methods that let you add ops to the list (which is why it’s named `Mutable`).
+    This is the class that’s used to implement `AllOpsResolver`, and it’s a good base
+    for any of your own resolver classes, too, but it can be simpler to call it directly.
+    We use this approach in some of the examples, and you can see how it works in
+    this snippet from the [`micro_speech` example](https://oreil.ly/gdZts):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: You might notice that we’re declaring the resolver object as `static`. This
+    is because the interpreter can call into it at any time, so its lifetime needs
+    to be at least as long as the object we created for the interpreter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the Size of Individual Functions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'If you’re using the GCC toolchain, you can use tools like `nm` to get information
+    on the size of functions and objects in object (*.o*) intermediate files. Here’s
+    an example of building a binary and then inspecting the size of items in the compiled
+    *audio_provider.cc* object file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see results that look something like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Many of these symbols are internal details or irrelevant, but the last few are
+    recognizable as functions we define in *audio_provider.cc*, with their names mangled
+    to match C++ linker conventions. The second column shows what their size is in
+    hexadecimal. You can see here that the `InitAudioRecording()` function is `0x2c4`
+    or 708 bytes, which could be quite significant on a small microcontroller, so
+    if space were tight it would be worth investigating where the size inside the
+    function is coming from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The best way we’ve found to do this is to disassemble the functions with the
+    source code intermingled. Luckily, the `objdump` tool lets us do this by using
+    the `-S` flag—but unlike with `nm`, you can’t use the standard version that’s
+    installed on your Linux or macOS desktop. Instead, you need to use one that came
+    with your toolchain. This will usually be downloaded automatically if you’re using
+    the TensorFlow Lite for Microcontrollers Makefile to build. It will exist somewhere
+    like *tensorflow/lite/micro/tools/make/downloads/gcc_embedded/bin*. Here’s a command
+    to run to see more about the functions inside *audio_provider.cc*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We won’t show all of the output, because it’s so long; instead, we present
+    an abridged version showing only the function we were curious about:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: You don’t need to understand what the assembly is doing, but hopefully you can
+    see where the space is going by seeing how the function size (the number on the
+    far left of the disassembled lines; for example, hexadecimal *10* at the end of
+    `InitAudioRecording()`) increases for each of the C++ source lines. What is revealed
+    if you look at the entire function is that all of the hardware initialization
+    code has been inlined within the `InitAudioRecording()` implementation, which
+    explains why it’s so large.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Framework Constants
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: There are a few places in the library code where we use hardcoded sizes for
+    arrays to avoid dynamic memory allocation. If RAM space becomes very tight, it’s
+    worth experimenting to see whether you can reduce them for your application (or,
+    for very complex use cases, you might even need to increase them). One of these
+    arrays is [`TFLITE_REGISTRATIONS_MAX`](https://oreil.ly/hYTLi), which controls
+    how many different operations can be registered. The default is 128, which is
+    probably far too many for most applications—especially given that it creates an
+    array of 128 `TfLiteRegistration` structs, which are at least 32 bytes each, requiring
+    4 KB of RAM. You can also look at lesser offenders like [`kStackDataAllocatorSize`](https://oreil.ly/wIsPm)
+    in `MicroInterpreter`, or try shrinking the size of the arena you pass into the
+    constructor of your interpreter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Truly Tiny Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A lot of the advice in this chapter is related to embedded systems that can
+    afford to use 20 KB of code footprint on framework code to run machine learning,
+    and aren’t trying to scrape by with less than 10 KB of RAM. If you have a device
+    with extremely tight resource constraints—for example, just a couple of kilobytes
+    of RAM or flash—you aren’t going to be able to use the same approach. For those
+    environments, you will need to write custom code and hand-tune everything extremely
+    carefully to reduce the size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We hope that TensorFlow Lite for Microcontrollers can still be useful in these
+    situations, though. We recommend that you still train a model in TensorFlow, even
+    if it’s tiny, and then use the export workflow to create a TensorFlow Lite model
+    file from it. This can be a good starting point for extracting the weights, and
+    you can use the existing framework code to verify the results of your custom version.
+    The reference implementations of the ops you’re using should be good starting
+    points for your own op code, too; they should be portable, understandable, and
+    memory efficient, even if they’re not optimal for latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we looked at some of the best techniques to shrink the amount
+    of storage you need for your embedded machine learning project. This is likely
+    to be one of the toughest constraints you’ll need to overcome, but when you have
+    an application that’s small enough, fast enough, and doesn’t use too much energy,
+    you’ve got a clear path to shipping your product. What remains is rooting out
+    all of the inevitable gremlins that will cause your device to behave in unexpected
+    ways. Debugging can be a frustrating process (we’ve heard it described as a murder
+    mystery where you’re the detective, the victim, and the murderer), but it’s an
+    essential skill to learn to get products out the door. [Chapter 18](ch18.xhtml#debugging)
+    covers the basic techniques that can help you understand what’s happening in a
+    machine learning system.
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,198 @@
+- en: Chapter 19\. Porting Models from TensorFlow to TensorFlow Lite
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you’ve made it this far, you’ll understand that we’re in favor of reusing
+    existing models for new tasks whenever you can. Training an entirely new model
+    from scratch can take a lot of time and experimentation, and even experts often
+    can’t predict the best approach ahead of time without trying a lot of different
+    prototypes. This means that a full guide to creating new architectures is beyond
+    the scope of this book, and we recommend looking in [Chapter 21](ch21.xhtml#ch21)
+    for further reading on the topic. There are some aspects (like working with a
+    restricted set of operations or preprocessing demands) that are unique to resource-constrained,
+    on-device machine learning, though, so this chapter offers advice on those.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understand What Ops Are Needed
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This book is focused on models created in TensorFlow because the authors work
+    on the team at Google, but even within a single framework there are a lot of different
+    ways of creating models. If you look at [the speech commands training script](https://oreil.ly/ZTYu7),
+    you’ll see that it’s building a model using core TensorFlow ops directly as building
+    blocks, and manually running a training loop. This is quite an old-fashioned way
+    of working these days (the script was originally written in 2017), and modern
+    examples with TensorFlow 2.0 are likely to use Keras as a high-level API that
+    takes care of a lot of the details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The downside to this is that the underlying operations that a model uses are
+    no longer obvious from inspecting the code. Instead, they will be created as part
+    of layers which represent larger chunks of the graph in a single call. This is
+    a problem because knowing what TensorFlow operations are being used by a model
+    is very important for understanding whether the model will run in TensorFlow Lite,
+    and what the resource requirements will be. Luckily you can access the underlying
+    low-level operations even from Keras, as long as you can retrieve the underlying
+    `Session` object using [`tf.keras.backend.get_session()`](https://oreil.ly/4zurk).
+    If you’re coding directly in TensorFlow, it’s likely that you already have the
+    session in a variable, so the following code should still work:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you’ve assigned your session to the `sess` variable, this will print out
+    the types of all the ops in your model. You can also access other properties,
+    like `name`, to get more information. Understanding what TensorFlow operations
+    are present will help a lot in the conversion process to TensorFlow Lite; otherwise,
+    any errors you see will be much more difficult to understand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Look at Existing Op Coverage in Tensorflow Lite
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: TensorFlow Lite supports only a subset of TensorFlow’s operations, and with
+    some restrictions. You can see the latest list in [the ops compatibility guide](https://oreil.ly/Pix9U).
+    This means that if you’re planning a new model, you should ensure at the outset
+    that you aren’t relying on features or ops that aren’t supported. In particular,
+    LSTMs, GRUs, and other recurrent neural networks are not yet usable. There’s also
+    currently a gap between what’s available in the full mobile version of TensorFlow
+    Lite and the microcontroller branch. The simplest way to understand what operations
+    are supported by TensorFlow Lite for Microcontrollers at the moment is to look
+    at [*all_ops_resolver.cc*](https://oreil.ly/HNpmM), because ops are constantly
+    being added.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It can become a bit confusing comparing the ops that show up in your TensorFlow
+    training session and those supported by TensorFlow Lite, because there are several
+    transformation steps that take place during the export process. These turn weights
+    that were stored as variables into constants, for example, and might quantize
+    float operations into their integer equivalents as an optimization. There are
+    also ops that exist only as part of the training loop, like those involved in
+    backpropagation, and these are stripped out entirely. The best way to figure out
+    what issues you might encounter is to try exporting a prospective model as soon
+    as you’ve created it, before it’s trained, so that you can adjust its structure
+    before you’ve spent a lot of time on the training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Move Preprocessing and Postprocessing into Application Code
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s common for deep learning models to have three stages. There’s often a preprocessing
+    step, which might be as simple as loading images and labels from disk and decoding
+    the JPEGs, or as complex as the speech example which transforms audio data into
+    spectrograms. There’s then a core neural network that takes in arrays of values
+    and outputs results in a similar form. Finally, you need to make sense of these
+    values in a postprocessing step. For many classification problems this is as simple
+    as matching scores in a vector to the corresponding labels, but if you look at
+    a model like [MobileSSD](https://oreil.ly/QT_dS), the network output is a soup
+    of overlapping bounding boxes that need to go through a complex process called
+    “non-max suppression” to be useful as results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The core neural network model is usually the most computationally intensive,
+    and is often composed of a comparatively small number of operations like convolutions
+    and activations. The pre- and postprocessing stages frequently require a lot more
+    operations, including control flow, even though their computational load is a
+    lot lower. This means that it often makes more sense to implement the non-core
+    steps as regular code in the application, rather than baking them into the TensorFlow
+    Lite model. For example, the neural network portion of a machine vision model
+    will take in an image of a particular size, like 224 pixels high by 224 pixels
+    wide. In the training environment, we’ll use a `DecodeJpeg` op followed by a `ResizeImages`
+    operation to convert the result into the correct size. When we’re running on a
+    device, however, we’re almost certainly grabbing input images from a fixed-size
+    source with no decompression required, so writing custom code to create the neural
+    network input makes a lot more sense than relying on a general-purpose operation
+    from our library. We’ll probably also be dealing with asynchronous capture and
+    might be able to get some benefits from threading the work involved. In the case
+    of speech commands, we do a lot of work to cache intermediate results from the
+    FFT so that we can reuse as many calculations as possible as we’re running on
+    streaming input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Not every model has a significant postprocessing stage in the training environment,
+    but when we’re running on a device, it’s very common to want to take advantage
+    of coherency over time to improve the results shown to the user. Even though the
+    model is just a classifier, the wake-word detection code runs multiple times a
+    second and [uses averaging](https://oreil.ly/E68Q4) to increase the accuracy of
+    the results. This sort of code is also best implemented at the application level,
+    given that expressing it as TensorFlow Lite operations is difficult and doesn’t
+    offer many benefits. It is possible, as you can see in [*detection_postprocess.cc*](https://oreil.ly/IMlsT),
+    but it involves a lot of work wiring through from the underlying TensorFlow graph
+    during the export process because the way it’s typically expressed as small ops
+    in the TensorFlow is not an efficient way to implement it on-device.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This all means that you should try to exclude non-core parts of the graph, which
+    will require some work determining what parts are which. We find [Netron](https://oreil.ly/qoQNY)
+    to be a good tool for exploring TensorFlow Lite graphs to understand what ops
+    are present, and get a sense for whether they’re part of the core of the neural
+    network or just processing steps. Once you understand what is happening internally,
+    you should be able to isolate the core network, export just those ops, and implement
+    the rest as application code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implement Required Ops if Necessary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you do find that there are TensorFlow operations that you absolutely need
+    that are not supported by TensorFlow Lite, it is possible to save them as *custom*
+    operations inside the TensorFlow Lite file format, and then implement them yourself
+    within the framework. The full process is beyond the scope of this book, but here
+    are the key steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run `toco` with `allow_custom_ops` enabled, so that unsupported operations are
+    stored as custom ops in the serialized model file.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Write a kernel implementing the operation and register it using `AddCustom()`
+    in the op resolver you’re using in your application.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Unpack the parameters that are stored in a FlexBuffer format when your `Init()`
+    method is called.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Optimize Ops
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Even if you’re using supported operations in your new model, you might be using
+    them in a way that hasn’t yet been optimized. The TensorFlow Lite team’s priorities
+    are driven by particular use cases, so if you are running a new model, you might
+    run into code paths that haven’t been optimized yet. We covered this in [Chapter 15](ch15.xhtml#optimizing_latency),
+    but just as we recommend you check export compatibility as soon as possible—even
+    before you’ve trained a model—it’s worth ensuring that you get the performance
+    you need before you plan your development schedule, because you might need to
+    budget some time to work on operation latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Training a novel neural network to complete a task successfully is already challenging,
+    but figuring out how to build a network that will produce good results and run
+    efficiently on embedded hardware is even tougher! This chapter discussed some
+    of the challenges you’ll face, and provided suggestions on approaches to overcome
+    them, but it’s a large and growing area of study, so we recommend taking a look
+    at some of the resources in [Chapter 21](ch21.xhtml#ch21) to see whether there
+    are new sources of inspiration for your model architecture. In particular, this
+    is an area where following the latest research papers on arXiv can be very useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After overcoming all these challenges, you should have a small, fast, power-efficient
+    product that’s ready to be deployed in the real world. It’s worth thinking about
+    what potentially harmful impacts it could have on your users before you release
+    it, though, so [Chapter 20](ch20.xhtml#ch20) covers questions around privacy and
+    security.
+  prefs: []
+  type: TYPE_NORMAL

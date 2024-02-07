@@ -1,0 +1,283 @@
+- en: Appendix B. Capturing Audio on Arduino
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The following text walks through the audio capture code from the wake-word application
+    in [Chapter 7](ch07.xhtml#chapter_speech_wake_word_example). Since it’s not directly
+    related to machine learning, it’s provided as an appendix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Arduino Nano 33 BLE Sense has an on-board microphone. To receive audio data
+    from the microphone, we can register a callback function that is called when there
+    is a chunk of new audio data ready.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each time this happens, we’ll write the chunk of new data to a *buffer* that
+    stores a reserve of data. Because audio data takes up a lot of memory, the buffer
+    has room for only a set amount of data. This data is overwritten when the buffer
+    becomes full.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whenever our program is ready to run inference, it can read the last second’s
+    worth of data from this buffer. As long as new data keeps coming in faster than
+    we need to access it, there’ll always be enough new data in the buffer to preprocess
+    and feed into our model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each cycle of preprocessing and inference is complex, and it takes some time
+    to complete. Because of this, we’ll only be able to run inference a few times
+    per second on an Arduino. This means that it will be easy for our buffer to stay
+    full.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As we saw in [Chapter 7](ch07.xhtml#chapter_speech_wake_word_example), *audio_provider.h*
+    implements these two functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GetAudioSamples()`, which provides a pointer to a chunk of raw audio data'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`LatestAudioTimestamp()`, which returns the timestamp of the most recently
+    captured audio'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The code that implements these for Arduino is located in [*arduino/audio_provider.cc*](https://oreil.ly/Bfh4v).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the first part, we pull in some dependencies. The *PDM.h* library defines
+    the API that we’ll use to get data from the microphone. The file *micro_model_settings.h*
+    contains constants related to our model’s data requirements that will help us
+    provide audio in the correct format:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The next chunk of code is where we set up some important variables:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Boolean `g_is_audio_initialized` is what we’ll use to track whether the
+    microphone has started capturing audio. Our audio capture buffer is defined by
+    `g_audio_capture_buffer` and is sized to be 16 times the size of `DEFAULT_PDM_BUFFER_SIZE`,
+    which is a constant defined in *PDM.h* that represents the amount of audio we
+    receive from the microphone each time the callback is called. Having a nice big
+    buffer means that we’re unlikely to run out of data if the program slows down
+    for some reason.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to the audio capture buffer, we also keep a buffer of output audio,
+    `g_audio_output_buffer`, that we’ll return a pointer to when `GetAudioSamples()`
+    is called. It’s the length of `kMaxAudioSampleSize`, which is a constant from
+    *micro_model_settings.h* that defines the number of 16-bit audio samples our preprocessing
+    code can handle at once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we use `g_latest_audio_timestamp` to keep track of the time represented
+    by our most recent audio sample. This won’t match up with the time on your wristwatch;
+    it’s just the number of milliseconds relative to when audio capture began. The
+    variable is declared as `volatile`, which means the processor shouldn’t attempt
+    to cache its value. We’ll see why later on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After setting up these variables, we define the callback function that will
+    be called every time there’s new audio data available. Here it is in its entirety:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This function is a bit complicated, so we’ll walk through it in chunks. Its
+    goal is to determine the correct index in the audio capture buffer to write this
+    new data to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'First, we figure out how much new data we’ll receive each time the callback
+    is called. We use that to determine a number in milliseconds that represents the
+    time of the most recent audio sample in the buffer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The number of audio samples per second is `kAudioSampleFrequency` (this constant
+    is defined in *micro_model_settings.h*). We divide this by 1,000 to get the number
+    of samples per millisecond.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we divide the number of samples per callback (`number_of_samples`) by
+    the samples per millisecond to obtain the number of milliseconds’ worth of data
+    we obtain each callback:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We then add this to the timestamp of our previous most recent audio sample,
+    `g_latest_audio_timestamp`, to obtain the timestamp of the most recent new audio
+    sample.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After we have this number, we can use it to obtain the index of the most recent
+    sample *in the history of all samples*. To do this, we multiply the timestamp
+    of our previous most recent audio sample by the number of samples per millisecond:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our buffer doesn’t have room to store every sample ever captured, though. Instead,
+    it has room for 16 times the `DEFAULT_PDM_BUFFER_SIZE`. As soon as we have more
+    data than that, we start overwriting the buffer with new data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now have the index of our new samples *in the history of all samples*. Next,
+    we need to convert this into theh samples’ proper index within our actual buffer.
+    To do this, we can divide our history index by the buffer length and get the remainder.
+    This is done using the modulo operator (`%`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Because the buffer’s size, `kAudioCaptureBufferSize`, is a multiple of `DEFAULT_PDM_BUFFER_SIZE`,
+    the new data will always fit neatly into the buffer. The modulo operator will
+    return the index within the buffer where the new data should begin.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we use the `PDM.read()` method to read the latest audio into the audio
+    capture buffer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first argument accepts a pointer to a location in memory that the data should
+    be written to. The variable `g_audio_capture_buffer` is a pointer to the address
+    in memory where the audio capture buffer starts. By adding `capture_index` to
+    this location, we can calculate the correct spot in memory to write our new data.
+    The second argument defines how much data should be read, and we go for the maximum,
+    `DEFAULT_PDM_BUFFER_SIZE`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, we update `g_latest_audio_timestamp`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will be exposed to other parts of the program via the `LatestAudioTimestamp()`
+    method, letting them know when new data becomes available. Because `g_latest_audio_timestamp`
+    is declared as `volatile`, its value will be looked up from memory every time
+    it is accessed. This is important, because otherwise the variable would be cached
+    by the processor. Because its value is set in a callback, the processor would
+    not know to refresh the cached value, and any code accessing it would not receive
+    its current value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You might be wondering what makes `CaptureSamples()` act as a callback function.
+    How does it know when new audio is available? This, among other things, is handled
+    in the next part of our code, which is a function that initiates audio capture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: This function will be called the first time someone calls `GetAudioSamples()`.
+    It first uses the `PDM` library to hook up the `CaptureSamples()` callback, by
+    calling `PDM.onReceive()`. Next, `PDM.begin()` is called with two arguments. The
+    first argument indicates how many channels of audio to record; we only want mono
+    audio, so we specify `1`. The second argument specifies how many samples we want
+    to receive per second.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, `PDM.setGain()` is used to configure the *gain*, which defines how much
+    the microphone’s audio should be amplified. We specify a gain of `20`, which was
+    chosen after some experimentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we loop until `g_latest_audio_timestamp` evaluates to true. Because
+    it starts at `0`, this has the effect of blocking execution until some audio has
+    been captured by the callback, since at that point `g_latest_audio_timestamp`
+    will have a nonzero value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The two functions we’ve just explored allow us to initiate the process of capturing
+    audio and to store the captured audio in a buffer. The next function, `GetAudioSamples()`,
+    provides a mechanism for other parts of our code (namely, the feature provider)
+    to obtain audio data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The function is called with an `ErrorReporter` for writing logs, two variables
+    that specify what audio we’re requesting (`start_ms` and `duration_ms`), and two
+    pointers used to pass back the audio data (`audio_samples_size` and `audio_samples`).
+    The first part of the function calls `InitAudioRecording()`. As we saw earlier,
+    this blocks execution until the first samples of audio have arrived. We use the
+    variable `g_is_audio_initialized` to ensure this setup code runs only once.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After this point, we can assume that there’s some audio stored in the capture
+    buffer. Our task is to figure out where in the buffer the correct audio data is
+    located. To do this, we first determine the index *in the history of all samples*
+    of the first sample that we want:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we determine the total number of samples that we want to grab:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now that we have this information, we can figure out where in our audio capture
+    buffer to read. We’ll read the data in a loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Earlier, we saw how we can use the modulo operator to find the correct position
+    within a buffer that only has enough space to hold the most recent samples. Here
+    we use the same technique again—if we divide the current index *within the history
+    of all samples* by the size of the audio capture buffer, `kAudioCaptureBufferSize`,
+    the remainder will indicate that data’s position within the buffer. We can then
+    use a simple assignment to read the data from the capture buffer to the output
+    buffer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, to get data out of this function, we use two pointers that were supplied
+    as arguments. These are `audio_samples_size`, which points to the number of audio
+    samples, and `audio_samples`, which points to the output buffer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: We end the function by returning `kTfLiteOk`, letting the caller know that the
+    operation was successful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, in the final part, we define `LatestAudioTimestamp()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Since this always returns the timestamp of the most recent audio, it can be
+    checked in a loop by other parts of our code to determine if new audio data has
+    arrived.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That’s all for our audio provider! We’ve now ensured that our feature provider
+    has a steady supply of fresh audio samples.
+  prefs: []
+  type: TYPE_NORMAL

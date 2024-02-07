@@ -1,0 +1,663 @@
+- en: Chapter 15\. Optimizing Latency
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Embedded systems don’t have much computing power, which means that the intensive
+    calculations needed for neural networks can take longer than on most other platforms.
+    Because embedded systems usually operate on streams of sensor data in real time,
+    running too slowly can cause a lot of problems. Suppose that you’re trying to
+    observe something that might occur only briefly (like a bird being visible in
+    a camera’s field of view). If your processing time is too long you might sample
+    the sensor too slowly and miss one of these occurrences. Sometimes the quality
+    of a prediction is improved by repeated observations of overlapping windows of
+    sensor data, in the way the wake-word detection example runs a one-second window
+    on audio data for wake-word spotting, but moves the window forward only a hundred
+    milliseconds or less each time, averaging the results. In these cases, reducing
+    latency lets us improve the overall accuracy. Speeding up the model execution
+    might also allow the device to run at a lower CPU frequency, or go to sleep in
+    between inferences, which can reduce the overall energy usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because latency is such an important area for optimization, this chapter focuses
+    on some of the different techniques you can use to reduce the time it takes to
+    run your model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First Make Sure It Matters
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s possible that your neural network code is such a small part of your overall
+    system latency that speeding it up wouldn’t make a big difference to your product’s
+    performance. The simplest way to determine whether this is the case is by commenting
+    out the call to [`tflite::MicroInterpreter::Invoke()`](https://oreil.ly/1dLTn)
+    in your application code. This is the function that contains all of the inference
+    calculations, and it will block until the network has been run, so by removing
+    it you can observe what difference it makes to the overall latency. In an ideal
+    world you’ll be able to calculate this change with a timer log statement or profiler,
+    but as described shortly even just blinking an LED and eye balling the frequency
+    difference might be enough to give you a rough idea of what the speed increase
+    is. If the difference between running the network inference and not is small,
+    there’s not much to gain from optimizing the deep learning part of the code, and
+    you should focus on other parts of your application first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hardware Changes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: If you do need to speed up your neural network code, the first question to ask
+    is whether you are able to use a more powerful hardware device. This won’t be
+    possible for many embedded products, because the decision on which hardware platform
+    to use is often made very early on or has been set externally, but because it’s
+    the easiest factor to change from a software perspective, it’s worth explicitly
+    considering. If you do have a choice, the biggest constraints are usually energy,
+    speed, and cost. If you can, trade off energy or cost for speed by switching the
+    chip you’re using. You might even get lucky in your research and discover a newer
+    platform that gives you more speed without losing either of the other main factors!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When neural networks are trained, it’s typical to send a large number of training
+    examples at once, in every training step. This allows a lot of calculation optimizations
+    that are not possible when only one sample is submitted at once. For example,
+    a hundred images and labels might be sent as part of a single training call. This
+    collection of training data is called a *batch*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With embedded systems we’re usually dealing with one group of sensor readings
+    at a time, in real time, so we don’t want to wait to gather a larger batch before
+    we trigger inference. This “single batch” focus means we can’t benefit from some
+    optimizations that make sense on the training side, so the hardware architectures
+    that are helpful for the cloud don’t always translate over to our use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Improvements
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After switching hardware platforms, the easiest place to have a big impact on
+    neural network latency is at the architecture level. If you can create a new model
+    that is accurate enough but involves fewer calculations, you can speed up inference
+    without making any code changes at all. It’s usually possible to trade reduced
+    accuracy for increased speed, so if you’re able to start with as accurate a model
+    as you can get at the beginning, you’ll have a lot more scope for these trade-offs.
+    This means that spending time on improving and expanding your training data can
+    be very helpful throughout the development process, even with apparently unrelated
+    tasks like latency optimization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When optimizing procedural code, it’s typically a better use of your budget
+    to spend time changing the high-level algorithms your code is based on rather
+    than rewriting inner loops in assembly. The focus on model architectures is based
+    on the same idea; it’s better to eliminate work entirely if you can rather than
+    improving the speed at which you do it. What is different in our case is that
+    it’s actually a lot easier to swap out machine learning models than it is to switch
+    algorithms in traditional code because each model is just a functional black box
+    that takes in input data and returns numerical results. After you have a good
+    set of data gathered, it should be comparatively easy to replace one model with
+    another in the training scripts. You can even experiment with removing individual
+    layers from a model that you’re using and observe the effect. Neural networks
+    tend to degrade extremely gracefully, so you should feel free to try lots of different
+    destructive changes and observe their effect on accuracy and latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Estimating Model Latency
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Most neural network models spend the majority of their time running large matrix
+    multiplications or very close equivalents. This is because every input value must
+    be scaled by a different weight for each output value, so the work involved is
+    approximately the number of input values times the number of output values for
+    each layer in the network. This is often approximated by talking about the number
+    of floating-point operations (or FLOPs) that a network requires for a single inference
+    run. Usually a multiply-add operation (which is often a single instruction at
+    the machine code level) counts as two FLOPs, and even if you’re performing 8-bit
+    or lower quantized calculations you might sometimes see them referred to as FLOPs,
+    even though floating-point numbers are no longer involved. The number of FLOPs
+    required for a network can be calculated by hand, layer by layer. For example,
+    a fully connected layer requires a number of FLOPs equal to the size of the input
+    vector, multiplied by the size of the output vector. Thus, if you know those dimensions,
+    you can figure out the work involved. You can also usually find FLOP estimates
+    in papers that discuss and compare model architectures, like [MobileNet](https://arxiv.org/abs/1905.02244).
+  prefs: []
+  type: TYPE_NORMAL
+- en: FLOPs are useful as a rough metric for how much time a network will take to
+    execute because, all else being equal, a model that involves fewer calculations
+    will run faster and in proportion to the difference in FLOPs. For example, you
+    could reasonably expect a model that requires 100 million FLOPs to run twice as
+    fast as a 200-million-FLOP version. This isn’t entirely true in practice, because
+    there are other factors like how well optimized the software is for particular
+    layers that will affect the latency, but it’s a good starting point for evaluating
+    different network architectures. It’s also useful to help establish what’s realistic
+    to expect for your hardware platform. If you’re able to run a 1-million-FLOP model
+    in 100 ms on your chip, you’ll be able to make an educated guess that a different
+    model requiring 10 million FLOPs will take about a second to calculate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How to Speed Up Your Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Model architecture design is still an active research field, so it’s not easy
+    to write a good guide for beginners at this point. The best starting point is
+    to find some existing models that have been designed with efficiency in mind and
+    then iteratively experiment with changes. Many models have particular parameters
+    that we can alter to affect the amount of computation required, such as MobileNet’s
+    depthwise channel factor, or the input size expected. In other cases, you might
+    look at the FLOPs required for each layer and try to remove particularly slow
+    ones or substitute them with faster alternatives (such as depthwise convolution
+    instead of plain convolution). If you can, it’s also worth looking at the actual
+    latency of each layer when running on-device, instead of estimating it through
+    FLOPs. This will require some of the profiling techniques discussed in the sections
+    that follow for code optimizations, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Designing model architectures is difficult and time-consuming, but there have
+    recently been some advances in automating the process, such as [MnasNet](https://arxiv.org/abs/1807.11626),
+    using approaches like genetic algorithms to improve network designs. These are
+    still not at the point of entirely replacing humans (they often require seeding
+    with known good architectures as starting points, and manual rules about what
+    search space to use, for example), but it’s likely we’ll see rapid progress in
+    this area.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are already services like [AutoML](https://cloud.google.com/automl/) that
+    allow users to avoid many of the gritty details of training, and hopefully this
+    trend will continue, so you’ll be able to pick the best possible model for your
+    data and efficiency trade-offs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quantization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Running a neural network requires hundreds of thousands or even millions of
+    calculations for every prediction. Most programs that perform such complex calculations
+    are very sensitive to numerical precision; otherwise, errors build up and give
+    a result that’s too inaccurate to use. Deep learning models are different—they
+    are able to cope with large losses in numerical precision during intermediate
+    calculations and still produce end results that are accurate overall. This property
+    seems to be a by-product of their training process, in which the inputs are large
+    and full of noise, so the models learn to be robust to insignificant variations
+    and focus on the important patterns that matter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What this means in practice is that operating with 32-bit floating-point representations
+    is almost always more precise than is required for inference. Training is a bit
+    more demanding because it requires many small changes to the weights to learn,
+    but even there, 16-bit representations are widely used. Most inference applications
+    can produce results that are indistinguishable from the floating-point equivalent,
+    using just 8 bits to store weights and activation values. This is good news for
+    embedded applications given that many of our platforms have strong support for
+    the kind of 8-bit multiply-and-accumulate instructions that these models rely
+    on, because those same instructions are common in signal-processing algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It isn’t straightforward to convert a model from floating point to 8-bit, though.
+    To perform calculations efficiently, the 8-bit values require a linear conversion
+    to real numbers. This is easy for weights because we know the range for each layer
+    from the trained values, so we can derive the correct scaling factor to perform
+    the conversion. It’s trickier for activations, though, because it’s not obvious
+    from inspecting the model parameters and architecture what the range of each layer’s
+    outputs actually is. If we pick a range that’s too small, some outputs will be
+    clipped to the minimum or maximum, but if it’s too large, the precision of the
+    outputs will be smaller than it could be, and we’ll risk losing accuracy in the
+    overall results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Quantization is still an active research topic and there are a lot of different
+    options, so the TensorFlow team has tried a variety of approaches over the past
+    few years. You can see a discussion of some of these experiments in [“Quantizing
+    Deep Convolutional Networks for Efficient Inference: A Whitepaper” by Raghuraman
+    Krishnamoorthi](https://arxiv.org/pdf/1806.08342.pdf), and the [quantization specification](https://oreil.ly/toF_E)
+    covers the recommended approach we now use based on our experience.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve centralized the quantization process so that it happens during the process
+    of converting a model from the TensorFlow training environment into a TensorFlow
+    Lite graph. We used to recommend a quantization-aware training scheme, but this
+    was difficult to use and we found we could produce equivalent results at export
+    time, using some additional techniques. The easiest type of quantization to use
+    is what’s known as [post-training weight quantization](https://oreil.ly/Tz9D_).
+    This is when the weights are quantized down to 8 bits but the activation layers
+    remain in floating point. This is useful because it shrinks the model file size
+    by 75% and offers some speed benefits. It is the easiest approach to run because
+    it doesn’t require any knowledge of the activation layer’s ranges, but it does
+    still require fast floating-point hardware that isn’t present on many embedded
+    platforms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Post-training integer quantization](https://oreil.ly/LDw-y) means that a model
+    can be executed without any floating-point calculations, which makes it the preferred
+    approach for the use cases we cover in this book. The most challenging part about
+    using it is that you need to provide some example inputs during the model export
+    process, so the ranges of the activation layer outputs can be observed by running
+    some typical images, audio, or other data through the graph. As we discussed earlier,
+    without estimates of these ranges, it’s not possible to quantize these layers
+    accurately. In the past, we’ve used other methods, like recording the ranges during
+    training or capturing them during every inference at runtime, but these had disadvantages
+    like making training much more complicated or imposing a latency penalty, so this
+    is the least-worst approach.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you look back at our instructions for exporting the person detector model
+    in [Chapter 10](ch10.xhtml#chapter_person_detection_training), you’ll see that
+    we provide a `representative_dataset` function to the `converter` object. This
+    is a Python function that produces the inputs that the activation range estimation
+    process needs, and for the person detector model we load some example images from
+    the training dataset. This is something you’ll need to figure out for every model
+    you train though, because the expected inputs will change for each application.
+    It can also be tough to discern how the inputs are scaled and transformed as part
+    of the preprocessing, so creating the function can involve some trial and error.
+    We’re hoping to make this process easier in the future.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running fully quantized models has big latency benefits on almost all platforms,
+    but if you’re supporting a new device it’s likely that you’ll need to optimize
+    the most computationally intensive operations to take advantage of specialized
+    instructions offered by your hardware. A good place to begin if you’re working
+    on a convolutional network is the [`Conv2D` operation](https://oreil.ly/NrjSo)
+    and the [kernel](https://oreil.ly/V27Q-). You’ll notice that there are `uint8`
+    and `int8` versions of many kernels; the `uint8` versions are remnants of an older
+    approach to quantization that is no longer used, and all models should now be
+    exported using the `int8` path.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Product Design
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You might not think of your product design as a way to optimize latency, but
+    it’s actually one of the best places to invest your time. The key is to figure
+    out whether you can loosen the requirements on your network, either for speed
+    or accuracy. For example, you might want to track hand gestures using a camera
+    at many frames per second, but if you have a body pose detection model that takes
+    a second to run, you might be able to use a much faster optical tracking algorithm
+    to follow the identified points at a higher rate, updating it with the more accurate
+    but less frequent neural network results when they’re available. As another example,
+    you could have a microcontroller delegate advanced speech recognition to a cloud
+    API accessed over a network while keeping wake-word detection running on the local
+    device. At a broader level, you might be able to relax the accuracy requirements
+    of your network by incorporating uncertainty into the user interface. The wake
+    words chosen for speech recognition systems tend to be short phrases that contain
+    sequences of syllables that are unlikely to show up in regular speech. If you
+    have a hand gesture system, maybe you can require every sequence to end with a
+    thumbs-up to confirm the commands were intentional?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The goal is to provide the best overall user experience you can, so anything
+    you can do in the rest of the system to be more forgiving of mistakes gives you
+    more room to trade off accuracy for speed or other properties you need to improve.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code Optimizations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We’ve positioned this topic pretty late in the chapter because there are other
+    approaches to optimizing latency that you should try first, but traditional code
+    optimization is an important way to achieve acceptable performance. In particular,
+    the TensorFlow Lite for Microcontrollers code has been written to run well across
+    a large number of models and systems with as small a binary footprint as possible,
+    so there might well be optimizations that apply only to your particular model
+    or platform that you can benefit from adding yourself. This is one of the reasons
+    we encourage you to delay code optimization as long as possible, though—many of
+    these kinds of changes will not be applicable if you change your hardware platform
+    or the model architecture you’re using, so having those things nailed down first
+    is essential.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performance Profiling
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The foundation of any code optimization effort is knowing how long different
+    parts of your program take to run. This can be surprisingly difficult to figure
+    out in the embedded world because you might not even have a simple timer available
+    by default, and even if you do, recording and returning the information you need
+    can be demanding. Here’s a variety of approaches we’ve used, ranging from the
+    easiest to implement to the trickiest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Blinky
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Almost all embedded development boards have at least one LED that you can control
+    from your program. If you’re measuring times that are more than about half a second,
+    you can try turning on that LED at the start of the code section that you want
+    to measure and then disabling it afterward. You’ll probably be able to roughly
+    estimate the time taken using an external stopwatch and manually counting how
+    many blinks you see in 10 seconds. You can also have two dev boards side by side
+    with different versions of the code, and estimate which one is faster by the comparative
+    frequency of the flashes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shotgun profiling
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: After you have a rough idea of how long a normal run of your application is
+    taking, the simplest way to estimate how long a particular piece of code is taking
+    is to comment it out and see how much faster the overall execution takes. This
+    has been called *shotgun profiling* by analogy with shotgun debugging, in which
+    you remove large chunks of code in order to locate crashes when little other information
+    is available. It can be surprisingly effective for neural network debugging because
+    there are typically no data-dependent branches in the model execution code, so
+    turning any one operation into a no-op by commenting out its internal implementation
+    shouldn’t affect the speed of other parts of the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debug logging
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In most cases you should have the ability to output a line of text back to a
+    host computer from your embedded development board, so this might seem an ideal
+    way to detect when a piece of code is executing. Unfortunately, the act of communicating
+    with the development machine can itself be very time-consuming. [Serial Wire Debug
+    output](https://oreil.ly/SdsWk) on an Arm Cortex-M chip can take up to 500 ms,
+    with a lot of variability in the latency, which makes it useless for a simplistic
+    approach to log profiling. Debug logging based on UART connections is usually
+    a lot less expensive, but it’s still not ideal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Logic analyzer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In a similar manner to toggling LEDs but with a lot more precision, you can
+    have your code turn GPIO pins on and off and then use an external logic analyzer
+    (we’ve used the [Saleae Logic Pro 16](https://oreil.ly/pig8l) in the past) to
+    visualize and measure the duration. This requires a bit of wiring, and the equipment
+    itself can be expensive, but it gives a very flexible way to investigate your
+    program’s latency without requiring any software support beyond the control of
+    one or more GPIO pins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Timer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you have a timer that can give you a consistent current time with enough
+    precision, you can record the time at the start and end of the code section you’re
+    interested in and output the duration to logs afterward, where any communication
+    latency won’t affect the result. We’ve considered requiring a platform-agnostic
+    timer interface in TensorFlow Lite for Microcontrollers for exactly this reason,
+    but we decided this would add too much of a burden for people porting to different
+    platforms, given that setting up timers can be complicated. Unfortunately this
+    means that you’ll need to explore how to implement this functionality yourself
+    for the chip you’re running on. There’s also the disadvantage that you need to
+    add the timer calls around any code that you want to investigate, so it does require
+    work and planning to identify the critical sections, and you’ll need to keep recompiling
+    and flashing as you explore where the time is going.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Profiler
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If you’re lucky, you’ll be working with a toolchain and platform that support
+    some kind of external profiling tool. These applications will typically use debug
+    information from your program to match statistics on execution that they gather
+    from running your program on-device. They will then be able to visualize which
+    functions are taking the most time, or even which lines of code. This is the fastest
+    way to understand where the speed bottlenecks are in your code because you’ll
+    be able to rapidly explore and zoom into the functions that matter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizing Operations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: After you’ve ensured that you’re using as simple a model as you can and you’ve
+    identified which parts of your code are taking the most time, you should then
+    look at what you can do to speed them up. Most of the execution time for neural
+    networks should be spent inside operation implementations, given that they can
+    involve hundreds of thousands or millions of calculations for each layer, so it’s
+    likely that you’ve found one or more of these to be the bottleneck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Look for Implementations That Are Already Optimized
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The default implementations of all operations in TensorFlow Lite for Microcontrollers
+    are written to be small, understandable, and portable, not fast, so it’s expected
+    that you should be able to beat them fairly easily with an approach that uses
+    more lines of code or memory. We do have a set of these faster implementations
+    in [the *kernels/portable_optimized directory*](https://oreil.ly/fmY8R), using
+    the subfolder specialization approach described in [Chapter 13](ch13.xhtml#chapter_tensorflow_lite_for_microcontrollers).
+    These implementations shouldn’t have any platform dependencies, but they can use
+    more memory than the reference versions. Because they’re using subfolder specialization,
+    you can just pass in the `TAGS="portable_optimized"` argument to generate a project
+    that uses these rather than the defaults.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re using a device that has platform-specific implementations—for example
+    through a library like CMSIS-NN—and they aren’t automatically being picked when
+    you specify your target, you can choose to use these nonportable versions by passing
+    in the appropriate tag. You’ll need to explore your platform’s documentation and
+    the TensorFlow Lite for Microcontrollers source tree to find what that is, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Write Your Own Optimized Implementation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you’ve not been able to find an optimized implementation of the operations
+    that are taking the most time or the available implementations aren’t fast enough,
+    you might want to write your own. The good news is that you should be able to
+    narrow the scope to make that work easier. You’ll only be calling the operations
+    with a few different input and output sizes and parameters, so you need to focus
+    only on making those paths faster rather than the general case. For example, we
+    found that the depthwise convolution reference code was taking up most of the
+    time for the first version of the speech wake-word example on the SparkFun Edge
+    board, and it was overall running too slowly to be usable. When we looked at what
+    the code was doing, we saw that the width of the convolution filters was always
+    eight, which made it possible to write [some optimized code that exploited that
+    pattern](https://oreil.ly/Kbx22). We could load four input values and four weights
+    held in bytes at a time by using 32-bit integers to fetch them in parallel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To start the optimization process, create a new directory inside the *kernels*
+    root using the subfolder specialization approach described earlier. Copy the reference
+    kernel implementation into that subfolder as a starting point for your code. To
+    make sure things are building correctly, run the unit test associated with that
+    op and make sure it still passes; if you’re passing in the correct tags, it should
+    use the new implementation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: We then recommend adding a new test to the unit test code for your op—one that
+    doesn’t check the correctness but just reports the time taken to execute the operation.
+    Having a benchmark like this will help you to verify that your changes are improving
+    performance in the way you expect. You should have a benchmark for each scenario
+    for which you see a speed bottleneck in your profiling, with the same sizes and
+    other parameters that the op has at that point in your model (though the weights
+    and inputs can be random values, because in most cases the numbers won’t affect
+    the execution latency). The benchmark code itself will need to rely on one of
+    the profiling methods discussed earlier in the chapter, ideally using a high-precision
+    timer to measure duration, but if not at least toggling an LED or logic output.
+    If the granularity of your measurement process is too large, you might need to
+    execute the operation multiple times in a loop and then divide by the number of
+    iterations to capture the real time taken. After you have your benchmark written,
+    make a note of the latency before you’ve made any changes and ensure that it roughly
+    matches what you saw from profiling your application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With a representative benchmark available, you should now be able to quickly
+    iterate on potential optimizations. A good first step is finding the innermost
+    loop of the initial implementation. This is the section of code that will be run
+    most frequently, so making improvements to it will have a bigger impact than for
+    other parts of the algorithm. You should hopefully be able to identify this by
+    looking through the code and literally finding the most deeply nested `for`-loop
+    (or equivalent), but it’s worth verifying that you have the appropriate section
+    by commenting it out and running the benchmark again. If the latency drops dramatically
+    (hopefully by 50% or more), you’ve found the right area to focus on. As an example,
+    take this code from the [reference implementation of depthwise convolution](https://oreil.ly/8S4kS):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Just from examining the indentation, it’s possible to identify the correct
+    inner loop as this section:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This code is being executed many more times than the other lines in the function
+    by virtue of its position in the middle of all the loops, and commenting it out
+    will confirm it’s taking the majority of the time. If you’re lucky enough to have
+    line-by-line profiling information, this can help you find the exact section,
+    too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you’ve found a high-impact area, the goal is to move as much work as
+    you can outside of it to less critical sections. For example, there’s an `if`
+    statement in the middle, which means a conditional check must be executed on every
+    inner loop iteration, but it’s possible to hoist that work outside of this part
+    of the code so that the check is executed much less frequently in an outer loop.
+    You might also notice that some conditions or calculations aren’t needed for your
+    particular model and benchmark. In the speech wake-word model, the dilation factors
+    are always 1, so the multiplications involving them can be skipped, saving more
+    work. We recommend that you guard these kind of parameter-specific optimizations
+    with a check at the top level, though, and fall back to a plain reference implementation
+    if the arguments aren’t what the optimization requires. This allows speedups for
+    known models, but ensures that if you have ops that don’t meet these criteria,
+    they at least work correctly. To make sure that you don’t accidentally break correctness
+    it’s worth running the unit tests for the op frequently, too, as you’re making
+    changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s beyond the scope of this book to cover all the ways that you can optimize
+    numerical processing code, but you can look at the kernels in the [*portable_optimized*](https://oreil.ly/tQkJm)
+    folder to see some of the techniques that can be useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Taking Advantage of Hardware Features
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: So far we’ve been talking only about portable optimizations that aren’t platform-specific.
+    This is because restructuring your code to avoid work entirely is usually the
+    easiest way to make a big impact. It also simplifies and narrows the focus of
+    more specialized optimizations. You might find yourself on a platform like a Cortex-M
+    device with [SIMD instructions](https://oreil.ly/MBxf5), which are often a big
+    help for the kinds of repetitive calculations that take up most of the time for
+    neural network inference. You’ll be tempted to jump straight into using intrinsics
+    or even assembly to rewrite your inner loop, but resist! At least check the documentation
+    of the vendor-supplied libraries to see whether there’s something suitable already
+    written to implement a larger part of the algorithm, because that will hopefully
+    be highly optimized already (though it might miss optimizations you can apply
+    knowing your op parameters). If you can, try calling an existing function to calculate
+    something common like fast Fourier transform, rather than writing your own version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have worked through these stages, it’s time to experiment with the assembly
+    level of your platform. Our recommended approach is to begin by replacing individual
+    lines of code with their mechanical equivalents in assembly, one line at a time
+    so that you can verify correctness as you go without initially worrying about
+    a speedup. After you have the necessary code converted, you can experiment with
+    fusing operations and other techniques to reduce the latency. One advantage of
+    working with embedded systems is that they tend to be simpler in behavior than
+    more complex processors without deep instruction pipelines or caches, so it’s
+    a lot more feasible to understand potential performance on paper and establish
+    potential assembly-level optimizations without too much risk of unexpected side
+    effects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accelerators and Coprocessors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As machine learning workloads become more important in the embedded world, we’re
+    seeing more systems emerge that offer specialized hardware to speed them up or
+    reduce the power they need. There isn’t a clear programming model or standard
+    API for them yet, however, so it’s not always clear how to integrate them with
+    a software framework. With TensorFlow Lite for Microcontrollers, we want to support
+    direct integration with hardware that works in a synchronous way with the main
+    processor, but asynchronous components are beyond the scope of the current project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What we mean by synchronous is that the acceleration hardware is tightly coupled
+    to the main CPU, sharing a memory space, and that an operator implementation can
+    invoke the accelerator very quickly and will block until the result is returned.
+    It’s potentially possible that a threading layer above TensorFlow Lite could assign
+    work to another thread or process during this blocking, but that’s unlikely to
+    be feasible on most current embedded platforms. From a programmer’s perspective,
+    this kind of accelerator looks more like the kind of floating-point coprocessor
+    that existed on early x86 systems than the alternative model, which is more like
+    a GPU. The reason we’re focused on these kinds of synchronous accelerators is
+    that they seem to make the most sense for the low-energy systems that we’re targeting,
+    and avoiding asynchronous coordination keeps the runtime much simpler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Coprocessor-like accelerators need to be very close to the CPU in the system
+    architecture to be able to respond with such low latency. The contrasting model
+    is that used by modern GPUs, in which there’s a completely separate system with
+    its own control logic on the other end of a bus. Programming these kinds of processors
+    involves the CPU queuing up a large list of commands that will take a comparatively
+    long time to execute and sending them over as soon as a batch is ready, but immediately
+    continuing with other work and not waiting for the accelerator to complete. In
+    this model any latency in communication between the CPU and accelerator is insignificant,
+    because sending the commands is done infrequently and there’s no blocking on the
+    result. Accelerators can benefit from this approach because seeing a lot of commands
+    at once gives lots of opportunities to rearrange and optimize the work involved
+    in a way that’s difficult when tasks are much more fine-grained and need to be
+    executed in order. It’s perfect for graphics rendering because the result never
+    needs to return to the CPU at all; the rendered display buffer is simply shown
+    to the user. It’s been adapted to deep learning training by sending large batches
+    of training samples to ensure that there’s a lot of work to be done at once and
+    keeping as much as possible on the card, avoiding copies back to the CPU. As embedded
+    systems become more complex and take on larger workloads, we might revisit the
+    requirements for the framework and support this flow with something like the delegate
+    interface in mobile TensorFlow Lite, but that’s outside of our scope for this
+    version of the library.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Contributing Back to Open Source
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We’re always keen to see contributions to TensorFlow Lite, and after you’ve
+    put effort into optimizing some framework code, you might be interested in sharing
+    it back to the mainline. A good place to begin is by joining the [SIG Micro](https://oreil.ly/wrtz-)
+    mailing list and sending a quick email summarizing the work you’ve done, together
+    with a pointer to a fork of the TensorFlow repository with your proposed changes.
+    It helps if you include the benchmark you’re using and some inline documentation
+    discussing where the optimization will be helpful. The community should be able
+    to offer feedback; they’ll be looking for something that’s possible to build on
+    top of, that is generally useful, and that can be maintained and tested. We can’t
+    wait to see what you come up with, and thanks for considering open-sourcing your
+    improvements!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we covered the most important things you need to know to speed
+    up the execution of your model. The fastest code is code that you don’t run at
+    all, so the key thing to remember is to shrink what you’re doing at the model
+    and algorithm level before you begin optimizing individual functions. You’ll probably
+    need to tackle latency issues before you can get your application working on a
+    real device and test that it works the way you intend it to. After that, the next
+    priority is likely to be ensuring that your device has the lifetime it needs to
+    be useful—and that’s where the next chapter, on optimizing energy use, will be
+    useful.
+  prefs: []
+  type: TYPE_NORMAL

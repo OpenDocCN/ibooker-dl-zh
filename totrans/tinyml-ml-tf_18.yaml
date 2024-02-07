@@ -1,0 +1,435 @@
+- en: Chapter 18\. Debugging
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: You’re bound to run into some confusing errors as you integrate machine learning
+    into your product, embedded or otherwise, and probably sooner rather than later.
+    In this chapter, we discuss some approaches to understanding what’s happening
+    when things go wrong.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accuracy Loss Between Training and Deployment
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: There are a lot of ways for problems to creep in when you take a machine learning
+    model out of an authoring environment like TensorFlow and deploy it into an application.
+    Even after you’re able to get a model building and running without reporting any
+    errors, you might still not be getting the results you expect in terms of accuracy.
+    This can be very frustrating because the neural network inference step can seem
+    like a black box, with no visibility into what’s happening internally or what’s
+    causing any problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preprocessing Differences
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: An area that doesn’t get very much attention in machine learning research is
+    how training samples are converted into a form that a neural network can operate
+    on. If you’re trying to do object classification on images, those images must
+    be converted into tensors, which are multidimensional arrays of numbers. You might
+    think that would be straightforward, because images are already stored as 2D arrays,
+    usually with three channels for red, green, and blue values. Even in this case,
+    though, you do still need to make some changes. Classification models expect their
+    inputs to be a particular width and height, for example 224 pixels wide by 224
+    high, and a camera or other input source is unlikely to produce them in the correct
+    size. This means you’ll need to rescale your captured data to match. Something
+    similar has to be done for the training process, because the dataset will probably
+    be a set of arbitrarily sized images on disk.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A subtle problem that often creeps in is that the rescaling method used for
+    a deployment doesn’t match the one that was used to train the model. For example,
+    early versions of [Inception](https://oreil.ly/rGKnL) used bilinear scaling to
+    shrink images, which was confusing to people with a background in image processing
+    because downscaling that way degrades the visual quality of an image and is generally
+    to be avoided. As a result, many developers using these models for inference in
+    their applications instead used the more *correct* approach of area sampling—but
+    it turns out that this actually decreases the accuracy of the results! The intuition
+    is that the trained models had learned to look for the artifacts that bilinear
+    downscaling produces, and their absence caused the top-one error rate to increase
+    by a few percent.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The image preprocessing doesn’t stop at the rescaling step, either. There’s
+    also the question of how to convert image values typically encoded from 0 to 255
+    into the floating-point numbers used during training. For several reasons, these
+    are usually linearly scaled into a smaller range: either –1.0 to 1.0 or 0.0 to
+    1.0\. You’ll need to do the same value scaling in your application if you’re feeding
+    in floating-point values. If you’re feeding 8-bit values directly, you won’t need
+    to do this at runtime—the original 8-bit values can be used untransformed—but
+    you do still need to pass them into the `toco` export tool through the `--mean_values`
+    and `--std_values` flags. For a range of –1.0 to 1.0, you’d use `--mean_values=128
+    --std_values=128`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Confusingly, it’s often not obvious what the correct scale for input image values
+    should be from the model code, since this is a detail that’s often buried in the
+    implementation of the APIs used. The Slim framework that a lot of published Google
+    models use defaults to –1.0 to 1.0, so that’s a good range to try, but you might
+    end up having to debug through the training Python implementation to figure it
+    out in other cases, if it’s not documented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even worse, you can end up getting *mostly* correct results even if you get
+    the resizing or value scaling a bit wrong, but you’ll degrade the accuracy. This
+    means that your application can appear to work upon a casual inspection, but end
+    up with an overall experience that’s less impressive than it should be. And the
+    challenges around image preprocessing are actually a lot simpler than in other
+    areas, like audio or accelerometer data, for which there might be a complex pipeline
+    of feature generation to convert raw data into an array of numbers for the neural
+    network. If you look at [the preprocessing code for the `micro_speech` example](https://oreil.ly/tedw1),
+    you’ll see that we had to implement many stages of signal processing to get from
+    the audio samples to a spectrogram that could be fed into the model, and any difference
+    between this code and the version used in training would degrade the accuracy
+    of the results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Debugging Preprocessing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Given that these input data transformations are so prone to errors, you might
+    not easily be able to even spot that you have a problem—and if you do, it might
+    be tough to figure out the cause. What are you supposed to do? We’ve found that
+    there are a few approaches that can help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s always best to have some version of your code that you can run on a desktop
+    machine if at all possible, even if the peripherals are stubbed out. You’ll have
+    much better debugging tools in a Linux, macOS, or Windows environment, and it’s
+    easy to transfer test data between your training tools and the application. For
+    the sample code in TensorFlow Lite for Microcontrollers, we’ve broken the different
+    parts of our applications into modules and enabled Makefile building for Linux
+    and macOS targets, so we can run the inference and preprocessing stages separately.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The most important tool for debugging preprocessing problems is comparing results
+    between the training environment and what you’re seeing in your application. The
+    most difficult part of doing this is extracting the correct values for the nodes
+    you care about during training and controlling what the inputs are. It’s beyond
+    the scope of this book to cover how to do this in detail, but you’ll need to identify
+    the names of the ops that correspond to the core neural network stages (after
+    file decoding, preprocessing, and the first op that takes in the results of the
+    preprocessing). The first op that takes in the results of the preprocessing corresponds
+    to the `--input_arrays` argument to `toco`. If you can identify these ops, insert
+    a [`tf.print`](https://oreil.ly/JYT_m) op with `summarize` set to `-1` after each
+    of them in Python. You’ll then be able to see printouts of the contents of the
+    tensors at each stage in the debug console if you run a training loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should then be able to take these tensor contents and convert them into
+    C data arrays that you can compile into your program. There are some examples
+    of this in the `micro_speech` code, like [a one-second audio sample of someone
+    saying “yes”](https://oreil.ly/qFoMn), and [the expected results of preprocessing
+    that input](https://oreil.ly/uKYWo). After you have these reference values, you
+    should be able to feed them as inputs into the modules holding each stage of your
+    pipeline (preprocessing, neural network inference) and make sure the outputs match
+    what you expect. You can do this with throwaway code if you’re short on time,
+    but it’s worth the extra investment to turn them into [unit tests](https://oreil.ly/t2E03)
+    that ensure your preprocessing and model inference continue to be verified as
+    the code changes over time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On-Device Evaluation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: At the end of training, neural networks are evaluated using a test set of inputs,
+    and the predictions are compared to the expected results to characterize the overall
+    accuracy of the model. This happens as a normal part of the training process,
+    but it’s rare to do the same evaluation on the code that has been deployed on
+    a device. Often the biggest barrier is just transferring the thousands of input
+    samples that make up a typical test dataset onto an embedded system with limited
+    resources. This is a shame, though; making sure that the on-device accuracy matches
+    what was seen at the end of training is the only way to be sure that the model
+    has been correctly deployed, because there are so many ways to introduce subtle
+    errors that are difficult to spot otherwise. We didn’t manage to implement a full
+    test set evaluation for the `micro_speech` demo, but there is at least [an end-to-end
+    test](https://oreil.ly/4372z) that makes sure we get the correct labels for two
+    different inputs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Numerical Differences
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A neural network is a chain of complex mathematical operations performed on
+    large arrays of numbers. The original training is usually done in floating point,
+    but we try to convert down to a lower-precision integer representation for embedded
+    applications. The operations themselves can be implemented in many different ways,
+    depending on the platform and optimization trade-offs. All these factors mean
+    that you can’t expect bit-wise identical results from a network on different devices,
+    even if it’s given the same input. This means you must determine what differences
+    you can tolerate, and, if those differences become too large, how to track down
+    where they come from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Are the Differences a Problem?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We sometimes joke that the only metric that really matters is the app store
+    rating. Our goal should be to produce products that people are happy with, so
+    all other metrics are just proxies for user satisfaction. Since there are always
+    going to be numerical differences from the training environment, the first challenge
+    is to understand whether they hurt the product experience. This can be obvious
+    if the values you’re getting out of your network are nonsensical, but if they
+    only differ by a few percentage points from what’s expected, it’s worth trying
+    out the resulting network as part of a full application with a realistic use case.
+    It might be that the accuracy loss isn’t a problem, or that there are other issues
+    that are more important and should be prioritized.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Establish a Metric
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When you are sure that you have a real problem, it helps to quantify it. It
+    can be tempting to pick a numerical measure, like the percentage difference in
+    the output score vector from the expected result. This might not reflect the user
+    experience very well, though. For example, if you’re doing image classification
+    and all of the scores are 5% below what you’d expect, but the relative ordering
+    of the results remains the same, the end result might be perfectly fine for many
+    applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, we recommend designing a metric that does reflect what the product
+    needs. In the image classification case, you might pick what’s called a *top-one*
+    score across a set of test images, because this will show how often the model
+    picks the correct label. The top-one metric is how often the model picks the ground
+    truth label as its highest-scoring prediction (*top-five* is similar, but covers
+    how often the ground truth label is in the five highest-scoring predictions).
+    You can then use the top-one metric to keep track of your progress and, importantly,
+    get an idea of when the changes you’ve made are good enough.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should also be careful to assemble a standard set of inputs that reflect
+    what’s actually fed into the neural network processing, because as we discussed
+    earlier, there are lots of ways that preprocessing can introduce errors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compare Against a Baseline
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: TensorFlow Lite for Microcontrollers was designed to have reference implementations
+    for all of its functionality, and one of the reasons we did this was so that it’s
+    possible to compare their results against optimized code to debug potential differences.
+    Once you have some standard inputs, you should try running them through a desktop
+    build of the framework, with no optimizations enabled so that the reference operator
+    implementations are called. If you want a starting point for this kind of standalone
+    test, take a look at [*micro_speech_test.cc*](https://oreil.ly/x5QYp). If you
+    run your results through the metric you’ve established, you should see a score
+    that you expect. If not, there might have been some error during the conversion
+    process or something else might have gone wrong earlier in your workflow, so you’ll
+    need to debug back into training to understand what the problem is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you do see good results using the reference code, you should then try building
+    and running the same test on your target platform with all optimizations enabled.
+    It might not be as simple as this, of course, since often embedded devices don’t
+    have the memory to hold all the input data, and outputting the results can be
+    tricky if all you have is a debug logging connection. It’s worth persevering,
+    though, even if you must break your test up into multiple runs. When you have
+    the results, run them through your metric to understand what the deficit actually
+    is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Swap Out Implementations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Many platforms will enable optimizations by default, given that the reference
+    implementations may take so long to run on an embedded device that they’re practically
+    unusable. There are lots of ways to disable these optimizations, but we find the
+    simplest is often just to find all the kernel implementations that are currently
+    being used, usually in subfolders of [*tensorflow/lite/micro/kernels*](https://oreil.ly/k3lln),
+    and overwrite them with the reference versions that are in that parent directory
+    (making sure you have backups of the files you’re replacing). As a first step,
+    replace all of the optimized implementations and rerun the on-device tests, to
+    ensure that you do see the better score that you’d expect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After you’ve done this wholesale replacement, try just overwriting half of the
+    optimized kernels and see how that affects the metric. In most cases you’ll be
+    able to use a binary search approach to determine which optimized kernel implementation
+    is causing the biggest drop in the score. Once you have narrowed it down to a
+    particular optimized kernel, you should then be able to create a minimal reproducible
+    case by capturing the input values for one of the *bad* runs and the expected
+    output values for those inputs from the reference implementation. The easiest
+    way to do this is by debug logging from within the kernel implementation during
+    one of the test runs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you have a reproducible case, you should be able to create a unit test
+    out of it. You can look at [one of the standard kernel tests](https://oreil.ly/0rnPW)
+    to get started, and either create a new standalone test or add it to the existing
+    file for that kernel. That then gives you a tool that you can use to communicate
+    the issue to the team responsible for the optimized implementation, because you’ll
+    be able to show that there’s a difference in the results from their code and the
+    reference version, and that it affects your application. That same test can then
+    also be added to the main code base if you contribute it back, and ensure that
+    no other optimized implementations cause the same problem. It’s also a great tool
+    for debugging an implementation yourself, because you can experiment with the
+    code in isolation and iterate quickly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mysterious Crashes and Hangs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One of the most difficult situations to fix on an embedded system is when your
+    program doesn’t run, but there’s no obvious logging output or error to explain
+    what went wrong. The easiest way to understand the problem is to attach a debugger
+    (like GDB) and either look at a stack trace if it’s hung or step through your
+    code to see where execution goes wrong. It’s not always easy to set up a debugger,
+    though, or the source of the problem may still not be clear after using one, so
+    there are some other techniques you can try.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Desktop Debugging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Full operating systems like Linux, macOS, and Windows all have extensive debugging
+    tools and error reporting mechanisms, so if at all possible try to keep your program
+    portable to one of those platforms, even if you have to stub out some of the hardware-specific
+    functionality with dummy implementations. This is how TensorFlow Lite for Microcontrollers
+    is designed, and it means that we can first try to reproduce anything that’s going
+    wrong on our Linux machines. If the same error occurs in this environment, it’s
+    usually much easier and faster to track down using standard tooling, and without
+    having to flash devices, speeding up iterations. Even if it would be too difficult
+    to maintain your full application as a desktop build, at least see whether you
+    can create unit and integration tests for your modules that do compile on a desktop.
+    Then you can try giving them similar inputs to those in the situation you’re seeing
+    a problem with and discover whether this also causes a similar error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Log Tracing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The only platform-specific functionality that TensorFlow Lite for Microcontrollers
+    requires is an implementation of `DebugLog()`. We have this requirement because
+    it’s such an essential tool for understanding what’s going on during development,
+    even though it’s not something you need for production deployments. In an ideal
+    world, any crashes or program errors should trigger log output—for example, our
+    bare-metal support for STM32 devices has a [fault handler](https://oreil.ly/dsHG8)
+    that does this)—but that’s not always feasible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You should always be able to inject log statements into the code yourself,
+    though. These don’t need to be meaningful, just statements of what location in
+    the code has been reached. You can even define an automatic trace macro, like
+    this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then use it in your code like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: You should see output in your debug console showing how far the code managed
+    to go. It’s usually best to start with the highest level of your code and then
+    see where the logging stops. That will give you an idea of the rough area where
+    the crash or hang is happening, and then you can add more `TRACE` statements to
+    narrow down exactly where the problem is occurring.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shotgun Debugging
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Sometimes tracing doesn’t give you enough information about what’s going wrong,
+    or the problem might occur only in an environment in which you don’t have access
+    to logs, like production. In those cases, we recommend what’s sometimes called
+    “shotgun debugging.” This is similar to the “shotgun profiling” we covered in
+    [Chapter 15](ch15.xhtml#optimizing_latency), and it’s as simple as commenting
+    out parts of your code and seeing whether the error still occurs. If you start
+    at the top level of your application and work your way down, you can usually do
+    the equivalent of a binary search to isolate which lines of code are causing the
+    issue. For example, you might start with something like this in your main loop:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: If this runs successfully with `DoSomething()` commented out, you know that
+    the problem is happening within that function. You can then uncomment it and recursively
+    do the same within its body to focus in on the misbehaving code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory Corruption
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The most painful errors are caused by values in memory being accidentally overwritten.
+    Embedded systems don’t have the same hardware to protect against this that desktop
+    or mobile CPUs do, so these can be particularly challenging to debug. Even tracing
+    or commenting out code can produce confusing results, because the overwriting
+    can occur long before the code that uses the corrupted values runs, so crashes
+    can be a long way from their cause. They might even depend on sensor input or
+    hardware timings, making issues intermittent and maddeningly hard to reproduce.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The number one cause of this in our experience is overrunning the program stack.
+    This is where local variables are stored, and TensorFlow Lite for Microcontrollers
+    uses these extensively for comparatively large objects; thus, it requires more
+    space than is typical for many other embedded applications. The exact size you’ll
+    need is not easy to ascertain, unfortunately. Often the biggest contributor is
+    the memory arena you need to pass into `SimpleTensorAllocator`, which in [the
+    examples](https://oreil.ly/Pb9Pa) is allocated as a local array:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you are using the same approach, you’ll need to make sure the stack size
+    is approximately the size of that arena, plus several kilobytes for miscellaneous
+    variables used by the runtime. If your arena is held elsewhere (maybe as a global
+    variable), you should need only a few kilobytes of stack. The exact amount of
+    memory required depends on your architecture, the compiler, and the model you’re
+    running, so unfortunately it’s not easy to give an exact value ahead of time.
+    If you are seeing mysterious crashes, it’s worth increasing this value as much
+    as you can to see whether that helps, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re still seeing problems, you should start by trying to establish what
+    variable or area of memory is being overwritten. Hopefully this should be possible
+    using the logging or code elimination approaches described earlier, narrowing
+    down the issue to the read of a value that seems to have been corrupted. Once
+    you know what variable or array entry is being clobbered, you can then write a
+    variation on the `TRACE` macro that outputs the value of that memory location
+    along with the file and line it’s been called from. You might need to do special
+    tricks like storing the memory address in a global variable so that it’s accessible
+    from deeper stack frames if it’s a local. Then, just like you would for tracking
+    down a normal crash, you can `TRACE` out the contents of that location as you
+    run through the program and attempt to identify which code is responsible for
+    overwriting it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wrapping Up
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Coming up with a solution when things work in a training environment but fail
+    on a real device can be a long and frustrating process. In this chapter, we’ve
+    given you a set of tools to try when you do find yourself stuck and spinning your
+    wheels. Unfortunately there aren’t many shortcuts in debugging, but by methodically
+    working through the problem using these approaches, we do have confidence that
+    you can track down any embedded machine learning problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once you’ve gotten one model working in a product, you’ll probably start to
+    wonder about how you can adapt it or even create an entirely new model to tackle
+    different issues. [Chapter 19](ch19.xhtml#ch19) discusses how you can transfer
+    your own model from the TensorFlow training environment into the TensorFlow Lite
+    inference engine.
+  prefs: []
+  type: TYPE_NORMAL
