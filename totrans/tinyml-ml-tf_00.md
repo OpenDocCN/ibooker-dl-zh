@@ -56,42 +56,6 @@ Daniel Situnayake
 
 如果您觉得您对代码示例的使用超出了合理使用范围或上述给出的许可，请随时联系我们，邮箱为*permissions@oreilly.com*。
 
-# O’Reilly 在线学习
-
-###### 注意
-
-[*O'Reilly Media*](http://oreilly.com)已经提供技术和商业培训、知识和见解帮助公司成功超过 40 年。
-
-我们独特的专家和创新者网络通过书籍、文章、会议和我们的在线学习平台分享他们的知识和专长。O'Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O'Reilly 和其他 200 多家出版商的大量文本和视频。欲了解更多信息，请访问[*http://oreilly.com*](http://oreilly.com)。
-
-# 如何联系我们
-
-请将有关此书的评论和问题发送给出版商：
-
-+   O'Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（在美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为这本书创建了一个网页，列出勘误、示例和任何其他信息。您可以访问[*https://oreil.ly/tiny*](https://oreil.ly/tiny)。
-
-发送电子邮件至*tinyml-book@googlegroups.com*评论或提出有关此书的技术问题。
-
-有关我们的书籍、课程、会议和新闻的更多信息，请访问我们的网站[*http://www.oreilly.com*](http://www.oreilly.com)。
-
-在 Facebook 上找到我们：[*http://facebook.com/oreilly*](http://facebook.com/oreilly)
-
-在 Twitter 上关注我们：[*http://twitter.com/oreillymedia*](http://twitter.com/oreillymedia)
-
-在 YouTube 上观看我们：[*http://www.youtube.com/oreillymedia*](http://www.youtube.com/oreillymedia)
-
 # 致谢
 
 我们要特别感谢 Nicole Tache 出色的编辑工作，Jennifer Wang 的启发性魔杖示例，以及 Neil Tan 在 uTensor 库中进行的开创性嵌入式 ML 工作。没有 Rajat Monga 和 Sarah Sirajuddin 的专业支持，我们无法完成这本书的写作。我们还要感谢我们的合作伙伴 Joanne Ladolcetta 和 Lauren Ward 的耐心。

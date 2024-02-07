@@ -58,44 +58,6 @@ TensorFlow 目前是领先的深度学习开源软件，被越来越多的从业
 
 如果您觉得您对代码示例的使用超出了合理使用范围或上述许可，请随时通过*permissions@oreilly.com*与我们联系。
 
-# O'Reilly Safari
-
-###### 注意
-
-[*Safari*](http://oreilly.com/safari)（原 Safari Books Online）是一个面向企业、政府、教育工作者和个人的基于会员制的培训和参考平台。
-
-会员可以访问来自 250 多家出版商的数千本图书、培训视频、学习路径、交互式教程和策划播放列表，包括 O'Reilly Media、哈佛商业评论、Prentice Hall 专业、Addison-Wesley 专业、微软出版社、Sams、Que、Peachpit 出版社、Adobe、Focal Press、思科出版社、约翰威利与儿子、Syngress、摩根考夫曼、IBM 红皮书、Packt、Adobe 出版社、FT 出版社、Apress、Manning、New Riders、麦格劳希尔、琼斯与巴特利特以及课程技术等。
-
-有关更多信息，请访问[*http://oreilly.com/safari*](http://www.oreilly.com/safari)。
-
-# 如何联系我们
-
-请将有关本书的评论和问题发送至出版商：
-
-+   O'Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为这本书创建了一个网页，列出勘误、示例和任何额外信息。您可以在[*http://bit.ly/learning-tensorflow*](http://bit.ly/learning-tensorflow)上访问这个页面。
-
-要评论或提出关于这本书的技术问题，请发送电子邮件至*bookquestions@oreilly.com*。
-
-有关我们的图书、课程、会议和新闻的更多信息，请访问我们的网站[*http://www.oreilly.com*](http://www.oreilly.com)。
-
-在 Facebook 上找到我们：[*http://facebook.com/oreilly*](http://facebook.com/oreilly)
-
-在 Twitter 上关注我们：[*http://twitter.com/oreillymedia*](http://twitter.com/oreillymedia)
-
-在 YouTube 上关注我们：[*http://www.youtube.com/oreillymedia*](http://www.youtube.com/oreillymedia)
-
 # 致谢
 
 作者要感谢为这本书提供反馈意见的审阅者：Chris Fregly、Marvin Bertin、Oren Sar Shalom 和 Yoni Lavi。我们还要感谢 Nicole Tache 和 O'Reilly 团队，使写作这本书成为一种乐趣。

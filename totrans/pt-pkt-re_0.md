@@ -72,42 +72,6 @@
 
 如果您认为您对代码示例的使用超出了合理使用范围或上述许可，请随时通过*permissions@oreilly.com*与我们联系。
 
-# O'Reilly 在线学习
-
-###### 注意
-
-40 多年来，[*O'Reilly Media*](http://oreilly.com)提供技术和商业培训、知识和见解，帮助公司取得成功。
-
-我们独特的专家和创新者网络通过书籍、文章和我们的在线学习平台分享他们的知识和专长。O'Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O'Reilly 和其他 200 多家出版商的大量文本和视频。有关更多信息，请访问[*http://oreilly.com*](http://oreilly.com)。
-
-# 如何联系我们
-
-请将有关本书的评论和问题发送给出版商：
-
-+   O'Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（在美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为这本书建立了一个网页，列出勘误、示例和任何额外信息。您可以访问[*https://oreil.ly/PyTorch-pocket*](https://oreil.ly/PyTorch-pocket)。
-
-发送电子邮件至*bookquestions@oreilly.com*评论或询问有关本书的技术问题。
-
-关于我们的图书和课程的新闻和信息，请访问[*http://oreilly.com*](http://oreilly.com)。
-
-在 Facebook 上找到我们：[*http://facebook.com/oreilly*](http://facebook.com/oreilly)
-
-在 Twitter 上关注我们：[*http://twitter.com/oreillymedia*](http://twitter.com/oreillymedia)
-
-在 YouTube 上观看我们：[*http://youtube.com/oreillymedia*](http://youtube.com/oreillymedia)
-
 # 致谢
 
 作为读者，我经常在阅读其他作者的致谢时感到惊讶。写一本书并不是一件小事，写一本好书需要许多人的支持。阅读致谢是一个不断提醒我们不能独自完成的过程。
