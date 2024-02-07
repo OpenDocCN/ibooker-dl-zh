@@ -1,0 +1,1367 @@
+- en: Chapter 9\. PyTorch in the Wild
+  prefs: []
+  type: TYPE_NORMAL
+- en: For our final chapter, we’ll look at how PyTorch is used by other people and
+    companies. You’ll also learn some new techniques along the way, including resizing
+    pictures, generating text, and creating images that can fool neural networks.
+    In a slight change from earlier chapters, we’ll be concentrating on how to get
+    up and running with existing libraries rather than starting from scratch in PyTorch.
+    I’m hoping that this will be a springboard for further exploration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start by examining some of the latest approaches for squeezing the most
+    out of your data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Data Augmentation: Mixed and Smoothed'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Way back in [Chapter 4](index_split_070.html#filepos357125), we looked at various
+    ways of augmenting data to help reduce the model overfitting on the training dataset.
+    The ability to do more with less data is naturally an area of high activity in
+    deep learning research, and in this section we’ll look at two increasingly popular
+    ways to squeeze every last drop of signal from your data. Both approaches will
+    also see us changing how we calculate our loss function, so it will be a good
+    test of the more flexible training loop that we just created.
+  prefs: []
+  type: TYPE_NORMAL
+- en: mixup
+  prefs: []
+  type: TYPE_NORMAL
+- en: mixup is an intriguing augmentation technique that arises from looking askew
+    at what we want our model to do. Our normal understanding of a model is that we
+    send it an image like the one in [Figure 9-1](#filepos1277141) and want the model
+    to return a result that the image is a fox.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00059.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-1\. A fox
+  prefs: []
+  type: TYPE_NORMAL
+- en: But as you know, we don’t get just that from the model; we get a tensor of all
+    the possible classes and, hopefully, the element of that tensor with the highest
+    value is the fox class. In fact, in the ideal scenario, we’d have a tensor that
+    is all 0s except for a 1 in the fox class.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Except that is difficult for a neural network to do! There’s always going to
+    be uncertainty, and our activation functions like `softmax` make it difficult
+    for the tensors to get to 1 or 0\. mixup takes advantage of this by asking a question:
+    what is the class of [Figure 9-2](#filepos1278102)?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00069.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-2\. A mixture of cat and fox
+  prefs: []
+  type: TYPE_NORMAL
+- en: To our eyes, this may be a bit of a mess, but it is 60% cat and 40% fox. What
+    if, instead of trying to make our model make a definitive guess, we could make
+    it target two classes? This would mean that our output tensor won’t run into the
+    problem of approaching but never reaching 1 in training, and we could alter each
+    mixed image by a different fraction, improving our model’s ability to generalize.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'But how do we calculate the loss function of this mixed-up image? Well, if
+    p is the percentage of the first image in the mixed image, then we have a simple
+    linear combination of the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`p * loss(image1) + (1-p) * loss(image2)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: It has to predict those images, right? And we need to scale according to how
+    much of those images is in the final mixed image, so this new loss function seems
+    reasonable. To choose p, we could just use random numbers drawn from a normal
+    or uniform distribution as we would do in many other cases. However, the writers
+    of the mixup paper determined that samples drawn from the beta distribution work
+    out much better in practice.^([1](index_split_191.html#filepos1487373)) Don’t
+    know what the beta distribution looks like? Well, neither did I until I saw this
+    paper! [Figure 9-3](#filepos1280023) shows how it looks when given the characteristics
+    described in the paper.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00002.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-3\. Beta distribution, where ⍺ = β
+  prefs: []
+  type: TYPE_NORMAL
+- en: The U-shape is interesting because it tells us that most of the time, our mixed
+    image will be mainly one image or another. Again, this makes intuitive sense as
+    we can imagine the network is going to have a harder time working out a 50/50
+    mixup than a 90/10 one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s a modified training loop that takes a new additional data loader, `mix_loader`,
+    and mixes the batches together:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`def``train``(``model``,``optimizer``,``loss_fn``,``train_loader``,``val_loader``,``epochs``=``20``,``device``,``mix_loader``):``for``epoch``in``range``(``epochs``):``model``.``train``()``for``batch``in``zip``(``train_loader``,``mix_loader``):``((``inputs``,``targets``),(``inputs_mix``,``targets_mix``))``=``batch``optimizer``.``zero_grad``()``inputs``=``inputs``.``to``(``device``)``targets``=``targets``.``to``(``device``)``inputs_mix``=``inputs_mix``.``to``(``device``)``target_mix``=``targets_mix``.``to``(``device``)``distribution``=``torch``.``distributions``.``beta``.``Beta``(``0.5``,``0.5``)``beta``=``distribution``.``expand``(``torch``.``zeros``(``batch_size``)``.``shape``)``.``sample``()``.``to``(``device``)``#
+    We need to transform the shape of beta``# to be in the same dimensions as our
+    input tensor``# [batch_size, channels, height, width]``mixup``=``beta``[:,``None``,``None``,``None``]``inputs_mixed``=``(``mixup``*``inputs``)``+``(``1``-``mixup``*``inputs_mix``)``#
+    Targets are mixed using beta as they have the same shape``targets_mixed``=``(``beta``*``targets``)``+``(``1``-``beta``*``inputs_mix``)``output_mixed``=``model``(``inputs_mixed``)``#
+    Multiply losses by beta and 1-beta,``# sum and get average of the two mixed losses``loss``=``(``loss_fn``(``output``,``targets``)``*``beta``+``loss_fn``(``output``,``targets_mixed``)``*``(``1``-``beta``))``.``mean``()``#
+    Training method is as normal from herein on``loss``.``backward``()``optimizer``.``step``()``…`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: What’s happening here is after we get our two batches, we use `torch.distribution.Beta`
+    to generate a series of mix parameters, using the `expand` method to produce a
+    tensor of `[1, batch_size]`. We could iterate through the batch and generate the
+    parameters one by one, but this is neater, and remember, GPUs love matrix multiplication,
+    so it’ll end up being faster to do all the calculations across the batch at once
+    (this is shown in [Chapter 7](index_split_126.html#filepos862414) when fixing
+    our `BadRandom` transformation, remember!). We multiply the entire batch by this
+    tensor, and then the batch to mix in by `1 - mix_factor_tensor` using broadcasting
+    (which we covered in [Chapter 1](index_split_013.html#filepos24290)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We then take the losses of the predictions against our targets for both images,
+    and our final loss is the mean of the sum of those losses. What’s happening there?
+    Well, if you look at the source code for `CrossEntropyLoss`, you’ll see the comment
+    `The losses are averaged across observations for each minibatch.` There’s also
+    a `reduction` parameter that has a default set to `mean` (we’ve used the default
+    so far, so that’s why you haven’t seen it before!). We need to preserve that condition,
+    so we take the mean of our combined losses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, having two data loaders isn’t too much trouble, but it does make the code
+    a little more complicated. If you run this code, you might error out because the
+    batches are not balanced as final batches come out of the loaders, meaning that
+    you’ll have to write extra code to handle that case. The authors of the mixup
+    paper suggest that you could replace the mix data loader with a random shuffle
+    of the incoming batch. We can do this with `torch.randperm()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`shuffle``=``torch``.``randperm``(``inputs``.``size``(``0``))``inputs_mix``=``inputs``[``shuffle``]``targets_mix``=``targets``[``shuffle``]`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'When using mixup in this way, be aware that you are much more likely to get
+    collisions where you end up applying the same parameter to the same set of images,
+    potentially reducing the accuracy of training. For example, you could have cat1
+    mixed with fish1, and draw a beta parameter of 0.3\. Then later in the same batch,
+    you pull out fish1 and it gets mixed with cat1 with a parameter of 0.7 — making
+    it the same mix! Some implementations of mixup — in particular, the fast.ai implementation
+    — resolve this issue by replacing our mix parameters with the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`mix_parameters``=``torch``.``max``(``mix_parameters``,``1``-``mix_parameters``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: This ensures that the nonshuffled batch will always have the highest component
+    when being merged with the mix batch, thus eliminating that potential issue.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Oh, and one more thing: we performed the mixup transformation after our image
+    transformation pipeline. At this point, our batches are just tensors that we’ve
+    added together. This means that there’s no reason mixup training should be restricted
+    to images. We could use it on any type of data that’s been transformed into tensors,
+    whether text, image, audio, or anything else.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can still do a little more to make our labels work harder for us. Enter
+    another approach that is now a mainstay of state-of-the-art models: label smoothing.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Label Smoothing
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a similar manner to mixup, label smoothing helps to improve model performance
+    by making the model less sure of its predictions. Instead of trying to force it
+    to predict `1` for the predicted class (which has all the problems we talked about
+    in the previous section), we instead alter it to predict 1 minus a small value,
+    epsilon. We can create a new loss function implementation that wraps up our existing
+    `CrossEntropyLoss` function with this functionality. As it turns out, writing
+    a custom loss function is just another subclass of `nn.Module`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`class``LabelSmoothingCrossEntropyLoss``(``nn``.``Module``):``def``__init__``(``self``,``epsilon``=``0.1``):``super``(``LabelSmoothingCrossEntropyLoss``,``self``)``.``__init__``()``self``.``epsilon``=``epsilon``def``forward``(``self``,``output``,``target``):``num_classes``=``output``.``size``()[``-``1``]``log_preds``=``F``.``log_softmax``(``output``,``dim``=-``1``)``loss``=``(``-``log_preds``.``sum``(``dim``=-``1``))``.``mean``()``nll``=``F``.``nll_loss``(``log_preds``,``target``)``final_loss``=``self``.``epsilon``*``loss``/``num_classes``+``(``1``-``self``.``epsilon``)``*``nll``return``final_loss`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: When it comes to computing the loss function, we calculate the cross-entropy
+    loss as per the implementation of `CrossEntropyLoss`. Our `final_loss` is constructed
+    from negative log-likelihood being multiplied by 1 minus epsilon (our smoothed
+    label) added to the loss multiplied by epsilon divided by the number of classes.
+    This occurs because we are smoothing not only the label for the predicted class
+    to be 1 minus epsilon, but also the other labels so that they’re not being forced
+    to zero, but instead a value between zero and epsilon.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This new custom loss function can replace `CrossEntropyLoss` in training anywhere
+    we’ve used it in the book, and when combined with mixup, it is an incredibly effective
+    way of getting that little bit more from your input data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll now turn away from data augmentation to have a look at another hot topic
+    in current deep learning trends: generative adversarial networks.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computer, Enhance!
+  prefs: []
+  type: TYPE_NORMAL
+- en: One odd consequence of the increasing power of deep learning is that for decades,
+    we computer people have been mocking television crime shows that have a detective
+    click a button to make a blurry camera image suddenly become a sharp, in-focus
+    picture. How we laughed and cast derision on shows like CSI for doing this. Except
+    we can now actually do this, at least up to a point. Here’s an example of this
+    witchcraft, on a smaller 256 × 256 image scaled to 512 × 512, in Figures [9-4](#filepos1315729)
+    and [9-5](#filepos1315996).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00008.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-4\. Mailbox at 256 × 256 resolution
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00014.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-5\. ESRGAN-enhanced mailbox at 512 × 512 resolution
+  prefs: []
+  type: TYPE_NORMAL
+- en: The neural network learns how to hallucinate new details to fill in what’s not
+    there, and the effect can be impressive. But how does this work?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction to Super-Resolution
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the first part of a very simple super-resolution model. To start, it’s
+    pretty much exactly the same as any model you’ve seen so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`class``OurFirstSRNet``(``nn``.``Module``):``def``__init__``(``self``):``super``(``OurFirstSRNet``,``self``)``.``__init__``()``self``.``features``=``nn``.``Sequential``(``nn``.``Conv2d``(``3``,``64``,``kernel_size``=``8``,``stride``=``4``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``Conv2d``(``64``,``192``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``Conv2d``(``192``,``256``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``)``)``def``forward``(``self``,``x``):``x``=``self``.``features``(``x``)``return``x`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'If we pass a random tensor through the network, we end up with a tensor of
+    shape `[1, 256, 62, 62]`; the image representation has been compressed into a
+    much smaller vector. Let’s now introduce a new layer type, `torch.nn.ConvTranspose2d`.
+    You can think of this as a layer that inverts a standard `Conv2d` transform (with
+    its own learnable parameters). We’ll add a new `nn.Sequential` layer, `upsample`,
+    and put in a simple list of these new layers and `ReLU` activation functions.
+    In the `forward()` method, we pass input through that consolidated layer after
+    the others:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`class``OurFirstSRNet``(``nn``.``Module``):``def``__init__``(``self``):``super``(``OurFirstSRNet``,``self``)``.``__init__``()``self``.``features``=``nn``.``Sequential``(``nn``.``Conv2d``(``3``,``64``,``kernel_size``=``8``,``stride``=``4``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``Conv2d``(``64``,``192``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``Conv2d``(``192``,``256``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``)``)``self``.``upsample``=``nn``.``Sequential``(``nn``.``ConvTranspose2d``(``256``,``192``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``ConvTranspose2d``(``192``,``64``,``kernel_size``=``2``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``ConvTranspose2d``(``64``,``3``,``kernel_size``=``8``,``stride``=``4``,``padding``=``2``),``nn``.``ReLU``(``inplace``=``True``)``)``def``forward``(``self``,``x``):``x``=``self``.``features``(``x``)``x``=``self``.``upsample``(``x``)``return``x`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: If you now test the model with a random tensor, you’ll get back a tensor of
+    exactly the same size that went in! What we’ve built here is known as an autoencoder,
+    a type of network that rebuilds its input, usually after compressing it into a
+    smaller dimension. That is what we’ve done here; the `features` sequential layer
+    is an encoder that transforms an image into a tensor of size `[1, 256, 62, 62]`,
+    and the `upsample` layer is our decoder that turns it back into the original shape.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our labels for training the image would, of course, be our input images, but
+    that means we can’t use loss functions like our fairly standard `CrossEntropyLoss`,
+    because, well, we don’t have classes! What we want is a loss function that tells
+    us how different our output image is from our input image, and for that, taking
+    the mean squared loss or mean absolute loss between the pixels of the image is
+    a common approach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: NOTE
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Although calculating the loss in terms of pixels makes a lot of sense, it turns
+    out that a lot of the most successful super-resolution networks use augmented
+    loss functions that try to capture how much a generated image looks like the original,
+    tolerating pixel loss for better performance in areas like texture and content
+    loss. Some of the papers listed in [“Further Reading”](index_split_191.html#filepos1485467)
+    go into deeper detail.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Now that gets us back to the same size input we entered, but what if we add
+    another transposed convolution to the mix?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`self``.``upsample``=``nn``.``Sequential``(``...``nn``.``ConvTranspose2d``(``3``,``3``,``kernel_size``=``2``,``stride``=``2``)``nn``.``ReLU``(``inplace``=``True``))`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Try it! You should find that the output tensor is twice as big as the input.
+    If we have access to a set of ground truth images at that size to act as labels,
+    we can train the network to take in images at a size x and produce images for
+    a size 2x. In practice, we tend to perform this upsampling by scaling up twice
+    as much as we need to and then adding a standard convolutional layer, like so:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`self``.``upsample``=``nn``.``Sequential``(``......``nn``.``ConvTranspose2d``(``3``,``3``,``kernel_size``=``2``,``stride``=``2``),``nn``.``ReLU``(``inplace``=``True``),``nn``.``Conv2d``(``3``,``3``,``kernel_size``=``2``,``stride``=``2``),``nn``.``ReLU``(``inplace``=``True``))`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: We do this because the transposed convolution has a tendency to add jaggies
+    and moiré patterns as it expands the image. By expanding twice and then scaling
+    back down to our required size, we hopefully provide enough information to the
+    network to smooth those out and make the output look more realistic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Those are the basics behind super-resolution. Most current high-performing super-resolution
+    networks are trained with a technique called the generative adversarial network,
+    which has stormed the deep learning world in the past few years.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An Introduction to GANs
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the universal problems in deep learning (or any machine learning application)
+    is the cost of producing labeled data. In this book, we’ve mostly avoided the
+    problem by using sample datasets that are all carefully labeled (even some that
+    come prepackaged in easy training/validation/test sets!). But in the real world
+    producing large quantities of labeled data. Indeed, techniques that you’ve learned
+    a lot about so far, like transfer learning, have all been about doing more with
+    less. But sometimes you need more, and generative adversarial networks (GANs)
+    have a way to help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GANs were introduced by Ian Goodfellow in a 2014 paper and are a novel way of
+    providing more data to help train neural networks. And the approach is mainly
+    “we know you love neural networks, so we added another.”^([2](index_split_191.html#filepos1487802))
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Forger and the Critic
+  prefs: []
+  type: TYPE_NORMAL
+- en: The setup of a GAN is as follows. Two neural networks are trained together.
+    The first is the generator, which takes random noise from the vector space of
+    the input tensors and produces fake data as output. The second network is the
+    discriminator, which alternates between the generated fake data and real data.
+    Its job is to look at the incoming inputs and decide whether they’re real or fake.
+    A simple conceptual diagram of a GAN is shown in [Figure 9-6](#filepos1353726).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00020.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-6\. A simple GAN setup
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The great thing about GANs is that although the details end up being somewhat
+    complicated, the general idea is easy to convey: the two networks are in opposition
+    to each other, and during training they work as hard as they can to defeat the
+    other. By the end of the process, the generator should be producing data that
+    matches the distribution of the real input data to flummox the discriminator.
+    And once you get to that point, you can use the generator to produce more data
+    for all your needs, while the discriminator presumably retires to the neural network
+    bar to drown its sorrows.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a GAN
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Training a GAN is a little more complicated than training traditional networks.
+    During the training loop, we first need to use real data to start training the
+    discriminator. We calculate the discriminator’s loss (using BCE, as we have only
+    two classes: real or fake), and then do a backward pass to update the parameters
+    of the discriminator as usual. But this time, we don’t call the optimizer to update.
+    Instead, we generate a batch of data from our generator and pass that through
+    the model. We calculate the loss and do another backward pass, so at this point
+    the training loop has calculated the losses of two passes through the model. Now,
+    we call the optimizer to update based on these accumulated gradients.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the second half of training, we turn to the generator. We give the generator
+    access to the discriminator and then generate a new batch of data (which the generator
+    insists is all real!) and test it against the discriminator. We form a loss against
+    this output data, where each data point that the discriminator says is fake is
+    considered a wrong answer — because we’re trying to fool it — and then do a standard
+    backward/optimize pass.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s a generalized implementation in PyTorch. Note that the generator and
+    discriminator are just standard neural networks, so theoretically they could be
+    generating images, text, audio, or whatever type of data, and be constructed of
+    any of the types of networks you’ve seen so far:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`generator``=``Generator``()``discriminator``=``Discriminator``()``# Set up
+    separate optimizers for each network``generator_optimizer``=``...``discriminator_optimizer``=``...``def``gan_train``():``for``epoch``in``num_epochs``:``for``batch``in``real_train_loader``:``discriminator``.``train``()``generator``.``eval``()``discriminator``.``zero_grad``()``preds``=``discriminator``(``batch``)``real_loss``=``criterion``(``preds``,``torch``.``ones_like``(``preds``))``discriminator``.``backward``()``fake_batch``=``generator``(``torch``.``rand``(``batch``.``shape``))``fake_preds``=``discriminator``(``fake_batch``)``fake_loss``=``criterion``(``fake_preds``,``torch``.``zeros_like``(``fake_preds``))``discriminator``.``backward``()``discriminator_optimizer``.``step``()``discriminator``.``eval``()``generator``.``train``()``generator``.``zero_grad``()``forged_batch``=``generator``(``torch``.``rand``(``batch``.``shape``))``forged_preds``=``discriminator``(``forged_batch``)``forged_loss``=``criterion``(``forged_preds``,``torch``.``ones_like``(``forged_preds``))``generator``.``backward``()``generator_optimizer``.``step``()`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Note that the flexibility of PyTorch helps a lot here. Without a dedicated training
+    loop that is perhaps mainly designed for more standard training, building up a
+    new training loop is something we’re used to, and we know all the steps that we
+    need to include. In some other frameworks, training GANs is a bit more of a fiddly
+    process. And that’s important, because training GANs is a difficult enough task
+    without the framework getting in the way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Dangers of Mode Collapse
+  prefs: []
+  type: TYPE_NORMAL
+- en: In an ideal world, what happens during training is that the discriminator will
+    be good at detecting fakes at first, because it’s training on real data, whereas
+    the generator is allowed access to only the discriminator and not the real data
+    itself. Eventually, the generator will learn how to fool the discriminator, and
+    then it will soon improve rapidly to match the data distribution in order to repeatedly
+    produce forgeries that slip past the critic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But one thing that plagues many GAN architectures is mode collapse. If our real
+    data has three types of data, then maybe our generator will start generating the
+    first type, and perhaps it starts getting rather good at it. The discriminator
+    may then decide that anything that looks like the first type is actually fake,
+    even the real example itself, and the generator then starts to generate something
+    that looks like the third type. The discriminator starts rejecting all samples
+    of the third type, and the generator picks another one of the real examples to
+    generate. The cycle continues endlessly; the generator never manages to settle
+    into a period where it can generate samples from across the distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reducing mode collapse is a key performance issue of using GANs and is an on-going
+    research area. Some approaches include adding a similarity score to the generated
+    data, so that potential collapse can be detected and averted, keeping a replay
+    buffer of generated images around so that the discriminator doesn’t overfit onto
+    just the most current batch of generated images, allowing actual labels from the
+    real dataset to be added to the generator network, and so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next we round off this section by examining a GAN application that performs
+    super-resolution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ESRGAN
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Enhanced Super-Resolution Generative Adversarial Network (ESRGAN) is a network
+    developed in 2018 that produces impressive super-resolution results. The generator
+    is a series of convolutional network blocks with a combination of residual and
+    dense layer connections (so a mixture of both ResNet and DenseNet), with `BatchNorm`
+    layers removed as they appear to create artifacts in upsampled images. For the
+    discriminator, instead of simply producing a result that says this is real or
+    this is fake, it predicts a probability that a real image is relatively more realistic
+    than a fake one, and this helps to make the model produce more natural results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running ESRGAN
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To show off ESRGAN, we’re going to download the code from the [GitHub repository](https://github.com/xinntao/ESRGAN).
+    Clone that using `git`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`git clone https://github.com/xinntao/ESRGAN`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: We then need to download the weights so we can use the model without training.
+    Using the Google Drive link in the README, download the RRDB_ESRGAN_x4.pth file
+    and place it in ./models. We’re going to upsample a scaled-down version of Helvetica
+    in her box, but feel free to place any image into the ./LR directory. Run the
+    supplied test.py script and you’ll see upsampled images being generated and saved
+    into the results directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That wraps it up for super-resolution, but we haven’t quite finished with images
+    yet.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further Adventures in Image Detection
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our image classifications in Chapters [2](index_split_033.html#filepos97807)–[4](index_split_070.html#filepos357125)
+    all had one thing in common: we determined that the image belonged to a single
+    class, cat or fish. And obviously, in real-world applications, that would be extended
+    to a much larger set of classes. But we’d also expect images to potentially include
+    both a cat and a fish (which might be bad news for the fish), or any of the classes
+    we’re looking for. There might be two people in the scene, a car, and a boat,
+    and we not only want to determine that they’re present in the image, but also
+    where they are in the image. There are two main ways to do this: object detection
+    and segmentation. We’ll look at both and then turn to Facebook’s PyTorch implementations
+    of Faster R-CNN and Mask R-CNN to look at concrete examples.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Object Detection
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at our cat in a box. What we really want is for the network
+    to put the cat in a box in another box! In particular, we want a bounding box
+    that encompasses everything in the image that the model thinks is cat, as seen
+    in [Figure 9-7](#filepos1374851).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00028.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-7\. Cat in a box in a bounding box
+  prefs: []
+  type: TYPE_NORMAL
+- en: But how can we get our networks to work this out? Remember that these networks
+    can predict anything that you want them to. What if alongside our prediction of
+    a class, we also produce four more outputs? In our CATFISH model, we’d have a
+    `Linear` layer of output size `6` instead of `2`. The additional four outputs
+    will define a rectangle using x[1], x[2], y[1], y[2] coordinates. Instead of just
+    supplying images as training data, we’ll also have to augment them with bounding
+    boxes so that the model has something to train toward, of course. Our loss function
+    will now be a combined loss of the cross-entropy loss of our class prediction
+    and a mean squared loss for the bounding boxes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s no magic here! We just design the model to give us what we need, feed
+    in data that has enough information to make and train to those predictions, and
+    include a loss function that tells our network how well or badly it’s doing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An alternative to the proliferation of bounding boxes is segmentation. Instead
+    of producing boxes, our network outputs an image mask of the same size of the
+    input; the pixels in the mask are colored depending on which class they fall into.
+    For example, grass could be green, roads could be purple, cars could be red, and
+    so on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we’re outputting an image, you’d be right in thinking that we’ll probably
+    end up using a similar sort of architecture as in the super-resolution section.
+    There’s a lot of cross-over between the two topics, and one model type that has
+    become popular over the past few years is the U-Net architecture, shown in [Figure 9-8](#filepos1377311).^([3](index_split_191.html#filepos1488225))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00034.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-8\. Simplified U-Net architecture
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you can see, the classic U-Net architecture is a set of convolutional blocks
+    that scale down an image and another series of convolutions that scale it back
+    up again to the target image. However, the key of U-Net is the lines that go across
+    from the left blocks to their counterparts on the righthand side, which are concatenated
+    with the output tensors as the image is scaled back up. These connections allow
+    information from the higher-level convolutional blocks to transfer across, preserving
+    details that might be removed as the convolutional blocks reduce the input image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll find U-Net-based architectures cropping up all over Kaggle segmentation
+    competitions, proving in some ways that this structure is a good one for segmentation.
+    Another technique that has been applied to the basic setup is our old friend transfer
+    learning. In this approach, the first part of the U is taken from a pretrained
+    model such as ResNet or Inception, and the other side of the U, plus skip connections,
+    are added on top of the trained network and fine-tuned as usual.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at some existing pretrained models that can deliver state-of-the-art
+    object detection and segmentation, direct from Facebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Faster R-CNN and Mask R-CNN
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Facebook Research has produced the maskrcnn-benchmark library, which contains
+    reference implementations of both object detection and segmentation algorithms.
+    We’re going to install the library and add code to generate predictions. At the
+    time of this writing, the easiest way to build the models is by using Docker (this
+    may change when PyTorch 1.2 is released). Clone the repository from [https://github.com/facebookresearch/maskrcnn-benchmark](https://github.com/facebookresearch/maskrcnn-benchmark)
+    and add this script, predict.py, into the demo directory to set up a prediction
+    pipeline using a ResNet-101 backbone:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`import``matplotlib.pyplot``as``plt``from``PIL``import``Image``import``numpy``as``np``import``sys``from``maskrcnn_benchmark.config``import``cfg``from``predictor``import``COCODemo``config_file``=``"../configs/caffe2/e2e_faster_rcnn_R_101_FPN_1x_caffe2.yaml"``cfg``.``merge_from_file``(``config_file``)``cfg``.``merge_from_list``([``"MODEL.DEVICE"``,``"cpu"``])``coco_demo``=``COCODemo``(``cfg``,``min_image_size``=``500``,``confidence_threshold``=``0.7``,``)``pil_image``=``Image``.``open``(``sys``.``argv``[``1``])``image``=``np``.``array``(``pil_image``)[:,``:,``[``2``,``1``,``0``]]``predictions``=``coco_demo``.``run_on_opencv_image``(``image``)``predictions``=``predictions``[:,:,::``-``1``]``plt``.``imsave``(``sys``.``argv``[``2``],``predictions``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'In this short script, we’re first setting up the `COCODemo` predictor, making
+    sure that we pass in the configuration that sets up Faster R-CNN instead of Mask
+    R-CNN (which will produce segmented output). We then open an image file set on
+    the command line, but we have to turn it into `BGR` format instead of `RGB` format
+    as the predictor is trained on OpenCV images rather than the PIL images we’ve
+    been using so far. Finally, we use `imsave` to write the `predictions` array (the
+    original image plus bounding boxes) to a new file, also specified on the command
+    line. Copy in a test image file into this demo directory and we can then build
+    the Docker image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`docker build docker/`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: We run the script from inside the Docker container and produce output that looks
+    like [Figure 9-7](index_split_176.html#filepos1374851) (I actually used the library
+    to generate that image). Try experimenting with different `confidence_threshold`
+    values and different pictures. You can also switch to the `e2e_mask_rcnn_R_101_FPN_1x_caffe2.yaml`
+    configuration to try out Mask R-CNN and generate segmentation masks as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To train your own data on the models, you’ll need to supply your own dataset
+    that provides bounding box labels for each image. The library provides a helper
+    function called `BoxList`. Here’s a skeleton implementation of a dataset that
+    you could use as a starting point:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`from``maskrcnn_benchmark.structures.bounding_box``import``BoxList``class``MyDataset``(``object``):``def``__init__``(``self``,``path``,``transforms``=``None``):``self``.``images``=``#
+    set up image list``self``.``boxes``=``# read in boxes``self``.``labels``=``# read
+    in labels``def``__getitem__``(``self``,``idx``):``image``=``# Get PIL image from
+    self.images``boxes``=``# Create a list of arrays, one per box in x1, y1, x2, y2
+    format``labels``=``# labels that correspond to the boxes``boxlist``=``BoxList``(``boxes``,``image``.``size``,``mode``=``"xyxy"``)``boxlist``.``add_field``(``"labels"``,``labels``)``if``self``.``transforms``:``image``,``boxlist``=``self``.``transforms``(``image``,``boxlist``)``return``image``,``boxlist``,``idx``def``get_img_info``(``self``,``idx``):``return``{``"height"``:``img_height``,``"width"``:``img_width`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: You’ll then need to add your newly created dataset to maskrcnn_benchmark/data/datasets/init.py
+    and maskrcnn_benchmark/config/paths_catalog.py. Training can then be carried out
+    using the supplied train_net.py script in the repo. Be aware that you may have
+    to decrease the batch size to train any of these networks on a single GPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That wraps it up for object detection and segmentation, though see [“Further
+    Reading”](index_split_191.html#filepos1485467) for more ideas, including the wonderfully
+    entitled You Only Look Once (YOLO) architecture. In the meantime, we look at how
+    to maliciously break a model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adversarial Samples
+  prefs: []
+  type: TYPE_NORMAL
+- en: You have probably seen articles online about images that can somehow prevent
+    image recognition from working properly. If a person holds up an image to the
+    camera, the neural network thinks it is seeing a panda or something like that.
+    These are known as adversarial samples, and they’re interesting ways of discovering
+    the limitations of your architectures and how best to defend against them.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Creating an adversarial sample isn’t too difficult, especially if you have
+    access to the model. Here’s a simple neural network that classifies images from
+    the popular CIFAR-10 dataset. There’s nothing special about this model, so feel
+    free to swap it out for AlexNet, ResNet, or any other network presented so far
+    in the book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`class``ModelToBreak``(``nn``.``Module``):``def``__init__``(``self``):``super``(``ModelToBreak``,``self``)``.``__init__``()``self``.``conv1``=``nn``.``Conv2d``(``3``,``6``,``5``)``self``.``pool``=``nn``.``MaxPool2d``(``2``,``2``)``self``.``conv2``=``nn``.``Conv2d``(``6``,``16``,``5``)``self``.``fc1``=``nn``.``Linear``(``16``*``5``*``5``,``120``)``self``.``fc2``=``nn``.``Linear``(``120``,``84``)``self``.``fc3``=``nn``.``Linear``(``84``,``10``)``def``forward``(``self``,``x``):``x``=``self``.``pool``(``F``.``relu``(``self``.``conv1``(``x``)))``x``=``self``.``pool``(``F``.``relu``(``self``.``conv2``(``x``)))``x``=``x``.``view``(``-``1``,``16``*``5``*``5``)``x``=``F``.``relu``(``self``.``fc1``(``x``))``x``=``F``.``relu``(``self``.``fc2``(``x``))``x``=``self``.``fc3``(``x``)``return``x`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Once the network has been trained on CIFAR-10, we can get a prediction for the
+    image in [Figure 9-9](#filepos1416882). Hopefully the training has gone well enough
+    to report that it’s a frog (if not, you might want to train a little more!). What
+    we’re going to do is change our picture of a frog just enough that the neural
+    network gets confused and thinks it’s something else, even though we can still
+    recognize that it’s clearly a frog.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00040.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-9\. Our frog example
+  prefs: []
+  type: TYPE_NORMAL
+- en: To do this, we’ll use a method of attack called the fast gradient sign method.^([4](index_split_191.html#filepos1488680))
+    The idea is to take the image we want to misclassify and run it through the model
+    as usual, which gives us an output tensor. Typically for predictions, we’d look
+    to see which of the tensor’s values was the highest and use that as the index
+    into our classes, using `argmax()`. But this time we’re going to pretend that
+    we’re training the network again and backpropagate that result back through the
+    model, giving us the gradient changes of the model with respect to the original
+    input (in this case, our picture of a frog).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Having done that, we create a new tensor that looks at these gradients and replaces
+    an entry with +1 if the gradient is positive and –1 if the gradient is negative.
+    That gives us the direction of travel that this image is pushing the model’s decision
+    boundaries. We then multiply by a small scalar (called epsilon in the paper) to
+    produce our malicious mask, which we then add to the original image, creating
+    an adversarial example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s a simple PyTorch method that returns the fast gradient sign tensors
+    for an input batch when supplied with the batch’s labels, plus the model and the
+    loss function used to evaluate the model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`def``fgsm``(``input_tensor``,``labels``,``epsilon``=``0.02``,``loss_function``,``model``):``outputs``=``model``(``input_tensor``)``loss``=``loss_function``(``outputs``,``labels``)``loss``.``backward``(``retain_graph``=``True``)``fsgm``=``torch``.``sign``(``inputs``.``grad``)``*``epsilon``return``fgsm`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Epsilon is normally found via experimentation. By playing around with various
+    images, I discovered that `0.02` works well for this model, but you could also
+    use something like a grid or random search to find the value that turns a frog
+    into a ship!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running this function on our frog and our model, we get a mask, which we can
+    then add to our original image to generate our adversarial sample. Have a look
+    at [Figure 9-10](#filepos1425973) to see what it looks like!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`model_to_break``=``# load our model to break here``adversarial_mask``=``fgsm``(``frog_image``.``unsqueeze``(``-``1``),``batch_labels``,``loss_function``,``model_to_break``)``adversarial_image``=``adversarial_mask``.``squeeze``(``0``)``+``frog_image`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '![](images/00045.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-10\. Our adversarial frog
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clearly, our created image is still a frog to our human eyes. (If it doesn’t
+    look like a frog to you, then you may be a neural network. Report yourself for
+    a Voight-Kampff test immediately.) But what happens if we get a prediction from
+    the model on this new image?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`model_to_break``(``adversarial_image``.``unsqueeze``(``-``1``))``# look up
+    in labels via argmax()``>>``''cat''`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: We have defeated the model. But is this as much of a problem as it first appears?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Black-Box Attacks
+  prefs: []
+  type: TYPE_NORMAL
+- en: You may have noticed that to produce an image that fools the classifier, we
+    need to know a lot about the model being used. We have the entire structure of
+    the model in front of us as well as the loss function that was used in training
+    the model, and we need to do forward and backward passes in the model to get our
+    gradients. This is a classic example of what’s known in computer security as a
+    white-box attack, where we can peek into any part of our code to work out what’s
+    going on and exploit whatever we can find.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So does this matter? After all, most models that you’ll encounter online won’t
+    allow you to peek inside. Is a black-box attack, where all you have is the input
+    and output, actually possible? Well, sadly, yes. Consider that we have a set of
+    inputs, and a set of outputs to match them against. The outputs are labels, and
+    it is possible to use targeted queries of models to train a new model that you
+    can use as a local proxy and carry out attacks in a white-box manner. Just as
+    you’ve seen with transfer learning, the attacks on the proxy model can work effectively
+    on the actual model. Are we doomed?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defending Against Adversarial Attacks
+  prefs: []
+  type: TYPE_NORMAL
+- en: How can we defend against these attacks? For something like classifying an image
+    as a cat or a fish, it’s probably not the end of the world, but for self-driving
+    systems, cancer-detection applications, and so forth, it could literally mean
+    the difference between life and death. Successfully defending against all types
+    of adversarial attacks is still an area of research, but highlights so far include
+    distilling and validation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distilling a model by using it to train another model seems to help. Using label
+    smoothing with the new model, as outlined earlier in this chapter, also seems
+    to help. Making the model less sure of its decisions appears to smooth out the
+    gradients somewhat, making the gradient-based attack we’ve outlined in this chapter
+    less effective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A stronger approach is to go back to some parts of the early computer vision
+    days. If we perform input validation on the incoming data, we can possibly prevent
+    the adversarial image from getting to the model in the first place. In the preceding
+    example, the generated attack image has a few pixels that are very out of place
+    to what our eyes are expecting when we see a frog. Depending on the domain, we
+    could have a filter that allows in only images that pass some filtering tests.
+    You could in theory make a neural net to do that too, because then the attackers
+    have to try to break two different models with the same image!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we really are done with images. But let’s look at some developments in text-based
+    networks that have occurred the past couple of years.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'More Than Meets the Eye: The Transformer Architecture'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Transfer learning has been a big feature in allowing image-based networks to
+    become so effective and prevalent over the past decade, but text has been a more
+    difficult nut to crack. In the last couple of years, though, some major steps
+    have been taken that are beginning to unlock the potential of using transfer learning
+    in text for all sorts of tasks, such as generation, classification, and answering
+    questions. We’ve also seen a new type of architecture begin to take center stage:
+    the Transformer network. These networks don’t come from Cybertron, but the technique
+    is behind the most powerful text-based networks we’ve seen, with OpenAI’s GPT-2
+    model, released in 2019, showing a scarily impressive quality in its generated
+    text, to the extent that OpenAI initially held back the larger version of the
+    model to prevent it from being used for nefarious purposes. We look at the general
+    theory of Transformer and then dive into how to use Hugging Face’s implementations
+    of GPT-2 and BERT.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Paying Attention
+  prefs: []
+  type: TYPE_NORMAL
+- en: The initial step along the way to the Transformer architecture was the attention
+    mechanism, which was initially introduced to RNNs to help in sequence-to-sequence
+    applications such as translation.^([5](index_split_191.html#filepos1489115))
+  prefs: []
+  type: TYPE_NORMAL
+- en: The issue attention was trying to solve was the difficulty in translating sentences
+    such as “The cat sat on the mat and she purred.” We know that she in that sentence
+    refers to the cat, but it’s a hard concept to get a standard RNN to understand.
+    It may have the hidden state that we talked about in [Chapter 5](index_split_082.html#filepos460066),
+    but by the time we get to she, we already have a lot of time steps and hidden
+    state for each step!
+  prefs: []
+  type: TYPE_NORMAL
+- en: So what attention does is add an extra set of learnable weights attached to
+    each time step that focuses the network onto a particular part of the sentence.
+    The weights are normally pushed through a `softmax` layer to generate probabilities
+    for each step and then the dot product of the attention weights is calculated
+    with the previous hidden state. [Figure 9-11](#filepos1433730) shows a simplified
+    version of this with respect to our sentence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00054.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-11\. An attention vector pointing to cat
+  prefs: []
+  type: TYPE_NORMAL
+- en: The weights ensure that when the hidden state gets combined with the current
+    state, cat will be a major part of determining the output vector at the time step
+    for she, which will provide useful context for translating into French, for example!
+  prefs: []
+  type: TYPE_NORMAL
+- en: We won’t go into all the details about how attention can work in a concrete
+    implementation, but know the concept was powerful enough that it kickstarted the
+    impressive growth and accuracy of Google Translate back in the mid-2010s. But
+    more was to come.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention Is All You Need
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the groundbreaking paper “Attention Is All You Need,”^([6](index_split_191.html#filepos1489575))
+    Google researchers pointed out that we’d spent all this time bolting attention
+    onto an already slow RNN-based network (compared to CNNs or linear units, anyhow).
+    What if we didn’t need the RNN after all? The paper showed that with stacked attention-based
+    encoders and decoders, you could create a model that didn’t rely on the RNN’s
+    hidden state at all, leading the way to the larger and faster Transformer that
+    dominates textual deep learning today.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The key idea was to use what the authors called multihead attention, which parallelizes
+    the attention step over all the input by using a group of `Linear` layers. With
+    these, and borrowing some residual connection tricks from ResNet, Transformer
+    quickly began to supplant RNNs for many text-based applications. Two important
+    Transformer releases, BERT and GPT-2, represent the current state-of-the-art as
+    this book goes to print.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Luckily for us, there’s [a library](https://oreil.ly/xpDzq) from Hugging Face
+    that implements both of them in PyTorch. It can be installed using `pip` or `conda`,
+    and you should also `git clone` the repo itself, as we’ll be using some of the
+    utility scripts later!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install pytorch-transformers'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: conda install pytorch-transformers`
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: First, we’ll have a look at BERT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: BERT
+  prefs: []
+  type: TYPE_NORMAL
+- en: Google’s 2018 Bidirectional Encoder Representations from Transformers (BERT)
+    model was one of the first successful examples of bringing transfer learning of
+    a powerful model to test. BERT itself is a massive Transformer-based model (weighing
+    in at 110 million parameters in its smallest version), pretrained on Wikipedia
+    and the BookCorpus dataset. The issue that both Transformer and convolutional
+    networks traditionally have when working with text is that because they see all
+    of the data at once, it’s difficult for those networks to learn the temporal structure
+    of language. BERT gets around this in its pretraining stage by masking 15% of
+    the text input at random and forcing the model to predict the parts that have
+    been masked. Despite being conceptually simple, the combination of the massive
+    size of the 340 million parameters in the largest model with the Transformer architecture
+    resulted in new state-of-the-art results for a whole series of text-related benchmarks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, despite being created by Google with TensorFlow, there are implementations
+    of BERT for PyTorch. Let’s take a quick look at one now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FastBERT
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An easy way to start using the BERT model in your own classification applications
+    is to use the FastBERT library that mixes Hugging Face’s repository with the fast.ai
+    API (which you’ll see in a bit more detail when we come to ULMFiT shortly). It
+    can be installed via `pip` in the usual manner:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`pip install fast-bert`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Here’s a script that can be used to fine-tune BERT on our Sentiment140 Twitter
+    dataset that we used into [Chapter 5](index_split_082.html#filepos460066):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`import``torch``import``logger``from``pytorch_transformers.tokenization``import``BertTokenizer``from``fast_bert.data``import``BertDataBunch``from``fast_bert.learner``import``BertLearner``from``fast_bert.metrics``import``accuracy``device``=``torch``.``device``(``''cuda''``)``logger``=``logging``.``getLogger``()``metrics``=``[{``''name''``:``''accuracy''``,``''function''``:``accuracy``}]``tokenizer``=``BertTokenizer``.``from_pretrained``(``''bert-base-uncased''``,``do_lower_case``=``True``)``databunch``=``BertDataBunch``([``PATH_TO_DATA``],``[``PATH_TO_LABELS``],``tokenizer``,``train_file``=``[``TRAIN_CSV``],``val_file``=``[``VAL_CSV``],``test_data``=``[``TEST_CSV``],``text_col``=``[``TEST_FEATURE_COL``],``label_col``=``[``0``],``bs``=``64``,``maxlen``=``140``,``multi_gpu``=``False``,``multi_label``=``False``)``learner``=``BertLearner``.``from_pretrained_model``(``databunch``,``''bert-base-uncased''``,``metrics``,``device``,``logger``,``is_fp16``=``False``,``multi_gpu``=``False``,``multi_label``=``False``)``learner``.``fit``(``3``,``lr``=``''1e-2''``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: After our imports, we set up the `device`, `logger`, and `metrics` objects,
+    which are required by the `BertLearner` object. We then create a `BERTTokenizer`
+    for tokenizing our input data, and in this base we’re going to use the `bert-base-uncased`
+    model (which has 12 layers and 110 million parameters). Next, we need a `BertDataBunch`
+    object that contains paths to the training, validation, and test datasets, where
+    to find the label column, our batch size, and the maximum length of our input
+    data, which in our case is simple because it can be only the length of a tweet,
+    at that time 140 characters. Having done that, we will set up a BERT model by
+    using the `BertLearner.from_pretrained_model` method. This passes in our input
+    data, our BERT model type, the `metric`, `device`, and `logger` objects we set
+    up at the start of the script, and finally some flags to turn off training options
+    that we don’t need but aren’t given defaults for the method signature.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, the `fit()` method takes care of fine-tuning the BERT model on our
+    input data, running on its own internal training loop. In this example, we’re
+    training for three epochs with a learning rate of `1e-2`. The trained PyTorch
+    model can be accessed afterward using `learner.model`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: And that’s how to get up and running with BERT. Now, onto the competition.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GPT-2
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, while Google was quietly working on BERT, OpenAI was working on its own
+    version of a Transformer-based text model. Instead of using masking to force the
+    model to learn language structure, the model constrains the attention mechanism
+    within the architecture to simply predict the next word in a sequence, in a similar
+    style to the RNNs in [Chapter 5](index_split_082.html#filepos460066). As a result,
+    GPT was somewhat left behind by the impressive performance of BERT, but in 2019
+    OpenAI struck back with GPT-2, a new version of the model that reset the bar for
+    text generation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The magic behind GPT-2 is scale: the model is trained on text from over 8 million
+    websites, and the largest variant of GPT-2 weighs in at 1.5 billion parameters.
+    And while it still doesn’t dislodge BERT on particular benchmarks for things like
+    question/answering or other NLP tasks, its ability to create incredibly realistic
+    text from a basic prompt led to OpenAI locking the full-size model behind closed
+    doors for fear of it being weaponized. They have, however, released smaller versions
+    of the model, clocking in at 117 and 340 million parameters.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s an example of the output that GPT-2 can generate. Everything in italics
+    was written by GPT-2’s 340M model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Jack and Jill went up the hill on a bike ride. The sky was a grey white and
+    the wind was blowing, causing a heavy snowfall. It was really difficult to drive
+    down the hill, I had to lean forward on a bit of gear to get it on. But then there
+    was a moment of freedom that I would never forget: The bike was at a complete
+    stop on the mountain side and I was in the middle of it. I didn’t have time to
+    say a word, but I did lean forward and touch the brakes and the bike started to
+    go.'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Aside from switching from Jack and Jill to I, this is an impressive piece of
+    text generation. For short pieces of text, it can sometimes be indistinguishable
+    from human-created text. It does reveal the machine behind the curtain as the
+    generated text continues, but it’s an impressive feat that could be writing tweets
+    and Reddit comments right now. Let’s have a look at how to do this with PyTorch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generating Text with GPT-2
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Like BERT, the official GPT-2 release from OpenAI is a TensorFlow model. Also
+    like BERT, Hugging Face has released a PyTorch version that is contained within
+    the same library (`pytorch-transformers`). However, a burgeoning ecosystem has
+    been built around the original TensorFlow model that just doesn’t exist currently
+    around the PyTorch version. So just this once, we’re going to cheat: we’re going
+    to use some of the TensorFlow-based libraries to fine-tune the GPT-2 model, and
+    then export the weights and import them into the PyTorch version of the model.
+    To save us from too much setup, we also do all the TensorFlow operations in a
+    Colab notebook! Let’s get started.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Open a new Google Colab notebook and install the library that we’re using,
+    Max Woolf’s gpt-2-simple, which wraps up GPT-2 fine-tuning in a single package.
+    Install it by adding this into a cell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`!pip3 install gpt-2-simple`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Next up, you need some text. In this example, I’m using a public domain text
+    of PG Wodehouse’s My Man Jeeves. I’m also not going to do any further processing
+    on the text after downloading it from the Project Gutenberg website with `wget`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`!wget http://www.gutenberg.org/cache/epub/8164/pg8164.txt`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Now we can use the library to train. First, make sure your notebook is connected
+    to a GPU (look in Runtime→Change Runtime Type), and then run this code in a cell:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`import``gpt_2_simple``as``gpt2``gpt2``.``download_gpt2``(``model_name``=``"117M"``)``sess``=``gpt2``.``start_tf_sess``()``gpt2``.``finetune``(``sess``,``"pg8164.txt"``,``model_name``=``"117M"``,``steps``=``1000``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Replace the text file with whatever text file you’re using. As the model trains,
+    it will spit out a sample every hundred steps. In my case, it was interesting
+    to see it turn from spitting out vaguely Shakespearian play scripts to something
+    that ended up approaching Wodehouse prose. This will likely take an hour or two
+    to train for 1,000 epochs, so go off and do something more interesting instead
+    while the cloud’s GPUs are whirring away.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once it has finished, we need to get the weights out of Colab and into your
+    Google Drive account so you can download them to wherever you’re running PyTorch
+    from:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`gpt2``.``copy_checkpoint_to_gdrive``()`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: That will point you to open a new web page to copy an authentication code into
+    the notebook. Do that, and the weights will be tarred up and saved to your Google
+    Drive as run1.tar.gz.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now, on the instance or notebook where you’re running PyTorch, download that
+    tarfile and extract it. We need to rename a couple of files to make these weights
+    compatible with the Hugging Face reimplementation of GPT-2:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`mv encoder.json vocab.json'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: mv vocab.bpe merges.txt`
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'We now need to convert the saved TensorFlow weights into ones that are compatible
+    with PyTorch. Handily, the `pytorch-transformers` repo comes with a script to
+    do that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`python` `[``REPO_DIR``]``/pytorch_transformers/convert_gpt2_checkpoint_to_pytorch.py'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: --gpt2_checkpoint_path` `[``SAVED_TENSORFLOW_MODEL_DIR``]` `--pytorch_dump_folder_path`
+    `[``SAVED_TENSORFLOW_MODEL_DIR``]`
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Creating a new instance of the GPT-2 model can then be performed in code like
+    this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`from``pytorch_transformers``import``GPT2LMHeadModel``model``=``GPT2LMHeadModel``.``from_pretrained``([``SAVED_TENSORFLOW_MODEL_DIR``])`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Or, just to play around with the model, you can use the run_gpt2.py script
+    to get a prompt where you enter text and get generated samples back from the PyTorch-based
+    model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`python` `[``REPO_DIR``]``/pytorch-transformers/examples/run_gpt2.py'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: --model_name_or_path` `[``SAVED_TENSORFLOW_MODEL_DIR``]`
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Training GPT-2 is likely to become easier in the coming months as Hugging Face
+    incorporates a consistent API for all the models in its repo, but the TensorFlow
+    method is the easiest to get started with right now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'BERT and GPT-2 are the most popular names in text-based learning right now,
+    but before we wrap up, we cover the dark horse of the current state-of-the-art
+    models: ULMFiT.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ULMFiT
+  prefs: []
+  type: TYPE_NORMAL
+- en: In contrast to the behemoths of BERT and GPT-2, ULMFiT is based on a good old
+    RNN. No Transformer in sight, just the AWD-LSTM, an architecture originally created
+    by Stephen Merity. Trained on the WikiText-103 dataset, it has proven to be amendable
+    to transfer learning, and despite the old type of architecture, has proven to
+    be competitive with BERT and GPT-2 in the classification realm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While ULMFiT is, at heart, just another model that can be loaded and used in
+    PyTorch like any other, its natural home is within the fast.ai library, which
+    sits on top of PyTorch and provides many useful abstractions for getting to grips
+    with and being productive with deep learning quickly. To that end, we’ll look
+    at how to use ULMFiT with the fast.ai library on the Twitter dataset we used in
+    [Chapter 5](index_split_082.html#filepos460066).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We first use fast.ai’s Data Block API to prepare our data for fine-tuning the
+    LSTM:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`data_lm``=``(``TextList``.``from_csv``(``"./twitter-data/"``,``''train-processed.csv''``,``cols``=``5``,``vocab``=``data_lm``.``vocab``)``.``split_by_rand_pct``()``.``label_from_df``(``cols``=``0``)``.``databunch``())`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'This is fairly similar to the `torchtext` helpers from [Chapter 5](index_split_082.html#filepos460066)
+    and just produces what fast.ai calls a `databunch`, from which its models and
+    training routines can easily grab data. Next, we create the model, but in fast.ai,
+    this happens a little differently. We create a `learner` that we interact with
+    to train the model instead of the model itself, though we pass that in as a parameter.
+    We also supply a dropout value (we’re using the one suggested in the fast.ai training
+    materials):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`learn``=``language_model_learner``(``data_lm``,``AWD_LSTM``,``drop_mult``=``0.3``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'Once we have our `learner` object, we can find the optimal learning rate. This
+    is just like what we implemented in [Chapter 4](index_split_070.html#filepos357125),
+    except that it’s built into the library and uses an exponentially moving average
+    to smooth out the graph, which in our implementation is pretty spiky:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`learn``.``lr_find``()``learn``.``recorder``.``plot``()`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: From the plot in [Figure 9-12](#filepos1472844), it looks like `1e-2` is where
+    we’re starting to hit a steep decline, so we’ll pick that as our learning rate.
+    Fast.ai uses a method called `fit_one_cycle`, which uses a 1cycle learning scheduler
+    (see [“Further Reading”](index_split_191.html#filepos1485467) for more details
+    on 1cycle) and very high learning rates to train a model in an order of magnitude
+    fewer epochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](images/00062.jpg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 9-12\. ULMFiT learning rate plot
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here, we’re training for just one cycle and saving the fine-tuned head of the
+    network (the encoder):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`learn``.``fit_one_cycle``(``1``,``1e-2``)``learn``.``save_encoder``(``''twitter_encoder''``)`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'With the fine-tuning of the language model completed (you may want to experiment
+    with more cycles in training), we build a new `databunch` for the actual classification
+    problem:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`twitter_classifier_bunch``=``TextList``.``from_csv``(``"./twitter-data/"``,``''train-processed.csv''``,``cols``=``5``,``vocab``=``data_lm``.``vocab``)``.``split_by_rand_pct``()``.``label_from_df``(``cols``=``0``)``.``databunch``())`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'The only real difference here is that we supply the actual labels by using
+    `label_from_df` and we pass in a `vocab` object from the language model training
+    that we performed earlier to make sure they’re using the same mapping of words
+    to numbers, and then we’re ready to create a new `text_classifier_learner`, where
+    the library does all the model creation for you behind the scenes. We load the
+    fine-tuned encoder onto this new model and begin the process of training again:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`learn``=``text_classifier_learner``(``data_clas``,``drop_mult``=``0.5``)``learn``.``load_encoder``(``''fine_tuned_enc''``)``learn``.``lr_find``()``learn``.``recorder``.``plot``()``learn``.``fit_one_cycle``(``1``,``2e-2``,``moms``=``(``0.8``,``0.7``))`'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: And with a tiny amount of code, we have a classifier that reports an accuracy
+    of 76%. We could easily improve that by training the language model for more cycles,
+    adding differential learning rates and freezing parts of the model while training,
+    all of which fast.ai supports with methods defined on the `learner`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What to Use?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Given that little whirlwind tour of the current cutting edge of text models
+    in deep learning, there’s probably one question on your mind: “That’s all great,
+    but which one should I actually use?” In general, if you’re working on a classification
+    problem, I suggest you start with ULMFiT. BERT is impressive, but ULMFiT is competitive
+    with BERT in terms of accuracy, and it has the additional benefit that you don’t
+    need to buy a huge number of TPU credits to get the best out of it. A single GPU
+    fine-tuning ULMFiT is likely to be enough for most people.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: And as for GPT-2, if you’re after generated text, then yes, it’s a better fit,
+    but for classification purposes, it’s going to be harder to approach ULMFiT or
+    BERT performance. One thing that I do think might be interesting is to let GPT-2
+    loose on data augmentation; if you have a dataset like Sentiment140, which we’ve
+    been using throughout this book, why not fine-tune a GPT-2 model on that input
+    and use it to generate more data?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter looked at the wider world of PyTorch, including libraries with
+    existing models that you can import into your own projects, some cutting-edge
+    data augmentation approaches that can be applied to any domain, as well as adversarial
+    samples that can ruin your model’s day and how to defend against them. I hope
+    that as we come to the end of our journey, you understand how neural networks
+    are assembled and how to get images, text, and audio to flow through them as tensors.
+    You should be able to train them, augment data, experiment with learning rates,
+    and even debug models when they’re not going quite right. And once all that’s
+    done, you know how to package them up in Docker and get them serving requests
+    from the wider world.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where do we go from here? Consider having a look at the PyTorch forums and the
+    other documentation on the website. I definitely also recommend visiting the fast.ai
+    community even if you don’t end up using the library; it’s a hive of activity,
+    filled with good ideas and people experimenting with new approaches, while also
+    friendly to newcomers!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keeping up with the cutting edge of deep learning is becoming harder and harder.
+    Most papers are published on [arXiv](https://arxiv.org), but the rate of papers
+    being published seems to be rising at an almost exponential level; as I was typing
+    up this conclusion, [XLNet](https://arxiv.org/abs/1906.08237) was released, which
+    apparently beats BERT on various tasks. It never ends! To try to help in this,
+    I listed a few Twitter accounts here where people often recommend interesting
+    papers. I suggest following them to get a taste of current and interesting work,
+    and from there you can perhaps use a tool such as [arXiv Sanity Preserver](http://arxiv-sanity.com)
+    to drink from the firehose when you feel more comfortable diving in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, I trained a GPT-2 model on the book and it would like to say a few
+    words:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deep learning is a key driver of how we work on today’s deep learning applications,
+    and deep learning is expected to continue to expand into new fields such as image-based
+    classification and in 2016, NVIDIA introduced the CUDA LSTM architecture. With
+    LSTMs now becoming more popular, LSTMs were also a cheaper and easier to produce
+    method of building for research purposes, and CUDA has proven to be a very competitive
+    architecture in the deep learning market.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Thankfully, you can see there’s still a way to go before we authors are out
+    of a job. But maybe you can help change that!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Further Reading
+  prefs: []
+  type: TYPE_NORMAL
+- en: A survey of [current super-resolution techniques](https://arxiv.org/pdf/1902.06068.pdf)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ian Goodfellow’s [lecture on GANs](https://www.youtube.com/watch?v=Z6rxFNMGdn0)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[You Only Look Once (YOLO)](https://pjreddie.com/darknet/yolo), a family of
+    fast object detection models with highly readable papers'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[CleverHans](https://github.com/tensorflow/cleverhans), a library of adversarial
+    generation techniques for TensorFlow and PyTorch'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[The Illustrated Transformer](http://jalammar.github.io/illustrated-transformer),
+    an in-depth voyage through the Transformer architecture'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Some Twitter accounts to follow:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '@jeremyphoward — Cofounder of fast.ai'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '@miles_brundage — Research scientist (policy) at OpenAI'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '@BrundageBot — Twitter bot that generates a daily summary of interesting papers
+    from arXiv (warning: often tweets out 50 papers a day!)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '@pytorch — Official PyTorch account'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[1](index_split_166.html#filepos1279640)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'See [“mixup: Beyond Empirical Risk Minimization”](https://arxiv.org/abs/1710.09412)
+    by Hongyi Zhang et al. (2017).'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[2](index_split_170.html#filepos1352879)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: See [“Generative Adversarial Networks”](https://arxiv.org/abs/1406.2661) by
+    Ian J. Goodfellow et al. (2014).
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[3](index_split_176.html#filepos1377165)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'See [“U-Net: Convolutional Networks for Biomedical Image Segmentation”](https://arxiv.org/abs/1505.04597)
+    by Olaf Ronneberger et al. (2015).'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[4](index_split_178.html#filepos1417230)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: See [“Explaining and Harnessing Adversarial Examples”](https://arxiv.org/abs/1412.6572)
+    by Ian Goodfellow et al. (2014).
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[5](index_split_182.html#filepos1432506)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: See [“Neural Machine Translation by Jointly Learning to Align and Translate”](https://arxiv.org/abs/1409.0473)
+    by Dzmitry Bahdanau et al. (2014).
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: '[6](index_split_183.html#filepos1434803)'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: See [“Attention Is All You Need”](https://arxiv.org/abs/1706.03762) by Ashish
+    Vaswani et al. (2017).
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
