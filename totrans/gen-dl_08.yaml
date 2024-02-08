@@ -1,0 +1,1627 @@
+- en: Chapter 5\. Autoregressive Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far, we have explored two different families of generative models that have
+    both involved latent variables—variational autoencoders (VAEs) and generative
+    adversarial networks (GANs). In both cases, a new variable is introduced with
+    a distribution that is easy to sample from and the model learns how to *decode*
+    this variable back into the original domain.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will now turn our attention to *autoregressive models*—a family of models
+    that simplify the generative modeling problem by treating it as a sequential process.
+    Autoregressive models condition predictions on previous values in the sequence,
+    rather than on a latent random variable. Therefore, they attempt to explicitly
+    model the data-generating distribution rather than an approximation of it (as
+    in the case of VAEs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter we shall explore two different autoregressive models: long
+    short-term memory networks and PixelCNN. We will apply the LSTM to text data and
+    the PixelCNN to image data. We will cover another highly successful autoregressive
+    model, the Transformer, in detail in [Chapter 9](ch09.xhtml#chapter_transformer).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To understand how an LSTM works, we will first pay a visit to a strange prison,
+    where the inmates have formed a literary society…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The story of Mr. Sopp and his crowdsourced fables is an analogy for one of
+    the most notorious autoregressive techniques for sequential data such as text:
+    the long short-term memory network.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Long Short-Term Memory Network (LSTM)
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An LSTM is a particular type of recurrent neural network (RNN). RNNs contain
+    a recurrent layer (or *cell*) that is able to handle sequential data by making
+    its own output at a particular timestep form part of the input to the next timestep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When RNNs were first introduced, recurrent layers were very simple and consisted
+    solely of a tanh operator that ensured that the information passed between timesteps
+    was scaled between –1 and 1\. However, this approach was shown to suffer from
+    the vanishing gradient problem and didn’t scale well to long sequences of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LSTM cells were first introduced in 1997 in a paper by Sepp Hochreiter and Jürgen
+    Schmidhuber.^([1](ch05.xhtml#idm45387018222496)) In the paper, the authors describe
+    how LSTMs do not suffer from the same vanishing gradient problem experienced by
+    vanilla RNNs and can be trained on sequences that are hundreds of timesteps long.
+    Since then, the LSTM architecture has been adapted and improved, and variations
+    such as gated recurrent units (discussed later in this chapter) are now widely
+    utilized and available as layers in Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: LSTMs have been applied to a wide range of problems involving sequential data,
+    including time series forecasting, sentiment analysis, and audio classification.
+    In this chapter we will be using LSTMs to tackle the challenge of text generation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/05_autoregressive/01_lstm/lstm.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Recipes Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We’ll be using the [Epicurious Recipes dataset](https://oreil.ly/laNUt) that
+    is available through Kaggle. This is a set of over 20,000 recipes, with accompanying
+    metadata such as nutritional information and ingredient lists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can download the dataset by running the Kaggle dataset downloader script
+    in the book repository, as shown in [Example 5-1](#downloading-recipe-dataset).
+    This will save the recipes and accompanying metadata locally to the */data* folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-1\. Downloading the Epicurious Recipe dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`[Example 5-2](#example0601) shows how the data can be loaded and filtered
+    so that only recipes with a title and a description remain. An example of a recipe
+    text string is given in [Example 5-3](#text_clean).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-2\. Loading the data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-3\. A text string from the Recipes dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Before taking a look at how to build an LSTM network in Keras, we must first
+    take a quick detour to understand the structure of text data and how it is different
+    from the image data that we have seen so far in this book.`  `## Working with
+    Text Data
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are several key differences between text and image data that mean that
+    many of the methods that work well for image data are not so readily applicable
+    to text data. In particular:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Text data is composed of discrete chunks (either characters or words), whereas
+    pixels in an image are points in a continuous color spectrum. We can easily make
+    a green pixel more blue, but it is not obvious how we should go about making the
+    word *cat* more like the word *dog*, for example. This means we can easily apply
+    backpropagation to image data, as we can calculate the gradient of our loss function
+    with respect to individual pixels to establish the direction in which pixel colors
+    should be changed to minimize the loss. With discrete text data, we can’t obviously
+    apply backpropagation in the same way, so we need to find a way around this problem.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Text data has a time dimension but no spatial dimension, whereas image data
+    has two spatial dimensions but no time dimension. The order of words is highly
+    important in text data and words wouldn’t make sense in reverse, whereas images
+    can usually be flipped without affecting the content. Furthermore, there are often
+    long-term sequential dependencies between words that need to be captured by the
+    model: for example, the answer to a question or carrying forward the context of
+    a pronoun. With image data, all pixels can be processed simultaneously.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Text data is highly sensitive to small changes in the individual units (words
+    or characters). Image data is generally less sensitive to changes in individual
+    pixel units—a picture of a house would still be recognizable as a house even if
+    some pixels were altered—but with text data, changing even a few words can drastically
+    alter the meaning of the passage, or make it nonsensical. This makes it very difficult
+    to train a model to generate coherent text, as every word is vital to the overall
+    meaning of the passage.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Text data has a rules-based grammatical structure, whereas image data doesn’t
+    follow set rules about how the pixel values should be assigned. For example, it
+    wouldn’t make grammatical sense in any context to write “The cat sat on the having.”
+    There are also semantic rules that are extremely difficult to model; it wouldn’t
+    make sense to say “I am in the beach,” even though grammatically, there is nothing
+    wrong with this statement.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Advances in Text-Based Generative Deep Learning
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Until recently, most of the most sophisticated generative deep learning models
+    have focused on image data, because many of the challenges presented in the preceding
+    list were beyond the reach of even the most advanced techniques. However, in the
+    last five years astonishing progress has been made in the field of text-based
+    generative deep learning, thanks to the introduction of the Transformer model
+    architecture, which we will explore in [Chapter 9](ch09.xhtml#chapter_transformer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With these points in mind, let’s now take a look at the steps we need to take
+    in order to get the text data into the right shape to train an LSTM network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tokenization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The first step is to clean up and tokenize the text. *Tokenization* is the process
+    of splitting the text up into individual units, such as words or characters.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How you tokenize your text will depend on what you are trying to achieve with
+    your text generation model. There are pros and cons to using both word and character
+    tokens, and your choice will affect how you need to clean the text prior to modeling
+    and the output from your model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you use word tokens:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All text can be converted to lowercase, to ensure capitalized words at the start
+    of sentences are tokenized the same way as the same words appearing in the middle
+    of a sentence. In some cases, however, this may not be desirable; for example,
+    some proper nouns, such as names or places, may benefit from remaining capitalized
+    so that they are tokenized independently.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The text *vocabulary* (the set of distinct words in the training set) may be
+    very large, with some words appearing very sparsely or perhaps only once. It may
+    be wise to replace sparse words with a token for *unknown word*, rather than including
+    them as separate tokens, to reduce the number of weights the neural network needs
+    to learn.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Words can be *stemmed*, meaning that they are reduced to their simplest form,
+    so that different tenses of a verb remained tokenized together. For example, *browse*,
+    *browsing*, *browses*, and *browsed* would all be stemmed to *brows*.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You will need to either tokenize the punctuation, or remove it altogether.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using word tokenization means that the model will never be able to predict words
+    outside of the training vocabulary.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If you use character tokens:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model may generate sequences of characters that form new words outside of
+    the training vocabulary—this may be desirable in some contexts, but not in others.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Capital letters can either be converted to their lowercase counterparts, or
+    remain as separate tokens.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The vocabulary is usually much smaller when using character tokenization. This
+    is beneficial for model training speed as there are fewer weights to learn in
+    the final output layer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For this example, we’ll use lowercase word tokenization, without word stemming.
+    We’ll also tokenize punctuation marks, as we would like the model to predict when
+    it should end sentences or use commas, for example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in [Example 5-4](#tokenisation) cleans and tokenizes the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-4\. Tokenization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pad the punctuation marks, to treat them as separate words.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Convert to a TensorFlow Dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create a Keras `TextVectorization` layer to convert text to lowercase, give
+    the most prevalent 10,000 words a corresponding integer token, and trim or pad
+    the sequence to 201 tokens long.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apply the `TextVectorization` layer to the training data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_autoregressive_models_CO1-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `vocab` variable stores a list of the word tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An example of a recipe after tokenization is shown in [Example 5-5](#text_tokenised).
+    The sequence length that we use to train the model is a parameter of the training
+    process. In this example we choose to use a sequence length of 200, so we pad
+    or clip the recipe to one more than this length, to allow us to create the target
+    variable (more on this in the next section). To achieve this desired length, the
+    end of the vector is padded with zeros.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stop Tokens
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The `0` token is known as a the *stop token*, signifying that the text string
+    has come to an end.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-5\. The recipe from [Example 5-3](#text_clean) tokenized
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: In [Example 5-6](#tokens), we can see a subset of the list of tokens mapped
+    to their respective indices. The layer reserves the `0` token for padding (i.e.,
+    it is the stop token) and the `1` token for unknown words that fall outside the
+    top 10,000 words (e.g., persillade). The other words are assigned tokens in order
+    of frequency. The number of words to include in the vocabulary is also a parameter
+    of the training process. The more words included, the fewer *unknown* tokens you
+    will see in the text; however, your model will need to be larger to accommodate
+    the larger vocabulary size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-6\. The vocabulary of the `TextVectorization` layer
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Creating the Training Set
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Our LSTM will be trained to predict the next word in a sequence, given a sequence
+    of words preceding this point. For example, we could feed the model the tokens
+    for *grilled chicken with boiled* and would expect the model to output a suitable
+    next word (e.g., *potatoes*, rather than *bananas*).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can therefore simply shift the entire sequence by one token in order to create
+    our target variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The dataset generation step can be achieved with the code in [Example 5-7](#example0602).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-7\. Creating the training dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create the training set consisting of recipe tokens (the input) and the same
+    vector shifted by one token (the target).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The LSTM Architecture
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The architecture of the overall LSTM model is shown in [Table 5-1](#lstm_summary).
+    The input to the model is a sequence of integer tokens and the output is the probability
+    of each word in the 10,000-word vocabulary appearing next in the sequence. To
+    understand how this works in detail, we need to introduce two new layer types,
+    `Embedding` and `LSTM`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 5-1\. Model summary of the LSTM
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Layer (type) | Output shape | Param # |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| InputLayer | (None, None) | 0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Embedding | (None, None, 100) | 1,000,000 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| LSTM | (None, None, 128) | 117,248 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Dense | (None, None, 10000) | 1,290,000 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Total params | 2,407,248 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Trainable params | 2,407,248 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Non-trainable params | 0 |'
+  prefs: []
+  type: TYPE_TB
+- en: The Input Layer of the LSTM
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Notice that the `Input` layer does not need us to specify the sequence length
+    in advance. Both the batch size and the sequence length are flexible (hence the
+    `(None, None)` shape). This is because all downstream layers are agnostic to the
+    length of the sequence being passed through.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Embedding Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: An *embedding layer* is essentially a lookup table that converts each integer
+    token into a vector of length `embedding_size`, as shown in [Figure 5-2](#embedding).
+    The lookup vectors are learned by the model as *weights*. Therefore, the number
+    of weights learned by this layer is equal to the size of the vocabulary multiplied
+    by the dimension of the embedding vector (i.e., 10,000 × 100 = 1,000,000).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0502.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-2\. An embedding layer is a lookup table for each integer token
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We embed each integer token into a continuous vector because it enables the
+    model to learn a representation for each word that is able to be updated through
+    backpropagation. We could also just one-hot encode each input token, but using
+    an embedding layer is preferred because it makes the embedding itself trainable,
+    thus giving the model more flexibility in deciding how to embed each token to
+    improve its performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, the `Input` layer passes a tensor of integer sequences of shape `[batch_size,
+    seq_length]` to the `Embedding` layer, which outputs a tensor of shape `[batch_size,
+    seq_length, embedding_size]`. This is then passed on to the `LSTM` layer ([Figure 5-3](#embedding_layer)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0503.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-3\. A single sequence as it flows through an embedding layer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The LSTM Layer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To understand the LSTM layer, we must first look at how a general recurrent
+    layer works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A recurrent layer has the special property of being able to process sequential
+    input data <math alttext="x 1 comma ellipsis comma x Subscript n Baseline"><mrow><msub><mi>x</mi>
+    <mn>1</mn></msub> <mo>,</mo> <mo>⋯</mo> <mo>,</mo> <msub><mi>x</mi> <mi>n</mi></msub></mrow></math>
+    . It consists of a cell that updates its *hidden state*, <math alttext="h Subscript
+    t"><msub><mi>h</mi> <mi>t</mi></msub></math> , as each element of the sequence
+    <math alttext="x Subscript t"><msub><mi>x</mi> <mi>t</mi></msub></math> is passed
+    through it, one timestep at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The hidden state is a vector with length equal to the number of *units* in the
+    cell—it can be thought of as the cell’s current understanding of the sequence.
+    At timestep <math alttext="t"><mi>t</mi></math> , the cell uses the previous value
+    of the hidden state, <math alttext="h Subscript t minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , together with the data from the current timestep <math alttext="x Subscript
+    t"><msub><mi>x</mi> <mi>t</mi></msub></math> to produce an updated hidden state
+    vector, <math alttext="h Subscript t"><msub><mi>h</mi> <mi>t</mi></msub></math>
+    . This recurrent process continues until the end of the sequence. Once the sequence
+    is finished, the layer outputs the final hidden state of the cell, <math alttext="h
+    Subscript n"><msub><mi>h</mi> <mi>n</mi></msub></math> , which is then passed
+    on to the next layer of the network. This process is shown in [Figure 5-4](#lstm_rolled).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0504.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-4\. A simple diagram of a recurrent layer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To explain this in more detail, let’s unroll the process so that we can see
+    exactly how a single sequence is fed through the layer ([Figure 5-5](#lstm_layer)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cell Weights
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: It’s important to remember that all of the cells in this diagram share the same
+    weights (as they are really the same cell). There is no difference between this
+    diagram and [Figure 5-4](#lstm_rolled); it’s just a different way of drawing the
+    mechanics of a recurrent layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0505.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-5\. How a single sequence flows through a recurrent layer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Here, we represent the recurrent process by drawing a copy of the cell at each
+    timestep and show how the hidden state is constantly being updated as it flows
+    through the cells. We can clearly see how the previous hidden state is blended
+    with the current sequential data point (i.e., the current embedded word vector)
+    to produce the next hidden state. The output from the layer is the final hidden
+    state of the cell, after each word in the input sequence has been processed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The fact that the output from the cell is called a *hidden* state is an unfortunate
+    naming convention—it’s not really hidden, and you shouldn’t think of it as such.
+    Indeed, the last hidden state is the overall output from the layer, and we will
+    be making use of the fact that we can access the hidden state at each individual
+    timestep later in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The LSTM Cell
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have seen how a generic recurrent layer works, let’s take a look
+    inside an individual LSTM cell.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The job of the LSTM cell is to output a new hidden state, <math alttext="h Subscript
+    t"><msub><mi>h</mi> <mi>t</mi></msub></math> , given its previous hidden state,
+    <math alttext="h Subscript t minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , and the current word embedding, <math alttext="x Subscript t"><msub><mi>x</mi>
+    <mi>t</mi></msub></math> . To recap, the length of <math alttext="h Subscript
+    t"><msub><mi>h</mi> <mi>t</mi></msub></math> is equal to the number of units in
+    the LSTM. This is a parameter that is set when you define the layer and has nothing
+    to do with the length of the sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Make sure you do not confuse the term *cell* with *unit*. There is one cell
+    in an LSTM layer that is defined by the number of units it contains, in the same
+    way that the prisoner cell from our earlier story contained many prisoners. We
+    often draw a recurrent layer as a chain of cells unrolled, as it helps to visualize
+    how the hidden state is updated at each timestep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An LSTM cell maintains a cell state, <math alttext="upper C Subscript t"><msub><mi>C</mi>
+    <mi>t</mi></msub></math> , which can be thought of as the cell’s internal beliefs
+    about the current status of the sequence. This is distinct from the hidden state,
+    <math alttext="h Subscript t"><msub><mi>h</mi> <mi>t</mi></msub></math> , which
+    is ultimately output by the cell after the final timestep. The cell state is the
+    same length as the hidden state (the number of units in the cell).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s look more closely at a single cell and how the hidden state is updated
+    ([Figure 5-6](#lstm_cell)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The hidden state is updated in six steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The hidden state of the previous timestep, <math alttext="h Subscript t minus
+    1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , and the current word embedding, <math alttext="x Subscript t"><msub><mi>x</mi>
+    <mi>t</mi></msub></math> , are concatenated and passed through the *forget* gate.
+    This gate is simply a dense layer with weights matrix <math alttext="upper W Subscript
+    f"><msub><mi>W</mi> <mi>f</mi></msub></math> , bias <math alttext="b Subscript
+    f"><msub><mi>b</mi> <mi>f</mi></msub></math> , and a sigmoid activation function.
+    The resulting vector, <math alttext="f Subscript t"><msub><mi>f</mi> <mi>t</mi></msub></math>
+    , has length equal to the number of units in the cell and contains values between
+    0 and 1 that determine how much of the previous cell state, <math alttext="upper
+    C Subscript t minus 1"><msub><mi>C</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , should be retained.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0506.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-6\. An LSTM cell
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The concatenated vector is also passed through an *input* gate that, like the
+    forget gate, is a dense layer with weights matrix <math alttext="upper W Subscript
+    i"><msub><mi>W</mi> <mi>i</mi></msub></math> , bias <math alttext="b Subscript
+    i"><msub><mi>b</mi> <mi>i</mi></msub></math> , and a sigmoid activation function.
+    The output from this gate, <math alttext="i Subscript t"><msub><mi>i</mi> <mi>t</mi></msub></math>
+    , has length equal to the number of units in the cell and contains values between
+    0 and 1 that determine how much new information will be added to the previous
+    cell state, <math alttext="upper C Subscript t minus 1"><msub><mi>C</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    .
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The concatenated vector is passed through a dense layer with weights matrix
+    <math alttext="upper W Subscript upper C"><msub><mi>W</mi> <mi>C</mi></msub></math>
+    , bias <math alttext="b Subscript upper C"><msub><mi>b</mi> <mi>C</mi></msub></math>
+    , and a tanh activation function to generate a vector <math alttext="upper C overTilde
+    Subscript t"><msub><mover accent="true"><mi>C</mi> <mo>˜</mo></mover> <mi>t</mi></msub></math>
+    that contains the new information that the cell wants to consider keeping. It
+    also has length equal to the number of units in the cell and contains values between
+    –1 and 1.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: <math alttext="f Subscript t"><msub><mi>f</mi> <mi>t</mi></msub></math> and
+    <math alttext="upper C Subscript t minus 1"><msub><mi>C</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    are multiplied element-wise and added to the element-wise multiplication of <math
+    alttext="i Subscript t"><msub><mi>i</mi> <mi>t</mi></msub></math> and <math alttext="upper
+    C overTilde Subscript t"><msub><mover accent="true"><mi>C</mi> <mo>˜</mo></mover>
+    <mi>t</mi></msub></math> . This represents forgetting parts of the previous cell
+    state and then adding new relevant information to produce the updated cell state,
+    <math alttext="upper C Subscript t"><msub><mi>C</mi> <mi>t</mi></msub></math>
+    .
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'The concatenated vector is passed through an *output* gate: a dense layer with
+    weights matrix <math alttext="upper W Subscript o"><msub><mi>W</mi> <mi>o</mi></msub></math>
+    , bias <math alttext="b Subscript o"><msub><mi>b</mi> <mi>o</mi></msub></math>
+    , and a sigmoid activation. The resulting vector, <math alttext="o Subscript t"><msub><mi>o</mi>
+    <mi>t</mi></msub></math> , has length equal to the number of units in the cell
+    and stores values between 0 and 1 that determine how much of the updated cell
+    state, <math alttext="upper C Subscript t"><msub><mi>C</mi> <mi>t</mi></msub></math>
+    , to output from the cell.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: <math alttext="o Subscript t"><msub><mi>o</mi> <mi>t</mi></msub></math> is multiplied
+    element-wise with the updated cell state, <math alttext="upper C Subscript t"><msub><mi>C</mi>
+    <mi>t</mi></msub></math> , after a tanh activation has been applied to produce
+    the new hidden state, <math alttext="h Subscript t"><msub><mi>h</mi> <mi>t</mi></msub></math>
+    .
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The Keras LSTM Layer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: All of this complexity is wrapped up within the `LSTM` layer type in Keras,
+    so you don’t have to worry about implementing it yourself!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training the LSTM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The code to build, compile, and train the LSTM is given in [Example 5-8](#example0603).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-8\. Building, compiling, and training the LSTM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Input` layer does not need us to specify the sequence length in advance
+    (it can be flexible), so we use `None` as a placeholder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Embedding` layer requires two parameters, the size of the vocabulary (10,000
+    tokens) and the dimensionality of the embedding vector (100).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The LSTM layers require us to specify the dimensionality of the hidden vector
+    (128). We also choose to return the full sequence of hidden states, rather than
+    just the hidden state at the final timestep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Dense` layer transforms the hidden states at each timestep into a vector
+    of probabilities for the next token.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_autoregressive_models_CO3-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The overall `Model` predicts the next token, given an input sequence of tokens.
+    It does this for each token in the sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_autoregressive_models_CO3-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model is compiled with `SparseCategoricalCrossentropy` loss—this is the
+    same as categorical cross-entropy, but is used when the labels are integers rather
+    than one-hot encoded vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_autoregressive_models_CO3-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model is fit to the training dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Figure 5-7](#lstm_training) you can see the first few epochs of the LSTM
+    training process—notice how the example output becomes more comprehensible as
+    the loss metric falls. [Figure 5-8](#lstm_loss) shows the cross-entropy loss metric
+    falling throughout the training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0507.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-7\. The first few epochs of the LSTM training process
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0508.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-8\. The cross-entropy loss metric of the LSTM training process by epoch
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Analysis of the LSTM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now that we have compiled and trained the LSTM, we can start to use it to generate
+    long strings of text by applying the following process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Feed the network with an existing sequence of words and ask it to predict the
+    following word.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Append this word to the existing sequence and repeat.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The network will output a set of probabilities for each word that we can sample
+    from. Therefore, we can make the text generation stochastic, rather than deterministic.
+    Moreover, we can introduce a *temperature* parameter to the sampling process to
+    indicate how deterministic we would like the process to be.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Temperature Parameter
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A temperature close to 0 makes the sampling more deterministic (i.e., the word
+    with the highest probability is very likely to be chosen), whereas a temperature
+    of 1 means each word is chosen with the probability output by the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is achieved with the code in [Example 5-9](#textgenerator_callback), which
+    creates a callback function that can be used to generate text at the end of each
+    training epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-9\. The `TextGenerator` callback function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create an inverse vocabulary mapping (from word to token).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This function updates the probabilities with a `temperature` scaling factor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The start prompt is a string of words that you would like to give the model
+    to start the generation process (for example, *recipe for*). The words are first
+    converted to a list of tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The sequence is generated until it is `max_tokens` long or a stop token (0)
+    is produced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_autoregressive_models_CO4-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model outputs the probabilities of each word being next in the sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_autoregressive_models_CO4-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The probabilities are passed through the sampler to output the next word, parameterized
+    by `temperature`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_autoregressive_models_CO4-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We append the new word to the prompt text, ready for the next iteration of the
+    generative process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s take a look at this in action, at two different temperature values ([Figure 5-9](#lstm_examples)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0509.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-9\. Generated outputs at `temperature = 1.0` and `temperature = 0.2`
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There are a few things to note about these two passages. First, both are stylistically
+    similar to a recipe from the original training set. They both open with a recipe
+    title and contain generally grammatically correct constructions. The difference
+    is that the generated text with a temperature of 1.0 is more adventurous and therefore
+    less accurate than the example with a temperature of 0.2\. Generating multiple
+    samples with a temperature of 1.0 will therefore lead to more variety, as the
+    model is sampling from a probability distribution with greater variance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To demonstrate this, [Figure 5-10](#lstm_probs) shows the top five tokens with
+    the highest probabilities for a range of prompts, for both temperature values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0510.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-10\. Distribution of word probabilities following various sequences,
+    for temperature values of 1.0 and 0.2
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The model is able to generate a suitable distribution for the next most likely
+    word across a range of contexts. For example, even though the model was never
+    told about parts of speech such as nouns, verbs, or numbers, it is generally able
+    to separate words into these classes and use them in a way that is grammatically
+    correct.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moreover, the model is able to select an appropriate verb to begin the recipe
+    instructions, depending on the preceding title. For roasted vegetables, it selects
+    `preheat`, `prepare`, `heat`, `put`, or `combine` as the most likely possibilities,
+    whereas for ice cream it selects `in`, `combine`, `stir`, `whisk`, and `mix`.
+    This shows that the model has some contextual understanding of the differences
+    between recipes depending on their ingredients.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice also how the probabilities for the `temperature = 0.2` examples are much
+    more heavily weighted toward the first choice token. This is the reason why there
+    is generally less variety in generations when the temperature is lower.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While our basic LSTM model is doing a great job at generating realistic text,
+    it is clear that it still struggles to grasp some of the semantic meaning of the
+    words that it is generating. It introduces ingredients that are not likely to
+    work well together (for example, sour Japanese potatoes, pecan crumbs, and sorbet)!
+    In some cases, this may be desirable—say, if we want our LSTM to generate interesting
+    and unique patterns of words—but in other cases, we will need our model to have
+    a deeper understanding of the ways in which words can be grouped together and
+    a longer memory of ideas introduced earlier in the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we’ll explore some of the ways that we can improve our
+    basic LSTM network. In [Chapter 9](ch09.xhtml#chapter_transformer), we’ll take
+    a look at a new kind of autoregressive model, the Transformer, which takes language
+    modeling to the next level.`  `# Recurrent Neural Network (RNN) Extensions
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model in the preceding section is a simple example of how an LSTM can be
+    trained to learn how to generate text in a given style. In this section we will
+    explore several extensions to this idea.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stacked Recurrent Networks
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The network we just looked at contained a single LSTM layer, but we can also
+    train networks with stacked LSTM layers, so that deeper features can be learned
+    from the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To achieve this, we simply introduce another LSTM layer after the first. The
+    second LSTM layer can then use the hidden states from the first layer as its input
+    data. This is shown in [Figure 5-11](#lstm_multilayer), and the overall model
+    architecture is shown in [Table 5-2](#lstm_multilayer_arch).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0511.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 5-11\. Diagram of a multilayer RNN: g[t] denotes hidden states of the
+    first layer and h[t] denotes hidden states of the second layer'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Table 5-2\. Model summary of the stacked LSTM
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Layer (type) | Output shape | Param # |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| InputLayer | (None, None) | 0 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Embedding | (None, None, 100) | 1,000,000 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| LSTM | (None, None, 128) | 117,248 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| LSTM | (None, None, 128) | 131,584 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Dense | (None, None, 10000) | 1,290,000 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Total params | 2,538,832 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Trainable params | 2,538,832 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Non-trainable params | 0 |'
+  prefs: []
+  type: TYPE_TB
+- en: The code to build the stacked LSTM is given in [Example 5-10](#example0605).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-10\. Building a stacked LSTM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Gated Recurrent Units
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Another type of commonly used RNN layer is the *gated recurrent unit* (GRU).^([2](ch05.xhtml#idm45387016270848))
+    The key differences from the LSTM unit are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *forget* and *input* gates are replaced by *reset* and *update* gates.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: There is no *cell state* or *output* gate, only a *hidden state* that is output
+    from the cell.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The hidden state is updated in four steps, as illustrated in [Figure 5-12](#gru_cell).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0512.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-12\. A single GRU cell
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'The process is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The hidden state of the previous timestep, <math alttext="h Subscript t minus
+    1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , and the current word embedding, <math alttext="x Subscript t"><msub><mi>x</mi>
+    <mi>t</mi></msub></math> , are concatenated and used to create the *reset* gate.
+    This gate is a dense layer, with weights matrix <math alttext="upper W Subscript
+    r"><msub><mi>W</mi> <mi>r</mi></msub></math> and a sigmoid activation function.
+    The resulting vector, <math alttext="r Subscript t"><msub><mi>r</mi> <mi>t</mi></msub></math>
+    , has length equal to the number of units in the cell and stores values between
+    0 and 1 that determine how much of the previous hidden state, <math alttext="h
+    Subscript t minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , should be carried forward into the calculation for the new beliefs of the cell.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The reset gate is applied to the hidden state, <math alttext="h Subscript t
+    minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , and concatenated with the current word embedding, <math alttext="x Subscript
+    t"><msub><mi>x</mi> <mi>t</mi></msub></math> . This vector is then fed to a dense
+    layer with weights matrix <math alttext="upper W"><mi>W</mi></math> and a tanh
+    activation function to generate a vector, <math alttext="h overTilde Subscript
+    t"><msub><mover accent="true"><mi>h</mi> <mo>˜</mo></mover> <mi>t</mi></msub></math>
+    , that stores the new beliefs of the cell. It has length equal to the number of
+    units in the cell and stores values between –1 and 1.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The concatenation of the hidden state of the previous timestep, <math alttext="h
+    Subscript t minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , and the current word embedding, <math alttext="x Subscript t"><msub><mi>x</mi>
+    <mi>t</mi></msub></math> , are also used to create the *update* gate. This gate
+    is a dense layer with weights matrix <math alttext="upper W Subscript z"><msub><mi>W</mi>
+    <mi>z</mi></msub></math> and a sigmoid activation. The resulting vector, <math
+    alttext="z Subscript t"><msub><mi>z</mi> <mi>t</mi></msub></math> , has length
+    equal to the number of units in the cell and stores values between 0 and 1, which
+    are used to determine how much of the new beliefs, <math alttext="h overTilde
+    Subscript t"><msub><mover accent="true"><mi>h</mi> <mo>˜</mo></mover> <mi>t</mi></msub></math>
+    , to blend into the current hidden state, <math alttext="h Subscript t minus 1"><msub><mi>h</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math> .
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The new beliefs of the cell, <math alttext="h overTilde Subscript t"><msub><mover
+    accent="true"><mi>h</mi> <mo>˜</mo></mover> <mi>t</mi></msub></math> , and the
+    current hidden state, <math alttext="h Subscript t minus 1"><msub><mi>h</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    , are blended in a proportion determined by the update gate, <math alttext="z
+    Subscript t"><msub><mi>z</mi> <mi>t</mi></msub></math> , to produce the updated
+    hidden state, <math alttext="h Subscript t"><msub><mi>h</mi> <mi>t</mi></msub></math>
+    , that is output from the cell.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Bidirectional Cells
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'For prediction problems where the entire text is available to the model at
+    inference time, there is no reason to process the sequence only in the forward
+    direction—it could just as well be processed backward. A `Bidirectional` layer
+    takes advantage of this by storing two sets of hidden states: one that is produced
+    as a result of the sequence being processed in the usual forward direction and
+    another that is produced when the sequence is processed backward. This way, the
+    layer can learn from information both preceding and succeeding the given timestep.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In Keras, this is implemented as a wrapper around a recurrent layer, as shown
+    in [Example 5-11](#example0606).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-11\. Building a bidirectional GRU layer
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hidden State
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The hidden states in the resulting layer are vectors of length equal to double
+    the number of units in the wrapped cell (a concatenation of the forward and backward
+    hidden states). Thus, in this example the hidden states of the layer are vectors
+    of length 200.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far, we have only applied autoregressive models (LSTMs) to text data. In
+    the next section, we will see how autoregressive models can also be used to generate
+    images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PixelCNN
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In 2016, van den Oord et al.^([3](ch05.xhtml#idm45387016135616)) introduced
+    a model that generates images pixel by pixel by predicting the likelihood of the
+    next pixel based on the pixels before it. The model is called *PixelCNN*, and
+    it can be trained to generate images autoregressively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are two new concepts that we need to introduce to understand the PixelCNN—*masked
+    convolutional layers* and *residual blocks*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/05_autoregressive/02_pixelcnn/pixelcnn.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code has been adapted from the excellent [PixelCNN tutorial](https://keras.io/examples/generative/pixelcnn)
+    created by ADMoreau, available on the Keras website.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Masked Convolutional Layers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As we saw in [Chapter 2](ch02.xhtml#chapter_deep_learning), a convolutional
+    layer can be used to extract features from an image by applying a series of filters.
+    The output of the layer at a particular pixel is a weighted sum of the filter
+    weights multiplied by the preceding layer values over a small square centered
+    on the pixel. This method can detect edges and textures and, at deeper layers,
+    shapes and higher-level features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Whilst convolutional layers are extremely useful for feature detection, they
+    cannot directly be used in an autoregressive sense, because there is no ordering
+    placed on the pixels. They rely on the fact that all pixels are treated equally—no
+    pixel is treated as the *start* or *end* of the image. This is in contrast to
+    the text data that we have already seen in this chapter, where there is a clear
+    ordering to the tokens so recurrent models such as LSTMs can be readily applied.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For us to be able to apply convolutional layers to image generation in an autoregressive
+    sense, we must first place an ordering on the pixels and ensure that the filters
+    are only able to see pixels that precede the pixel in question. We can then generate
+    images one pixel at a time, by applying convolutional filters to the current image
+    to predict the value of the next pixel from all preceding pixels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We first need to choose an ordering for the pixels—a sensible suggestion is
+    to order the pixels from top left to bottom right, moving first along the rows
+    and then down the columns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We then mask the convolutional filters so that the output of the layer at each
+    pixel is only influenced by pixel values that precede the pixel in question. This
+    is achieved by multiplying a mask of ones and zeros with the filter weights matrix,
+    so that the values of any pixels that are after the target pixel are zeroed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are actually two different kinds of masks in a PixelCNN, as shown in
+    [Figure 5-13](#conv_filter_mask):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Type A, where the value of the central pixel is masked
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Type B, where the value of the central pixel is *not* masked
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0513.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 5-13\. Left: a convolutional filter mask; right: a mask applied to a
+    set of pixels to predict the distribution of the central pixel value (source:
+    [van den Oord et al., 2016](https://arxiv.org/pdf/1606.05328))'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The initial masked convolutional layer (i.e., the one that is applied directly
+    to the input image) cannot use the central pixel, because this is precisely the
+    pixel we want the network to guess! However, subsequent layers can use the central
+    pixel because this will have been calculated only as a result of information from
+    preceding pixels in the original input image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see in [Example 5-12](#masked_conv_layer) how a `MaskedConvLayer` can
+    be built using Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-12\. A `MaskedConvLayer` in Keras
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `MaskedConvLayer` is based on the normal `Conv2D` layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The mask is initialized with all zeros.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The pixels in the preceding rows are unmasked with ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The pixels in the preceding columns that are in the same row are unmasked with
+    ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_autoregressive_models_CO5-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the mask type is B, the central pixel is unmasked with a one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_autoregressive_models_CO5-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The mask is multiplied with the filter weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that this simplified example assumes a grayscale image (i.e., with one
+    channel). If we have color images, we’ll have three color channels that we can
+    also place an ordering on so that, for example, the red channel precedes the blue
+    channel, which precedes the green channel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Residual Blocks
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have seen how to mask the convolutional layer, we can start to build
+    our PixelCNN. The core building block that we will use is the residual block.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *residual block* is a set of layers where the output is added to the input
+    before being passed on to the rest of the network. In other words, the input has
+    a *fast-track* route to the output, without having to go through the intermediate
+    layers—this is called a *skip connection*. The rationale behind including a skip
+    connection is that if the optimal transformation is just to keep the input the
+    same, this can be achieved by simply zeroing the weights of the intermediate layers.
+    Without the skip connection, the network would have to find an identity mapping
+    through the intermediate layers, which is much harder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A diagram of the residual block in our PixelCNN is shown in [Figure 5-14](#residual_block_pixelcnn).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0514.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-14\. A PixelCNN residual block (the numbers of filters are next to
+    the arrows and the filter sizes are next to the layers)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can build a `ResidualBlock` using the code shown in [Example 5-13](#residual_block_code_pixelcnn).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-13\. A `ResidualBlock`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The initial `Conv2D` layer halves the number of channels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Type B `MaskedConv2D` layer with kernel size of 3 only uses information
+    from five pixels—three pixels in the row above the focus pixel, one to the left,
+    and the focus pixel itself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO6-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final `Conv2D` layer doubles the number of channels to again match the input
+    shape.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO6-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output from the convolutional layers is added to the input—this is the skip
+    connection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training the PixelCNN
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [Example 5-14](#pixelcnn_architecture) we put together the whole PixelCNN
+    network, approximately following the structure laid out in the original paper.
+    In the original paper, the output layer is a 256-filter `Conv2D` layer, with softmax
+    activation. In other words, the network tries to re-create its input by predicting
+    the correct pixel values, a bit like an autoencoder. The difference is that the
+    PixelCNN is constrained so that no information from earlier pixels can flow through
+    to influence the prediction for each pixel, due to the way that network is designed,
+    using `MaskedConv2D` layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A challenge with this approach is that the network has no way to understand
+    that a pixel value of, say, 200 is very close to a pixel value of 201\. It must
+    learn every pixel output value independently, which means training can be very
+    slow, even for the simplest datasets. Therefore, in our implementation, we instead
+    simplify the input so that each pixel can take only one of four values. This way,
+    we can use a 4-filter `Conv2D` output layer instead of 256.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-14\. The PixelCNN architecture
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model `Input` is a grayscale image of size 16 × 16 × 1, with inputs scaled
+    between 0 and 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first Type A `MaskedConv2D` layer with a kernel size of 7 uses information
+    from 24 pixels—21 pixels in the three rows above the focus pixel and 3 to the
+    left (the focus pixel itself is not used).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Five `ResidualBlock` layer groups are stacked sequentially.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO7-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two Type B `MaskedConv2D` layers with a kernel size of 1 act as `Dense` layers
+    across the number of channels for each pixel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_autoregressive_models_CO7-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final `Conv2D` layer reduces the number of channels to four—the number of
+    pixel levels for this example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_autoregressive_models_CO7-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Model` is built to accept an image and output an image of the same dimensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_autoregressive_models_CO7-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fit the model—`input_data` is scaled in the range [0, 1] (floats); `output_data`
+    is scaled in the range [0, 3] (integers).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis of the PixelCNN
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We can train our PixelCNN on images from the Fashion-MNIST dataset that we encountered
+    in [Chapter 3](ch03.xhtml#chapter_vae). To generate new images, we need to ask
+    the model to predict the next pixel given all preceding pixels, one pixel at a
+    time. This is a very slow process compared to a model such as a variational autoencoder!
+    For a 32 × 32 grayscale image, we need to make 1,024 predictions sequentially
+    using the model, compared to the single prediction that we need to make for a
+    VAE. This is one of the major downsides to autoregressive models such as a PixelCNN—they
+    are slow to sample from, because of the sequential nature of the sampling process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For this reason, we use an image size of 16 × 16, rather than 32 × 32, to speed
+    up the generation of new images. The generation callback class is shown in [Example 5-15](#pixelcnn_generation).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-15\. Generating new images using the PixelCNN
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Start with a batch of empty images (all zeros).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO8-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop over the rows, columns, and channels of the current image, predicting the
+    distribution of the next pixel value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO8-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sample a pixel level from the predicted distribution (for our example, a level
+    in the range [0, 3]).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO8-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Convert the pixel level to the range [0, 1] and overwrite the pixel value in
+    the current image, ready for the next iteration of the loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Figure 5-15](#pixelcnn_output), we can see several images from the original
+    training set, alongside images that have been generated by the PixelCNN.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0515.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-15\. Example images from the training set and generated images created
+    by the PixelCNN model
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The model does a great job of re-creating the overall shape and style of the
+    original images! It is quite amazing that we can treat images as a series of tokens
+    (pixel values) and apply autoregressive models such as a PixelCNN to produce realistic
+    samples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As mentioned previously, one of the downsides to autoregressive models is that
+    they are slow to sample from, which is why a simple example of their application
+    is presented in this book. However, as we shall see in [Chapter 10](ch10.xhtml#chapter_image_generation),
+    more complex forms of autoregressive model can be applied to images to produce
+    state-of-the-art outputs. In such cases, the slow generation speed is a necessary
+    price to pay in return for exceptional-quality outputs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the original paper was published, several improvements have been made
+    to the architecture and training process of the PixelCNN. The following section
+    introduces one of those changes—using mixture distributions—and demonstrates how
+    to train a PixelCNN model with this improvement using a built-in TensorFlow function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mixture Distributions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For our previous example, we reduced the output of the PixelCNN to just 4 pixel
+    levels to ensure the network didn’t have to learn a distribution over 256 independent
+    pixel values, which would slow the training process. However, this is far from
+    ideal—for color images, we wouldn’t want our canvas to be restricted to only a
+    handful of possible colors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To get around this problem, we can make the output of the network a *mixture
+    distribution*, instead of a softmax over 256 discrete pixel values, following
+    the ideas presented by Salimans et al.^([4](ch05.xhtml#idm45387015116960)) A mixture
+    distribution is quite simply a mixture of two or more other probability distributions.
+    For example, we could have a mixture distribution of five logistic distributions,
+    each with different parameters. The mixture distribution also requires a discrete
+    categorical distribution that denotes the probability of choosing each of the
+    distributions included in the mix. An example is shown in [Figure 5-16](#mixture_distribution).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0516.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-16\. A mixture distribution of three normal distributions with different
+    parameters—the categorical distribution over the three normal distributions is
+    `[0.5, 0.3, 0.2]`
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To sample from a mixture distribution, we first sample from the categorical
+    distribution to choose a particular subdistribution and then sample from this
+    in the usual way. This way, we can create complex distributions with relatively
+    few parameters. For example, the mixture distribution in [Figure 5-16](#mixture_distribution)
+    only requires eight parameters—two for the categorical distribution and a mean
+    and variance for each of the three normal distributions. This is compared to the
+    255 parameters that would define a categorical distribution over the entire pixel
+    range.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conveniently, the TensorFlow Probability library provides a function that allows
+    us to create a PixelCNN with mixture distribution output in a single line. [Example 5-16](#pixelcnn_generation2)
+    illustrates how to build a PixelCNN using this function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook in *notebooks/05_autoregressive/03_pixelcnn_md/pixelcnn_md.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-16\. Building a PixelCNN using the TensorFlow function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_autoregressive_models_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define the PixelCNN as a distribution—i.e., the output layer is a mixture distribution
+    made up of five logistic distributions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_autoregressive_models_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input is a grayscale image of size 32 × 32 × 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_autoregressive_models_CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Model` takes a grayscale image as input and outputs the log-likelihood
+    of the image under the mixture distribution calculated by the PixelCNN.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_autoregressive_models_CO9-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The loss function is the mean negative log-likelihood over the batch of input
+    images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model is trained in the same way as before, but this time accepting integer
+    pixel values as input, in the range [0, 255]. Outputs can be generated from the
+    distribution using the `sample` function, as shown in [Example 5-17](#pixelcnn_sampling).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-17\. Sampling from the PixelCNN mixture distribution
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example generated images are shown in [Figure 5-17](#pixel_cnn_mixture_outputs).
+    The difference from our previous examples is that now the full range of pixel
+    values is being utilized.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0517.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-17\. Outputs from the PixelCNN using a mixture distribution output
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we have seen how autoregressive models such as recurrent neural
+    networks can be applied to generate text sequences that mimic a particular style
+    of writing, and also how a PixelCNN can generate images in a sequential fashion,
+    one pixel at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We explored two different types of recurrent layers—long short-term memory (LSTM)
+    and gated recurrent unit (GRU)—and saw how these cells can be stacked or made
+    bidirectional to form more complex network architectures. We built an LSTM to
+    generate realistic recipes using Keras and saw how to manipulate the temperature
+    of the sampling process to increase or decrease the randomness of the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also saw how images can be generated in an autoregressive manner, using a
+    PixelCNN. We built a PixelCNN from scratch using Keras, coding the masked convolutional
+    layers and residual blocks to allow information to flow through the network so
+    that only preceding pixels could be used to generate the current pixel. Finally,
+    we discussed how the TensorFlow Probability library provides a standalone `PixelCNN`
+    function that implements a mixture distribution as the output layer, allowing
+    us to further improve the learning process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next chapter we will explore another generative modeling family that
+    explicitly models the data-generating distribution—normalizing flow models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](ch05.xhtml#idm45387018222496-marker)) Sepp Hochreiter and Jürgen Schmidhuber,
+    “Long Short-Term Memory,” *Neural Computation* 9 (1997): 1735–1780, [*https://www.bioinf.jku.at/publications/older/2604.pdf*](https://www.bioinf.jku.at/publications/older/2604.pdf).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.xhtml#idm45387016270848-marker)) Kyunghyun Cho et al., “Learning
+    Phrase Representations Using RNN Encoder-Decoder for Statistical Machine Translation,”
+    June 3, 2014, [*https://arxiv.org/abs/1406.1078*](https://arxiv.org/abs/1406.1078).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch05.xhtml#idm45387016135616-marker)) Aaron van den Oord et al., “Pixel
+    Recurrent Neural Networks,” August 19, 2016, [*https://arxiv.org/abs/1601.06759*](https://arxiv.org/abs/1601.06759).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([4](ch05.xhtml#idm45387015116960-marker)) Tim Salimans et al., “PixelCNN++:
+    Improving the PixelCNN with Discretized Logistic Mixture Likelihood and Other
+    Modifications,” January 19, 2017, [*http://arxiv.org/abs/1701.05517*](http://arxiv.org/abs/1701.05517).`'
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,1308 @@
+- en: Chapter 11\. Music Generation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Musical composition is a complex and creative process that involves combining
+    different musical elements such as melody, harmony, rhythm, and timbre. While
+    this is traditionally seen as a uniquely human activity, recent advancements have
+    made it possible to generate music that both is pleasing to the ear and has long-term
+    structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most popular techniques for music generation is the Transformer,
+    as music can be thought of as a sequence prediction problem. These models have
+    been adapted to generate music by treating musical notes as a sequence of tokens,
+    similar to words in a sentence. The Transformer model learns to predict the next
+    note in the sequence based on the previous notes, resulting in a generated piece
+    of music.
+  prefs: []
+  type: TYPE_NORMAL
+- en: MuseGAN takes a totally different approach to generating music. Unlike Transformers,
+    which generate music note by note, MuseGAN generates entire musical tracks at
+    once by treating music as an *image*, consisting of a pitch axis and a time axis.
+    Moreover, MuseGAN separates out different musical components such as chords, style,
+    melody, and groove so that they can be controlled independently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter we will learn how to process music data and apply both a Transformer
+    and MuseGAN to generate music that is stylistically similar to a given training
+    set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: For a machine to compose music that is pleasing to our ear, it must master many
+    of the same technical challenges that we saw in [Chapter 9](ch09.xhtml#chapter_transformer)
+    in relation to text. In particular, our model must be able to learn from and re-create
+    the sequential structure of music and be able to choose from a discrete set of
+    possibilities for subsequent notes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, music generation presents additional challenges that are not present
+    for text generation, namely pitch and rhythm. Music is often polyphonic—that is,
+    there are several streams of notes played simultaneously on different instruments,
+    which combine to create harmonies that are either dissonant (clashing) or consonant
+    (harmonious). Text generation only requires us to handle a single stream of text,
+    in contrast to the parallel streams of chords that are present in music.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, text generation can be handled one word at a time. Unlike text data, music
+    is a multipart, interwoven tapestry of sounds that are not necessarily delivered
+    at the same time—much of the interest that stems from listening to music is in
+    the interplay between different rhythms across the ensemble. For example, a guitarist
+    might play a flurry of quicker notes while the pianist holds a longer sustained
+    chord. Therefore, generating music note by note is complex, because we often do
+    not want all the instruments to change notes simultaneously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will start this chapter by simplifying the problem to focus on music generation
+    for a single (monophonic) line of music. Many of the techniques from [Chapter 9](ch09.xhtml#chapter_transformer)
+    for text generation can also be used for music generation, as the two tasks share
+    many common themes. We will start by training a Transformer to generate music
+    in the style of the J.S. Bach cello suites and see how the attention mechanism
+    allows the model to focus on previous notes in order to determine the most natural
+    subsequent note. We’ll then tackle the task of polyphonic music generation and
+    explore how we can deploy an architecture based around GANs to create music for
+    multiple voices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Transformers for Music Generation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The model we will be building here is a decoder Transformer, taking inspiration
+    from OpenAI’s [*MuseNet*](https://oreil.ly/OaCDY), which also utilizes a decoder
+    Transformer (similar to GPT-3) trained to predict the next note given a sequence
+    of previous notes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In music generation tasks, the length of the sequence <math alttext="upper N"><mi>N</mi></math>
+    grows large as the music progresses, and this means that the <math alttext="upper
+    N times upper N"><mrow><mi>N</mi> <mo>×</mo> <mi>N</mi></mrow></math> attention
+    matrix for each head becomes expensive to store and compute. We ideally do not
+    want to clip the input sequence to a short number of tokens, as we would like
+    the model to construct the piece around a long-term structure and repeat motifs
+    and phrases from several minutes ago, as a human composer would.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To tackle this problem, MuseNet utilizes a form of Transformer known as a [*Sparse
+    Transformer*](https://oreil.ly/euQiL). Each output position in the attention matrix
+    only computes weights for a subset of input positions, thereby reducing the computational
+    complexity and memory required to train the model. MuseNet can therefore operate
+    with full attention over 4,096 tokens and can learn long-term structure and melodic
+    structure across a range of styles. (See, for example, OpenAI’s [Chopin](https://oreil.ly/cmwsO)
+    and [Mozart](https://oreil.ly/-T-Je) recordings on SoundCloud.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: To see how the continuation of a musical phrase is often influenced by notes
+    from several bars ago, take a look at the opening bars of the Prelude to Bach’s
+    Cello Suite No. 1 ([Figure 11-1](#bach_cello_prelude1)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1101.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-1\. The opening of Bach’s Cello Suite No. 1 (Prelude)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Bars
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '*Bars* (or *measures*) are small units of music that contain a fixed, small
+    number of beats and are marked out by vertical lines that cross the staff. If
+    you can count 1, 2, 1, 2 along to a piece of music, then there are two beats in
+    each bar and you’re probably listening to a march. If you can count 1, 2, 3, 1,
+    2, 3, then there are three beats to each bar and you may be listening to a waltz.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What note do you think comes next? Even if you have no musical training you
+    may still be able to guess. If you said G (the same as the very first note of
+    the piece), then you’d be correct. How did you know this? You may have been able
+    to see that every bar and half bar starts with the same note and used this information
+    to inform your decision. We want our model to be able to perform the same trick—in
+    particular, we want it to pay attention to a particular note from the previous
+    half bar, when the previous low G was registered. An attention-based model such
+    as a Transformer will be able to incorporate this long-term look-back without
+    having to maintain a hidden state across many bars, as is the case with a recurrent
+    neural network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anyone tackling the task of music generation must first have a basic understanding
+    of musical theory. In the next section we’ll go through the essential knowledge
+    required to read music and how we can represent this numerically, in order to
+    transform music into the input data required to train our Transformer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/11_music/01_transformer/transformer.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Bach Cello Suite Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The raw dataset that we shall be using is a set of MIDI files for the Cello
+    Suites by J.S. Bach. You can download the dataset by running the dataset downloader
+    script in the book repository, as shown in [Example 11-1](#downloading-cello-dataset).
+    This will save the MIDI files locally to the */data* folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-1\. Downloading the J.S. Bach Cello Suites dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`To view and listen to the music generated by the model, you’ll need some software
+    that can produce musical notation. [MuseScore](https://musescore.org) is a great
+    tool for this purpose and can be downloaded for free.`  `## Parsing MIDI Files'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll be using the Python library `music21` to load the MIDI files into Python
+    for processing. [Example 11-2](#example0701) shows how to load a MIDI file and
+    visualize it ([Figure 11-2](#musical_notation)), both as a score and as structured
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1102.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-2\. Musical notation
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Example 11-2\. Importing a MIDI file
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Octaves
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The number after each note name indicates the *octave* that the note is in—since
+    the note names (A to G) repeat, this is needed to uniquely identify the pitch
+    of the note. For example, `G2` is an octave below `G3`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now it’s time to convert the scores into something that looks more like text!
+    We start by looping over each score and extracting the note and duration of each
+    element in the piece into two separate text strings, with elements separated by
+    spaces. We encode the key and time signature of the piece as special symbols,
+    with zero duration.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Monophonic Versus Polyphonic Music
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this first example, we will treat the music as *monophonic* (one single line),
+    taking just the top note of any chords. Sometimes we may wish to keep the parts
+    separate to generate music that is *polyphonic* in nature. This presents additional
+    challenges that we shall tackle later on in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output from this process is shown in [Figure 11-3](#music_duration_pitch)—compare
+    this to [Figure 11-2](#musical_notation) so that you can see how the raw music
+    data has been transformed into the two strings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1103.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-3\. Samples of the *notes* text string and the *duration* text string,
+    corresponding to [Figure 11-2](#musical_notation)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This looks a lot more like the text data that we have dealt with previously.
+    The *words* are the note–duration combinations, and we should try to build a model
+    that predicts the next note and duration, given a sequence of previous notes and
+    durations. A key difference between music and text generation is that we need
+    to build a model that can handle the note and duration prediction simultaneously—i.e.,
+    there are two streams of information that we need to handle, compared to the single
+    streams of text that we saw in [Chapter 9](ch09.xhtml#chapter_transformer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tokenization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To create the dataset that will train the model, we first need to tokenize each
+    note and duration, exactly as we did previously for each word in a text corpus.
+    We can achieve this by using a `TextVectorization` layer, applied to the notes
+    and durations separately, as shown in [Example 11-3](#example0702).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-3\. Tokenizing the notes and durations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The full parsing and tokenization process is shown in [Figure 11-4](#music_lookups).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1104.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-4\. Parsing the MIDI files and tokenizing the notes and durations
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Creating the Training Set
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The final step of preprocessing is to create the training set that we will feed
+    to our Transformer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We do this by splitting both the note and duration strings into chunks of 50
+    elements, using a sliding window technique. The output is simply the input window
+    shifted by one note, so that the Transformer is trained to predict the note and
+    duration of the element one timestep into the future, given previous elements
+    in the window. An example of this (using a sliding window of only four elements
+    for demonstration purposes) is shown in [Figure 11-5](#music_input_output).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1105.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-5\. The inputs and outputs for the musical Transformer model—in this
+    example, a sliding window of width 4 is used to create input chunks, which are
+    then shifted by one element to create the target output
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The architecture we will be using for our Transformer is the same as we used
+    for text generation in [Chapter 9](ch09.xhtml#chapter_transformer), with a few
+    key differences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sine Position Encoding
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Firstly, we will be introducing a different type of encoding for the token positions.
+    In [Chapter 9](ch09.xhtml#chapter_transformer) we used a simple `Embedding` layer
+    to encode the position of each token, effectively mapping each integer position
+    to a distinct vector that was learned by the model. We therefore needed to define
+    a maximum length ( <math alttext="upper N"><mi>N</mi></math> ) that the sequence
+    could be and train on this length of sequence. The downside to this approach is
+    that it is then impossible to extrapolate to sequences that are longer than this
+    maximum length. You would have to clip the input to the last <math alttext="upper
+    N"><mi>N</mi></math> tokens, which isn’t ideal if you are trying to generate long-form
+    content.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To circumvent this problem, we can switch to using a different type of embedding
+    called a *sine position embedding*. This is similar to the embedding that we used
+    in [Chapter 8](ch08.xhtml#chapter_diffusion) to encode the noise variances of
+    the diffusion model. Specifically, the following function is used to convert the
+    position of the word ( <math alttext="p o s"><mrow><mi>p</mi> <mi>o</mi> <mi>s</mi></mrow></math>
+    ) in the input sequence into a unique vector of length <math alttext="d"><mi>d</mi></math>
+    :'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column upper P upper E Subscript p o
+    s comma 2 i 2nd Column equals 3rd Column sine left-parenthesis StartFraction p
+    o s Over 10 comma 000 Superscript 2 i slash d Baseline EndFraction right-parenthesis
+    2nd Row 1st Column upper P upper E Subscript p o s comma 2 i plus 1 2nd Column
+    equals 3rd Column cosine left-parenthesis StartFraction p o s Over 10 comma 000
+    Superscript left-parenthesis 2 i plus 1 right-parenthesis slash d Baseline EndFraction
+    right-parenthesis EndLayout" display="block"><mtable displaystyle="true"><mtr><mtd
+    columnalign="right"><mrow><mi>P</mi> <msub><mi>E</mi> <mrow><mi>p</mi><mi>o</mi><mi>s</mi><mo>,</mo><mn>2</mn><mi>i</mi></mrow></msub></mrow></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><mo form="prefix">sin</mo>
+    <mo>(</mo> <mfrac><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow> <mrow><mn>10</mn><mo>,</mo><msup><mn>000</mn>
+    <mrow><mn>2</mn><mi>i</mi><mo>/</mo><mi>d</mi></mrow></msup></mrow></mfrac> <mo>)</mo></mrow></mtd></mtr>
+    <mtr><mtd columnalign="right"><mrow><mi>P</mi> <msub><mi>E</mi> <mrow><mi>p</mi><mi>o</mi><mi>s</mi><mo>,</mo><mn>2</mn><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><mo form="prefix">cos</mo>
+    <mo>(</mo> <mfrac><mrow><mi>p</mi><mi>o</mi><mi>s</mi></mrow> <mrow><mn>10</mn><mo>,</mo><msup><mn>000</mn>
+    <mrow><mo>(</mo><mn>2</mn><mi>i</mi><mo>+</mo><mn>1</mn><mo>)</mo><mo>/</mo><mi>d</mi></mrow></msup></mrow></mfrac>
+    <mo>)</mo></mrow></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: For small <math alttext="i"><mi>i</mi></math> , the wavelength of this function
+    is short and therefore the function value changes rapidly along the position axis.
+    Larger values of <math alttext="i"><mi>i</mi></math> create a longer wavelength.
+    Each position thus has its own unique encoding, which is a specific combination
+    of the different wavelengths.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Notice that this embedding is defined for all possible position values. It is
+    a deterministic function (i.e., it isn’t learned by the model) that uses trigonometric
+    functions to define a unique encoding for each possible position.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *Keras NLP* module has a built-in layer that implements this embedding for
+    us—we can therefore define our `TokenAndPositionEmbedding` layer as shown in [Example 11-4](#music_token_pos_embedding).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-4\. Tokenizing the notes and durations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 11-6](#music_token_pos_embedding_img) shows how the two embeddings
+    (token and position) are added to produce the overall embedding for the sequence.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1106.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-6\. The `TokenAndPositionEmbedding` layer adds the token embeddings
+    to the sinusoidal position embeddings to produce the overall embedding for the
+    sequence
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Multiple Inputs and Outputs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We now have two input streams (notes and durations) and two output streams (predicted
+    notes and durations). We therefore need to adapt the architecture of our Transformer
+    to cater for this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are many ways of handling the dual stream of inputs. We could create tokens
+    that represent each note–duration pair and then treat the sequence as a single
+    stream of tokens. However, this has the downside of not being able to represent
+    note–duration pairs that have not been seen in the training set (for example,
+    we may have seen a `G#2` note and a `1/3` duration independently, but never together,
+    so there would be no token for `G#2:1/3`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead, we choose to embed the note and duration tokens separately and then
+    use a concatenation layer to create a single representation of the input that
+    can be used by the downstream Transformer block. Similarly, the output from the
+    Transformer block is passed to two separate dense layers, which represent the
+    predicted note and duration probabilities. The overall architecture is shown in
+    [Figure 11-7](#music_gen_transformer). Layer output shapes are shown with batch
+    size `b` and sequence length `l`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1107.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-7\. The architecture of the music-generating Transformer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: An alternative approach would be to interleave the note and duration tokens
+    into a single stream of input and let the model learn that the output should be
+    a single stream where the note and duration tokens alternate. This comes with
+    the added complexity of ensuring that the output can still be parsed when the
+    model has not yet learned how to interleave the tokens correctly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There is no *right* or *wrong* way to design your model—part of the fun is experimenting
+    with different setups and seeing which works best for you!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis of the Music-Generating Transformer
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We’ll start by generating some music from scratch, by seeding the network with
+    a `START` note token and `0.0` duration token (i.e., we are telling the model
+    to assume it is starting from the beginning of the piece). Then we can generate
+    a musical passage using the same iterative technique we used in [Chapter 9](ch09.xhtml#chapter_transformer)
+    for generating text sequences, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given the current sequence (of notes and durations), the model predicts two
+    distributions, one for the next note and one for the next duration.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We sample from both of these distributions, using a `temperature` parameter
+    to control how much variation we would like in the sampling process.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The chosen note and duration are appended to the respective input sequences.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The process repeats with the new input sequences for as many elements as we
+    wish to generate.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[Figure 11-8](#transformer_generated_music) shows examples of music generated
+    from scratch by the model at various epochs of the training process. We use a
+    temperature of 0.5 for the notes and durations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1108.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-8\. Some examples of passages generated by the model when seeded only
+    with a `START` note token and `0.0` duration token
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Most of our analysis in this section will focus on the note predictions, rather
+    than durations, as for Bach’s Cello Suites the harmonic intricacies are more difficult
+    to capture and therefore more worthy of investigation. However, you can also apply
+    the same analysis to the rhythmic predictions of the model, which may be particularly
+    relevant for other styles of music that you could use to train this model (such
+    as a drum track).
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are several points to note about the generated passages in [Figure 11-8](#transformer_generated_music).
+    First, see how the music is becoming more sophisticated as training progresses.
+    To begin with, the model plays it safe by sticking to the same group of notes
+    and rhythms. By epoch 10, the model has begun to generate small runs of notes,
+    and by epoch 20 it is producing interesting rhythms and is firmly established
+    in a set key (E ♭ major).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Second, we can analyze the distribution of notes over time by plotting the predicted
+    distribution at each timestep as a heatmap. [Figure 11-9](#pitch_values_transformer)
+    shows this heatmap for the example from epoch 20 in [Figure 11-8](#transformer_generated_music).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1109.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 11-9\. The distribution of possible next notes over time (at epoch 20):
+    the darker the square, the more certain the model is that the next note is at
+    this pitch'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: An interesting point to note here is that the model has clearly learned which
+    notes belong to particular *keys*, as there are gaps in the distribution at notes
+    that do not belong to the key. For example, there is a gray gap along the row
+    for note 54 (corresponding to G ♭/F ♯). This note is highly unlikely to appear
+    in a piece of music in the key of E ♭ major. The model establishes the key early
+    on in the generation process, and as the piece progresses, the model chooses notes
+    that are more likely to feature in that key by attending to the token that represents
+    it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It is also worth pointing out that the model has learned Bach’s characteristic
+    style of dropping to a low note on the cello to end a phrase and bouncing back
+    up again to start the next. See how around note 20, the phrase ends on a low E
+    ♭—it is common in the Bach Cello Suites to then return to a higher, more sonorous
+    range of the instrument for the start of next phrase, which is exactly what the
+    model predicts. There is a large gray gap between the low E ♭ (pitch number 39)
+    and the next note, which is predicted to be around pitch number 50, rather than
+    continuing to rumble around the depths of the instrument.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, we should check to see if our attention mechanism is working as expected.
+    The horizontal axis in [Figure 11-10](#attention_matrix) shows the generated sequence
+    of notes; the vertical axis shows where the attention of the network was aimed
+    when predicting each note along the horizontal axis. The color of each square
+    shows the maximum attention weight across all heads at each point in the generated
+    sequence. The darker the square, the more attention is being applied to this position
+    in the sequence. For simplicity, we only show the notes in this diagram, but the
+    durations of each note are also being attended to by the network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see that for the initial key signature, time signature, and rest, the
+    network chose to place almost all of its attention on the `START` token. This
+    makes sense, as these artifacts always appear at the start of a piece of music—once
+    the notes start flowing the `START` token essentially stops being attended to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we move beyond the initial few notes, we can see that the network places
+    most attention on approximately the last two to four notes and rarely places significant
+    weight on notes more than four notes ago. Again, this makes sense; there is probably
+    enough information contained in the previous four notes to understand how the
+    phrase might continue. Additionally, some notes attend more strongly back to the
+    key signature of D minor—for example, the `E3` (7th note of the piece) and `B-2`
+    (B ♭–14th note of the piece). This is fascinating, because these are the exact
+    notes that rely on the key of D minor to relieve any ambiguity. The network must
+    *look back* at the key signature in order to tell that there is a B ♭ in the key
+    signature (rather than a B natural) but there isn’t an E ♭ in the key signature
+    (E natural must be used instead).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1110.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-10\. The color of each square in the matrix indicates the amount of
+    attention given to each position on the vertical axis, at the point of predicting
+    the note on the horizontal axis
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There are also examples of where the network has chosen to ignore a certain
+    note or rest nearby, as it doesn’t add any additional information to its understanding
+    of the phrase. For example, the penultimate note (`A2`) is not particularly attentive
+    to the `B-2` three notes back, but is slightly more attentive to the `A2` four
+    notes back. It is more interesting for the model to look at the `A2` that falls
+    on the beat, rather than the `B-2` off the beat, which is just a passing note.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember we haven’t told the model anything about which notes are related or
+    which notes belong to which key signatures—it has worked this out for itself just
+    by studying the music of J.S. Bach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tokenization of Polyphonic Music
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The Transformer we’ve been exploring in this section works well for single-line
+    (monophonic) music, but could it be adapted to multiline (polyphonic) music?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The challenge lies in how to represent the different lines of music as a single
+    sequence of tokens. In the previous section we decided to split the notes and
+    durations of the notes into two distinct inputs and outputs of the network, but
+    we also saw that we could have interleaved these tokens into a single stream.
+    We can use the same idea to handle polyphonic music. Two different approaches
+    will be introduced here: *grid tokenization* and *event-based tokenization*, as
+    discussed in the 2018 paper “Music Transformer: Generating Music with Long-Term
+    Structure.”^([1](ch11.xhtml#idm45387004193120))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Grid tokenization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Consider the two bars of music from a J.S. Bach chorale in [Figure 11-11](#Bach_chorale).
+    There are four distinct parts (soprano [S], alto [A], tenor [T], bass [B]), written
+    on different staffs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1111.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-11\. The first two bars of a J.S. Bach chorale
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can imagine drawing this music on a grid, where the y-axis represents the
+    pitch of the note and the x-axis represents the number of 16th-notes (semiquavers)
+    that have passed since the start of the piece. If the grid square is filled, then
+    there is a note playing at that point in time. All four parts are drawn on the
+    same grid. This grid is known as a *piano roll* because it resembles a physical
+    roll of paper with holes punched into it, which was used as a recording mechanism
+    before digital systems were invented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can serialize the grid into a stream of tokens by moving first through the
+    four voices, then along the timesteps in sequence. This produces a sequence of
+    tokens <math alttext="upper S 1 comma upper A 1 comma upper T 1 comma upper B
+    1 comma upper S 2 comma upper A 2 comma upper T 2 comma upper B 2 comma ellipsis"><mrow><msub><mi>S</mi>
+    <mn>1</mn></msub> <mo>,</mo> <msub><mi>A</mi> <mn>1</mn></msub> <mo>,</mo> <msub><mi>T</mi>
+    <mn>1</mn></msub> <mo>,</mo> <msub><mi>B</mi> <mn>1</mn></msub> <mo>,</mo> <msub><mi>S</mi>
+    <mn>2</mn></msub> <mo>,</mo> <msub><mi>A</mi> <mn>2</mn></msub> <mo>,</mo> <msub><mi>T</mi>
+    <mn>2</mn></msub> <mo>,</mo> <msub><mi>B</mi> <mn>2</mn></msub> <mo>,</mo> <mo>...</mo></mrow></math>
+    , where the subscript denotes the timestep, as shown in [Figure 11-12](#grid_tokenization).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1112.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-12\. Creating the grid tokenization for the first two bars of the
+    Bach chorale
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We would then train our Transformer on this sequence of tokens, to predict the
+    next token given the previous tokens. We can decode the generated sequence back
+    into a grid structure by rolling the sequence back out over time in groups of
+    four notes (one for each voice). This technique works surprisingly well, despite
+    the same note often being split across multiple tokens with tokens from other
+    voices in between.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, there are some disadvantages. Firstly, notice that there is no way
+    for the model to tell the difference between one long note and two shorter adjacent
+    notes of the same pitch. This is because the tokenization does not explicitly
+    encode the duration of notes, only whether a note is present at each timestep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, this method requires the music to have a regular beat that is divisible
+    into reasonably sized chunks. For example, using the current system, we cannot
+    encode triplets (a group of three notes played across a single beat). We could
+    divide the music into 12 steps per quarter-note (crotchet) instead of 4, that
+    would triple the number of tokens required to represent the same passage of music,
+    adding overhead on the training process and affecting the lookback capacity of
+    the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, it is not obvious how we might add other components to the tokenization,
+    such as dynamics (how loud or quiet the music is in each part) or tempo changes.
+    We are locked into the two-dimensional grid structure of the piano roll, which
+    provides a convenient way to represent pitch and timing, but not necessarily an
+    easy way to incorporate other components that make music interesting to listen
+    to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Event-based tokenization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A more flexible approach is to use event-based tokenization. This can be thought
+    of as a vocabulary that literally describes how the music is created as a sequence
+    of events, using a rich set of tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example in [Figure 11-13](#event_tokenization), we use three types of tokens:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`NOTE_ON<*pitch*>` (start playing a note of a given pitch)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`NOTE_OFF<*pitch*>` (stop playing a note of a given pitch)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`TIME_SHIFT<*step*>` (shift forward in time by a given step)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This vocabulary can be used to create a sequence that describes the construction
+    of the music as a set of instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1113.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-13\. An event tokenization for the first bar of the Bach chorale
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We could easily incorporate other types of tokens into this vocabulary, to represent
+    dynamic and tempo changes for subsequent notes. This method also provides a way
+    to generate triplets against a backdrop of quarter-notes, by separating the notes
+    of the triplets with `TIME_SHIFT<0.33>` tokens. Overall, it is a more expressive
+    framework for tokenization, though it is also potentially more complex for the
+    Transformer to learn inherent patterns in the training set music, as it is by
+    definition less structured than the grid method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: I encourage you to try implementing these polyphonic techniques and train a
+    Transformer on the new tokenized dataset using all the knowledge you have built
+    up so far in this book. I would also recommend checking our Dr. Tristan Behrens’s
+    guide to music generation research, available on [GitHub](https://oreil.ly/YfaiJ),
+    which provides a comprehensive overview of different papers on the topic of music
+    generation using deep learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section we will take a completely different approach to music generation,
+    using GANs.`  `# MuseGAN
+  prefs: []
+  type: TYPE_NORMAL
+- en: You may have thought that the piano roll shown in [Figure 11-12](#grid_tokenization)
+    looks a bit like a piece of modern art. This begs the question—could we in fact
+    treat this piano roll as a *picture* and utilize image generation methods instead
+    of sequence generation techniques?
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we shall see, the answer to this question is yes, we can treat music generation
+    directly as an image generation problem. This means that instead of using Transformers,
+    we can apply the same convolutional-based techniques that work so well for image
+    generation problems—in particular, GANs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'MuseGAN was introduced in the 2017 paper “MuseGAN: Multi-Track Sequential Generative
+    Adversarial Networks for Symbolic Music Generation and Accompaniment.”^([2](ch11.xhtml#idm45387004128000))
+    The authors show how it is possible to train a model to generate polyphonic, multitrack,
+    multibar music through a novel GAN framework. Moreover, they show how, by dividing
+    up the responsibilities of the noise vectors that feed the generator, they are
+    able to maintain fine-grained control over the high-level temporal and track-based
+    features of the music.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s start by introducing the the J.S. Bach chorale dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/11_music/02_musegan/musegan.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Bach Chorale Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To begin this project, you’ll first need to download the MIDI files that we’ll
+    be using to train the MuseGAN. We’ll use a dataset of 229 J.S. Bach chorales for
+    four voices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can download the dataset by running the Bach chorale dataset downloader
+    script in the book repository, as shown in [Example 11-5](#downloading-bach-chorale-dataset).
+    This will save the MIDI files locally to the */data* folder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-5\. Downloading the Bach chorale dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`The dataset consists of an array of four numbers for each timestep: the MIDI
+    note pitches of each of the four voices. A timestep in this dataset is equal to
+    a 16th note (a semiquaver). So, for example, in a single bar of 4 quarter (crotchet)
+    beats, there are 16 timesteps. The dataset is automatically split into *train*,
+    *validation*, and *test* sets. We will be using the *train* dataset to train the
+    MuseGAN.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To start, we need to get the data into the correct shape to feed the GAN. In
+    this example we’ll generate two bars of music, so we’ll extract only the first
+    two bars of each chorale. Each bar consists of 16 timesteps and there are a potential
+    84 pitches across the 4 voices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Voices will be referred to as *tracks* from here on, to keep the terminology
+    in line with the original paper.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Therefore, the transformed data will have the following shape:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'where:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: To get the data into this shape, we one-hot encode the pitch numbers into a
+    vector of length 84 and split each sequence of notes into two bars of 16 timesteps
+    each. We are making the assumption here that each chorale in the dataset has four
+    beats in each bar, which is reasonable, and even if this were not the case it
+    would not adversely affect the training of the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 11-14](#musegan_data) shows how two bars of raw data are converted
+    into the transformed piano roll dataset that we will use to train the GAN.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1114.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-14\. Processing two bars of raw data into piano roll data that we
+    can use to train the GAN`  `## The MuseGAN Generator
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Like all GANs, MuseGAN consists of a generator and a critic. The generator tries
+    to fool the critic with its musical creations, and the critic tries to prevent
+    this from happening by ensuring it is able to tell the difference between the
+    generator’s forged Bach chorales and the real thing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Where MuseGAN differs is in the fact that the generator doesn’t just accept
+    a single noise vector as input, but instead has four separate inputs, which correspond
+    to four different characteristics of the music: chords, style, melody, and groove.
+    By manipulating each of these inputs independently we can change high-level properties
+    of the generated music.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A high-level view of the generator is shown in [Figure 11-15](#musegan_generator).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1115.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-15\. High-level diagram of the MuseGAN generator
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The diagram shows how the chords and melody inputs are first passed through
+    a *temporal network* that outputs a tensor with one of the dimensions equal to
+    the number of bars to be generated. The style and groove inputs are not stretched
+    temporally in this way, as they remain constant through the piece.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Then, to generate a particular bar for a particular track, the relevant outputs
+    from the chords, style, melody, and groove parts of the network are concatenated
+    to form a longer vector. This is then passed to a bar generator, which ultimately
+    outputs the specified bar for the specified track.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By concatenating the generated bars for all tracks, we create a score that can
+    be compared with real scores by the critic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s first take a look at how to build a temporal network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The temporal network
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The job of a temporal network—a neural network consisting of convolutional transpose
+    layers—is to transform a single input noise vector of length `Z_DIM = 32` into
+    a different noise vector for every bar (also of length 32). The Keras code to
+    build this is shown in [Example 11-6](#example0705).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-6\. Building the temporal network
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_music_generation_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input to the temporal network is a vector of length 32 (`Z_DIM`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_music_generation_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We reshape this vector to a 1 × 1 tensor with 32 channels, so that we can apply
+    convolutional 2D transpose operations to it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_music_generation_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We apply `Conv2DTranspose` layers to expand the size of the tensor along one
+    axis, so that it is the same length as `N_BARS`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_music_generation_CO1-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We remove the unnecessary extra dimension with a `Reshape` layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The reason we use convolutional operations rather than requiring two independent
+    vectors into the network is because we would like the network to learn how one
+    bar should follow on from another in a consistent way. Using a neural network
+    to expand the input vector along the time axis means the model has a chance to
+    learn how music flows across bars, rather than treating each bar as completely
+    independent of the last.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chords, style, melody, and groove
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s now take a closer look at the four different inputs that feed the generator:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chords
+  prefs: []
+  type: TYPE_NORMAL
+- en: The chords input is a single noise vector of length `Z_DIM`. This vector’s job
+    is to control the general progression of the music over time, shared across tracks,
+    so we use a `TemporalNetwork` to transform this single vector into a different
+    latent vector for every bar. Note that while we call this input chords, it really
+    could control anything about the music that changes per bar, such as general rhythmic
+    style, without being specific to any particular track.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Style
+  prefs: []
+  type: TYPE_NORMAL
+- en: The style input is also a vector of length `Z_DIM`. This is carried forward
+    without transformation, so it is the same across all bars and tracks. It can be
+    thought of as the vector that controls the overall style of the piece (i.e., it
+    affects all bars and tracks consistently).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Melody
+  prefs: []
+  type: TYPE_NORMAL
+- en: The melody input is an array of shape `[N_TRACKS, Z_DIM]`—that is, we provide
+    the model with a random noise vector of length `Z_DIM` for each track.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each of these vectors is passed through a track-specific `TemporalNetwork`,
+    where the weights are not shared between tracks. The output is a vector of length
+    `Z_DIM` for every bar of every track. The model can therefore use these input
+    vectors to fine-tune the content of every single bar and track independently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Groove
+  prefs: []
+  type: TYPE_NORMAL
+- en: The groove input is also an array of shape `[N_TRACKS, Z_DIM]`—a random noise
+    vector of length `Z_DIM` for each track. Unlike the melody input, these vectors
+    are not passed through the temporal network but instead are fed straight through,
+    just like the style vector. Therefore, each groove vector will affect the overall
+    properties of a track, across all bars.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can summarize the responsibilities of each component of the MuseGAN generator
+    as shown in [Table 11-1](#musegan_sections).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 11-1\. Components of the MuseGAN generator
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|  | Output differs across bars? | Output differs across parts? |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Style | Ｘ | Ｘ |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Groove | Ｘ | ✓ |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Chords | ✓ | Ｘ |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Melody | ✓ | ✓ |'
+  prefs: []
+  type: TYPE_TB
+- en: The final piece of the MuseGAN generator is the *bar generator*—let’s see how
+    we can use this to glue together the outputs from the chord, style, melody, and
+    groove components.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The bar generator
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The bar generator receives four latent vectors—one from each of the chord, style,
+    melody, and groove components. These are concatenated to produce a vector of length
+    `4 * Z_DIM` as input. The output is a piano roll representation of a single bar
+    for a single track—i.e., a tensor of shape `[1, n_steps_per_bar, n_pitches, 1]`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The bar generator is just a neural network that uses convolutional transpose
+    layers to expand the time and pitch dimensions of the input vector. We create
+    one bar generator for every track, and weights are not shared between tracks.
+    The Keras code to build a `BarGenerator` is given in [Example 11-7](#example0706).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-7\. Building the `BarGenerator`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_music_generation_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input to the bar generator is a vector of length `4 * Z_DIM`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_music_generation_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: After passing it through a `Dense` layer, we reshape the tensor to prepare it
+    for the convolutional transpose operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_music_generation_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First we expand the tensor along the timestep axis…​
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_music_generation_CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: …​then along the pitch axis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_music_generation_CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final layer has a tanh activation applied, as we will be using a WGAN-GP
+    (which requires tanh output activation) to train the network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_music_generation_CO2-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The tensor is reshaped to add two extra dimensions of size 1, to prepare it
+    for concatenation with other bars and tracks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Putting it all together
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Ultimately, the MuseGAN generator takes the four input noise tensors (chords,
+    style, melody, and groove) and converts them into a multitrack, multibar score.
+    The Keras code to build the MuseGAN generator is provided in [Example 11-8](#example0707).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-8\. Building the MuseGAN generator
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_music_generation_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Define the inputs to the generator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_music_generation_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pass the chords input through the temporal network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_music_generation_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pass the melody input through the temporal network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_music_generation_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create an independent bar generator network for every track.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_music_generation_CO3-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop over the tracks and bars, creating a generated bar for each combination.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_music_generation_CO3-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concatenate everything together to form a single output tensor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_music_generation_CO3-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The MuseGAN model takes four distinct noise tensors as input and outputs a generated
+    multitrack, multibar score.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The MuseGAN Critic
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In comparison to the generator, the critic architecture is much more straightforward
+    (as is often the case with GANs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The critic tries to distinguish full multitrack, multibar scores created by
+    the generator from real excerpts from the Bach chorales. It is a convolutional
+    neural network, consisting mostly of `Conv3D` layers that collapse the score into
+    a single output prediction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conv3D Layers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far in this book, we have only worked with `Conv2D` layers, applicable to
+    three-dimensional input images (width, height, channels). Here we have to use
+    `Conv3D` layers, which are analogous to `Conv2D` layers but accept four-dimensional
+    input tensors (`n_bars`, `n_steps_per_bar`, `n_pitches`, `n_tracks`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We do not use batch normalization layers in the critic as we will be using the
+    WGAN-GP framework for training the GAN, which forbids this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Keras code to build the critic is given in [Example 11-9](#example0708).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 11-9\. Building the MuseGAN critic
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_music_generation_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input to the critic is an array of multitrack, multibar scores, each of
+    shape `[N_BARS, N_STEPS_PER_BAR, N_PITCHES, N_TRACKS]`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_music_generation_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, we collapse the tensor along the bar axis. We apply `Conv3D` layers throughout
+    the critic as we are working with 4D tensors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_music_generation_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we collapse the tensor along the pitch axis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_music_generation_CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we collapse the tensor along the timesteps axis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_music_generation_CO4-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output is a `Dense` layer with a single unit and no activation function,
+    as required by the WGAN-GP framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis of the MuseGAN
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We can perform some experiments with our MuseGAN by generating a score, then
+    tweaking some of the input noise parameters to see the effect on the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output from the generator is an array of values in the range [–1, 1] (due
+    to the tanh activation function of the final layer). To convert this to a single
+    note for each track, we choose the note with the maximum value over all 84 pitches
+    for each timestep. In the original MuseGAN paper the authors use a threshold of
+    0, as each track can contain multiple notes; however, in this setting we can simply
+    take the maximum to guarantee exactly one note per timestep per track, as is the
+    case for the Bach chorales.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 11-16](#musegan_experiments) shows a score that has been generated
+    by the model from random normally distributed noise vectors (top left). We can
+    find the closest score in the dataset (by Euclidean distance) and check that our
+    generated score isn’t a copy of a piece of music that already exists in the dataset—the
+    closest score is shown just below it, and we can see that it does not resemble
+    our generated score.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_1116.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 11-16\. Example of a MuseGAN predicted score, showing the closest real
+    score in the training data and how the generated score is affected by changing
+    the input noise
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Let’s now play around with the input noise to tweak our generated score. First,
+    we can try changing the chord noise vector—the bottom-left score in [Figure 11-16](#musegan_experiments)
+    shows the result. We can see that every track has changed, as expected, and also
+    that the two bars exhibit different properties. In the second bar, the baseline
+    is more dynamic and the top line is higher in pitch than in the first bar. This
+    is because the latent vectors that affect the two bars are different, as the input
+    chord vector was passed through a temporal network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When we change the style vector (top right), both bars change in a similar way.
+    The whole passage has changed style from the original generated score, in a consistent
+    way (i.e., the same latent vector is being used to adjust all tracks and bars).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can also alter tracks individually, through the melody and groove inputs.
+    In the center-right score in [Figure 11-16](#musegan_experiments) we can see the
+    effect of changing just the melody noise input for the top line of music. All
+    other parts remain unaffected, but the top-line notes change significantly. Also,
+    we can see a rhythmic change between the two bars in the top line: the second
+    bar is more dynamic, containing faster notes than the first bar.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, the bottom-right score in the diagram shows the predicted score when
+    we alter the groove input parameter for only the baseline. Again, all other parts
+    remain unaffected, but the baseline is different. Moreover, the overall pattern
+    of the baseline remains similar between bars, as we would expect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This shows how each of the input parameters can be used to directly influence
+    high-level features of the generated musical sequence, in much the same way as
+    we were able to adjust the latent vectors of VAEs and GANs in previous chapters
+    to alter the appearance of a generated image. One drawback to the model is that
+    the number of bars to generate must be specified up front. To tackle this, the
+    authors show an extension to the model that allows previous bars to be fed in
+    as input, allowing the model to generate long-form scores by continually feeding
+    the most recent predicted bars back in as additional input.`  `# Summary
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter we have explored two different kinds of models for music generation:
+    a Transformer and a MuseGAN.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Transformer is similar in design to the networks we saw in [Chapter 9](ch09.xhtml#chapter_transformer)
+    for text generation. Music and text generation share a lot of features in common,
+    and often similar techniques can be used for both. We extended the Transformer
+    architecture by incorporating two input and output streams, for note and duration.
+    We saw how the model was able to learn about concepts such as keys and scales,
+    simply by learning to accurately generate the music of Bach.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also explored how we can adapt the tokenization process to handle polyphonic
+    (multitrack) music generation. Grid tokenization serializes a piano roll representation
+    of the score, allowing us to train a Transformer on a single stream of tokens
+    that describe which note is present in each voice, at discrete, equally spaced
+    timestep intervals. Event-based tokenization produces a *recipe* that describes
+    how to create the multiple lines of music in a sequential fashion, through a single
+    stream of instructions. Both methods have advantages and disadvantages—the success
+    or failure of a Transformer-based approach to music generation is often heavily
+    dependent on the choice of tokenization method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also saw that generating music does not always require a sequential approach—MuseGAN
+    uses convolutions to generate polyphonic musical scores with multiple tracks,
+    by treating the score as an image where the tracks are individual channels of
+    the image. The novelty of MuseGAN lies in the way the four input noise vectors
+    (chords, style, melody, and groove) are organized so that it is possible to maintain
+    full control over high-level features of the music. While the underlying harmonization
+    is still not as perfect or varied as Bach’s, it is a good attempt at what is an
+    extremely difficult problem to master and highlights the power of GANs to tackle
+    a wide variety of problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](ch11.xhtml#idm45387004193120-marker)) Cheng-Zhi Anna Huang et al., “Music
+    Transformer: Generating Music with Long-Term Structure,” September 12, 2018, [*https://arxiv.org/abs/1809.04281*](https://arxiv.org/abs/1809.04281).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](ch11.xhtml#idm45387004128000-marker)) Hao-Wen Dong et al., “MuseGAN:
+    Multi-Track Sequential Generative Adversarial Networks for Symbolic Music Generation
+    and Accompaniment,” September 19, 2017, [*https://arxiv.org/abs/1709.06298*](https://arxiv.org/abs/1709.06298).``'
+  prefs: []
+  type: TYPE_NORMAL

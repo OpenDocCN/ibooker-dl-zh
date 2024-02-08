@@ -1,0 +1,1067 @@
+- en: Chapter 6\. Normalizing Flow Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'So far, we have discussed three families of generative models: variational
+    autoencoders, generative adversarial networks, and autoregressive models. Each
+    presents a different way to address the challenge of modeling the distribution
+    <math alttext="p left-parenthesis x right-parenthesis"><mrow><mi>p</mi> <mo>(</mo>
+    <mi>x</mi> <mo>)</mo></mrow></math> , either by introducing a latent variable
+    that can be easily sampled (and transformed using the decoder in VAEs or generator
+    in GANs), or by tractably modeling the distribution as a function of the values
+    of preceding elements (autoregressive models).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will cover a new family of generative models—normalizing
+    flow models. As we shall see, normalizing flows share similarities with both autoregressive
+    models and variational autoencoders. Like autoregressive models, normalizing flows
+    are able to explicitly and tractably model the data-generating distribution <math
+    alttext="p left-parenthesis x right-parenthesis"><mrow><mi>p</mi> <mo>(</mo> <mi>x</mi>
+    <mo>)</mo></mrow></math> . Like VAEs, normalizing flows attempt to map the data
+    into a simpler distribution, such as a Gaussian distribution. The key difference
+    is that normalizing flows place a constraint on the form of the mapping function,
+    so that it is invertible and can therefore be used to generate new data points.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will dig into this definition in detail in the first section of this chapter
+    before implementing a normalizing flow model called RealNVP using Keras. We will
+    also see how normalizing flows can be extended to create more powerful models,
+    such as GLOW and FFJORD.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will begin with a short story to illustrate the key concepts behind normalizing
+    flows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The story of Jacob and the F.L.O.W. machine is a depiction of a normalizing
+    flow model. Let’s now explore the theory of normalizing flows in more detail,
+    before we implement a practical example using Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Normalizing Flows
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The motivation of normalizing flow models is similar to that of variational
+    autoencoders, which we explored in [Chapter 3](ch03.xhtml#chapter_vae). To recap,
+    in a variational autoencoder, we learn an *encoder* mapping function between a
+    complex distribution and a much simpler distribution that we can sample from.
+    We then also learn a *decoder* mapping function from the simpler distribution
+    to the complex distribution, so that we can generate a new data point by sampling
+    a point <math alttext="z"><mi>z</mi></math> from the simpler distribution and
+    applying the learned transformation. Probabilistically speaking, the decoder models
+    <math alttext="p left-parenthesis x vertical-bar z right-parenthesis"><mrow><mi>p</mi>
+    <mo>(</mo> <mi>x</mi> <mo>|</mo> <mi>z</mi> <mo>)</mo></mrow></math> but the encoder
+    is only an approximation <math alttext="q left-parenthesis z vertical-bar x right-parenthesis"><mrow><mi>q</mi>
+    <mo>(</mo> <mi>z</mi> <mo>|</mo> <mi>x</mi> <mo>)</mo></mrow></math> of the true
+    <math alttext="p left-parenthesis z vertical-bar x right-parenthesis"><mrow><mi>p</mi>
+    <mo>(</mo> <mi>z</mi> <mo>|</mo> <mi>x</mi> <mo>)</mo></mrow></math> —the encoder
+    and decoder are two completely distinct neural networks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a normalizing flow model, the decoding function is designed to be the exact
+    inverse of the encoding function and quick to calculate, giving normalizing flows
+    the property of tractability. However, neural networks are not by default invertible
+    functions. This raises the question of how we can create an invertible process
+    that converts between a complex distribution (such as the data generation distribution
+    of a set of watercolor paintings) and a much simpler distribution (such as a bell-shaped
+    Gaussian distribution) while still making use of the flexibility and power of
+    deep learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To answer this question, we first need to understand a technique known as *change
+    of variables*. For this section, we will work with a simple example in just two
+    dimensions, so that you can see exactly how normalizing flows work in fine detail.
+    More complex examples are just extensions of the basic techniques presented here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Change of Variables
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Suppose we have a probability distribution <math alttext="p Subscript upper
+    X Baseline left-parenthesis x right-parenthesis"><mrow><msub><mi>p</mi> <mi>X</mi></msub>
+    <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math> defined over a rectangle
+    <math alttext="upper X"><mi>X</mi></math> in two dimensions ( <math alttext="x
+    equals left-parenthesis x 1 comma x 2 right-parenthesis"><mrow><mi>x</mi> <mo>=</mo>
+    <mo>(</mo> <msub><mi>x</mi> <mn>1</mn></msub> <mo>,</mo> <msub><mi>x</mi> <mn>2</mn></msub>
+    <mo>)</mo></mrow></math> ), as shown in [Figure 6-2](#simple_prob).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![https://www.math3d.org/VlDIWw2AK](Images/gdl2_0602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-2\. A probability distribution <math alttext="p Subscript upper X Baseline
+    left-parenthesis x right-parenthesis"><mrow><msub><mi>p</mi> <mi>X</mi></msub>
+    <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math> defined over two dimensions,
+    shown in 2D (left) and 3D (right)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'This function integrates to 1 over the domain of the distribution (i.e., <math
+    alttext="x 1"><msub><mi>x</mi> <mn>1</mn></msub></math> in the range [1, 4] and
+    <math alttext="x 2"><msub><mi>x</mi> <mn>2</mn></msub></math> in the range [0,
+    2]), so it represents a well-defined probability distribution. We can write this
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="integral Subscript 0 Superscript 2 Baseline integral Subscript
+    1 Superscript 4 Baseline p Subscript upper X Baseline left-parenthesis x right-parenthesis
+    d x 1 d x 2 equals 1" display="block"><mrow><msubsup><mo>∫</mo> <mrow><mn>0</mn></mrow>
+    <mn>2</mn></msubsup> <msubsup><mo>∫</mo> <mrow><mn>1</mn></mrow> <mn>4</mn></msubsup>
+    <msub><mi>p</mi> <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow>
+    <mi>d</mi> <msub><mi>x</mi> <mn>1</mn></msub> <mi>d</mi> <msub><mi>x</mi> <mn>2</mn></msub>
+    <mo>=</mo> <mn>1</mn></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s say that we want to shift and scale this distribution so that it is instead
+    defined over a unit square <math alttext="upper Z"><mi>Z</mi></math> . We can
+    achieve this by defining a new variable <math alttext="z equals left-parenthesis
+    z 1 comma z 2 right-parenthesis"><mrow><mi>z</mi> <mo>=</mo> <mo>(</mo> <msub><mi>z</mi>
+    <mn>1</mn></msub> <mo>,</mo> <msub><mi>z</mi> <mn>2</mn></msub> <mo>)</mo></mrow></math>
+    and a function <math alttext="f"><mi>f</mi></math> that maps each point in <math
+    alttext="upper X"><mi>X</mi></math> to exactly one point in <math alttext="upper
+    Z"><mi>Z</mi></math> as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column z 2nd Column equals 3rd Column
+    f left-parenthesis x right-parenthesis 2nd Row 1st Column z 1 2nd Column equals
+    3rd Column StartFraction x 1 minus 1 Over 3 EndFraction 3rd Row 1st Column z 2
+    2nd Column equals 3rd Column StartFraction x 2 Over 2 EndFraction EndLayout" display="block"><mtable
+    displaystyle="true"><mtr><mtd columnalign="right"><mi>z</mi></mtd> <mtd><mo>=</mo></mtd>
+    <mtd columnalign="left"><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mtd></mtr>
+    <mtr><mtd columnalign="right"><msub><mi>z</mi> <mn>1</mn></msub></mtd> <mtd><mo>=</mo></mtd>
+    <mtd columnalign="left"><mfrac><mrow><msub><mi>x</mi> <mn>1</mn></msub> <mo>-</mo><mn>1</mn></mrow>
+    <mn>3</mn></mfrac></mtd></mtr> <mtr><mtd columnalign="right"><msub><mi>z</mi>
+    <mn>2</mn></msub></mtd> <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mfrac><msub><mi>x</mi>
+    <mn>2</mn></msub> <mn>2</mn></mfrac></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that this function is *invertible*. That is, there is a function <math
+    alttext="g"><mi>g</mi></math> that maps every <math alttext="z"><mi>z</mi></math>
+    back to its corresponding <math alttext="x"><mi>x</mi></math> . This is essential
+    for a change of variables, as otherwise we cannot consistently map backward and
+    forward between the two spaces. We can find <math alttext="g"><mi>g</mi></math>
+    simply by rearranging the equations that define <math alttext="f"><mi>f</mi></math>
+    , as shown in [Figure 6-3](#change_of_variables).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-3\. Changing variables between <math alttext="upper X"><mi>X</mi></math>
+    and <math alttext="upper Z"><mi>Z</mi></math>
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'We now need to see how the change of variables from <math alttext="upper X"><mi>X</mi></math>
+    to <math alttext="upper Z"><mi>Z</mi></math> affects the probability distribution
+    <math alttext="p Subscript upper X Baseline left-parenthesis x right-parenthesis"><mrow><msub><mi>p</mi>
+    <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>
+    . We can do this by plugging the equations that define <math alttext="g"><mi>g</mi></math>
+    into <math alttext="p Subscript upper X Baseline left-parenthesis x right-parenthesis"><mrow><msub><mi>p</mi>
+    <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>
+    to transform it into a function <math alttext="p Subscript upper Z Baseline left-parenthesis
+    z right-parenthesis"><mrow><msub><mi>p</mi> <mi>Z</mi></msub> <mrow><mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow></mrow></math> that is defined in terms of <math alttext="z"><mi>z</mi></math>
+    :'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column p Subscript upper Z Baseline left-parenthesis
+    z right-parenthesis 2nd Column equals 3rd Column StartFraction left-parenthesis
+    left-parenthesis 3 z 1 plus 1 right-parenthesis minus 1 right-parenthesis left-parenthesis
+    2 z 2 right-parenthesis Over 9 EndFraction 2nd Row 1st Column Blank 2nd Column
+    equals 3rd Column StartFraction 2 z 1 z 2 Over 3 EndFraction EndLayout" display="block"><mtable
+    displaystyle="true"><mtr><mtd columnalign="right"><mrow><msub><mi>p</mi> <mi>Z</mi></msub>
+    <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow></mrow></mtd> <mtd><mo>=</mo></mtd>
+    <mtd columnalign="left"><mfrac><mrow><mrow><mo>(</mo><mrow><mo>(</mo><mn>3</mn><msub><mi>z</mi>
+    <mn>1</mn></msub> <mo>+</mo><mn>1</mn><mo>)</mo></mrow><mo>-</mo><mn>1</mn><mo>)</mo></mrow><mrow><mo>(</mo><mn>2</mn><msub><mi>z</mi>
+    <mn>2</mn></msub> <mo>)</mo></mrow></mrow> <mn>9</mn></mfrac></mtd></mtr> <mtr><mtd><mo>=</mo></mtd>
+    <mtd columnalign="left"><mfrac><mrow><mn>2</mn><msub><mi>z</mi> <mn>1</mn></msub>
+    <msub><mi>z</mi> <mn>2</mn></msub></mrow> <mn>3</mn></mfrac></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, if we now integrate <math alttext="p Subscript upper Z Baseline left-parenthesis
+    z right-parenthesis"><mrow><msub><mi>p</mi> <mi>Z</mi></msub> <mrow><mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow></mrow></math> over the unit square, we can see that
+    we have a problem!
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="integral Subscript 0 Superscript 1 Baseline integral Subscript
+    0 Superscript 1 Baseline StartFraction 2 z 1 z 2 Over 3 EndFraction d z 1 d z
+    2 equals one-sixth" display="block"><mrow><msubsup><mo>∫</mo> <mrow><mn>0</mn></mrow>
+    <mn>1</mn></msubsup> <msubsup><mo>∫</mo> <mrow><mn>0</mn></mrow> <mn>1</mn></msubsup>
+    <mfrac><mrow><mn>2</mn><msub><mi>z</mi> <mn>1</mn></msub> <msub><mi>z</mi> <mn>2</mn></msub></mrow>
+    <mn>3</mn></mfrac> <mi>d</mi> <msub><mi>z</mi> <mn>1</mn></msub> <mi>d</mi> <msub><mi>z</mi>
+    <mn>2</mn></msub> <mo>=</mo> <mfrac><mn>1</mn> <mn>6</mn></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The transformed function <math alttext="p Subscript upper Z Baseline left-parenthesis
+    z right-parenthesis"><mrow><msub><mi>p</mi> <mi>Z</mi></msub> <mrow><mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow></mrow></math> is now no longer a valid probability
+    distribution, because it only integrates to 1/6\. If we want to transform our
+    complex probability distribution over the data into a simpler distribution that
+    we can sample from, we must ensure that it integrates to 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The missing factor of 6 is due to the fact that the domain of our transformed
+    probability distribution is six times smaller than the original domain—the original
+    rectangle <math alttext="upper X"><mi>X</mi></math> had area 6, and this has been
+    compressed into a unit square <math alttext="upper Z"><mi>Z</mi></math> that only
+    has area 1\. Therefore, we need to multiply the new probability distribution by
+    a normalization factor that is equal to the relative change in area (or volume
+    in higher dimensions).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Luckily, there is a way to calculate this volume change for a given transformation—it
+    is the absolute value of the Jacobian determinant of the transformation. Let’s
+    unpack that!
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Jacobian Determinant
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The *Jacobian* of a function <math alttext="z equals f left-parenthesis x right-parenthesis"><mrow><mi>z</mi>
+    <mo>=</mo> <mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> is the matrix
+    of its first-order partial derivatives, as shown here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal upper J equals StartFraction normal partial-differential
+    z Over normal partial-differential x EndFraction equals Start 3 By 3 Matrix 1st
+    Row 1st Column StartFraction normal partial-differential z 1 Over normal partial-differential
+    x 1 EndFraction 2nd Column  ellipsis 3rd Column StartFraction normal partial-differential
+    z 1 Over normal partial-differential x Subscript n Baseline EndFraction 2nd Row
+    1st Column  ellipsis 2nd Column  ellipsis 3rd Row 1st Column StartFraction normal
+    partial-differential z Subscript m Baseline Over normal partial-differential x
+    1 EndFraction 2nd Column  ellipsis 3rd Column StartFraction normal partial-differential
+    z Subscript m Baseline Over normal partial-differential x Subscript n Baseline
+    EndFraction EndMatrix" display="block"><mrow><mi mathvariant="normal">J</mi> <mo>=</mo>
+    <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow>
+    <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>=</mo> <mfenced open="["
+    close="]"><mtable><mtr><mtd><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><msub><mi>z</mi>
+    <mn>1</mn></msub></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mn>1</mn></msub></mrow></mfrac></mstyle></mtd>
+    <mtd><mo>⋯</mo></mtd> <mtd><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><msub><mi>z</mi>
+    <mn>1</mn></msub></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mi>n</mi></msub></mrow></mfrac></mstyle></mtd></mtr>
+    <mtr><mtd><mo>⋱</mo></mtd> <mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><mstyle scriptlevel="0"
+    displaystyle="true"><mfrac><mrow><mi>∂</mi><msub><mi>z</mi> <mi>m</mi></msub></mrow>
+    <mrow><mi>∂</mi><msub><mi>x</mi> <mn>1</mn></msub></mrow></mfrac></mstyle></mtd>
+    <mtd><mo>⋯</mo></mtd> <mtd><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><msub><mi>z</mi>
+    <mi>m</mi></msub></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mi>n</mi></msub></mrow></mfrac></mstyle></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The best way to explain this is with our example. If we take the partial derivative
+    of <math alttext="z 1"><msub><mi>z</mi> <mn>1</mn></msub></math> with respect
+    to <math alttext="x 1"><msub><mi>x</mi> <mn>1</mn></msub></math> , we obtain <math
+    alttext="one-third"><mfrac><mn>1</mn> <mn>3</mn></mfrac></math> . If we take the
+    partial derivative of <math alttext="z 1"><msub><mi>z</mi> <mn>1</mn></msub></math>
+    with respect to <math alttext="x 2"><msub><mi>x</mi> <mn>2</mn></msub></math>
+    , we obtain 0\. Similarly, if we take the partial derivative of <math alttext="z
+    2"><msub><mi>z</mi> <mn>2</mn></msub></math> with respect to <math alttext="x
+    1"><msub><mi>x</mi> <mn>1</mn></msub></math> , we obtain 0\. Lastly, if we take
+    the partial derivative of <math alttext="z 2"><msub><mi>z</mi> <mn>2</mn></msub></math>
+    with respect to <math alttext="x 2"><msub><mi>x</mi> <mn>2</mn></msub></math>
+    , we obtain <math alttext="one-half"><mfrac><mn>1</mn> <mn>2</mn></mfrac></math>
+    .
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Therefore, the Jacobian matrix for our function <math alttext="f left-parenthesis
+    x right-parenthesis"><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math>
+    is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper J equals Start 2 By 2 Matrix 1st Row 1st Column one-third
+    2nd Column 0 2nd Row 1st Column 0 2nd Column one-half EndMatrix" display="block"><mrow><mi>J</mi>
+    <mo>=</mo> <mfenced open="(" close=")"><mtable><mtr><mtd><mfrac><mn>1</mn> <mn>3</mn></mfrac></mtd>
+    <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mfrac><mn>1</mn>
+    <mn>2</mn></mfrac></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *determinant* is only defined for square matrices and is equal to the signed
+    volume of the parallelepiped created by applying the transformation represented
+    by the matrix to the unit (hyper)cube. In two dimensions, this is therefore just
+    the signed area of the parallelogram created by applying the transformation represented
+    by the matrix to the unit square.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is a [general formula](https://oreil.ly/FuDCf) for calculating the determinant
+    of a matrix with *n* dimensions, which runs in <math alttext="script upper O left-parenthesis
+    n cubed right-parenthesis"><mrow><mi>𝒪</mi> <mo>(</mo> <msup><mi>n</mi> <mn>3</mn></msup>
+    <mo>)</mo></mrow></math> time. For our example, we only need the formula for two
+    dimensions, which is simply as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal d normal e normal t Start 2 By 2 Matrix 1st Row 1st Column
+    a 2nd Column b 2nd Row 1st Column c 2nd Column d EndMatrix equals a d minus b
+    c" display="block"><mrow><mi>det</mi> <mfenced open="(" close=")"><mtable><mtr><mtd><mi>a</mi></mtd>
+    <mtd><mi>b</mi></mtd></mtr> <mtr><mtd><mi>c</mi></mtd> <mtd><mi>d</mi></mtd></mtr></mtable></mfenced>
+    <mo>=</mo> <mi>a</mi> <mi>d</mi> <mo>-</mo> <mi>b</mi> <mi>c</mi></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, for our example, the determinant of the Jacobian is <math alttext="one-third
+    times one-half minus 0 times 0 equals one-sixth"><mrow><mfrac><mn>1</mn> <mn>3</mn></mfrac>
+    <mo>×</mo> <mfrac><mn>1</mn> <mn>2</mn></mfrac> <mo>-</mo> <mn>0</mn> <mo>×</mo>
+    <mn>0</mn> <mo>=</mo> <mfrac><mn>1</mn> <mn>6</mn></mfrac></mrow></math> . This
+    is the scaling factor of 1/6 that we need to ensure that the probability distribution
+    after transformation still integrates to 1!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: By definition, the determinant is signed—that is, it can be negative. Therefore
+    we need to take the absolute value of the Jacobian determinant in order to obtain
+    the relative change of volume.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Change of Variables Equation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We can now write down a single equation that describes the process for changing
+    variables between <math alttext="upper X"><mi>X</mi></math> and <math alttext="upper
+    Z"><mi>Z</mi></math> . This is known as the *change of variables equation* ([Equation
+    6-1](#cov_equation)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Equation 6-1\. The change of variables equation
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: <math alttext="p Subscript upper X Baseline left-parenthesis x right-parenthesis
+    equals p Subscript upper Z Baseline left-parenthesis z right-parenthesis StartAbsoluteValue
+    normal d normal e normal t left-parenthesis StartFraction normal partial-differential
+    z Over normal partial-differential x EndFraction right-parenthesis EndAbsoluteValue"
+    display="block"><mrow><msub><mi>p</mi> <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi>
+    <mo>)</mo></mrow> <mo>=</mo> <msub><mi>p</mi> <mi>Z</mi></msub> <mrow><mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow> <mfenced separators="" open="|" close="|"><mi>det</mi>
+    <mfenced separators="" open="(" close=")"><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow>
+    <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mfenced></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: How does this help us build a generative model? The key is understanding that
+    if <math alttext="p Subscript upper Z Baseline left-parenthesis z right-parenthesis"><mrow><msub><mi>p</mi>
+    <mi>Z</mi></msub> <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow></mrow></math>
+    is a simple distribution from which we can easily sample (e.g., a Gaussian), then
+    in theory, all we need to do is find an appropriate invertible function <math
+    alttext="f left-parenthesis x right-parenthesis"><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi>
+    <mo>)</mo></mrow></math> that can map from the data <math alttext="upper X"><mi>X</mi></math>
+    into <math alttext="upper Z"><mi>Z</mi></math> and the corresponding inverse function
+    <math alttext="g left-parenthesis z right-parenthesis"><mrow><mi>g</mi> <mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow></math> that can be used to map a sampled <math alttext="z"><mi>z</mi></math>
+    back to a point <math alttext="x"><mi>x</mi></math> in the original domain. We
+    can use the preceding equation involving the Jacobian determinant to find an exact,
+    tractable formula for the data distribution <math alttext="p left-parenthesis
+    x right-parenthesis"><mrow><mi>p</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math>
+    .
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, there are two major issues when applying this in practice that we first
+    need to address!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Firstly, calculating the determinant of a high-dimensional matrix is computationally
+    extremely expensive—specifically, it is <math alttext="script upper O left-parenthesis
+    n cubed right-parenthesis"><mrow><mi>𝒪</mi> <mo>(</mo> <msup><mi>n</mi> <mn>3</mn></msup>
+    <mo>)</mo></mrow></math> . This is completely impractical to implement in practice,
+    as even small 32 × 32–pixel grayscale images have 1,024 dimensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, it is not immediately obvious how we should go about calculating the
+    invertible function <math alttext="f left-parenthesis x right-parenthesis"><mrow><mi>f</mi>
+    <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> . We could use a neural network
+    to find some function <math alttext="f left-parenthesis x right-parenthesis"><mrow><mi>f</mi>
+    <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> but we cannot necessarily invert
+    this network—neural networks only work in one direction!
+  prefs: []
+  type: TYPE_NORMAL
+- en: To solve these two problems, we need to use a special neural network architecture
+    that ensures that the change of variables function <math alttext="f"><mi>f</mi></math>
+    is invertible and has a determinant that is easy to calculate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We shall see how to do this in the following section using a technique called
+    *real-valued non-volume preserving (RealNVP) transformations*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RealNVP
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: RealNVP was first introduced by Dinh et al. in 2017.^([1](ch06.xhtml#idm45387014186656))
+    In this paper the authors show how to construct a neural network that can transform
+    a complex data distribution into a simple Gaussian, while also possessing the
+    desired properties of being invertible and having a Jacobian that can be easily
+    calculated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/06_normflow/01_realnvp/realnvp.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code has been adapted from the excellent [RealNVP tutorial](https://oreil.ly/ZjjwP)
+    created by Mandolini Giorgio Maria et al. available on the Keras website.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Two Moons Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The dataset we will use for this example is created by the `make_moons` function
+    from the Python library `sklearn`. This creates a noisy dataset of points in 2D
+    that resemble two crescents, as shown in [Figure 6-4](#moons_image).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![gdl2 0604](Images/gdl2_0604.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-4\. The two moons dataset in two dimensions
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The code for creating this dataset is given in [Example 6-1](#moons-dataset).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-1\. Creating a *moons* dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_normalizing_flow_models_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make a noisy, unnormalized moons dataset of 3,000 points.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_normalizing_flow_models_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Normalize the dataset to have mean 0 and standard deviation 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will build a RealNVP model that can generate points in 2D that follow a similar
+    distribution to the two moons dataset. Whilst this is a very simple example, it
+    will help us understand how a normalizing flow model works in practice, in fine
+    detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, however, we need to introduce a new type of layer, called a coupling
+    layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Coupling Layers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A *coupling layer* produces a scale and translation factor for each element
+    of its input. In other words, it produces two tensors that are exactly the same
+    size as the input, one for the scale factor and one for the translation factor,
+    as shown in [Figure 6-5](#coupling_layer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0605.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6-5\. A coupling layer outputs two tensors that are the same shape as
+    the input: a scaling factor (s) and a translation factor (t)'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To build a custom `Coupling` layer for our simple example, we can stack `Dense`
+    layers to create the scale output and a different set of `Dense` layers to create
+    the translation output, as shown in [Example 6-2](#coupling-layer-code).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For images, `Coupling` layer blocks use `Conv2D` layers instead of `Dense` layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-2\. A `Coupling` layer in Keras
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_normalizing_flow_models_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The input to the `Coupling` layer block in our example has two dimensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_normalizing_flow_models_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *scaling* stream is a stack of `Dense` layers of size 256.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_normalizing_flow_models_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final scaling layer is of size 2 and has `tanh` activation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_normalizing_flow_models_CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *translation* stream is a stack of `Dense` layers of size 256.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_normalizing_flow_models_CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final translation layer is of size 2 and has `linear` activation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_normalizing_flow_models_CO2-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Coupling` layer is constructed as a Keras `Model` with two outputs (the
+    scaling and translation factors).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice how the number of channels is temporarily increased to allow for a more
+    complex representation to be learned, before being collapsed back down to the
+    same number of channels as the input. In the original paper, the authors also
+    use regularizers on each layer to penalize large weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Passing data through a coupling layer
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The architecture of a coupling layer is not particularly interesting—what makes
+    it unique is the way the input data is masked and transformed as it is fed through
+    the layer, as shown in [Figure 6-6](#forward_update_equations).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0606.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-6\. The process of transforming the input <math alttext="x"><mi>x</mi></math>
+    through a coupling layer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Notice how only the first <math alttext="d"><mi>d</mi></math> dimensions of
+    the data are fed through to the first coupling layer—the remaining <math alttext="upper
+    D minus d"><mrow><mi>D</mi> <mo>-</mo> <mi>d</mi></mrow></math> dimensions are
+    completely masked (i.e., set to zero). In our simple example with <math alttext="upper
+    D equals 2"><mrow><mi>D</mi> <mo>=</mo> <mn>2</mn></mrow></math> , choosing <math
+    alttext="d equals 1"><mrow><mi>d</mi> <mo>=</mo> <mn>1</mn></mrow></math> means
+    that instead of the coupling layer seeing two values, <math alttext="left-parenthesis
+    x 1 comma x 2 right-parenthesis"><mrow><mo>(</mo> <msub><mi>x</mi> <mn>1</mn></msub>
+    <mo>,</mo> <msub><mi>x</mi> <mn>2</mn></msub> <mo>)</mo></mrow></math> , the layer
+    sees <math alttext="left-parenthesis x 1 comma 0 right-parenthesis"><mrow><mo>(</mo>
+    <msub><mi>x</mi> <mn>1</mn></msub> <mo>,</mo> <mn>0</mn> <mo>)</mo></mrow></math>
+    .
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The outputs from the layer are the scale and translation factors. These are
+    again masked, but this time with the *inverse* mask to previously, so that only
+    the second halves are let through—i.e., in our example, we obtain <math alttext="left-parenthesis
+    0 comma s 2 right-parenthesis"><mrow><mo>(</mo> <mn>0</mn> <mo>,</mo> <msub><mi>s</mi>
+    <mn>2</mn></msub> <mo>)</mo></mrow></math> and <math alttext="left-parenthesis
+    0 comma t 2 right-parenthesis"><mrow><mo>(</mo> <mn>0</mn> <mo>,</mo> <msub><mi>t</mi>
+    <mn>2</mn></msub> <mo>)</mo></mrow></math> . These are then applied element-wise
+    to the second half of the input <math alttext="x 2"><msub><mi>x</mi> <mn>2</mn></msub></math>
+    and the first half of the input <math alttext="x 1"><msub><mi>x</mi> <mn>1</mn></msub></math>
+    is simply passed straight through, without being updated at all. In summary, for
+    a vector with dimension <math alttext="upper D"><mi>D</mi></math> where <math
+    alttext="d less-than upper D"><mrow><mi>d</mi> <mo><</mo> <mi>D</mi></mrow></math>
+    , the update equations are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column z Subscript 1 colon d 2nd Column
+    equals 3rd Column x Subscript 1 colon d 2nd Row 1st Column z Subscript d plus
+    1 colon upper D 2nd Column equals 3rd Column x Subscript d plus 1 colon upper
+    D Baseline circled-dot normal e normal x normal p left-parenthesis s left-parenthesis
+    x Subscript 1 colon d Baseline right-parenthesis right-parenthesis plus t left-parenthesis
+    x Subscript 1 colon d Baseline right-parenthesis EndLayout" display="block"><mtable
+    displaystyle="true"><mtr><mtd columnalign="right"><msub><mi>z</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mtd></mtr>
+    <mtr><mtd columnalign="right"><msub><mi>z</mi> <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><msub><mi>x</mi> <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub>
+    <mo>⊙</mo> <mi>exp</mi> <mfenced separators="" open="(" close=")"><mi>s</mi> <mo>(</mo>
+    <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub> <mo>)</mo></mfenced>
+    <mo>+</mo> <mi>t</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>)</mo></mrow></mrow></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You may be wondering why we go to the trouble of building a layer that masks
+    so much information. The answer is clear if we investigate the structure of the
+    Jacobian matrix of this function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartFraction normal partial-differential z Over normal partial-differential
+    x EndFraction equals Start 2 By 2 Matrix 1st Row 1st Column bold upper I 2nd Column
+    0 2nd Row 1st Column StartFraction normal partial-differential z Subscript d plus
+    1 colon upper D Baseline Over normal partial-differential x Subscript 1 colon
+    d Baseline EndFraction 2nd Column normal d normal i normal a normal g left-parenthesis
+    normal e normal x normal p left-bracket s left-parenthesis x Subscript 1 colon
+    d Baseline right-parenthesis right-bracket right-parenthesis EndMatrix" display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow>
+    <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mi>𝐈</mi></mtd>
+    <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mfrac><mrow><mi>∂</mi><msub><mi>z</mi>
+    <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></mrow>
+    <mrow><mi>∂</mi><msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mrow></mfrac></mtd>
+    <mtd><mrow><mi>diag</mi> <mo>(</mo> <mi>exp</mi> <mrow><mo>[</mo> <mi>s</mi> <mrow><mo>(</mo>
+    <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub> <mo>)</mo></mrow>
+    <mo>]</mo></mrow> <mo>)</mo></mrow></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The top-left <math alttext="d times d"><mrow><mi>d</mi> <mo>×</mo> <mi>d</mi></mrow></math>
+    submatrix is simply the identity matrix, because <math alttext="z Subscript 1
+    colon d Baseline equals x Subscript 1 colon d"><mrow><msub><mi>z</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>=</mo> <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mrow></math>
+    . These elements are passed straight through without being updated. The top-right
+    submatrix is therefore 0, because <math alttext="z Subscript 1 colon d"><msub><mi>z</mi>
+    <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></math> is not dependent on
+    <math alttext="x Subscript d plus 1 colon upper D"><msub><mi>x</mi> <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></math>
+    .
+  prefs: []
+  type: TYPE_NORMAL
+- en: The bottom-left submatrix is complex, and we do not seek to simplify this. The
+    bottom-right submatrix is simply a diagonal matrix, filled with the elements of
+    <math alttext="normal e normal x normal p left-parenthesis s left-parenthesis
+    x Subscript 1 colon d Baseline right-parenthesis right-parenthesis"><mrow><mi>exp</mi>
+    <mo>(</mo> <mi>s</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>)</mo></mrow> <mo>)</mo></mrow></math> , because <math alttext="z Subscript
+    d plus 1 colon upper D"><msub><mi>z</mi> <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></math>
+    is linearly dependent on <math alttext="x Subscript d plus 1 colon upper D"><msub><mi>x</mi>
+    <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></math>
+    and the gradient is dependent only on the scaling factor (not on the translation
+    factor). [Figure 6-7](#jacobian_upper_triangular) shows a diagram of this matrix
+    form, where only the nonzero elements are filled in with color.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Notice how there are no nonzero elements above the diagonal—for this reason,
+    this matrix form is called *lower triangular*. Now we see the benefit of structuring
+    the matrix in this way—the determinant of a lower-triangular matrix is just equal
+    to the product of the diagonal elements. In other words, the determinant is not
+    dependent on any of the complex derivatives in the bottom-left submatrix!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0607.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-7\. The Jacobian matrix of the transformation—a lower triangular matrix,
+    with determinant equal to the product of the elements along the diagonal
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Therefore, we can write the determinant of this matrix as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal d normal e normal t left-parenthesis normal upper J right-parenthesis
+    equals normal e normal x normal p left-bracket sigma-summation Underscript j Endscripts
+    s left-parenthesis x Subscript 1 colon d Baseline right-parenthesis Subscript
+    j Baseline right-bracket" display="block"><mrow><mi>det</mi> <mrow><mo>(</mo>
+    <mi mathvariant="normal">J</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>exp</mi> <mfenced
+    separators="" open="[" close="]"><munder><mo>∑</mo> <mi>j</mi></munder> <mi>s</mi>
+    <msub><mrow><mo>(</mo><msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>)</mo></mrow> <mi>j</mi></msub></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is easily computable, which was one of the two original goals of building
+    a normalizing flow model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other goal was that the function must be easily invertible. We can see
+    that this is true as we can write down the invertible function just by rearranging
+    the forward equations, as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column x Subscript 1 colon d 2nd Column
+    equals 3rd Column z Subscript 1 colon d 2nd Row 1st Column x Subscript d plus
+    1 colon upper D 2nd Column equals 3rd Column left-parenthesis z Subscript d plus
+    1 colon upper D Baseline minus t left-parenthesis x Subscript 1 colon d Baseline
+    right-parenthesis right-parenthesis circled-dot normal e normal x normal p left-parenthesis
+    minus s left-parenthesis x Subscript 1 colon d Baseline right-parenthesis right-parenthesis
+    EndLayout" display="block"><mtable displaystyle="true"><mtr><mtd columnalign="right"><msub><mi>x</mi>
+    <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mtd> <mtd><mo>=</mo></mtd>
+    <mtd columnalign="left"><msub><mi>z</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub></mtd></mtr>
+    <mtr><mtd columnalign="right"><msub><mi>x</mi> <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><mrow><mo>(</mo> <msub><mi>z</mi>
+    <mrow><mi>d</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>D</mi></mrow></msub> <mo>-</mo>
+    <mi>t</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>⊙</mo> <mi>exp</mi> <mfenced separators=""
+    open="(" close=")"><mo>-</mo> <mi>s</mi> <mo>(</mo> <msub><mi>x</mi> <mrow><mn>1</mn><mo>:</mo><mi>d</mi></mrow></msub>
+    <mo>)</mo></mfenced></mrow></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: The equivalent diagram is shown in [Figure 6-8](#backward_update_equations).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0608.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-8\. The inverse function x = g(z)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We now have almost everything we need to build our RealNVP model. However, there
+    is one issue that still remains—how should we update the first <math alttext="d"><mi>d</mi></math>
+    elements of the input? Currently they are left completely unchanged by the model!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stacking coupling layers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: To resolve this problem, we can use a really simple trick. If we stack coupling
+    layers on top of each other but alternate the masking pattern, the layers that
+    are left unchanged by one layer will be updated in the next. This architecture
+    has the added benefit of being able to learn more complex representations of the
+    data, as it is a deeper neural network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Jacobian of this composition of coupling layers will still be simple to
+    compute, because linear algebra tells us that the determinant of a matrix product
+    is the product of the determinants. Similarly, the inverse of the composition
+    of two functions is just the composition of the inverses, as shown in the following
+    equations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column normal d normal e normal t left-parenthesis
+    normal upper A dot normal upper B right-parenthesis 2nd Column equals 3rd Column
+    normal d normal e normal t left-parenthesis normal upper A right-parenthesis normal
+    d normal e normal t left-parenthesis normal upper B right-parenthesis 2nd Row
+    1st Column left-parenthesis f Subscript b Baseline ring f Subscript a Baseline
+    right-parenthesis Superscript negative 1 2nd Column equals 3rd Column f Subscript
+    a Superscript negative 1 Baseline ring f Subscript b Superscript negative 1 EndLayout"
+    display="block"><mtable displaystyle="true"><mtr><mtd columnalign="right"><mrow><mi>det</mi>
+    <mo>(</mo> <mi mathvariant="normal">A</mi> <mo>·</mo> <mi mathvariant="normal">B</mi>
+    <mo>)</mo></mrow></mtd> <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><mi>det</mi>
+    <mo>(</mo> <mi mathvariant="normal">A</mi> <mo>)</mo> <mi>det</mi> <mo>(</mo>
+    <mi mathvariant="normal">B</mi> <mo>)</mo></mrow></mtd></mtr> <mtr><mtd columnalign="right"><msup><mrow><mo>(</mo><msub><mi>f</mi>
+    <mi>b</mi></msub> <mo>∘</mo><msub><mi>f</mi> <mi>a</mi></msub> <mo>)</mo></mrow>
+    <mrow><mo>-</mo><mn>1</mn></mrow></msup></mtd> <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><msubsup><mi>f</mi>
+    <mi>a</mi> <mrow><mo>-</mo><mn>1</mn></mrow></msubsup> <mo>∘</mo> <msubsup><mi>f</mi>
+    <mi>b</mi> <mrow><mo>-</mo><mn>1</mn></mrow></msubsup></mrow></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, if we stack coupling layers, flipping the masking each time, we can
+    build a neural network that is able to transform the whole input tensor, while
+    retaining the essential properties of having a simple Jacobian determinant and
+    being invertible. [Figure 6-9](#stacking_coupling) shows the overall structure.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0609.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-9\. Stacking coupling layers, alternating the masking with each layer
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Training the RealNVP Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Now that we have built the RealNVP model, we can train it to learn the complex
+    distribution of the two moons dataset. Remember, we want to minimize the negative
+    log-likelihood of the data under the model <math alttext="minus log p Subscript
+    upper X Baseline left-parenthesis x right-parenthesis"><mrow><mo>-</mo> <mo form="prefix">log</mo>
+    <mrow><msub><mi>p</mi> <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></mrow></math>
+    . Using [Equation 6-1](#cov_equation), we can write this as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="minus log p Subscript upper X Baseline left-parenthesis x right-parenthesis
+    equals minus log p Subscript upper Z Baseline left-parenthesis z right-parenthesis
+    minus log StartAbsoluteValue normal d normal e normal t left-parenthesis StartFraction
+    normal partial-differential z Over normal partial-differential x EndFraction right-parenthesis
+    EndAbsoluteValue" display="block"><mrow><mo>-</mo> <mo form="prefix">log</mo>
+    <mrow><msub><mi>p</mi> <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow>
+    <mo>=</mo> <mo>-</mo> <mo form="prefix">log</mo> <mrow><msub><mi>p</mi> <mi>Z</mi></msub>
+    <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow></mrow> <mo>-</mo> <mo form="prefix">log</mo>
+    <mfenced separators="" open="|" close="|"><mi>det</mi> <mfenced separators=""
+    open="(" close=")"><mfrac><mrow><mi>∂</mi><mi>z</mi></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mfenced></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: We choose the target output distribution <math alttext="p Subscript upper Z
+    Baseline left-parenthesis z right-parenthesis"><mrow><msub><mi>p</mi> <mi>Z</mi></msub>
+    <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow></mrow></math> of the forward process
+    <math alttext="f"><mi>f</mi></math> to be a standard Gaussian, because we can
+    easily sample from this distribution. We can then transform a point sampled from
+    the Gaussian back into the original image domain by applying the inverse process
+    <math alttext="g"><mi>g</mi></math> , as shown in [Figure 6-10](#realnvp_to_gaussian).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0610.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-10\. Transforming between the complex distribution <math alttext="p
+    Subscript upper X Baseline left-parenthesis x right-parenthesis"><mrow><msub><mi>p</mi>
+    <mi>X</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>
+    and a simple Gaussian <math alttext="p Subscript upper Z Baseline left-parenthesis
+    z right-parenthesis"><mrow><msub><mi>p</mi> <mi>Z</mi></msub> <mrow><mo>(</mo>
+    <mi>z</mi> <mo>)</mo></mrow></mrow></math> in 1D (middle row) and 2D (bottom row)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Example 6-3](#realnvp_model) shows how to build a RealNVP network, as a custom
+    Keras `Model`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 6-3\. Building the RealNVP model in Keras
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_normalizing_flow_models_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The target distribution is a standard 2D Gaussian.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_normalizing_flow_models_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, we create the alternating mask pattern.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_normalizing_flow_models_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A list of `Coupling` layers that define the RealNVP network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_normalizing_flow_models_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the main `call` function of the network, we loop over the `Coupling` layers.
+    If `training=True`, then we move forward through the layers (i.e., from data to
+    latent space). If `training=False`, then we move backward through the layers (i.e.,
+    from latent space to data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_normalizing_flow_models_CO3-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This line describes both the forward and backward equations dependent on the
+    `direction` (try plugging in `direction = -1` and `direction = 1` to prove this
+    to yourself!).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_normalizing_flow_models_CO3-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The log determinant of the Jacobian, which we need to calculate the loss function,
+    is simply the sum of the scaling factors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_normalizing_flow_models_CO3-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The loss function is the negative sum of the log probability of the transformed
+    data, under our target Gaussian distribution and the log determinant of the Jacobian.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis of the RealNVP Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Once the model is trained, we can use it to transform the training set into
+    the latent space (using the forward direction, <math alttext="f"><mi>f</mi></math>
+    ) and, more importantly, to transform a sampled point in the latent space into
+    a point that looks like it could have been sampled from the original data distribution
+    (using the backward direction, <math alttext="g"><mi>g</mi></math> ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 6-11](#realnvp_before_training) shows the output from the network before
+    any learning has taken place—the forward and backward directions just pass information
+    straight through with hardly any transformation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0611.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-11\. The RealNVP model inputs (left) and outputs (right) before training,
+    for the forward process (top) and the reverse process (bottom)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: After training ([Figure 6-12](#realnvp_after_training)), the forward process
+    is able to convert the points from the training set into a distribution that resembles
+    a Gaussian. Likewise, the backward process can take points sampled from a Gaussian
+    distribution and map them back to a distribution that resembles the original data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0612.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-12\. The RealNVP model inputs (left) and outputs (right) after training,
+    for the forward process (top) and the reverse process (bottom)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The loss curve for the training process is shown in [Figure 6-13](#realnvp_loss_curve).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0613.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-13\. The loss curve for the RealNVP training process
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This completes our discussion of RealNVP, a specific case of a normalizing flow
+    generative model. In the next section, we’ll cover some modern normalizing flow
+    models that extend the ideas introduced in the RealNVP paper.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other Normalizing Flow Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Two other successful and important normalizing flow models are *GLOW* and *FFJORD*.
+    The following sections describe the key advancements they made.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GLOW
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Presented at NeurIPS 2018, GLOW was one of the first models to demonstrate the
+    ability of normalizing flows to generate high-quality samples and produce a meaningful
+    latent space that can be traversed to manipulate samples. The key step was to
+    replace the reverse masking setup with invertible 1 × 1 convolutional layers.
+    For example, with RealNVP applied to images, the ordering of the channels is flipped
+    after each step, to ensure that the network gets the chance to transform all of
+    the input. In GLOW a 1 × 1 convolution is applied instead, which effectively acts
+    as a general method to produce any permutation of the channels that the model
+    desires. The authors show that even with this addition, the distribution as a
+    whole remains tractable, with determinants and inverses that are easy to compute
+    at scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0614.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6-14\. Random samples from the GLOW model (source: [Kingma and Dhariwal,
+    2018](https://arxiv.org/abs/1807.03039))^([2](ch06.xhtml#idm45387012901552))'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: FFJORD
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'RealNVP and GLOW are discrete time normalizing flows—that is, they transform
+    the input through a discrete set of coupling layers. FFJORD (Free-Form Continuous
+    Dynamics for Scalable Reversible Generative Models), presented at ICLR 2019, shows
+    how it is possible to model the transformation as a continuous time process (i.e.,
+    by taking the limit as the number of steps in the flow tends to infinity and the
+    step size tends to zero). In this case, the dynamics are modeled using an ordinary
+    differential equation (ODE) whose parameters are produced by a neural network
+    ( <math alttext="f Subscript theta"><msub><mi>f</mi> <mi>θ</mi></msub></math>
+    ). A black-box solver is used to solve the ODE at time <math alttext="t 1"><msub><mi>t</mi>
+    <mn>1</mn></msub></math> —i.e., to find <math alttext="z 1"><msub><mi>z</mi> <mn>1</mn></msub></math>
+    given some initial point <math alttext="z 0"><msub><mi>z</mi> <mn>0</mn></msub></math>
+    sampled from a Gaussian at <math alttext="t 0"><msub><mi>t</mi> <mn>0</mn></msub></math>
+    , as described by the following equations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column z 0 2nd Column tilde 3rd Column
+    p left-parenthesis z 0 right-parenthesis 2nd Row 1st Column StartFraction normal
+    partial-differential z left-parenthesis t right-parenthesis Over normal partial-differential
+    t EndFraction 2nd Column equals 3rd Column f Subscript theta Baseline left-parenthesis
+    x left-parenthesis t right-parenthesis comma t right-parenthesis 3rd Row 1st Column
+    x 2nd Column equals 3rd Column z 1 EndLayout" display="block"><mtable displaystyle="true"><mtr><mtd
+    columnalign="right"><msub><mi>z</mi> <mn>0</mn></msub></mtd> <mtd><mo>∼</mo></mtd>
+    <mtd columnalign="left"><mrow><mi>p</mi> <mo>(</mo> <msub><mi>z</mi> <mn>0</mn></msub>
+    <mo>)</mo></mrow></mtd></mtr> <mtr><mtd columnalign="right"><mfrac><mrow><mi>∂</mi><mi>z</mi><mo>(</mo><mi>t</mi><mo>)</mo></mrow>
+    <mrow><mi>∂</mi><mi>t</mi></mrow></mfrac></mtd> <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><msub><mi>f</mi>
+    <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>x</mi> <mrow><mo>(</mo> <mi>t</mi> <mo>)</mo></mrow>
+    <mo>,</mo> <mi>t</mi> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd columnalign="right"><mi>x</mi></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><msub><mi>z</mi> <mn>1</mn></msub></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: A diagram of the transformation process is shown in [Figure 6-15](#ffjord_model).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0615.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6-15\. FFJORD models the transformation between the data distribution
+    and a standard Gaussian via an ordinary differential equation, parameterized by
+    a neural network (source: [Will Grathwohl et al., 2018](https://arxiv.org/abs/1810.01367))^([3](ch06.xhtml#idm45387012548496))'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter we explored normalizing flow models such as RealNVP, GLOW, and
+    FFJORD.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A normalizing flow model is an invertible function defined by a neural network
+    that allows us to directly model the data density via a change of variables. In
+    the general case, the change of variables equation requires us to calculate a
+    highly complex Jacobian determinant, which is impractical for all but the simplest
+    of examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To sidestep this issue, the RealNVP model restricts the form of the neural
+    network, such that it adheres to the two essential criteria: it is invertible
+    and has a Jacobian determinant that is easy to compute.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It does this through stacking coupling layers, which produce scale and translation
+    factors at each step. Importantly, the coupling layer masks the data as it flows
+    through the network, in a way that ensures that the Jacobian is lower triangular
+    and therefore has a simple-to-compute determinant. Full visibility of the input
+    data is achieved through flipping the masks at each layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By design, the scale and translation operations can be easily inverted, so that
+    once the model is trained it is possible to run data through the network in reverse.
+    This means that we can target the forward transformation process toward a standard
+    Gaussian, which we can easily sample from. We can then run the sampled points
+    backward through the network to generate new observations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The RealNVP paper also shows how it is possible to apply this technique to images,
+    by using convolutions inside the coupling layers, rather than densely connected
+    layers. The GLOW paper extended this idea to remove the necessity for any hardcoded
+    permutation of the masks. The FFJORD model introduced the concept of continuous
+    time normalizing flows, by modeling the transformation process as an ODE defined
+    by a neural network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overall, we have seen how normalizing flows are a powerful generative modeling
+    family that can produce high-quality samples, while maintaining the ability to
+    tractably describe the data density function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.xhtml#idm45387014186656-marker)) Laurent Dinh et al., “Density Estimation
+    Using Real NVP,” May 27, 2016, [*https://arxiv.org/abs/1605.08803v3*](https://arxiv.org/abs/1605.08803v3).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](ch06.xhtml#idm45387012901552-marker)) Diedrick P. Kingma and Prafulla
+    Dhariwal, “Glow: Generative Flow with Invertible 1x1 Convolutions,” July 10, 2018,
+    *[*https://arxiv.org/abs/1807.03039*](https://arxiv.org/abs/1807.03039)*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([3](ch06.xhtml#idm45387012548496-marker)) Will Grathwohl et al., “FFJORD:
+    Free-Form Continuous Dynamics for Scalable Reversible Generative Models,” October
+    22, 2018, *[*https://arxiv.org/abs/1810.01367*](https://arxiv.org/abs/1810.01367)*.'
+  prefs: []
+  type: TYPE_NORMAL

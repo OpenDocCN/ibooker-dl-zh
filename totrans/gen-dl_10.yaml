@@ -1,0 +1,712 @@
+- en: Chapter 7\. Energy-Based Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Energy-based models are a broad class of generative model that borrow a key
+    idea from modeling physical systems—namely, that the probability of an event can
+    be expressed using a Boltzmann distribution, a specific function that normalizes
+    a real-valued energy function between 0 and 1\. This distribution was originally
+    formulated in 1868 by Ludwig Boltzmann, who used it to describe gases in thermal
+    equilibrium.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we will see how we can use this idea to train a generative
+    model that can be used to produce images of handwritten digits. We will explore
+    several new concepts, including contrastive divergence for training the EBM and
+    Langevin dynamics for sampling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We will begin with a short story to illustrate the key concepts behind energy-based
+    models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The story of Diane Mixx and the Long-au-Vin running club captures the key ideas
+    behind energy-based modeling. Let’s now explore the theory in more detail, before
+    we implement a practical example using Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Energy-Based Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Energy-based models attempt to model the true data-generating distribution using
+    a *Boltzmann distribution* ([Equation 7-1](#boltzmann_equation)) where <math alttext="upper
+    E left-parenthesis x right-parenthesis"><mrow><mi>E</mi> <mo>(</mo> <mi>x</mi>
+    <mo>)</mo></mrow></math> is know as the *energy function* (or *score*) of an observation
+    <math alttext="x"><mi>x</mi></math> .
+  prefs: []
+  type: TYPE_NORMAL
+- en: Equation 7-1\. Boltzmann distribution
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: <math alttext="p left-parenthesis bold x right-parenthesis equals StartFraction
+    e Superscript minus upper E left-parenthesis bold x right-parenthesis Baseline
+    Over integral Underscript ModifyingAbove bold x With bold caret element-of bold
+    upper X Endscripts e Superscript minus upper E left-parenthesis ModifyingAbove
+    bold x With bold caret right-parenthesis Baseline EndFraction" display="block"><mrow><mi>p</mi>
+    <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><msup><mi>e</mi>
+    <mrow><mo>-</mo><mi>E</mi><mo>(</mo><mi>𝐱</mi><mo>)</mo></mrow></msup> <mrow><msub><mo>∫</mo>
+    <mrow><mover accent="true"><mi>𝐱</mi> <mo>^</mo></mover><mo>∈</mo><mi>𝐗</mi></mrow></msub>
+    <msup><mi>e</mi> <mrow><mo>-</mo><mi>E</mi><mo>(</mo><mover accent="true"><mi>𝐱</mi>
+    <mo>^</mo></mover><mo>)</mo></mrow></msup></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: In practice, this amounts to training a neural network <math alttext="upper
+    E left-parenthesis x right-parenthesis"><mrow><mi>E</mi> <mo>(</mo> <mi>x</mi>
+    <mo>)</mo></mrow></math> to output low scores for likely observations (so <math
+    alttext="p bold x"><mrow><mi>p</mi> <mi>𝐱</mi></mrow></math> is close to 1) and
+    high scores for unlikely observations (so <math alttext="p bold x"><mrow><mi>p</mi>
+    <mi>𝐱</mi></mrow></math> is close to 0).
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are two challenges with modeling the data in this way. Firstly, it is
+    not clear how we should use our model for sampling new observations—we can use
+    it to generate a score given an observation, but how do we generate an observation
+    that has a low score (i.e., a plausible observation)?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Secondly, the normalizing denominator of [Equation 7-1](#boltzmann_equation)
+    contains an integral that is intractable for all but the simplest of problems.
+    If we cannot calculate this integral, then we cannot use maximum likelihood estimation
+    to train the model, as this requires that <math alttext="p bold x"><mrow><mi>p</mi>
+    <mi>𝐱</mi></mrow></math> is a valid probability distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The key idea behind an energy-based model is that we can use approximation techniques
+    to ensure we never need to calculate the intractable denominator. This is in contrast
+    to, say, a normalizing flow, where we go to great lengths to ensure that the transformations
+    that we apply to our standard Gaussian distribution do not change the fact that
+    the output is still a valid probability distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We sidestep the tricky intractable denominator problem by using a technique
+    called contrastive divergence (for training) and a technique called Langevin dynamics
+    (for sampling), following the ideas from Du and Mordatch’s 2019 paper “Implicit
+    Generation and Modeling with Energy-Based Models.”^([1](ch07.xhtml#idm45387012482384))
+    We shall explore these techniques in detail while building our own EBM later in
+    the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, let’s get set up with a dataset and design a simple neural network that
+    will represent our real-valued energy function <math alttext="upper E left-parenthesis
+    x right-parenthesis"><mrow><mi>E</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math>
+    .
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the Code for This Example
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The code for this example can be found in the Jupyter notebook located at *notebooks/07_ebm/01_ebm/ebm.ipynb*
+    in the book repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code is adapted from the excellent [tutorial on deep energy-based generative
+    models](https://oreil.ly/kyO9B) by Phillip Lippe.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The MNIST Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We’ll be using the standard [MNIST dataset](https://oreil.ly/mSvhc), consisting
+    of grayscale images of handwritten digits. Some example images from the dataset
+    are shown in [Figure 7-2](#mnist_examples).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0702.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-2\. Examples of images from the MNIST dataset
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The dataset comes prepackaged with TensorFlow, so it can be downloaded as shown
+    in [Example 7-1](#mnist-ex).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-1\. Loading the MNIST dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: As usual, we’ll scale the pixel values to the range [-1, 1] and add some padding
+    to make the images 32 × 32 pixels in size. We also convert it to a TensorFlow
+    Dataset, as shown in [Example 7-2](#mnist-preprocessing-ex).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-2\. Preprocessing the MNIST dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that we have our dataset, we can build the neural network that will represent
+    our energy function <math alttext="upper E left-parenthesis x right-parenthesis"><mrow><mi>E</mi>
+    <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> .
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Energy Function
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The energy function <math alttext="upper E Subscript theta Baseline left-parenthesis
+    x right-parenthesis"><mrow><msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo>
+    <mi>x</mi> <mo>)</mo></mrow></mrow></math> is a neural network with parameters
+    <math alttext="theta"><mi>θ</mi></math> that can transform an input image <math
+    alttext="x"><mi>x</mi></math> into a scalar value. Throughout this network, we
+    make use of an activation function called *swish*, as described in the following
+    sidebar.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The network is a set of stacked `Conv2D` layers that gradually reduce the size
+    of the image while increasing the number of channels. The final layer is a single
+    fully connected unit with linear activation, so the network can output values
+    in the range ( <math alttext="negative normal infinity"><mrow><mo>-</mo> <mi>∞</mi></mrow></math>
+    , <math alttext="normal infinity"><mi>∞</mi></math> ). The code to build it is
+    given in [Example 7-3](#ebm-model).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-3\. Building the energy function <math alttext="upper E left-parenthesis
+    x right-parenthesis"><mrow><mi>E</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math>
+    neural network
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_energy_based_models_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The energy function is a set of stacked `Conv2D` layers, with swish activation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_energy_based_models_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final layer is a single fully connected unit, with a linear activation function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_energy_based_models_CO1-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Keras `Model` that converts the input image into a scalar energy value.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sampling Using Langevin Dynamics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The energy function only outputs a score for a given input—how can we use this
+    function to generate new samples that have a low energy score?
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will use a technique called *Langevin dynamics*, which makes use of the fact
+    that we can compute the gradient of the energy function with respect to its input.
+    If we start from a random point in the sample space and take small steps in the
+    opposite direction of the calculated gradient, we will gradually reduce the energy
+    function. If our neural network is trained correctly, then the random noise should
+    transform into an image that resembles an observation from the training set before
+    our eyes!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Stochastic Gradient Langevin Dynamics
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Importantly, we must also add a small amount of random noise to the input as
+    we travel across the sample space; otherwise, there is a risk of falling into
+    local minima. The technique is therefore known as stochastic gradient Langevin
+    dynamics.^([3](ch07.xhtml#idm45387012049200))
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can visualize this gradient descent as shown in [Figure 7-4](#langevin_diagram),
+    for a two-dimensional space with the energy function value on the third dimension.
+    The path is a noisy descent downhill, following the negative gradient of the energy
+    function <math alttext="upper E left-parenthesis x right-parenthesis"><mrow><mi>E</mi>
+    <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> with respect to the input <math
+    alttext="x"><mi>x</mi></math> . In the MNIST image dataset, we have 1,024 pixels
+    so are navigating a 1,024-dimensional space, but the same principles apply!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![https://www.math3d.org/C1sQPhizZ](Images/gdl2_0704.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-4\. Gradient descent using Langevin dynamics
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: It is worth noting the difference between this kind of gradient descent and
+    the kind of gradient descent we normally use to train a neural network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When training a neural network, we calculate the gradient of the *loss function*
+    with respect to the *parameters* of the network (i.e., the weights) using backpropagation.
+    Then we update the parameters a small amount in the direction of the negative
+    gradient, so that over many iterations, we gradually minimize the loss.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With Langevin dynamics, we keep the neural network weights *fixed* and calculate
+    the gradient of the *output* with respect to the *input*. Then we update the input
+    a small amount in the direction of the negative gradient, so that over many iterations,
+    we gradually minimize the output (the energy score).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both processes utilize the same idea (gradient descent), but are applied to
+    different functions and with respect to different entities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Formally, Langevin dynamics can be described by the following equation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="x Superscript k Baseline equals x Superscript k minus 1 Baseline
+    minus eta normal nabla Subscript x Baseline upper E Subscript theta Baseline left-parenthesis
+    x Superscript k minus 1 Baseline right-parenthesis plus omega" display="block"><mrow><msup><mi>x</mi>
+    <mi>k</mi></msup> <mo>=</mo> <msup><mi>x</mi> <mrow><mi>k</mi><mo>-</mo><mn>1</mn></mrow></msup>
+    <mo>-</mo> <mi>η</mi> <msub><mi>∇</mi> <mi>x</mi></msub> <msub><mi>E</mi> <mi>θ</mi></msub>
+    <mrow><mo>(</mo> <msup><mi>x</mi> <mrow><mi>k</mi><mo>-</mo><mn>1</mn></mrow></msup>
+    <mo>)</mo></mrow> <mo>+</mo> <mi>ω</mi></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where <math alttext="omega tilde script upper N left-parenthesis 0 comma sigma
+    right-parenthesis"><mrow><mi>ω</mi> <mo>∼</mo> <mi>𝒩</mi> <mo>(</mo> <mn>0</mn>
+    <mo>,</mo> <mi>σ</mi> <mo>)</mo></mrow></math> and <math alttext="x Superscript
+    0 Baseline tilde script upper U"><mrow><msup><mi>x</mi> <mn>0</mn></msup> <mo>∼</mo>
+    <mi>𝒰</mi></mrow></math> (–1,1). <math alttext="eta"><mi>η</mi></math> is the
+    step size hyperparameter that must be tuned—too large and the steps jump over
+    minima, too small and the algorithm will be too slow to converge.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: <math alttext="x Superscript 0 Baseline tilde script upper U"><mrow><msup><mi>x</mi>
+    <mn>0</mn></msup> <mo>∼</mo> <mi>𝒰</mi></mrow></math> (–1,1) is the uniform distribution
+    on the range [–1, 1].
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can code up our Langevin sampling function as illustrated in [Example 7-4](#langevin-sampler).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-4\. The Langevin sampling function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_energy_based_models_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop over given number of steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_energy_based_models_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add a small amount of noise to the image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_energy_based_models_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pass the image through the model to obtain the energy score.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_energy_based_models_CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calculate the gradient of the output with respect to the input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_energy_based_models_CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add a small amount of the gradient to the input image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training with Contrastive Divergence
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we know how to sample a novel low-energy point from the sample space,
+    let’s turn our attention to training the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We cannot apply maximum likelihood estimation, because the energy function does
+    not output a probability; it outputs a score that does not integrate to 1 across
+    the sample space. Instead, we will apply a technique first proposed in 2002 by
+    Geoffrey Hinton, called *contrastive divergence*, for training unnormalized scoring
+    models.^([4](ch07.xhtml#idm45387011649104))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The value that we want to minimize (as always) is the negative log-likelihood
+    of the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="script upper L equals minus double-struck upper E Subscript x
+    tilde normal d normal a normal t normal a Baseline left-bracket log p Subscript
+    theta Baseline left-parenthesis bold x right-parenthesis right-bracket" display="block"><mrow><mi>ℒ</mi>
+    <mo>=</mo> <mo>-</mo> <msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo> <mi>data</mi></mrow></msub>
+    <mfenced separators="" open="[" close="]"><mo form="prefix">log</mo> <msub><mi>p</mi>
+    <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: When <math alttext="p Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>p</mi>
+    <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+    has the form of a Boltzmann distribution, with energy function <math alttext="upper
+    E Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>E</mi>
+    <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math>
+    , it can be shown that the gradient of this value can be written as follows (Oliver
+    Woodford’s “Notes on Contrastive Divergence” for the full derivation):^([5](ch07.xhtml#idm45387011627440))
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="StartLayout 1st Row 1st Column normal nabla Subscript theta Baseline
+    script upper L 2nd Column equals 3rd Column double-struck upper E Subscript x
+    tilde normal d normal a normal t normal a Baseline left-bracket normal nabla Subscript
+    theta Baseline upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis
+    right-bracket minus double-struck upper E Subscript x tilde normal m normal o
+    normal d normal e normal l Baseline left-bracket normal nabla Subscript theta
+    Baseline upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis
+    right-bracket EndLayout" display="block"><mtable displaystyle="true"><mtr><mtd
+    columnalign="right"><mrow><msub><mi>∇</mi> <mi>θ</mi></msub> <mi>ℒ</mi></mrow></mtd>
+    <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo>
+    <mi>data</mi></mrow></msub> <mfenced separators="" open="[" close="]"><msub><mi>∇</mi>
+    <mi>θ</mi></msub> <msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi>
+    <mo>)</mo></mrow></mfenced> <mo>-</mo> <msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo>
+    <mi>model</mi></mrow></msub> <mfenced separators="" open="[" close="]"><msub><mi>∇</mi>
+    <mi>θ</mi></msub> <msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi>
+    <mo>)</mo></mrow></mfenced></mrow></mtd></mtr></mtable></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: This intuitively makes a lot of sense—we want to train the model to output large
+    negative energy scores for real observations and large positive energy scores
+    for generated fake observations so that the contrast between these two extremes
+    is as large as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In other words, we can calculate the difference between the energy scores of
+    real and fake samples and use this as our loss function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To calculate the energy scores of fake samples, we would need to be able to
+    sample exactly from the distribution <math alttext="p Subscript theta Baseline
+    left-parenthesis bold x right-parenthesis"><mrow><msub><mi>p</mi> <mi>θ</mi></msub>
+    <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math> , which isn’t possible
+    due to the intractable denominator. Instead, we can use our Langevin sampling
+    procedure to generate a set of observations with low energy scores. The process
+    would need to run for infinitely many steps to produce a perfect sample (which
+    is obviously impractical), so instead we run for some small number of steps, on
+    the assumption that this is good enough to produce a meaningful loss function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We also maintain a buffer of samples from previous iterations, so that we can
+    use this as the starting point for the next batch, rather than pure random noise.
+    The code to produce the sampling buffer is shown in [Example 7-5](#sampling_buffer).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-5\. The `Buffer`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_energy_based_models_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The sampling buffer is initialized with a batch of random noise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_energy_based_models_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On average, 5% of observations are generated from scratch (i.e., random noise)
+    each time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_energy_based_models_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The rest are pulled at random from the existing buffer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_energy_based_models_CO3-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The observations are concatenated and run through the Langevin sampler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_energy_based_models_CO3-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting sample is added to the buffer, which is trimmed to a max length
+    of 8,192 observations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 7-5](#contrastive_divergence) shows one training step of contrastive
+    divergence. The scores of real observations are pushed down by the algorithm and
+    the scores of fake observations are pulled up, without caring about normalizing
+    these scores after each step.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0705.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-5\. One step of contrastive divergence
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can code up the training step of the contrastive divergence algorithm within
+    a custom Keras model as shown in [Example 7-6](#contrastive_divergence_python).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-6\. EBM trained using contrastive divergence
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](Images/1.png)](#co_energy_based_models_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A small amount of random noise is added to the real images, to avoid the model
+    overfitting to the training set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](Images/2.png)](#co_energy_based_models_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A set of fake images are sampled from the buffer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](Images/3.png)](#co_energy_based_models_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The real and fake images are run through the model to produce real and fake
+    scores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](Images/4.png)](#co_energy_based_models_CO4-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The contrastive divergence loss is simply the difference between the scores
+    of real and fake observations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](Images/5.png)](#co_energy_based_models_CO4-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A regularization loss is added to avoid the scores becoming too large.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](Images/6.png)](#co_energy_based_models_CO4-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Gradients of the loss function with respect to the weights of the network are
+    calculated for backpropagation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![7](Images/7.png)](#co_energy_based_models_CO4-7)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `test_step` is used during validation and calculates the contrastive divergence
+    between the scores of a set of random noise and data from the training set. It
+    can be used as a measure for how well the model is training (see the following
+    section).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analysis of the Energy-Based Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The loss curves and supporting metrics from the training process are shown in
+    [Figure 7-6](#ebm_loss_curves).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0706.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-6\. Loss curves and metrics for the training process of the EBM
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Firstly, notice that the loss calculated during the training step is approximately
+    constant and small across epochs. While the model is constantly improving, so
+    is the quality of generated images in the buffer that it is required to compare
+    against real images from the training set, so we shouldn’t expect the training
+    loss to fall significantly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, to judge model performance, we also set up a validation process that
+    doesn’t sample from the buffer, but instead scores a sample of random noise and
+    compares this against the scores of examples from the training set. If the model
+    is improving, we should see that the contrastive divergence falls over the epochs
+    (i.e., it is getting better at distinguishing random noise from real images),
+    as can be seen in [Figure 7-6](#ebm_loss_curves).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generating new samples from the EBM is simply a case of running the Langevin
+    sampler for a large number of steps, from a standing start (random noise), as
+    shown in [Example 7-7](#generating_ebm). The observation is forced *downhill*,
+    following the gradients of the scoring function with respect to the input, so
+    that out of the noise, a plausible observation appears.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 7-7\. Generating new observations using the EBM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Some examples of observations produced by the sampler after 50 epochs of training
+    are shown in [Figure 7-7](#ebm_examples).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0707.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-7\. Examples produced by the Langevin sampler using the EBM model to
+    direct the gradient descent
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can even show a replay of how a single observation is generated by taking
+    snapshots of the current observations during the Langevin sampling process—this
+    is shown in [Figure 7-8](#langevin_examples).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/gdl2_0708.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7-8\. Snapshots of an observation at different steps of the Langevin
+    sampling process
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Other Energy-Based Models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the previous example we made use of a deep EBM trained using contrastive
+    divergence with a Langevin dynamics sampler. However, early EBM models did not
+    make use of Langevin sampling, but instead relied on other techniques and architectures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One of the earliest examples of an EBM was the *Boltzmann machine*.^([6](ch07.xhtml#idm45387010130976))
+    This is a fully connected, undirected neural network, where binary units are either
+    *visible* (*v*) or *hidden* (*h*). The energy of a given configuration of the
+    network is defined as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper E Subscript theta Baseline left-parenthesis v comma h right-parenthesis
+    equals minus one-half left-parenthesis v Superscript upper T Baseline upper L
+    v plus h Superscript upper T Baseline upper J h plus v Superscript upper T Baseline
+    upper W h right-parenthesis" display="block"><mrow><msub><mi>E</mi> <mi>θ</mi></msub>
+    <mrow><mo>(</mo> <mi>v</mi> <mo>,</mo> <mi>h</mi> <mo>)</mo></mrow> <mo>=</mo>
+    <mo>-</mo> <mfrac><mn>1</mn> <mn>2</mn></mfrac> <mfenced separators="" open="("
+    close=")"><msup><mi>v</mi> <mi>T</mi></msup> <mi>L</mi> <mi>v</mi> <mo>+</mo>
+    <msup><mi>h</mi> <mi>T</mi></msup> <mi>J</mi> <mi>h</mi> <mo>+</mo> <msup><mi>v</mi>
+    <mi>T</mi></msup> <mi>W</mi> <mi>h</mi></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where <math alttext="upper W comma upper L comma upper J"><mrow><mi>W</mi> <mo>,</mo>
+    <mi>L</mi> <mo>,</mo> <mi>J</mi></mrow></math> are the weights matrices that are
+    learned by the model. Training is achieved by contrastive divergence, but using
+    Gibbs sampling to alternate between the visible and hidden layers until an equilibrium
+    is found. In practice this is very slow and not scalable to large numbers of hidden
+    units.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: See Jessica Stringham’s blog post [“Gibbs Sampling in Python”](https://oreil.ly/tXmOq)
+    for an excellent simple example of Gibbs sampling.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An extension to this model, the *restricted Boltzmann machine* (RBM), removes
+    the connections between units of the same type, therefore creating a two-layer
+    bipartite graph. This allows RBMs to be stacked into *deep belief networks* to
+    model more complex distributions. However, modeling high-dimensional data with
+    RBMs remains impractical, due to the fact that Gibbs sampling with long mixing
+    times is still required.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It was only in the late 2000s that EBMs were shown to have potential for modeling
+    more high-dimensional datasets and a framework for building deep EBMs was established.^([7](ch07.xhtml#idm45387010525504))
+    Langevin dynamics became the preferred sampling method for EBMs, which later evolved
+    into a training technique known as *score matching*. This further developed into
+    a model class known as *Denoising Diffusion Probabilistic Models*, which power
+    state-of-the-art generative models such as DALL.E 2 and ImageGen. We will explore
+    diffusion models in more detail in [Chapter 8](ch08.xhtml#chapter_diffusion).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Energy-based models are a class of generative model that make use of an energy
+    scoring function—a neural network that is trained to output low scores for real
+    observations and high scores for generated observations. Calculating the probability
+    distribution given by this score function would require normalizing by an intractable
+    denominator. EBMs avoid this problem by utilizing two tricks: contrastive divergence
+    for training the network and Langevin dynamics for sampling new observations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The energy function is trained by minimizing the difference between the generated
+    sample scores and the scores of the training data, a technique known as contrastive
+    divergence. This can be shown to be equivalent to minimizing the negative log-likelihood,
+    as required by maximum likelihood estimation, but does not require us to calculate
+    the intractable normalizing denominator. In practice, we approximate the sampling
+    process for the fake samples to ensure the algorithm remains efficient.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sampling of deep EBMs is achieved through Langevin dynamics, a technique that
+    uses the gradient of the score with respect to the input image to gradually transform
+    random noise into a plausible observation by updating the input in small steps,
+    following the gradient downhill. This improves upon earlier methods such as Gibbs
+    sampling, which is utilized by restricted Boltzmann machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch07.xhtml#idm45387012482384-marker)) Yilun Du and Igor Mordatch, “Implicit
+    Generation and Modeling with Energy-Based Models,” March 20, 2019, [*https://arxiv.org/abs/1903.08689*](https://arxiv.org/abs/1903.08689).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch07.xhtml#idm45387012241152-marker)) Prajit Ramachandran et al., “Searching
+    for Activation Functions,” October 16, 2017, [*https://arxiv.org/abs/1710.05941v2*](https://arxiv.org/abs/1710.05941v2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch07.xhtml#idm45387012049200-marker)) Max Welling and Yee Whye Teh, “Bayesian
+    Learning via Stochastic Gradient Langevin Dynamics,” 2011, *[*https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf*](https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf)*
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch07.xhtml#idm45387011649104-marker)) Geoffrey E. Hinton, “Training Products
+    of Experts by Minimizing Contrastive Divergence,” 2002, *[*https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf*](https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch07.xhtml#idm45387011627440-marker)) Oliver Woodford, “Notes on Contrastive
+    Divergence,” 2006, [*https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf*](https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch07.xhtml#idm45387010130976-marker)) David H. Ackley et al., “A Learning
+    Algorithm for Boltzmann Machines,” 1985, *Cognitive Science* 9(1), 147-165.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch07.xhtml#idm45387010525504-marker)) Yann Lecun et al., “A Tutorial on
+    Energy-Based Learning,” 2006, *[*https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning*](https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning)*.
+  prefs: []
+  type: TYPE_NORMAL
