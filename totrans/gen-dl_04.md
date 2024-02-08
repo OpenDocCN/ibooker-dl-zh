@@ -106,26 +106,26 @@ MLP 是一种判别模型（而不是生成模型），但在本书后面的章�
 import numpy as np
 from tensorflow.keras import datasets, utils
 
-(x_train, y_train), (x_test, y_test) = datasets.cifar10.load_data() ![1](img/1.png)
+(x_train, y_train), (x_test, y_test) = datasets.cifar10.load_data() # ①
 
 NUM_CLASSES = 10
 
-x_train = x_train.astype('float32') / 255.0 ![2](img/2.png)
+x_train = x_train.astype('float32') / 255.0 # ②
 x_test = x_test.astype('float32') / 255.0
 
-y_train = utils.to_categorical(y_train, NUM_CLASSES) ![3](img/3.png)
+y_train = utils.to_categorical(y_train, NUM_CLASSES) # ③
 y_test = utils.to_categorical(y_test, NUM_CLASSES)
 ```
 
-![1](img/#co_deep_learning_CO1-1)
+①
 
 加载 CIFAR-10 数据集。`x_train`和`x_test`分别是形状为`[50000, 32, 32, 3]`和`[10000, 32, 32, 3]`的`numpy`数组。`y_train`和`y_test`分别是形状为`[50000, 1]`和`[10000, 1]`的`numpy`数组，包含每个图像类的范围为 0 到 9 的整数标签。
 
-![2](img/#co_deep_learning_CO1-2)
+②
 
 缩放每个图像，使像素通道值介于 0 和 1 之间。
 
-![3](img/#co_deep_learning_CO1-3)
+③
 
 对标签进行独热编码——`y_train`和`y_test`的新形状分别为`[50000, 10]`和`[10000, 10]`。
 
@@ -311,31 +311,31 @@ Keras 提供了许多内置的损失函数可供选择，或者你可以创建�
 ##### 示例 2-8\. 调用 `fit` 方法来训练模型
 
 ```py
-model.fit(x_train ![1](img/1.png)
-          , y_train ![2](img/2.png)
-          , batch_size = 32 ![3](img/3.png)
-          , epochs = 10 ![4](img/4.png)
-          , shuffle = True ![5](img/5.png)
+model.fit(x_train # ①
+          , y_train # ②
+          , batch_size = 32 # ③
+          , epochs = 10 # ④
+          , shuffle = True # ⑤
           )
 ```
 
-![1](img/#co_deep_learning_CO2-1)
+①
 
 原始图像数据。
 
-![2](img/#co_deep_learning_CO2-2)
+②
 
 独热编码的类标签。
 
-![3](img/#co_deep_learning_CO2-3)
+③
 
 `batch_size` 确定每个训练步骤将传递给网络多少观察值。
 
-![4](img/#co_deep_learning_CO2-4)
+④
 
 `epochs` 确定网络将被展示完整训练数据的次数。
 
-![5](img/#co_deep_learning_CO2-5)
+⑤
 
 如果 `shuffle = True`，每个训练步骤将从训练数据中随机抽取批次而不重复。
 
@@ -383,16 +383,16 @@ model.evaluate(x_test, y_test)
 CLASSES = np.array(['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog'
                    , 'frog', 'horse', 'ship', 'truck'])
 
-preds = model.predict(x_test) ![1](img/1.png)
-preds_single = CLASSES[np.argmax(preds, axis = -1)] ![2](img/2.png)
+preds = model.predict(x_test) # ①
+preds_single = CLASSES[np.argmax(preds, axis = -1)] # ②
 actual_single = CLASSES[np.argmax(y_test, axis = -1)]
 ```
 
-![1](img/#co_deep_learning_CO3-1)
+①
 
 `preds`是一个形状为`[10000, 10]`的数组，即每个观测的 10 个类别概率的向量。
 
-![2](img/#co_deep_learning_CO3-2)
+②
 
 我们将这个概率数组转换回一个单一的预测，使用`numpy`的`argmax`函数。这里，`axis = -1`告诉函数将数组折叠到最后一个维度（类别维度），因此`preds_single`的形状为`[10000, 1]`。
 

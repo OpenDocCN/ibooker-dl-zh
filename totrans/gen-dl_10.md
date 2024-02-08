@@ -84,7 +84,7 @@ x_test = tf.data.Dataset.from_tensor_slices(x_test).batch(128)
 ebm_input = layers.Input(shape=(32, 32, 1))
 x = layers.Conv2D(
     16, kernel_size=5, strides=2, padding="same", activation = activations.swish
-)(ebm_input) ![1](img/1.png)
+)(ebm_input) # ①
 x = layers.Conv2D(
     32, kernel_size=3, strides=2, padding="same", activation = activations.swish
 )(x)
@@ -96,19 +96,19 @@ x = layers.Conv2D(
 )(x)
 x = layers.Flatten()(x)
 x = layers.Dense(64, activation = activations.swish)(x)
-ebm_output = layers.Dense(1)(x) ![2](img/2.png)
-model = models.Model(ebm_input, ebm_output) ![3](img/3.png)
+ebm_output = layers.Dense(1)(x) # ②
+model = models.Model(ebm_input, ebm_output) # ③
 ```
 
-![1](img/#co_energy_based_models_CO1-1)
+①
 
 能量函数是一组堆叠的`Conv2D`层，带有 swish 激活。
 
-![2](img/#co_energy_based_models_CO1-2)
+②
 
 最后一层是一个单个完全连接单元，具有线性激活函数。
 
-![3](img/#co_energy_based_models_CO1-3)
+③
 
 一个将输入图像转换为标量能量值的 Keras `Model`。
 
@@ -153,36 +153,36 @@ model = models.Model(ebm_input, ebm_output) ![3](img/3.png)
 ```py
 def generate_samples(model, inp_imgs, steps, step_size, noise):
     imgs_per_step = []
-    for _ in range(steps): ![1](img/1.png)
-        inp_imgs += tf.random.normal(inp_imgs.shape, mean = 0, stddev = noise) ![2](img/2.png)
+    for _ in range(steps): # ①
+        inp_imgs += tf.random.normal(inp_imgs.shape, mean = 0, stddev = noise) # ②
         inp_imgs = tf.clip_by_value(inp_imgs, -1.0, 1.0)
         with tf.GradientTape() as tape:
             tape.watch(inp_imgs)
-            out_score = -model(inp_imgs) ![3](img/3.png)
-        grads = tape.gradient(out_score, inp_imgs) ![4](img/4.png)
+            out_score = -model(inp_imgs) # ③
+        grads = tape.gradient(out_score, inp_imgs) # ④
         grads = tf.clip_by_value(grads, -0.03, 0.03)
-        inp_imgs += -step_size * grads ![5](img/5.png)
+        inp_imgs += -step_size * grads # ⑤
         inp_imgs = tf.clip_by_value(inp_imgs, -1.0, 1.0)
         return inp_imgs
 ```
 
-![1](img/#co_energy_based_models_CO2-1)
+①
 
 循环执行给定数量的步骤。
 
-![2](img/#co_energy_based_models_CO2-2)
+②
 
 向图像中添加少量噪音。
 
-![3](img/#co_energy_based_models_CO2-3)
+③
 
 通过模型传递图像以获得能量分数。
 
-![4](img/#co_energy_based_models_CO2-4)
+④
 
 计算输出相对于输入的梯度。
 
-![5](img/#co_energy_based_models_CO2-5)
+⑤
 
 向输入图像中添加少量梯度。
 
@@ -218,42 +218,42 @@ class Buffer:
         self.examples = [
             tf.random.uniform(shape = (1, 32, 32, 1)) * 2 - 1
             for _ in range(128)
-        ] ![1](img/1.png)
+        ] # ①
 
     def sample_new_exmps(self, steps, step_size, noise):
-        n_new = np.random.binomial(128, 0.05) ![2](img/2.png)
+        n_new = np.random.binomial(128, 0.05) # ②
         rand_imgs = (
             tf.random.uniform((n_new, 32, 32, 1)) * 2 - 1
         )
         old_imgs = tf.concat(
             random.choices(self.examples, k=128-n_new), axis=0
-        ) ![3](img/3.png)
+        ) # ③
         inp_imgs = tf.concat([rand_imgs, old_imgs], axis=0)
         inp_imgs = generate_samples(
             self.model, inp_imgs, steps=steps, step_size=step_size, noise = noise
-        ) ![4](img/4.png)
-        self.examples = tf.split(inp_imgs, 128, axis = 0) + self.examples ![5](img/5.png)
+        ) # ④
+        self.examples = tf.split(inp_imgs, 128, axis = 0) + self.examples # ⑤
         self.examples = self.examples[:8192]
         return inp_imgs
 ```
 
-![1](img/#co_energy_based_models_CO3-1)
+①
 
 采样缓冲区用一批随机噪声初始化。
 
-![2](img/#co_energy_based_models_CO3-2)
+②
 
 平均而言，每次有 5%的观察是从头开始生成的（即，随机噪声）。
 
-![3](img/#co_energy_based_models_CO3-3)
+③
 
 其余的随机从现有缓冲区中提取。
 
-![4](img/#co_energy_based_models_CO3-4)
+④
 
 这些观察被连接并通过 Langevin 采样器运行。
 
-![5](img/#co_energy_based_models_CO3-5)
+⑤
 
 生成的样本被添加到缓冲区中，缓冲区被修剪为最多 8,192 个观察。
 
@@ -293,22 +293,22 @@ class EBM(models.Model):
     def train_step(self, real_imgs):
         real_imgs += tf.random.normal(
             shape=tf.shape(real_imgs), mean = 0, stddev = 0.005
-        ) ![1](img/1.png)
+        ) # ①
         real_imgs = tf.clip_by_value(real_imgs, -1.0, 1.0)
         fake_imgs = self.buffer.sample_new_exmps(
             steps=60, step_size=10, noise = 0.005
-        ) ![2](img/2.png)
+        ) # ②
         inp_imgs = tf.concat([real_imgs, fake_imgs], axis=0)
         with tf.GradientTape() as training_tape:
-            real_out, fake_out = tf.split(self.model(inp_imgs), 2, axis=0) ![3](img/3.png)
+            real_out, fake_out = tf.split(self.model(inp_imgs), 2, axis=0) # ③
             cdiv_loss = tf.reduce_mean(fake_out, axis = 0) - tf.reduce_mean(
                 real_out, axis = 0
-            ) ![4](img/4.png)
+            ) # ④
             reg_loss = self.alpha * tf.reduce_mean(
                 real_out ** 2 + fake_out ** 2, axis = 0
-            ) ![5](img/5.png)
+            ) # ⑤
             loss = reg_loss + cdiv_loss
-        grads = training_tape.gradient(loss, self.model.trainable_variables) ![6](img/6.png)
+        grads = training_tape.gradient(loss, self.model.trainable_variables) # ⑥
         self.optimizer.apply_gradients(
             zip(grads, self.model.trainable_variables)
         )
@@ -319,7 +319,7 @@ class EBM(models.Model):
         self.fake_out_metric.update_state(tf.reduce_mean(fake_out, axis = 0))
         return {m.name: m.result() for m in self.metrics}
 
-    def test_step(self, real_imgs): ![7](img/7.png)
+    def test_step(self, real_imgs): # ⑦
         batch_size = real_imgs.shape[0]
         fake_imgs = tf.random.uniform((batch_size, 32, 32, 1)) * 2 - 1
         inp_imgs = tf.concat([real_imgs, fake_imgs], axis=0)
@@ -337,31 +337,31 @@ ebm.compile(optimizer=optimizers.Adam(learning_rate=0.0001), run_eagerly=True)
 ebm.fit(x_train, epochs=60, validation_data = x_test,)
 ```
 
-![1](img/#co_energy_based_models_CO4-1)
+①
 
 为真实图像添加少量随机噪声，以避免模型过度拟合训练集。
 
-![2](img/#co_energy_based_models_CO4-2)
+②
 
 一组假图像从缓冲区中抽样。
 
-![3](img/#co_energy_based_models_CO4-3)
+③
 
 真实和假图像通过模型运行以产生真实和假分数。
 
-![4](img/#co_energy_based_models_CO4-4)
+④
 
 对比散度损失简单地是真实和假观察的分数之间的差异。
 
-![5](img/#co_energy_based_models_CO4-5)
+⑤
 
 添加正则化损失以避免分数变得过大。
 
-![6](img/#co_energy_based_models_CO4-6)
+⑥
 
 通过反向传播计算网络权重相对于损失函数的梯度。
 
-![7](img/#co_energy_based_models_CO4-7)
+⑦
 
 `test_step` 用于在验证过程中计算一组随机噪声和训练集中的数据之间的对比散度。它可以作为衡量模型训练效果的指标（见下一节）。
 

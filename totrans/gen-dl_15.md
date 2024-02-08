@@ -389,31 +389,31 @@ def conv_t(x, f, k, s, a, p, bn):
     return x
 
 def TemporalNetwork():
-    input_layer = layers.Input(shape=(Z_DIM,), name='temporal_input') ![1](img/1.png)
-    x = layers.Reshape([1,1,Z_DIM])(input_layer) ![2](img/2.png)
+    input_layer = layers.Input(shape=(Z_DIM,), name='temporal_input') # ①
+    x = layers.Reshape([1,1,Z_DIM])(input_layer) # ②
     x = conv_t(
         x, f=1024, k=(2,1), s=(1,1), a = 'relu', p = 'valid', bn = True
-    ) ![3](img/3.png)
+    ) # ③
     x = conv_t(
         x, f=Z_DIM, k=(N_BARS - 1,1), s=(1,1), a = 'relu', p = 'valid', bn = True
     )
-    output_layer = layers.Reshape([N_BARS, Z_DIM])(x) ![4](img/4.png)
+    output_layer = layers.Reshape([N_BARS, Z_DIM])(x) # ④
     return models.Model(input_layer, output_layer)
 ```
 
-![1](img/#co_music_generation_CO1-1)
+①
 
 时间网络的输入是长度为 32 的向量（`Z_DIM`）。
 
-![2](img/#co_music_generation_CO1-2)
+②
 
 我们将这个向量重塑为一个具有 32 个通道的 1×1 张量，以便我们可以对其应用二维卷积转置操作。
 
-![3](img/#co_music_generation_CO1-3)
+③
 
 我们应用`Conv2DTranspose`层来沿一个轴扩展张量的大小，使其与`N_BARS`的长度相同。
 
-![4](img/#co_music_generation_CO1-4)
+④
 
 我们使用 `Reshape` 层去除不必要的额外维度。
 
@@ -465,45 +465,45 @@ MuseGAN 生成器的最后一部分是 *小节生成器*—让我们看看如何
 ```py
 def BarGenerator():
 
-    input_layer = layers.Input(shape=(Z_DIM * 4,), name='bar_generator_input') ![1](img/1.png)
+    input_layer = layers.Input(shape=(Z_DIM * 4,), name='bar_generator_input') # ①
 
-    x = layers.Dense(1024)(input_layer) ![2](img/2.png)
+    x = layers.Dense(1024)(input_layer) # ②
     x = layers.BatchNormalization(momentum = 0.9)(x)
     x = layers.Activation('relu')(x)
     x = layers.Reshape([2,1,512])(x)
 
-    x = conv_t(x, f=512, k=(2,1), s=(2,1), a= 'relu',  p = 'same', bn = True) ![3](img/3.png)
+    x = conv_t(x, f=512, k=(2,1), s=(2,1), a= 'relu',  p = 'same', bn = True) # ③
     x = conv_t(x, f=256, k=(2,1), s=(2,1), a= 'relu', p = 'same', bn = True)
     x = conv_t(x, f=256, k=(2,1), s=(2,1), a= 'relu', p = 'same', bn = True)
-    x = conv_t(x, f=256, k=(1,7), s=(1,7), a= 'relu', p = 'same', bn = True) ![4](img/4.png)
-    x = conv_t(x, f=1, k=(1,12), s=(1,12), a= 'tanh', p = 'same', bn = False) ![5](img/5.png)
+    x = conv_t(x, f=256, k=(1,7), s=(1,7), a= 'relu', p = 'same', bn = True) # ④
+    x = conv_t(x, f=1, k=(1,12), s=(1,12), a= 'tanh', p = 'same', bn = False) # ⑤
 
-    output_layer = layers.Reshape([1, N_STEPS_PER_BAR , N_PITCHES ,1])(x) ![6](img/6.png)
+    output_layer = layers.Reshape([1, N_STEPS_PER_BAR , N_PITCHES ,1])(x) # ⑥
 
     return models.Model(input_layer, output_layer)
 ```
 
-![1](img/#co_music_generation_CO2-1)
+①
 
 bar 生成器的输入是长度为 `4 * Z_DIM` 的向量。
 
-![2](img/#co_music_generation_CO2-2)
+②
 
 通过一个 `Dense` 层后，我们重新塑造张量以准备进行卷积转置操作。
 
-![3](img/#co_music_generation_CO2-3)
+③
 
 首先我们沿着时间步长轴扩展张量…​
 
-![4](img/#co_music_generation_CO2-4)
+④
 
 …​然后沿着音高轴。
 
-![5](img/#co_music_generation_CO2-5)
+⑤
 
 最终层应用了 tanh 激活，因为我们将使用 WGAN-GP（需要 tanh 输出激活）来训练网络。
 
-![6](img/#co_music_generation_CO2-6)
+⑥
 
 张量被重塑以添加两个大小为 1 的额外维度，以准备与其他小节和轨道连接。
 
@@ -515,18 +515,18 @@ bar 生成器的输入是长度为 `4 * Z_DIM` 的向量。
 
 ```py
 def Generator():
-    chords_input = layers.Input(shape=(Z_DIM,), name='chords_input') ![1](img/1.png)
+    chords_input = layers.Input(shape=(Z_DIM,), name='chords_input') # ①
     style_input = layers.Input(shape=(Z_DIM,), name='style_input')
     melody_input = layers.Input(shape=(N_TRACKS, Z_DIM), name='melody_input')
     groove_input = layers.Input(shape=(N_TRACKS, Z_DIM), name='groove_input')
 
-    chords_tempNetwork = TemporalNetwork() ![2](img/2.png)
+    chords_tempNetwork = TemporalNetwork() # ②
     chords_over_time = chords_tempNetwork(chords_input)
 
     melody_over_time = [None] * N_TRACKS
     melody_tempNetwork = [None] * N_TRACKS
     for track in range(N_TRACKS):
-        melody_tempNetwork[track] = TemporalNetwork() ![3](img/3.png)
+        melody_tempNetwork[track] = TemporalNetwork() # ③
         melody_track = layers.Lambda(lambda x, track = track: x[:,track,:])(
             melody_input
         )
@@ -534,11 +534,11 @@ def Generator():
 
     barGen = [None] * N_TRACKS
     for track in range(N_TRACKS):
-        barGen[track] = BarGenerator() ![4](img/4.png)
+        barGen[track] = BarGenerator() # ④
 
     bars_output = [None] * N_BARS
     c = [None] * N_BARS
-    for bar in range(N_BARS): ![5](img/5.png)
+    for bar in range(N_BARS): # ⑤
         track_output = [None] * N_TRACKS
 
         c[bar] = layers.Lambda(lambda x, bar = bar: x[:,bar,:])(chords_over_time)
@@ -563,40 +563,40 @@ def Generator():
 
     generator_output = layers.Concatenate(axis = 1, name = 'concat_bars')(
         bars_output
-    ) ![6](img/6.png)
+    ) # ⑥
 
     return models.Model(
         [chords_input, style_input, melody_input, groove_input], generator_output
-    ) ![7](img/7.png)
+    ) # ⑦
 
 generator = Generator()
 ```
 
-![1](img/#co_music_generation_CO3-1)
+①
 
 定义生成器的输入。
 
-![2](img/#co_music_generation_CO3-2)
+②
 
 通过时间网络传递和弦输入。
 
-![3](img/#co_music_generation_CO3-3)
+③
 
 通过时间网络传递旋律输入。
 
-![4](img/#co_music_generation_CO3-4)
+④
 
 为每个轨道创建一个独立的小节生成器网络。
 
-![5](img/#co_music_generation_CO3-5)
+⑤
 
 循环遍历轨道和小节，为每种组合创建一个生成的小节。
 
-![6](img/#co_music_generation_CO3-6)
+⑥
 
 将所有内容连接在一起形成单个输出张量。
 
-![7](img/#co_music_generation_CO3-7)
+⑦
 
 MuseGAN 模型接受四个不同的噪声张量作为输入，并输出一个生成的多轨多小节乐谱。
 
@@ -631,16 +631,16 @@ def Critic():
     critic_input = layers.Input(
         shape=(N_BARS, N_STEPS_PER_BAR, N_PITCHES, N_TRACKS),
         name='critic_input'
-    ) ![1](img/1.png)
+    ) # ①
 
     x = critic_input
-    x = conv(x, f=128, k = (2,1,1), s = (1,1,1), p = 'valid') ![2](img/2.png)
+    x = conv(x, f=128, k = (2,1,1), s = (1,1,1), p = 'valid') # ②
     x = conv(x, f=128, k = (N_BARS - 1,1,1), s = (1,1,1), p = 'valid')
 
-    x = conv(x, f=128, k = (1,1,12), s = (1,1,12), p = 'same') ![3](img/3.png)
+    x = conv(x, f=128, k = (1,1,12), s = (1,1,12), p = 'same') # ③
     x = conv(x, f=128, k = (1,1,7), s = (1,1,7), p = 'same')
 
-    x = conv(x, f=128, k = (1,2,1), s = (1,2,1), p = 'same') ![4](img/4.png)
+    x = conv(x, f=128, k = (1,2,1), s = (1,2,1), p = 'same') # ④
     x = conv(x, f=128, k = (1,2,1), s = (1,2,1), p = 'same')
     x = conv(x, f=256, k = (1,4,1), s = (1,2,1), p = 'same')
     x = conv(x, f=512, k = (1,3,1), s = (1,2,1), p = 'same')
@@ -652,30 +652,30 @@ def Critic():
 
     critic_output = layers.Dense(
         1, activation=None, kernel_initializer = initializer
-    )(x) ![5](img/5.png)
+    )(x) # ⑤
 
     return models.Model(critic_input, critic_output)
 
 critic = Critic()
 ```
 
-![1](img/#co_music_generation_CO4-1)
+①
 
 评论家的输入是一个多轨多小节乐谱数组，每个形状为`[N_BARS, N_STEPS_PER_BAR, N_PITCHES, N_TRACKS]`。
 
-![2](img/#co_music_generation_CO4-2)
+②
 
 首先，我们沿着小节轴折叠张量。由于我们使用的是 4D 张量，所以在评论家中应用`Conv3D`层。
 
-![3](img/#co_music_generation_CO4-3)
+③
 
 接下来，我们沿着音高轴折叠张量。
 
-![4](img/#co_music_generation_CO4-4)
+④
 
 最后，我们沿着时间步轴折叠张量。
 
-![5](img/#co_music_generation_CO4-5)
+⑤
 
 输出是一个具有单个单元且没有激活函数的`Dense`层，这是 WGAN-GP 框架所需的。
 

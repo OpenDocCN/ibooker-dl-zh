@@ -115,37 +115,37 @@ x_test = preprocess(x_test)
 ```py
 encoder_input = layers.Input(
     shape=(32, 32, 1), name = "encoder_input"
-) ![1](img/1.png)
+) # ①
 x = layers.Conv2D(32, (3, 3), strides = 2, activation = 'relu', padding="same")(
     encoder_input
-) ![2](img/2.png)
+) # ②
 x = layers.Conv2D(64, (3, 3), strides = 2, activation = 'relu', padding="same")(x)
 x = layers.Conv2D(128, (3, 3), strides = 2, activation = 'relu', padding="same")(x)
 shape_before_flattening = K.int_shape(x)[1:]
 
-x = layers.Flatten()(x) ![3](img/3.png)
-encoder_output = layers.Dense(2, name="encoder_output")(x) ![4](img/4.png)
+x = layers.Flatten()(x) # ③
+encoder_output = layers.Dense(2, name="encoder_output")(x) # ④
 
-encoder = models.Model(encoder_input, encoder_output) ![5](img/5.png)
+encoder = models.Model(encoder_input, encoder_output) # ⑤
 ```
 
-![1](img/#co_variational_autoencoders_CO1-1)
+①
 
 定义编码器（图像）的“输入”层。
 
-![2](img/#co_variational_autoencoders_CO1-2)
+②
 
 顺序堆叠`Conv2D`层。
 
-![3](img/#co_variational_autoencoders_CO1-3)
+③
 
 将最后一个卷积层展平为一个向量。
 
-![4](img/#co_variational_autoencoders_CO1-4)
+④
 
 将这个向量连接到 2D 嵌入中的`Dense`层。
 
-![5](img/#co_variational_autoencoders_CO1-5)
+⑤
 
 定义编码器的 Keras`Model`——一个将输入图像并将其编码为 2D 嵌入的模型。
 
@@ -177,12 +177,12 @@ encoder = models.Model(encoder_input, encoder_output) ![5](img/5.png)
 ##### 示例 3-4. 解码器
 
 ```py
-decoder_input = layers.Input(shape=(2,), name="decoder_input") ![1](img/1.png)
-x = layers.Dense(np.prod(shape_before_flattening))(decoder_input) ![2](img/2.png)
-x = layers.Reshape(shape_before_flattening)(x) ![3](img/3.png)
+decoder_input = layers.Input(shape=(2,), name="decoder_input") # ①
+x = layers.Dense(np.prod(shape_before_flattening))(decoder_input) # ②
+x = layers.Reshape(shape_before_flattening)(x) # ③
 x = layers.Conv2DTranspose(
     128, (3, 3), strides=2, activation = 'relu', padding="same"
-)(x) ![4](img/4.png)
+)(x) # ④
 x = layers.Conv2DTranspose(
     64, (3, 3), strides=2, activation = 'relu', padding="same"
 )(x)
@@ -198,26 +198,26 @@ decoder_output = layers.Conv2D(
     name="decoder_output"
 )(x)
 
-decoder = models.Model(decoder_input, decoder_output) ![5](img/5.png)
+decoder = models.Model(decoder_input, decoder_output) # ⑤
 ```
 
-![1](img/#co_variational_autoencoders_CO2-1)
+①
 
 定义解码器（嵌入）的`Input`层。
 
-![2](img/#co_variational_autoencoders_CO2-2)
+②
 
 将输入连接到`Dense`层。
 
-![3](img/#co_variational_autoencoders_CO2-3)
+③
 
 将这个向量重塑成一个张量，可以作为输入传递到第一个`Conv2DTranspose`层。
 
-![4](img/#co_variational_autoencoders_CO2-4)
+④
 
 将`Conv2DTranspose`层堆叠在一起。
 
-![5](img/#co_variational_autoencoders_CO2-5)
+⑤
 
 定义解码器的 Keras `Model`——一个模型，将潜在空间中的嵌入解码为原始图像域。
 
@@ -228,10 +228,10 @@ decoder = models.Model(decoder_input, decoder_output) ![5](img/5.png)
 ##### 示例 3-5. 完整自编码器
 
 ```py
-autoencoder = Model(encoder_input, decoder(encoder_output)) ![1](img/1.png)
+autoencoder = Model(encoder_input, decoder(encoder_output)) # ①
 ```
 
-![1](img/#co_variational_autoencoders_CO3-1)
+①
 
 定义完整自编码器的 Keras `Model`——一个模型，将图像通过编码器传递并通过解码器返回，生成原始图像的重建。
 
@@ -441,20 +441,20 @@ epsilon ~ N(0,I)
 ##### 示例 3-11. `Sampling`层
 
 ```py
-class Sampling(layers.Layer): ![1](img/1.png)
+class Sampling(layers.Layer): # ①
     def call(self, inputs):
         z_mean, z_log_var = inputs
         batch = tf.shape(z_mean)[0]
         dim = tf.shape(z_mean)[1]
         epsilon = K.random_normal(shape=(batch, dim))
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon ![2](img/2.png)
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon # ②
 ```
 
-![1](img/#co_variational_autoencoders_CO4-1)
+①
 
 我们通过对 Keras 基础`Layer`类进行子类化来创建一个新层（请参阅“子类化 Layer 类”侧边栏）。
 
-![2](img/#co_variational_autoencoders_CO4-2)
+②
 
 我们使用重参数化技巧（请参阅“重参数化技巧”侧边栏）来构建由`z_mean`和`z_log_var`参数化的正态分布的样本。
 
@@ -474,22 +474,22 @@ x = layers.Conv2D(128, (3, 3), strides=2, activation="relu", padding="same")(x)
 shape_before_flattening = K.int_shape(x)[1:]
 
 x = layers.Flatten()(x)
-z_mean = layers.Dense(2, name="z_mean")(x) ![1](img/1.png)
+z_mean = layers.Dense(2, name="z_mean")(x) # ①
 z_log_var = layers.Dense(2, name="z_log_var")(x)
-z = Sampling()([z_mean, z_log_var]) ![2](img/2.png)
+z = Sampling()([z_mean, z_log_var]) # ②
 
-encoder = models.Model(encoder_input, [z_mean, z_log_var, z], name="encoder") ![3](img/3.png)
+encoder = models.Model(encoder_input, [z_mean, z_log_var, z], name="encoder") # ③
 ```
 
-![1](img/#co_variational_autoencoders_CO5-1)
+①
 
 我们将`Flatten`层直接连接到 2D 潜在空间，而不是直接连接到`z_mean`和`z_log_var`层。
 
-![2](img/#co_variational_autoencoders_CO5-2)
+②
 
 `Sampling`层从由参数`z_mean`和`z_log_var`定义的正态分布中对潜在空间中的点`z`进行采样。
 
-![3](img/#co_variational_autoencoders_CO5-3)
+③
 
 定义编码器的 Keras `Model`——一个接受输入图像并输出`z_mean`、`z_log_var`和由这些参数定义的正态分布中的采样点`z`的模型。
 
@@ -563,12 +563,12 @@ class VAE(models.Model):
             self.kl_loss_tracker,
         ]
 
-    def call(self, inputs): ![1](img/1.png)
+    def call(self, inputs): # ①
         z_mean, z_log_var, z = encoder(inputs)
         reconstruction = decoder(z)
         return z_mean, z_log_var, reconstruction
 
-    def train_step(self, data): ![2](img/2.png)
+    def train_step(self, data): # ②
         with tf.GradientTape() as tape:
             z_mean, z_log_var, reconstruction = self(data)
             reconstruction_loss = tf.reduce_mean(
@@ -576,7 +576,7 @@ class VAE(models.Model):
                 * losses.binary_crossentropy(
                     data, reconstruction, axis=(1, 2, 3)
                 )
-            ) ![3](img/3.png)
+            ) # ③
             kl_loss = tf.reduce_mean(
                 tf.reduce_sum(
                     -0.5
@@ -584,7 +584,7 @@ class VAE(models.Model):
                     axis = 1,
                 )
             )
-            total_loss = reconstruction_loss + kl_loss ![4](img/4.png)
+            total_loss = reconstruction_loss + kl_loss # ④
 
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
@@ -604,19 +604,19 @@ vae.fit(
 )
 ```
 
-![1](img/#co_variational_autoencoders_CO6-1)
+①
 
 这个函数描述了我们希望在特定输入图像上返回的内容，我们称之为 VAE。
 
-![2](img/#co_variational_autoencoders_CO6-2)
+②
 
 这个函数描述了 VAE 的一个训练步骤，包括损失函数的计算。
 
-![3](img/#co_variational_autoencoders_CO6-3)
+③
 
 重建损失中使用了一个 beta 值为 500。
 
-![4](img/#co_variational_autoencoders_CO6-4)
+④
 
 总损失是重建损失和 KL 散度损失的总和。
 
@@ -786,27 +786,27 @@ train_data = utils.image_dataset_from_directory(
 
 ```py
 grid_width, grid_height = (10,3)
-z_sample = np.random.normal(size=(grid_width * grid_height, 200)) ![1](img/1.png)
+z_sample = np.random.normal(size=(grid_width * grid_height, 200)) # ①
 
-reconstructions = decoder.predict(z_sample) ![2](img/2.png)
+reconstructions = decoder.predict(z_sample) # ②
 
 fig = plt.figure(figsize=(18, 5))
 fig.subplots_adjust(hspace=0.4, wspace=0.4)
 for i in range(grid_width * grid_height):
     ax = fig.add_subplot(grid_height, grid_width, i + 1)
     ax.axis("off")
-    ax.imshow(reconstructions[i, :, :]) ![3](img/3.png)
+    ax.imshow(reconstructions[i, :, :]) # ③
 ```
 
-![1](img/#co_variational_autoencoders_CO7-1)
+①
 
 从具有 200 维度的标准多元正态分布中采样 30 个点。
 
-![2](img/#co_variational_autoencoders_CO7-2)
+②
 
 解码采样点。
 
-![3](img/#co_variational_autoencoders_CO7-3)
+③
 
 绘制图像！
 

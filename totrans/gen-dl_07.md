@@ -110,10 +110,10 @@ train = train_data.map(lambda x: preprocess(x))
 ##### 示例 4-4。鉴别器
 
 ```py
-discriminator_input = layers.Input(shape=(64, 64, 1)) ![1](img/1.png)
+discriminator_input = layers.Input(shape=(64, 64, 1)) # ①
 x = layers.Conv2D(64, kernel_size=4, strides=2, padding="same", use_bias = False)(
     discriminator_input
-) ![2](img/2.png)
+) # ②
 x = layers.LeakyReLU(0.2)(x)
 x = layers.Dropout(0.3)(x)
 x = layers.Conv2D(
@@ -142,24 +142,24 @@ x = layers.Conv2D(
     use_bias = False,
     activation = 'sigmoid'
 )(x)
-discriminator_output = layers.Flatten()(x) ![3](img/3.png)
+discriminator_output = layers.Flatten()(x) # ③
 
-discriminator = models.Model(discriminator_input, discriminator_output) ![4](img/4.png)
+discriminator = models.Model(discriminator_input, discriminator_output) # ④
 ```
 
-![1](img/#co_generative_adversarial_networks_CO1-1)
+①
 
 定义鉴别器的`Input`层（图像）。
 
-![2](img/#co_generative_adversarial_networks_CO1-2)
+②
 
 将`Conv2D`层堆叠在一起，中间夹有`BatchNormalization`、`LeakyReLU`激活和`Dropout`层。
 
-![3](img/#co_generative_adversarial_networks_CO1-3)
+③
 
 将最后一个卷积层展平-到这一点，张量的形状为 1×1×1，因此不需要最终的`Dense`层。
 
-![4](img/#co_generative_adversarial_networks_CO1-4)
+④
 
 定义鉴别器的 Keras 模型-一个接受输入图像并输出介于 0 和 1 之间的单个数字的模型。
 
@@ -203,11 +203,11 @@ discriminator = models.Model(discriminator_input, discriminator_output) ![4](img
 ##### 示例 4-5。生成器
 
 ```py
-generator_input = layers.Input(shape=(100,)) ![1](img/1.png)
-x = layers.Reshape((1, 1, 100))(generator_input) ![2](img/2.png)
+generator_input = layers.Input(shape=(100,)) # ①
+x = layers.Reshape((1, 1, 100))(generator_input) # ②
 x = layers.Conv2DTranspose(
     512, kernel_size=4, strides=1, padding="valid", use_bias = False
-)(x) ![3](img/3.png)
+)(x) # ③
 x = layers.BatchNormalization(momentum=0.9)(x)
 x = layers.LeakyReLU(0.2)(x)
 x = layers.Conv2DTranspose(
@@ -232,27 +232,27 @@ generator_output = layers.Conv2DTranspose(
     padding="same",
     use_bias = False,
     activation = 'tanh'
-)(x) ![4](img/4.png)
-generator = models.Model(generator_input, generator_output) ![5](img/5.png)
+)(x) # ④
+generator = models.Model(generator_input, generator_output) # ⑤
 ```
 
-![1](img/#co_generative_adversarial_networks_CO2-1)
+①
 
 定义生成器的`Input`层-长度为 100 的向量。
 
-![2](img/#co_generative_adversarial_networks_CO2-2)
+②
 
 我们使用一个`Reshape`层来给出一个 1×1×100 的张量，这样我们就可以开始应用卷积转置操作。
 
-![3](img/#co_generative_adversarial_networks_CO2-3)
+③
 
 我们通过四个`Conv2DTranspose`层传递这些数据，其中夹在中间的是`BatchNormalization`和`LeakyReLU`层。
 
-![4](img/#co_generative_adversarial_networks_CO2-4)
+④
 
 最终的`Conv2DTranspose`层使用 tanh 激活函数将输出转换为范围[-1,1]，以匹配原始图像域。
 
-![5](img/#co_generative_adversarial_networks_CO2-5)
+⑤
 
 定义生成器的 Keras 模型-接受长度为 100 的向量并输出形状为`[64，64，1]`的张量。
 
@@ -288,7 +288,7 @@ class DCGAN(models.Model):
 
     def compile(self, d_optimizer, g_optimizer):
         super(DCGAN, self).compile()
-        self.loss_fn = losses.BinaryCrossentropy() ![1](img/1.png)
+        self.loss_fn = losses.BinaryCrossentropy() # ①
         self.d_optimizer = d_optimizer
         self.g_optimizer = g_optimizer
         self.d_loss_metric = metrics.Mean(name="d_loss")
@@ -302,16 +302,16 @@ class DCGAN(models.Model):
         batch_size = tf.shape(real_images)[0]
         random_latent_vectors = tf.random.normal(
             shape=(batch_size, self.latent_dim)
-        ) ![2](img/2.png)
+        ) # ②
 
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             generated_images = self.generator(
                 random_latent_vectors, training = True
-            ) ![3](img/3.png)
-            real_predictions = self.discriminator(real_images, training = True) ![4](img/4.png)
+            ) # ③
+            real_predictions = self.discriminator(real_images, training = True) # ④
             fake_predictions = self.discriminator(
                 generated_images, training = True
-            ) ![5](img/5.png)
+            ) # ⑤
 
             real_labels = tf.ones_like(real_predictions)
             real_noisy_labels = real_labels + 0.1 * tf.random.uniform(
@@ -324,9 +324,9 @@ class DCGAN(models.Model):
 
             d_real_loss = self.loss_fn(real_noisy_labels, real_predictions)
             d_fake_loss = self.loss_fn(fake_noisy_labels, fake_predictions)
-            d_loss = (d_real_loss + d_fake_loss) / 2.0 ![6](img/6.png)
+            d_loss = (d_real_loss + d_fake_loss) / 2.0 # ⑥
 
-            g_loss = self.loss_fn(real_labels, fake_predictions) ![7](img/7.png)
+            g_loss = self.loss_fn(real_labels, fake_predictions) # ⑦
 
         gradients_of_discriminator = disc_tape.gradient(
             d_loss, self.discriminator.trainable_variables
@@ -337,7 +337,7 @@ class DCGAN(models.Model):
 
         self.d_optimizer.apply_gradients(
             zip(gradients_of_discriminator, discriminator.trainable_variables)
-        ) ![8](img/8.png)
+        ) # ⑧
         self.g_optimizer.apply_gradients(
             zip(gradients_of_generator, generator.trainable_variables)
         )
@@ -363,35 +363,35 @@ dcgan.compile(
 dcgan.fit(train, epochs=300)
 ```
 
-![1](img/#co_generative_adversarial_networks_CO3-1)
+①
 
 生成器和鉴别器的损失函数是`BinaryCrossentropy`。
 
-![2](img/#co_generative_adversarial_networks_CO3-2)
+②
 
 为了训练网络，首先从多元标准正态分布中抽取一批向量。
 
-![3](img/#co_generative_adversarial_networks_CO3-3)
+③
 
 接下来，通过生成器生成一批生成的图像。
 
-![4](img/#co_generative_adversarial_networks_CO3-4)
+④
 
 现在让鉴别器预测一批真实图像的真实性...​
 
-![5](img/#co_generative_adversarial_networks_CO3-5)
+⑤
 
 ...​和一批生成的图像。
 
-![6](img/#co_generative_adversarial_networks_CO3-6)
+⑥
 
 鉴别器损失是真实图像（标签为 1）和假图像（标签为 0）之间的平均二元交叉熵。
 
-![7](img/#co_generative_adversarial_networks_CO3-7)
+⑦
 
 生成器损失是鉴别器对生成图像的预测与标签 1 之间的二元交叉熵。
 
-![8](img/#co_generative_adversarial_networks_CO3-8)
+⑧
 
 分别更新鉴别器和生成器的权重。
 
@@ -598,41 +598,41 @@ Wasserstein 损失函数定义如下：
 
 ```py
 def gradient_penalty(self, batch_size, real_images, fake_images):
-    alpha = tf.random.normal([batch_size, 1, 1, 1], 0.0, 1.0) ![1](img/1.png)
+    alpha = tf.random.normal([batch_size, 1, 1, 1], 0.0, 1.0) # ①
     diff = fake_images - real_images
-    interpolated = real_images + alpha * diff ![2](img/2.png)
+    interpolated = real_images + alpha * diff # ②
 
     with tf.GradientTape() as gp_tape:
         gp_tape.watch(interpolated)
-        pred = self.critic(interpolated, training=True) ![3](img/3.png)
+        pred = self.critic(interpolated, training=True) # ③
 
-    grads = gp_tape.gradient(pred, [interpolated])[0] ![4](img/4.png)
-    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3])) ![5](img/5.png)
-    gp = tf.reduce_mean((norm - 1.0) ** 2) ![6](img/6.png)
+    grads = gp_tape.gradient(pred, [interpolated])[0] # ④
+    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3])) # ⑤
+    gp = tf.reduce_mean((norm - 1.0) ** 2) # ⑥
     return gp
 ```
 
-![1](img/#co_generative_adversarial_networks_CO4-1)
+①
 
 批次中的每个图像都会得到一个介于 0 和 1 之间的随机数，存储为向量`alpha`。
 
-![2](img/#co_generative_adversarial_networks_CO4-2)
+②
 
 计算一组插值图像。
 
-![3](img/#co_generative_adversarial_networks_CO4-3)
+③
 
 批评家被要求对这些插值图像进行评分。
 
-![4](img/#co_generative_adversarial_networks_CO4-4)
+④
 
 根据输入图像计算预测的梯度。
 
-![5](img/#co_generative_adversarial_networks_CO4-5)
+⑤
 
 计算这个向量的 L2 范数。
 
-![6](img/#co_generative_adversarial_networks_CO4-6)
+⑥
 
 该函数返回 L2 范数与 1 之间的平均平方距离。
 
@@ -650,7 +650,7 @@ def gradient_penalty(self, batch_size, real_images, fake_images):
 def train_step(self, real_images):
     batch_size = tf.shape(real_images)[0]
 
-    for i in range(3): ![1](img/1.png)
+    for i in range(3): # ①
         random_latent_vectors = tf.random.normal(
             shape=(batch_size, self.latent_dim)
         )
@@ -664,16 +664,16 @@ def train_step(self, real_images):
 
             c_wass_loss = tf.reduce_mean(fake_predictions) - tf.reduce_mean(
                 real_predictions
-            ) ![2](img/2.png)
+            ) # ②
             c_gp = self.gradient_penalty(
                 batch_size, real_images, fake_images
-            ) ![3](img/3.png)
-            c_loss = c_wass_loss + c_gp * self.gp_weight ![4](img/4.png)
+            ) # ③
+            c_loss = c_wass_loss + c_gp * self.gp_weight # ④
 
         c_gradient = tape.gradient(c_loss, self.critic.trainable_variables)
         self.c_optimizer.apply_gradients(
             zip(c_gradient, self.critic.trainable_variables)
-        ) ![5](img/5.png)
+        ) # ⑤
 
     random_latent_vectors = tf.random.normal(
         shape=(batch_size, self.latent_dim)
@@ -681,12 +681,12 @@ def train_step(self, real_images):
     with tf.GradientTape() as tape:
         fake_images = self.generator(random_latent_vectors, training=True)
         fake_predictions = self.critic(fake_images, training=True)
-        g_loss = -tf.reduce_mean(fake_predictions) ![6](img/6.png)
+        g_loss = -tf.reduce_mean(fake_predictions) # ⑥
 
     gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
     self.g_optimizer.apply_gradients(
         zip(gen_gradient, self.generator.trainable_variables)
-    ) ![7](img/7.png)
+    ) # ⑦
 
     self.c_loss_metric.update_state(c_loss)
     self.c_wass_loss_metric.update_state(c_wass_loss)
@@ -696,31 +696,31 @@ def train_step(self, real_images):
     return {m.name: m.result() for m in self.metrics}
 ```
 
-![1](img/#co_generative_adversarial_networks_CO5-1)
+①
 
 执行三次批评家更新。
 
-![2](img/#co_generative_adversarial_networks_CO5-2)
+②
 
 为批评家计算 Wasserstein 损失——虚假图像和真实图像的平均预测之间的差异。
 
-![3](img/#co_generative_adversarial_networks_CO5-3)
+③
 
 计算梯度惩罚项（参见示例 4-8）。
 
-![4](img/#co_generative_adversarial_networks_CO5-4)
+④
 
 批评家损失函数是 Wasserstein 损失和梯度惩罚的加权和。
 
-![5](img/#co_generative_adversarial_networks_CO5-5)
+⑤
 
 更新批评家的权重。
 
-![6](img/#co_generative_adversarial_networks_CO5-6)
+⑥
 
 为生成器计算 Wasserstein 损失。
 
-![7](img/#co_generative_adversarial_networks_CO5-7)
+⑦
 
 更新生成器的权重。
 
@@ -797,22 +797,22 @@ CGAN 之所以有效是因为评论者现在可以访问有关图像内容的额
 ##### 示例 4-10。CGAN 中的输入层
 
 ```py
-critic_input = layers.Input(shape=(64, 64, 3)) ![1](img/1.png)
+critic_input = layers.Input(shape=(64, 64, 3)) # ①
 label_input = layers.Input(shape=(64, 64, 2))
 x = layers.Concatenate(axis = -1)([critic_input, label_input])
 ...
-generator_input = layers.Input(shape=(32,)) ![2](img/2.png)
+generator_input = layers.Input(shape=(32,)) # ②
 label_input = layers.Input(shape=(2,))
 x = layers.Concatenate(axis = -1)([generator_input, label_input])
 x = layers.Reshape((1,1, 34))(x)
 ...
 ```
 
-![1](img/#co_generative_adversarial_networks_CO6-1)
+①
 
 图像通道和标签通道分别传递给评论家并连接。
 
-![2](img/#co_generative_adversarial_networks_CO6-2)
+②
 
 潜在向量和标签类别分别传递给生成器，并在重塑之前连接。
 
@@ -824,9 +824,9 @@ x = layers.Reshape((1,1, 34))(x)
 
 ```py
 def train_step(self, data):
-    real_images, one_hot_labels = data ![1](img/1.png)
+    real_images, one_hot_labels = data # ①
 
-    image_one_hot_labels = one_hot_labels[:, None, None, :] ![2](img/2.png)
+    image_one_hot_labels = one_hot_labels[:, None, None, :] # ②
     image_one_hot_labels = tf.repeat(
         image_one_hot_labels, repeats=64, axis = 1
     )
@@ -844,11 +844,11 @@ def train_step(self, data):
         with tf.GradientTape() as tape:
             fake_images = self.generator(
                 [random_latent_vectors, one_hot_labels], training = True
-            ) ![3](img/3.png)
+            ) # ③
 
             fake_predictions = self.critic(
                 [fake_images, image_one_hot_labels], training = True
-            ) ![4](img/4.png)
+            ) # ④
             real_predictions = self.critic(
                 [real_images, image_one_hot_labels], training = True
             )
@@ -858,7 +858,7 @@ def train_step(self, data):
             )
             c_gp = self.gradient_penalty(
                 batch_size, real_images, fake_images, image_one_hot_labels
-            ) ![5](img/5.png)
+            ) # ⑤
             c_loss = c_wass_loss + c_gp * self.gp_weight
 
         c_gradient = tape.gradient(c_loss, self.critic.trainable_variables)
@@ -873,7 +873,7 @@ def train_step(self, data):
     with tf.GradientTape() as tape:
         fake_images = self.generator(
             [random_latent_vectors, one_hot_labels], training=True
-        ) ![6](img/6.png)
+        ) # ⑥
         fake_predictions = self.critic(
             [fake_images, image_one_hot_labels], training=True
         )
@@ -885,27 +885,27 @@ def train_step(self, data):
     )
 ```
 
-![1](img/#co_generative_adversarial_networks_CO7-1)
+①
 
 图像和标签从输入数据中解压缩。
 
-![2](img/#co_generative_adversarial_networks_CO7-2)
+②
 
 独热编码向量被扩展为具有与输入图像相同空间大小（64×64）的独热编码图像。
 
-![3](img/#co_generative_adversarial_networks_CO7-3)
+③
 
 现在，生成器被提供了两个输入的列表——随机潜在向量和独热编码标签向量。
 
-![4](img/#co_generative_adversarial_networks_CO7-4)
+④
 
 评论家现在被提供了两个输入的列表——假/真实图像和独热编码标签通道。
 
-![5](img/#co_generative_adversarial_networks_CO7-5)
+⑤
 
 梯度惩罚函数还需要将独热编码标签通道传递给评论家，因为它使用评论家。
 
-![6](img/#co_generative_adversarial_networks_CO7-6)
+⑥
 
 对评论家培训步骤所做的更改也适用于生成器训练步骤。
 

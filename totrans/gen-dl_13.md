@@ -118,26 +118,26 @@ Transformer 中的注意力机制（也称为*注意力头*）旨在做到这一
 
 ```py
 layers.MultiHeadAttention(
-    num_heads = 4, ![1](img/1.png)
-    key_dim = 128, ![2](img/2.png)
-    value_dim = 64, ![3](img/3.png)
-    output_shape = 256 ![4](img/4.png)
+    num_heads = 4, # ①
+    key_dim = 128, # ②
+    value_dim = 64, # ③
+    output_shape = 256 # ④
     )
 ```
 
-![1](img/#co_transformers_CO1-1)
+①
 
 这个多头注意力层有四个头。
 
-![2](img/#co_transformers_CO1-2)
+②
 
 键（和查询）是长度为 128 的向量。
 
-![3](img/#co_transformers_CO1-3)
+③
 
 值（因此也是每个头的输出）是长度为 64 的向量。
 
-![4](img/#co_transformers_CO1-4)
+④
 
 输出向量的长度为 256。
 
@@ -220,7 +220,7 @@ np.transpose(causal_attention_mask(1, 10, 10, dtype = tf.int32)[0])
 
 ```py
 class TransformerBlock(layers.Layer):
-    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate=0.1): ![1](img/1.png)
+    def __init__(self, num_heads, key_dim, embed_dim, ff_dim, dropout_rate=0.1): # ①
         super(TransformerBlock, self).__init__()
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -243,42 +243,42 @@ class TransformerBlock(layers.Layer):
         seq_len = input_shape[1]
         causal_mask = causal_attention_mask(
             batch_size, seq_len, seq_len, tf.bool
-        ) ![2](img/2.png)
+        ) # ②
         attention_output, attention_scores = self.attn(
             inputs,
             inputs,
             attention_mask=causal_mask,
             return_attention_scores=True
-        ) ![3](img/3.png)
+        ) # ③
         attention_output = self.dropout_1(attention_output)
-        out1 = self.ln_1(inputs + attention_output) ![4](img/4.png)
-        ffn_1 = self.ffn_1(out1) ![5](img/5.png)
+        out1 = self.ln_1(inputs + attention_output) # ④
+        ffn_1 = self.ffn_1(out1) # ⑤
         ffn_2 = self.ffn_2(ffn_1)
         ffn_output = self.dropout_2(ffn_2)
-        return (self.ln_2(out1 + ffn_output), attention_scores) ![6](img/6.png)
+        return (self.ln_2(out1 + ffn_output), attention_scores) # ⑥
 ```
 
-![1](img/#co_transformers_CO2-1)
+①
 
 构成`TransformerBlock`层的子层在初始化函数中定义。
 
-![2](img/#co_transformers_CO2-2)
+②
 
 因果掩码被创建用来隐藏查询中的未来键。
 
-![3](img/#co_transformers_CO2-3)
+③
 
 创建了多头注意力层，并指定了注意力掩码。
 
-![4](img/#co_transformers_CO2-4)
+④
 
 第一个*加和归一化*层。
 
-![5](img/#co_transformers_CO2-5)
+⑤
 
 前馈层。
 
-![6](img/#co_transformers_CO2-6)
+⑥
 
 第二个*加和归一化*层。
 
@@ -317,26 +317,26 @@ class TokenAndPositionEmbedding(layers.Layer):
         self.embed_dim = embed_dim
         self.token_emb = layers.Embedding(
             input_dim=vocab_size, output_dim=embed_dim
-        ) ![1](img/1.png)
-        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim) ![2](img/2.png)
+        ) # ①
+        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim) # ②
 
     def call(self, x):
         maxlen = tf.shape(x)[-1]
         positions = tf.range(start=0, limit=maxlen, delta=1)
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
-        return x + positions ![3](img/3.png)
+        return x + positions # ③
 ```
 
-![1](img/#co_transformers_CO3-1)
+①
 
 标记使用`Embedding`层进行嵌入。
 
-![2](img/#co_transformers_CO3-2)
+②
 
 标记的位置也使用`Embedding`层进行嵌入。
 
-![3](img/#co_transformers_CO3-3)
+③
 
 该层的输出是标记和位置嵌入的总和。
 
@@ -364,38 +364,38 @@ N_HEADS = 2
 KEY_DIM = 256
 FEED_FORWARD_DIM = 256
 
-inputs = layers.Input(shape=(None,), dtype=tf.int32) ![1](img/1.png)
-x = TokenAndPositionEmbedding(MAX_LEN, VOCAB_SIZE, EMBEDDING_DIM)(inputs) ![2](img/2.png)
+inputs = layers.Input(shape=(None,), dtype=tf.int32) # ①
+x = TokenAndPositionEmbedding(MAX_LEN, VOCAB_SIZE, EMBEDDING_DIM)(inputs) # ②
 x, attention_scores = TransformerBlock(
     N_HEADS, KEY_DIM, EMBEDDING_DIM, FEED_FORWARD_DIM
-)(x) ![3](img/3.png)
-outputs = layers.Dense(VOCAB_SIZE, activation = 'softmax')(x) ![4](img/4.png)
-gpt = models.Model(inputs=inputs, outputs=[outputs, attention]) ![5](img/5.png)
-gpt.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), None]) ![6](img/6.png)
+)(x) # ③
+outputs = layers.Dense(VOCAB_SIZE, activation = 'softmax')(x) # ④
+gpt = models.Model(inputs=inputs, outputs=[outputs, attention]) # ⑤
+gpt.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), None]) # ⑥
 gpt.fit(train_ds, epochs=5)
 ```
 
-![1](img/#co_transformers_CO4-1)
+①
 
 输入被填充（用零填充）。
 
-![2](img/#co_transformers_CO4-2)
+②
 
 文本使用`TokenAndPositionEmbedding`层进行编码。
 
-![3](img/#co_transformers_CO4-3)
+③
 
 编码通过`TransformerBlock`传递。
 
-![4](img/#co_transformers_CO4-4)
+④
 
 转换后的输出通过具有 softmax 激活的`Dense`层传递，以预测后续单词的分布。
 
-![5](img/#co_transformers_CO4-5)
+⑤
 
 `Model`以单词标记序列作为输入，并输出预测的后续单词分布。还返回了 Transformer 块的输出，以便我们可以检查模型如何引导其注意力。
 
-![6](img/#co_transformers_CO4-6)
+⑥
 
 模型使用预测的单词分布上的`SparseCategoricalCrossentropy`损失进行编译。
 

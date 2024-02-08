@@ -53,30 +53,30 @@ train_data = utils.image_dataset_from_directory(
     shuffle=True,
     seed=42,
     interpolation="bilinear",
-) ![1](img/1.png)
+) # ①
 
 def preprocess(img):
     img = tf.cast(img, "float32") / 255.0
     return img
 
-train = train_data.map(lambda x: preprocess(x)) ![2](img/2.png)
-train = train.repeat(5) ![3](img/3.png)
-train = train.batch(64, drop_remainder=True) ![4](img/4.png)
+train = train_data.map(lambda x: preprocess(x)) # ②
+train = train.repeat(5) # ③
+train = train.batch(64, drop_remainder=True) # ④
 ```
 
-![1](img/#co_diffusion_models_CO1-1)
+①
 
 使用 Keras 的`image_dataset_from_directory`函数加载数据集（在训练期间需要时）。
 
-![2](img/#co_diffusion_models_CO1-2)
+②
 
 将像素值缩放到范围[0, 1]。
 
-![3](img/#co_diffusion_models_CO1-3)
+③
 
 将数据集重复五次。
 
-![4](img/#co_diffusion_models_CO1-4)
+④
 
 将数据集分成 64 张图像一组。
 
@@ -144,17 +144,17 @@ def linear_diffusion_schedule(diffusion_times):
     return noise_rates, signal_rates
 
 T = 1000
-diffusion_times = [x/T for x in range(T)] ![1](img/1.png)
+diffusion_times = [x/T for x in range(T)] # ①
 linear_noise_rates, linear_signal_rates = linear_diffusion_schedule(
     diffusion_times
-) ![2](img/2.png)
+) # ②
 ```
 
-![1](img/#co_diffusion_models_CO2-1)
+①
 
 扩散时间是 0 到 1 之间等间隔的步骤。
 
-![2](img/#co_diffusion_models_CO2-2)
+②
 
 线性扩散进度表应用于扩散时间以产生噪声和信号速率。
 
@@ -171,12 +171,12 @@ linear_noise_rates, linear_signal_rates = linear_diffusion_schedule(
 ##### 示例 8-4\. 余弦和偏移余弦扩散时间表
 
 ```py
-def cosine_diffusion_schedule(diffusion_times): ![1](img/1.png)
+def cosine_diffusion_schedule(diffusion_times): # ①
     signal_rates = tf.cos(diffusion_times * math.pi / 2)
     noise_rates = tf.sin(diffusion_times * math.pi / 2)
     return noise_rates, signal_rates
 
-def offset_cosine_diffusion_schedule(diffusion_times): ![2](img/2.png)
+def offset_cosine_diffusion_schedule(diffusion_times): # ②
     min_signal_rate = 0.02
     max_signal_rate = 0.95
     start_angle = tf.acos(max_signal_rate)
@@ -190,11 +190,11 @@ def offset_cosine_diffusion_schedule(diffusion_times): ![2](img/2.png)
     return noise_rates, signal_rates
 ```
 
-![1](img/#co_diffusion_models_CO3-1)
+①
 
 纯余弦扩散时间表（不包括偏移或重新缩放）。
 
-![2](img/#co_diffusion_models_CO3-2)
+②
 
 我们将使用的偏移余弦扩散时间表会调整时间表，以确保在扩散过程开始时噪声步骤不会太小。
 
@@ -260,70 +260,70 @@ class DiffusionModel(models.Model):
         return pred_noises, pred_images
 
     def train_step(self, images):
-        images = self.normalizer(images, training=True) ![1](img/1.png)
-        noises = tf.random.normal(shape=tf.shape(images)) ![2](img/2.png)
+        images = self.normalizer(images, training=True) # ①
+        noises = tf.random.normal(shape=tf.shape(images)) # ②
         batch_size = tf.shape(images)[0]
         diffusion_times = tf.random.uniform(
             shape=(batch_size, 1, 1, 1), minval=0.0, maxval=1.0
-        ) ![3](img/3.png)
+        ) # ③
         noise_rates, signal_rates = self.cosine_diffusion_schedule(
             diffusion_times
-        ) ![4](img/4.png)
-        noisy_images = signal_rates * images + noise_rates * noises ![5](img/5.png)
+        ) # ④
+        noisy_images = signal_rates * images + noise_rates * noises # ⑤
         with tf.GradientTape() as tape:
             pred_noises, pred_images = self.denoise(
                 noisy_images, noise_rates, signal_rates, training=True
-            ) ![6](img/6.png)
-            noise_loss = self.loss(noises, pred_noises)  ![7](img/7.png)
+            ) # ⑥
+            noise_loss = self.loss(noises, pred_noises)  # ⑦
         gradients = tape.gradient(noise_loss, self.network.trainable_weights)
         self.optimizer.apply_gradients(
             zip(gradients, self.network.trainable_weights)
-        ) ![8](img/8.png)
+        ) # ⑧
         self.noise_loss_tracker.update_state(noise_loss)
 
         for weight, ema_weight in zip(
             self.network.weights, self.ema_network.weights
         ):
-            ema_weight.assign(0.999 * ema_weight + (1 - 0.999) * weight) ![9](img/9.png)
+            ema_weight.assign(0.999 * ema_weight + (1 - 0.999) * weight) # ⑨
 
         return {m.name: m.result() for m in self.metrics}
 
     ...
 ```
 
-![1](img/#co_diffusion_models_CO4-1)
+①
 
 我们首先将图像批次归一化为零均值和单位方差。
 
-![2](img/#co_diffusion_models_CO4-2)
+②
 
 接下来，我们对形状与输入图像匹配的噪声进行采样。
 
-![3](img/#co_diffusion_models_CO4-3)
+③
 
 我们还对随机扩散时间进行采样…​
 
-![4](img/#co_diffusion_models_CO4-4)
+④
 
 …并使用这些根据余弦扩散计划生成噪声和信号速率。
 
-![5](img/#co_diffusion_models_CO4-5)
+⑤
 
 然后我们将信号和噪声权重应用于输入图像以生成嘈杂的图像。
 
-![6](img/#co_diffusion_models_CO4-6)
+⑥
 
 接下来，我们通过要求网络预测噪声然后撤消添加噪声的操作，使用提供的`noise_rates`和`signal_rates`来去噪嘈杂的图像。
 
-![7](img/#co_diffusion_models_CO4-7)
+⑦
 
 然后我们可以计算预测噪声和真实噪声之间的损失（平均绝对误差）…​
 
-![8](img/#co_diffusion_models_CO4-8)
+⑧
 
 …​并根据这个损失函数采取梯度步骤。
 
-![9](img/#co_diffusion_models_CO4-9)
+⑨
 
 EMA 网络权重更新为现有 EMA 权重和训练后的网络权重在梯度步骤后的加权平均值。
 
@@ -346,80 +346,80 @@ DDPM 论文的作者使用了一种称为*U-Net*的架构类型。这个网络�
 ##### 示例 8-6\. Keras 中的 U-Net 模型
 
 ```py
-noisy_images = layers.Input(shape=(64, 64, 3)) ![1](img/1.png)
-x = layers.Conv2D(32, kernel_size=1)(noisy_images) ![2](img/2.png)
+noisy_images = layers.Input(shape=(64, 64, 3)) # ①
+x = layers.Conv2D(32, kernel_size=1)(noisy_images) # ②
 
-noise_variances = layers.Input(shape=(1, 1, 1)) ![3](img/3.png)
-noise_embedding = layers.Lambda(sinusoidal_embedding)(noise_variances) ![4](img/4.png)
+noise_variances = layers.Input(shape=(1, 1, 1)) # ③
+noise_embedding = layers.Lambda(sinusoidal_embedding)(noise_variances) # ④
 noise_embedding = layers.UpSampling2D(size=64, interpolation="nearest")(
     noise_embedding
-) ![5](img/5.png)
+) # ⑤
 
-x = layers.Concatenate()([x, noise_embedding]) ![6](img/6.png)
+x = layers.Concatenate()([x, noise_embedding]) # ⑥
 
-skips = [] ![7](img/7.png)
+skips = [] # ⑦
 
-x = DownBlock(32, block_depth = 2)([x, skips]) ![8](img/8.png)
+x = DownBlock(32, block_depth = 2)([x, skips]) # ⑧
 x = DownBlock(64, block_depth = 2)([x, skips])
 x = DownBlock(96, block_depth = 2)([x, skips])
 
-x = ResidualBlock(128)(x) ![9](img/9.png)
+x = ResidualBlock(128)(x) # ⑨
 x = ResidualBlock(128)(x)
 
-x = UpBlock(96, block_depth = 2)([x, skips]) ![10](img/10.png)
+x = UpBlock(96, block_depth = 2)([x, skips]) # ⑩
 x = UpBlock(64, block_depth = 2)([x, skips])
 x = UpBlock(32, block_depth = 2)([x, skips])
 
-x = layers.Conv2D(3, kernel_size=1, kernel_initializer="zeros")(x) ![11](img/11.png)
+x = layers.Conv2D(3, kernel_size=1, kernel_initializer="zeros")(x) # ⑪ 
 
-unet = models.Model([noisy_images, noise_variances], x, name="unet") ![12](img/12.png)
+unet = models.Model([noisy_images, noise_variances], x, name="unet") # ⑫
 ```
 
-![1](img/#co_diffusion_models_CO5-1)
+①
 
 U-Net 的第一个输入是我们希望去噪的图像。
 
-![2](img/#co_diffusion_models_CO5-2)
+②
 
 这个图像通过一个`Conv2D`层传递，以增加通道数量。
 
-![3](img/#co_diffusion_models_CO5-3)
+③
 
 U-Net 的第二个输入是噪声方差（一个标量）。
 
-![4](img/#co_diffusion_models_CO5-4)
+④
 
 这是使用正弦嵌入编码的。
 
-![5](img/#co_diffusion_models_CO5-5)
+⑤
 
 这个嵌入被复制到空间维度以匹配输入图像的大小。
 
-![6](img/#co_diffusion_models_CO5-6)
+⑥
 
 两个输入流在通道上连接。
 
-![7](img/#co_diffusion_models_CO5-7)
+⑦
 
 `skips`列表将保存我们希望连接到下游`UpBlock`层的`DownBlock`层的输出。
 
-![8](img/#co_diffusion_models_CO5-8)
+⑧
 
 张量通过一系列`DownBlock`层传递，这些层减小了图像的大小，同时增加了通道的数量。
 
-![9](img/#co_diffusion_models_CO5-9)
+⑨
 
 然后，张量通过两个`ResidualBlock`层传递，这些层保持图像大小和通道数量恒定。
 
-![10](img/#co_diffusion_models_CO5-10)
+⑩
 
 接下来，张量通过一系列`UpBlock`层传递，这些层增加图像的大小，同时减少通道数。跳跃连接将输出与较早的`DownBlock`层的输出合并。
 
-![11](img/#co_diffusion_models_CO5-11)
+⑪ 
 
 最终的`Conv2D`层将通道数减少到三（RGB）。
 
-![12](img/#co_diffusion_models_CO5-12)
+⑫
 
 U-Net 是一个 Keras `Model`，它以嘈杂的图像和噪声方差作为输入，并输出预测的噪声图。
 
@@ -489,34 +489,34 @@ def sinusoidal_embedding(x):
 def ResidualBlock(width):
     def apply(x):
         input_width = x.shape[3]
-        if input_width == width: ![1](img/1.png)
+        if input_width == width: # ①
             residual = x
         else:
             residual = layers.Conv2D(width, kernel_size=1)(x)
-        x = layers.BatchNormalization(center=False, scale=False)(x) ![2](img/2.png)
+        x = layers.BatchNormalization(center=False, scale=False)(x) # ②
         x = layers.Conv2D(
             width, kernel_size=3, padding="same", activation=activations.swish
-        )(x) ![3](img/3.png)
+        )(x) # ③
         x = layers.Conv2D(width, kernel_size=3, padding="same")(x)
-        x = layers.Add()([x, residual]) ![4](img/4.png)
+        x = layers.Add()([x, residual]) # ④
         return x
 
     return apply
 ```
 
-![1](img/#co_diffusion_models_CO6-1)
+①
 
 检查输入中的通道数是否与我们希望该块输出的通道数匹配。如果不匹配，可以在跳跃连接上包含额外的`Conv2D`层，以使通道数与块的其余部分保持一致。
 
-![2](img/#co_diffusion_models_CO6-2)
+②
 
 应用`BatchNormalization`层。
 
-![3](img/#co_diffusion_models_CO6-3)
+③
 
 应用两个`Conv2D`层。
 
-![4](img/#co_diffusion_models_CO6-4)
+④
 
 将原始块输入添加到输出中，以提供块的最终输出。
 
@@ -539,9 +539,9 @@ def DownBlock(width, block_depth):
     def apply(x):
         x, skips = x
         for _ in range(block_depth):
-            x = ResidualBlock(width)(x) ![1](img/1.png)
-            skips.append(x) ![2](img/2.png)
-        x = layers.AveragePooling2D(pool_size=2)(x) ![3](img/3.png)
+            x = ResidualBlock(width)(x) # ①
+            skips.append(x) # ②
+        x = layers.AveragePooling2D(pool_size=2)(x) # ③
         return x
 
     return apply
@@ -549,36 +549,36 @@ def DownBlock(width, block_depth):
 def UpBlock(width, block_depth):
     def apply(x):
         x, skips = x
-        x = layers.UpSampling2D(size=2, interpolation="bilinear")(x) ![4](img/4.png)
+        x = layers.UpSampling2D(size=2, interpolation="bilinear")(x) # ④
         for _ in range(block_depth):
-            x = layers.Concatenate()([x, skips.pop()]) ![5](img/5.png)
-            x = ResidualBlock(width)(x) ![6](img/6.png)
+            x = layers.Concatenate()([x, skips.pop()]) # ⑤
+            x = ResidualBlock(width)(x) # ⑥
         return x
 
     return apply
 ```
 
-![1](img/#co_diffusion_models_CO7-1)
+①
 
 `DownBlock`通过给定`width`的`ResidualBlock`增加图像中的通道数…​
 
-![2](img/#co_diffusion_models_CO7-2)
+②
 
 …每个都保存在一个列表（`skips`）中，以便稍后由`UpBlock`使用。
 
-![3](img/#co_diffusion_models_CO7-3)
+③
 
 最终的`AveragePooling2D`层将图像的维度减半。
 
-![4](img/#co_diffusion_models_CO7-4)
+④
 
 `UpBlock`从一个`UpSampling2D`层开始，将图像大小加倍。
 
-![5](img/#co_diffusion_models_CO7-5)
+⑤
 
 `DownBlock`层的输出通过`Concatenate`层连接到当前输出。
 
-![6](img/#co_diffusion_models_CO7-6)
+⑥
 
 `ResidualBlock`用于在图像通过`UpBlock`时减少通道数。
 
@@ -589,33 +589,33 @@ def UpBlock(width, block_depth):
 ##### 示例 8-10。训练`DiffusionModel`的代码
 
 ```py
-model = DiffusionModel() ![1](img/1.png)
+model = DiffusionModel() # ①
 model.compile(
     optimizer=optimizers.experimental.AdamW(learning_rate=1e-3, weight_decay=1e-4),
     loss=losses.mean_absolute_error,
-) ![2](img/2.png)
+) # ②
 
-model.normalizer.adapt(train) ![3](img/3.png)
+model.normalizer.adapt(train) # ③
 
 model.fit(
     train,
     epochs=50,
-) ![4](img/4.png)
+) # ④
 ```
 
-![1](img/#co_diffusion_models_CO8-1)
+①
 
 实例化模型。
 
-![2](img/#co_diffusion_models_CO8-2)
+②
 
 编译模型，使用 AdamW 优化器（类似于 Adam，但带有权重衰减，有助于稳定训练过程）和平均绝对误差损失函数。
 
-![3](img/#co_diffusion_models_CO8-3)
+③
 
 使用训练集计算归一化统计数据。
 
-![4](img/#co_diffusion_models_CO8-4)
+④
 
 在 50 个时代内拟合模型。
 
@@ -660,51 +660,51 @@ class DiffusionModel(models.Model):
         num_images = initial_noise.shape[0]
         step_size = 1.0 / diffusion_steps
         current_images = initial_noise
-        for step in range(diffusion_steps): ![1](img/1.png)
-            diffusion_times = tf.ones((num_images, 1, 1, 1)) - step * step_size ![2](img/2.png)
-            noise_rates, signal_rates = self.diffusion_schedule(diffusion_times) ![3](img/3.png)
+        for step in range(diffusion_steps): # ①
+            diffusion_times = tf.ones((num_images, 1, 1, 1)) - step * step_size # ②
+            noise_rates, signal_rates = self.diffusion_schedule(diffusion_times) # ③
             pred_noises, pred_images = self.denoise(
                 current_images, noise_rates, signal_rates, training=False
-            ) ![4](img/4.png)
-            next_diffusion_times = diffusion_times - step_size ![5](img/5.png)
+            ) # ④
+            next_diffusion_times = diffusion_times - step_size # ⑤
             next_noise_rates, next_signal_rates = self.diffusion_schedule(
                 next_diffusion_times
-            ) ![6](img/6.png)
+            ) # ⑥
             current_images = (
                 next_signal_rates * pred_images + next_noise_rates * pred_noises
-            ) ![7](img/7.png)
-        return pred_images ![8](img/8.png)
+            ) # ⑦
+        return pred_images # ⑧
 ```
 
-![1](img/#co_diffusion_models_CO9-1)
+①
 
 观察固定数量的步骤（例如，20 步）。
 
-![2](img/#co_diffusion_models_CO9-2)
+②
 
 扩散时间都设置为 1（即在反向扩散过程开始时）。
 
-![3](img/#co_diffusion_models_CO9-3)
+③
 
 根据扩散计划计算噪声和信号率。
 
-![4](img/#co_diffusion_models_CO9-4)
+④
 
 U-Net 用于预测噪声，从而使我们能够计算去噪图像的估计。
 
-![5](img/#co_diffusion_models_CO9-5)
+⑤
 
 扩散时间减少一步。
 
-![6](img/#co_diffusion_models_CO9-6)
+⑥
 
 计算新的噪声和信号率。
 
-![7](img/#co_diffusion_models_CO9-7)
+⑦
 
 通过根据扩散计划率重新应用预测噪声到预测图像，计算出 `t-1` 图像。
 
-![8](img/#co_diffusion_models_CO9-8)
+⑧
 
 经过 20 步，最终的 <math alttext="bold x 0"><msub><mi>𝐱</mi> <mn>0</mn></msub></math> 预测图像被返回。
 
@@ -724,25 +724,25 @@ class DiffusionModel(models.Model):
 ...
 
     def denormalize(self, images):
-        images = self.normalizer.mean + images * self.normalizer.variance**0.5 ![1](img/1.png)
+        images = self.normalizer.mean + images * self.normalizer.variance**0.5 # ①
         return tf.clip_by_value(images, 0.0, 1.0)
 
     def generate(self, num_images, diffusion_steps):
-        initial_noise = tf.random.normal(shape=(num_images, 64, 64, 3)) ![1](img/1.png)
-        generated_images = self.reverse_diffusion(initial_noise, diffusion_steps) ![2](img/2.png)
-        generated_images = self.denormalize(generated_images) ![3](img/3.png)
+        initial_noise = tf.random.normal(shape=(num_images, 64, 64, 3)) # ①
+        generated_images = self.reverse_diffusion(initial_noise, diffusion_steps) # ②
+        generated_images = self.denormalize(generated_images) # ③
         return generated_images
 ```
 
-![1](img/#co_diffusion_models_CO10-1)
+①
 
 生成一些初始噪声图。
 
-![2](img/#co_diffusion_models_CO10-3)
+②
 
 应用逆扩散过程。
 
-![3](img/#co_diffusion_models_CO10-4)
+③
 
 网络输出的图像将具有零均值和单位方差，因此我们需要通过重新应用从训练数据计算得出的均值和方差来去标准化。
 

@@ -129,38 +129,38 @@ def pad_punctuation(s):
     s = re.sub(' +', ' ', s)
     return s
 
-text_data = [pad_punctuation(x) for x in filtered_data] ![1](img/1.png)
+text_data = [pad_punctuation(x) for x in filtered_data] # ①
 
-text_ds = tf.data.Dataset.from_tensor_slices(text_data).batch(32).shuffle(1000) ![2](img/2.png)
+text_ds = tf.data.Dataset.from_tensor_slices(text_data).batch(32).shuffle(1000) # ②
 
-vectorize_layer = layers.TextVectorization( ![3](img/3.png)
+vectorize_layer = layers.TextVectorization( # ③
     standardize = 'lower',
     max_tokens = 10000,
     output_mode = "int",
     output_sequence_length = 200 + 1,
 )
 
-vectorize_layer.adapt(text_ds) ![4](img/4.png)
-vocab = vectorize_layer.get_vocabulary() ![5](img/5.png)
+vectorize_layer.adapt(text_ds) # ④
+vocab = vectorize_layer.get_vocabulary() # ⑤
 ```
 
-![1](img/#co_autoregressive_models_CO1-1)
+①
 
 填充标点符号，将它们视为单独的单词。
 
-![2](img/#co_autoregressive_models_CO1-2)
+②
 
 转换为 TensorFlow 数据集。
 
-![3](img/#co_autoregressive_models_CO1-3)
+③
 
 创建一个 Keras `TextVectorization`层，将文本转换为小写，为最常见的 10,000 个单词分配相应的整数标记，并将序列修剪或填充到 201 个标记长。
 
-![4](img/#co_autoregressive_models_CO1-4)
+④
 
 将`TextVectorization`层应用于训练数据。
 
-![5](img/#co_autoregressive_models_CO1-5)
+⑤
 
 `vocab`变量存储一个单词标记列表。
 
@@ -225,10 +225,10 @@ def prepare_inputs(text):
     y = tokenized_sentences[:, 1:]
     return x, y
 
-train_ds = text_ds.map(prepare_inputs) ![1](img/1.png)
+train_ds = text_ds.map(prepare_inputs) # ①
 ```
 
-![1](img/#co_autoregressive_models_CO2-1)
+①
 
 创建包含食谱标记（输入）和相同向量向后移动一个标记（目标）的训练集。
 
@@ -339,42 +339,42 @@ LSTM 单元格维护一个单元格状态，<math alttext="上标 C 下标 t"><m
 ##### Example 5-8\. 构建、编译和训练 LSTM
 
 ```py
-inputs = layers.Input(shape=(None,), dtype="int32") ![1](img/1.png)
-x = layers.Embedding(10000, 100)(inputs) ![2](img/2.png)
-x = layers.LSTM(128, return_sequences=True)(x) ![3](img/3.png)
-outputs = layers.Dense(10000, activation = 'softmax')(x) ![4](img/4.png)
-lstm = models.Model(inputs, outputs) ![5](img/5.png)
+inputs = layers.Input(shape=(None,), dtype="int32") # ①
+x = layers.Embedding(10000, 100)(inputs) # ②
+x = layers.LSTM(128, return_sequences=True)(x) # ③
+outputs = layers.Dense(10000, activation = 'softmax')(x) # ④
+lstm = models.Model(inputs, outputs) # ⑤
 
 loss_fn = losses.SparseCategoricalCrossentropy()
-lstm.compile("adam", loss_fn) ![6](img/6.png)
-lstm.fit(train_ds, epochs=25) ![7](img/7.png)
+lstm.compile("adam", loss_fn) # ⑥
+lstm.fit(train_ds, epochs=25) # ⑦
 ```
 
-![1](img/#co_autoregressive_models_CO3-1)
+①
 
 `Input`层不需要我们提前指定序列长度（可以是灵活的），所以我们使用`None`作为占位符。
 
-![2](img/#co_autoregressive_models_CO3-2)
+②
 
 `Embedding`层需要两个参数，词汇量的大小（10,000 个标记）和嵌入向量的维度（100）。
 
-![3](img/#co_autoregressive_models_CO3-3)
+③
 
 LSTM 层要求我们指定隐藏向量的维度（128）。我们还选择返回完整的隐藏状态序列，而不仅仅是最终时间步的隐藏状态。
 
-![4](img/#co_autoregressive_models_CO3-4)
+④
 
 `Dense`层将每个时间步的隐藏状态转换为下一个标记的概率向量。
 
-![5](img/#co_autoregressive_models_CO3-5)
+⑤
 
 整体的`Model`在给定一系列标记的输入序列时预测下一个标记。它为序列中的每个标记执行此操作。
 
-![6](img/#co_autoregressive_models_CO3-6)
+⑥
 
 该模型使用`SparseCategoricalCrossentropy`损失进行编译——这与分类交叉熵相同，但在标签为整数而不是独热编码向量时使用。
 
-![7](img/#co_autoregressive_models_CO3-7)
+⑦
 
 模型适合训练数据集。
 
@@ -412,9 +412,9 @@ class TextGenerator(callbacks.Callback):
         self.index_to_word = index_to_word
         self.word_to_index = {
             word: index for index, word in enumerate(index_to_word)
-        } ![1](img/1.png)
+        } # ①
 
-    def sample_from(self, probs, temperature): ![2](img/2.png)
+    def sample_from(self, probs, temperature): # ②
         probs = probs ** (1 / temperature)
         probs = probs / np.sum(probs)
         return np.random.choice(len(probs), p=probs), probs
@@ -422,15 +422,15 @@ class TextGenerator(callbacks.Callback):
     def generate(self, start_prompt, max_tokens, temperature):
         start_tokens = [
             self.word_to_index.get(x, 1) for x in start_prompt.split()
-        ] ![3](img/3.png)
+        ] # ③
         sample_token = None
         info = []
-        while len(start_tokens) < max_tokens and sample_token != 0: ![4](img/4.png)
+        while len(start_tokens) < max_tokens and sample_token != 0: # ④
             x = np.array([start_tokens])
-            y = self.model.predict(x) ![5](img/5.png)
-            sample_token, probs = self.sample_from(y[0][-1], temperature) ![6](img/6.png)
+            y = self.model.predict(x) # ⑤
+            sample_token, probs = self.sample_from(y[0][-1], temperature) # ⑥
             info.append({'prompt': start_prompt , 'word_probs': probs})
-            start_tokens.append(sample_token) ![7](img/7.png)
+            start_tokens.append(sample_token) # ⑦
             start_prompt = start_prompt + ' ' + self.index_to_word[sample_token]
         print(f"\ngenerated text:\n{start_prompt}\n")
         return info
@@ -439,31 +439,31 @@ class TextGenerator(callbacks.Callback):
         self.generate("recipe for", max_tokens = 100, temperature = 1.0)
 ```
 
-![1](img/#co_autoregressive_models_CO4-1)
+①
 
 创建一个反向词汇映射（从单词到标记）。
 
-![2](img/#co_autoregressive_models_CO4-2)
+②
 
 此函数使用`temperature`缩放因子更新概率。
 
-![3](img/#co_autoregressive_models_CO4-3)
+③
 
 起始提示是您想要给模型以开始生成过程的一串单词（例如，*recipe for*）。首先将这些单词转换为标记列表。
 
-![4](img/#co_autoregressive_models_CO4-4)
+④
 
 序列生成直到达到`max_tokens`长度或产生停止令牌（0）为止。
 
-![5](img/#co_autoregressive_models_CO4-5)
+⑤
 
 模型输出每个单词成为序列中下一个单词的概率。
 
-![6](img/#co_autoregressive_models_CO4-6)
+⑥
 
 概率通过采样器传递以输出下一个单词，由`temperature`参数化。
 
-![7](img/#co_autoregressive_models_CO4-7)
+⑦
 
 我们将新单词附加到提示文本中，准备进行生成过程的下一次迭代。
 
@@ -616,43 +616,43 @@ class MaskedConvLayer(layers.Layer):
     def __init__(self, mask_type, **kwargs):
         super(MaskedConvLayer, self).__init__()
         self.mask_type = mask_type
-        self.conv = layers.Conv2D(**kwargs) ![1](img/1.png)
+        self.conv = layers.Conv2D(**kwargs) # ①
 
     def build(self, input_shape):
         self.conv.build(input_shape)
         kernel_shape = self.conv.kernel.get_shape()
-        self.mask = np.zeros(shape=kernel_shape) ![2](img/2.png)
-        self.mask[: kernel_shape[0] // 2, ...] = 1.0 ![3](img/3.png)
-        self.mask[kernel_shape[0] // 2, : kernel_shape[1] // 2, ...] = 1.0 ![4](img/4.png)
+        self.mask = np.zeros(shape=kernel_shape) # ②
+        self.mask[: kernel_shape[0] // 2, ...] = 1.0 # ③
+        self.mask[kernel_shape[0] // 2, : kernel_shape[1] // 2, ...] = 1.0 # ④
         if self.mask_type == "B":
-            self.mask[kernel_shape[0] // 2, kernel_shape[1] // 2, ...] = 1.0 ![5](img/5.png)
+            self.mask[kernel_shape[0] // 2, kernel_shape[1] // 2, ...] = 1.0 # ⑤
 
     def call(self, inputs):
-        self.conv.kernel.assign(self.conv.kernel * self.mask) ![6](img/6.png)
+        self.conv.kernel.assign(self.conv.kernel * self.mask) # ⑥
         return self.conv(inputs)
 ```
 
-![1](img/#co_autoregressive_models_CO5-1)
+①
 
 `MaskedConvLayer`基于普通的`Conv2D`层。
 
-![2](img/#co_autoregressive_models_CO5-2)
+②
 
 掩码初始化为全零。
 
-![3](img/#co_autoregressive_models_CO5-3)
+③
 
 前面行中的像素将被一个 1 解除掩码。
 
-![4](img/#co_autoregressive_models_CO5-4)
+④
 
 前面列中在同一行中的像素将被一个 1 解除掩码。
 
-![5](img/#co_autoregressive_models_CO5-5)
+⑤
 
 如果掩码类型为 B，则中心像素将被一个 1 解除掩码。
 
-![6](img/#co_autoregressive_models_CO5-6)
+⑥
 
 掩码与滤波器权重相乘。
 
@@ -680,38 +680,38 @@ class ResidualBlock(layers.Layer):
         super(ResidualBlock, self).__init__(**kwargs)
         self.conv1 = layers.Conv2D(
             filters=filters // 2, kernel_size=1, activation="relu"
-        ) ![1](img/1.png)
+        ) # ①
         self.pixel_conv = MaskedConv2D(
             mask_type="B",
             filters=filters // 2,
             kernel_size=3,
             activation="relu",
             padding="same",
-        ) ![2](img/2.png)
+        ) # ②
         self.conv2 = layers.Conv2D(
             filters=filters, kernel_size=1, activation="relu"
-        ) ![3](img/3.png)
+        ) # ③
 
     def call(self, inputs):
         x = self.conv1(inputs)
         x = self.pixel_conv(x)
         x = self.conv2(x)
-        return layers.add([inputs, x]) ![4](img/4.png)
+        return layers.add([inputs, x]) # ④
 ```
 
-![1](img/#co_autoregressive_models_CO6-1)
+①
 
 初始的`Conv2D`层将通道数量减半。
 
-![2](img/#co_autoregressive_models_CO6-2)
+②
 
 Type B `MaskedConv2D`层，核大小为 3，仅使用来自五个像素的信息——上面一行中的三个像素，左边一个像素和焦点像素本身。
 
-![3](img/#co_autoregressive_models_CO6-3)
+③
 
 最终的`Conv2D`层将通道数量加倍，以再次匹配输入形状。
 
-![4](img/#co_autoregressive_models_CO6-4)
+④
 
 卷积层的输出与输入相加——这是跳跃连接。
 
@@ -724,15 +724,15 @@ Type B `MaskedConv2D`层，核大小为 3，仅使用来自五个像素的信息
 ##### 示例 5-14。PixelCNN 架构
 
 ```py
-inputs = layers.Input(shape=(16, 16, 1)) ![1](img/1.png)
+inputs = layers.Input(shape=(16, 16, 1)) # ①
 x = MaskedConv2D(mask_type="A"
                    , filters=128
                    , kernel_size=7
                    , activation="relu"
-                   , padding="same")(inputs)![2](img/2.png)
+                   , padding="same")(inputs)# ②
 
 for _ in range(5):
-    x = ResidualBlock(filters=128)(x) ![3](img/3.png)
+    x = ResidualBlock(filters=128)(x) # ③
 
 for _ in range(2):
     x = MaskedConv2D(
@@ -742,13 +742,13 @@ for _ in range(2):
         strides=1,
         activation="relu",
         padding="valid",
-    )(x) ![4](img/4.png)
+    )(x) # ④
 
 out = layers.Conv2D(
     filters=4, kernel_size=1, strides=1, activation="softmax", padding="valid"
-)(x) ![5](img/5.png)
+)(x) # ⑤
 
-pixel_cnn = models.Model(inputs, out) ![6](img/6.png)
+pixel_cnn = models.Model(inputs, out) # ⑥
 
 adam = optimizers.Adam(learning_rate=0.0005)
 pixel_cnn.compile(optimizer=adam, loss="sparse_categorical_crossentropy")
@@ -758,34 +758,34 @@ pixel_cnn.fit(
     , output_data
     , batch_size=128
     , epochs=150
-) ![7](img/7.png)
+) # ⑦
 ```
 
-![1](img/#co_autoregressive_models_CO7-1)
+①
 
 模型的`Input`是一个尺寸为 16×16×1 的灰度图像，输入值在 0 到 1 之间缩放。
 
-![2](img/#co_autoregressive_models_CO7-2)
+②
 
 第一个 Type A `MaskedConv2D`层，核大小为 7，使用来自 24 个像素的信息——在焦点像素上面的三行中的 21 个像素和左边的 3 个像素（焦点像素本身不使用）。
 
-![3](img/#co_autoregressive_models_CO7-3)
+③
 
 五个`ResidualBlock`层组被顺序堆叠。
 
-![4](img/#co_autoregressive_models_CO7-4)
+④
 
 两个 Type B `MaskedConv2D`层，核大小为 1，作为每个像素通道数量的`Dense`层。
 
-![5](img/#co_autoregressive_models_CO7-5)
+⑤
 
 最终的`Conv2D`层将通道数减少到四——本示例中的像素级别数。
 
-![6](img/#co_autoregressive_models_CO7-6)
+⑥
 
 `Model`被构建为接受一幅图像并输出相同尺寸的图像。
 
-![7](img/#co_autoregressive_models_CO7-7)
+⑦
 
 拟合模型——`input_data`在范围[0,1]（浮点数）内缩放；`output_data`在范围[0,3]（整数）内缩放。
 
@@ -810,7 +810,7 @@ class ImageGenerator(callbacks.Callback):
     def generate(self, temperature):
         generated_images = np.zeros(
             shape=(self.num_img,) + (pixel_cnn.input_shape)[1:]
-        ) ![1](img/1.png)
+        ) # ①
         batch, rows, cols, channels = generated_images.shape
 
         for row in range(rows):
@@ -818,11 +818,11 @@ class ImageGenerator(callbacks.Callback):
                 for channel in range(channels):
                     probs = self.model.predict(generated_images)[
                         :, row, col, :
-                    ] ![2](img/2.png)
+                    ] # ②
                     generated_images[:, row, col, channel] = [
                         self.sample_from(x, temperature) for x in probs
-                    ] ![3](img/3.png)
-                    generated_images[:, row, col, channel] /= 4 ![4](img/4.png)
+                    ] # ③
+                    generated_images[:, row, col, channel] /= 4 # ④
         return generated_images
 
     def on_epoch_end(self, epoch, logs=None):
@@ -835,19 +835,19 @@ class ImageGenerator(callbacks.Callback):
 img_generator_callback = ImageGenerator(num_img=10)
 ```
 
-![1](img/#co_autoregressive_models_CO8-1)
+①
 
 从一批空白图像（全零）开始。
 
-![2](img/#co_autoregressive_models_CO8-2)
+②
 
 循环遍历当前图像的行、列和通道，预测下一个像素值的分布。
 
-![3](img/#co_autoregressive_models_CO8-3)
+③
 
 从预测分布中抽取一个像素级别（对于我们的示例，范围在[0,3]内）。
 
-![4](img/#co_autoregressive_models_CO8-4)
+④
 
 将像素级别转换为范围[0,1]并覆盖当前图像中的像素值，准备好进行下一次循环迭代。
 
@@ -893,29 +893,29 @@ dist = tfp.distributions.PixelCNN(
     num_filters=32,
     num_logistic_mix=5,
     dropout_p=.3,
-) ![1](img/1.png)
+) # ①
 
-image_input = layers.Input(shape=(32, 32, 1)) ![2](img/2.png)
+image_input = layers.Input(shape=(32, 32, 1)) # ②
 
 log_prob = dist.log_prob(image_input)
 
-model = models.Model(inputs=image_input, outputs=log_prob) ![3](img/3.png)
-model.add_loss(-tf.reduce_mean(log_prob)) ![4](img/4.png)
+model = models.Model(inputs=image_input, outputs=log_prob) # ③
+model.add_loss(-tf.reduce_mean(log_prob)) # ④
 ```
 
-![1](img/#co_autoregressive_models_CO9-1)
+①
 
 将 PixelCNN 定义为一个分布——即，输出层是由五个逻辑分布组成的混合分布。
 
-![2](img/#co_autoregressive_models_CO9-2)
+②
 
 输入是大小为 32×32×1 的灰度图像。
 
-![3](img/#co_autoregressive_models_CO9-3)
+③
 
 `Model`以灰度图像作为输入，并输出在 PixelCNN 计算的混合分布下图像的对数似然。
 
-![4](img/#co_autoregressive_models_CO9-4)
+④
 
 损失函数是输入图像批次上的平均负对数似然。
 

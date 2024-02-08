@@ -123,17 +123,17 @@ RealNVP 首次由 Dinh 等人在 2017 年提出。在这篇论文中，作者展
 ##### 示例 6-1。创建一个*moons*数据集
 
 ```py
-data = datasets.make_moons(3000, noise=0.05)[0].astype("float32") ![1](img/1.png)
+data = datasets.make_moons(3000, noise=0.05)[0].astype("float32") # ①
 norm = layers.Normalization()
 norm.adapt(data)
-normalized_data = norm(data) ![2](img/2.png)
+normalized_data = norm(data) # ②
 ```
 
-![1](img/#co_normalizing_flow_models_CO1-1)
+①
 
 创建一个包含 3,000 个点的嘈杂、非标准化的 moons 数据集。
 
-![2](img/#co_normalizing_flow_models_CO1-2)
+②
 
 将数据集归一化为均值为 0，标准差为 1。
 
@@ -159,11 +159,11 @@ normalized_data = norm(data) ![2](img/2.png)
 
 ```py
 def Coupling():
-    input_layer = layers.Input(shape=2) ![1](img/1.png)
+    input_layer = layers.Input(shape=2) # ①
 
     s_layer_1 = layers.Dense(
         256, activation="relu", kernel_regularizer=regularizers.l2(0.01)
-    )(input_layer) ![2](img/2.png)
+    )(input_layer) # ②
     s_layer_2 = layers.Dense(
         256, activation="relu", kernel_regularizer=regularizers.l2(0.01)
     )(s_layer_1)
@@ -175,11 +175,11 @@ def Coupling():
     )(s_layer_3)
     s_layer_5 = layers.Dense(
         2, activation="tanh", kernel_regularizer=regularizers.l2(0.01)
-    )(s_layer_4) ![3](img/3.png)
+    )(s_layer_4) # ③
 
     t_layer_1 = layers.Dense(
         256, activation="relu", kernel_regularizer=regularizers.l2(0.01)
-    )(input_layer) ![4](img/4.png)
+    )(input_layer) # ④
     t_layer_2 = layers.Dense(
         256, activation="relu", kernel_regularizer=regularizers.l2(0.01)
     )(t_layer_1)
@@ -191,32 +191,32 @@ def Coupling():
     )(t_layer_3)
     t_layer_5 = layers.Dense(
         2, activation="linear", kernel_regularizer=regularizers.l2(0.01)
-    )(t_layer_4) ![5](img/5.png)
+    )(t_layer_4) # ⑤
 
-    return models.Model(inputs=input_layer, outputs=[s_layer_5, t_layer_5]) ![6](img/6.png)
+    return models.Model(inputs=input_layer, outputs=[s_layer_5, t_layer_5]) # ⑥
 ```
 
-![1](img/#co_normalizing_flow_models_CO2-1)
+①
 
 我们示例中`Coupling`层块的输入有两个维度。
 
-![2](img/#co_normalizing_flow_models_CO2-2)
+②
 
 *缩放*流是一个大小为 256 的`Dense`层堆叠。
 
-![3](img/#co_normalizing_flow_models_CO2-3)
+③
 
 最终的缩放层大小为 2，并具有`tanh`激活。
 
-![4](img/#co_normalizing_flow_models_CO2-4)
+④
 
 *平移*流是一个大小为 256 的`Dense`层堆叠。
 
-![5](img/#co_normalizing_flow_models_CO2-5)
+⑤
 
 最终的翻译层大小为 2，并具有`linear`激活。
 
-![6](img/#co_normalizing_flow_models_CO2-6)
+⑥
 
 `Coupling`层被构建为一个 Keras `Model`，具有两个输出（缩放和平移因子）。
 
@@ -305,15 +305,15 @@ class RealNVP(models.Model):
         self.coupling_layers = coupling_layers
         self.distribution = tfp.distributions.MultivariateNormalDiag(
             loc=[0.0, 0.0], scale_diag=[1.0, 1.0]
-        ) ![1](img/1.png)
+        ) # ①
         self.masks = np.array(
             [[0, 1], [1, 0]] * (coupling_layers // 2), dtype="float32"
-        ) ![2](img/2.png)
+        ) # ②
         self.loss_tracker = metrics.Mean(name="loss")
         self.layers_list = [
             Coupling(input_dim, coupling_dim, regularization)
             for i in range(coupling_layers)
-        ] ![3](img/3.png)
+        ] # ③
 
     @property
     def metrics(self):
@@ -324,7 +324,7 @@ class RealNVP(models.Model):
         direction = 1
         if training:
             direction = -1
-        for i in range(self.coupling_layers)[::direction]: ![4](img/4.png)
+        for i in range(self.coupling_layers)[::direction]: # ④
             x_masked = x * self.masks[i]
             reversed_mask = 1 - self.masks[i]
             s, t = self.layers_listi
@@ -335,13 +335,13 @@ class RealNVP(models.Model):
                 reversed_mask
                 * (x * tf.exp(direction * s) + direction * t * tf.exp(gate * s))
                 + x_masked
-            ) ![5](img/5.png)
-            log_det_inv += gate * tf.reduce_sum(s, axis = 1) ![6](img/6.png)
+            ) # ⑤
+            log_det_inv += gate * tf.reduce_sum(s, axis = 1) # ⑥
         return x, log_det_inv
 
     def log_loss(self, x):
         y, logdet = self(x)
-        log_likelihood = self.distribution.log_prob(y) + logdet ![7](img/7.png)
+        log_likelihood = self.distribution.log_prob(y) + logdet # ⑦
         return -tf.reduce_mean(log_likelihood)
 
     def train_step(self, data):
@@ -373,31 +373,31 @@ model.fit(
 )
 ```
 
-![1](img/#co_normalizing_flow_models_CO3-1)
+①
 
 目标分布是标准的 2D 高斯分布。
 
-![2](img/#co_normalizing_flow_models_CO3-2)
+②
 
 在这里，我们创建交替的掩码模式。
 
-![3](img/#co_normalizing_flow_models_CO3-3)
+③
 
 定义 RealNVP 网络的`Coupling`层列表。
 
-![4](img/#co_normalizing_flow_models_CO3-4)
+④
 
 在网络的主`call`函数中，我们遍历`Coupling`层。如果`training=True`，那么我们通过层向前移动（即从数据到潜在空间）。如果`training=False`，那么我们通过层向后移动（即从潜在空间到数据）。
 
-![5](img/#co_normalizing_flow_models_CO3-5)
+⑤
 
 这行描述了正向和反向方程，取决于`direction`（尝试将`direction = -1`和`direction = 1`代入以证明这一点！）。
 
-![6](img/#co_normalizing_flow_models_CO3-6)
+⑥
 
 雅可比行列式的对数，我们需要计算损失函数，简单地是缩放因子的总和。
 
-![7](img/#co_normalizing_flow_models_CO3-7)
+⑦
 
 损失函数是转换数据的对数概率的负和，根据我们的目标高斯分布和雅可比行列式的对数确定。
 
