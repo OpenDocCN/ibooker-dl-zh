@@ -163,10 +163,24 @@ Create React App 是一个用于简单 React 网站的流行工具。如果您�
 这段代码可以在 GitHub 仓库的[*chapter5/simple/simple-ttt-model*](https://oreil.ly/38zZx)找到，看起来是这样的：
 
 ```py
-tf.ready().then(()=>{①constmodelPath="model/ttt_model.json"②tf.tidy(()=>{tf.loadLayersModel(modelPath).then(model=>{③// Three board states
-constemptyBoard=tf.zeros([9])④constbetterBlockMe=tf.tensor([-1,0,0,1,1,-1,0,0,-1])⑤constgoForTheKill=tf.tensor([1,0,1,0,-1,-1,-1,0,1])⑥// Stack states into a shape [3, 9]
-constmatches=tf.stack([emptyBoard,betterBlockMe,goForTheKill])⑦constresult=model.predict(matches)⑧// Log the results
-result.reshape([3,3,3]).print()⑨})})})
+tf.ready().then(() => { // ①
+  const modelPath = "model/ttt_model.json" // ②
+  tf.tidy(() => {
+    tf.loadLayersModel(modelPath).then(model => { // ③
+      // Three board states
+      const emptyBoard = tf.zeros([9]) // ④
+      const betterBlockMe = tf.tensor([-1, 0, 0, 1, 1, -1, 0, 0, -1]) // ⑤
+      const goForTheKill = tf.tensor([1, 0, 1, 0, -1, -1, -1, 0, 1]) // ⑥
+
+      // Stack states into a shape [3, 9]
+      const matches = tf.stack([emptyBoard, betterBlockMe, goForTheKill]) // ⑦
+      const result = model.predict(matches) // ⑧
+      // Log the results
+      result.reshape([3, 3, 3]).print() // ⑨
+    })
+  })
+})
+
 ```
 
 ①
@@ -294,11 +308,35 @@ Google 已经开始免费托管像 Inception v3 这样的模型在其自己的 C
 以下代码可在 GitHub 仓库的 [*chapter5/simple/simple-tfhub*](https://oreil.ly/X7TpN) 文件夹中找到。该代码依赖于一个具有 `id` `mystery` 的神秘图片。理想情况下，AI 可以为我们解决这个谜题：
 
 ```py
+tf.ready().then(() => {
+  const modelPath =
+    "https://tfhub.dev/google/tfjs-model/imagenet/inception_v3/classification/3/default/1"; // ①
+  tf.tidy(() => {
+    tf.loadGraphModel(modelPath, { fromTFHub: true }).then((model) => { // ②
+      const mysteryImage = document.getElementById("mystery");
+      const myTensor = tf.browser.fromPixels(mysteryImage);
+      // Inception v3 expects an image resized to 299x299
+      const readyfied = tf.image
+        .resizeBilinear(myTensor, [299, 299], true) // ③
+        .div(255) // ④
+        .reshape([1, 299, 299, 3]); // ⑤
 
-tf.ready().then(()=>{constmodelPath="https://tfhub.dev/google/tfjs-model/imagenet/inception_v3/classification/3
-    /default/1";①tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{②constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// Inception v3 expects an image resized to 299x299
-constreadyfied=tf.image.resizeBilinear(myTensor,[299,299],true)③.div(255)④.reshape([1,299,299,3]);⑤constresult=model.predict(readyfied);⑥result.print();⑦const{values,indices}=tf.topk(result,3);⑧indices.print();⑨// Let's hear those winners
-constwinners=indices.dataSync();console.log(`⑩ First place ${INCEPTION_CLASSES[winners[0]]},  Second place ${INCEPTION_CLASSES[winners[1]]},  Third place ${INCEPTION_CLASSES[winners[2]]}`);});});});
+      const result = model.predict(readyfied); // ⑥
+      result.print();  // ⑦
+
+      const { values, indices } = tf.topk(result, 3); // ⑧
+      indices.print(); // ⑨
+
+      // Let's hear those winners
+      const winners = indices.dataSync();
+      console.log(` 10
+         First place ${INCEPTION_CLASSES[winners[0]]},
+         Second place ${INCEPTION_CLASSES[winners[1]]},
+         Third place ${INCEPTION_CLASSES[winners[2]]}
+      `);
+    });
+  });
+});
 ```
 
 ①
@@ -400,7 +438,13 @@ result.print();
 对于这节课，CSS 已经直接嵌入到 HTML 中以方便。图像和画布布局如下：
 
 ```py
-<divstyle="position: relative; height: 80vh">①<imgid="pet"src="/dog1.jpg"height="100%"/><canvasid="detection"style="position: absolute; left: 0;"><canvas/>②</div>
+<div style="position: relative; height: 80vh"> <!-- ① -->
+  <img id="pet" src="/dog1.jpg" height="100%" />
+  <canvas
+    id="detection"
+    style="position: absolute; left: 0;"
+  ><canvas/> <!-- ② -->
+</div>
 ```
 
 ①
@@ -420,7 +464,21 @@ result.print();
 使用起点、覆盖矩形的宽度和高度，您可以用几行代码在画布上按比例绘制它。记住，张量输出是一个百分比，需要在每个维度上进行缩放。
 
 ```py
-// Draw box on canvas constdetection=document.getElementById("detection");constimgWidth=petImage.width;constimgHeight=petImage.height;detection.width=imgWidth;①detection.height=imgHeight;constbox=result.dataSync();②conststartX=box[0]*imgWidth;③conststartY=box[1]*imgHeight;constwidth=(box[2]-box[0])*imgWidth;④constheight=(box[3]-box[1])*imgHeight;constctx=detection.getContext("2d");ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.strokeRect(startX,startY,width,height);⑤
+// Draw box on canvas
+const detection = document.getElementById("detection");
+const imgWidth = petImage.width;
+const imgHeight = petImage.height;
+detection.width = imgWidth; // ①
+detection.height = imgHeight;
+const box = result.dataSync(); // ②
+const startX = box[0] * imgWidth; // ③
+const startY = box[1] * imgHeight;
+const width = (box[2] - box[0]) * imgWidth; // ④
+const height = (box[3] - box[1]) * imgHeight;
+const ctx = detection.getContext("2d");
+ctx.strokeStyle = "#0F0";
+ctx.lineWidth = 4;
+ctx.strokeRect(startX, startY, width, height); // ⑤
 ```
 
 ①
