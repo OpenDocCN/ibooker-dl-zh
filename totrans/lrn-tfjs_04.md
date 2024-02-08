@@ -57,7 +57,12 @@
 ##### 示例 3-1。创建您的第一个张量
 
 ```py
-// creating our first tensor constdataArray=[8,6,7,5,3,0,9]constfirst=tf.tensor(dataArray)①// does the same thing constfirst_again=tf.tensor1d(dataArray)②
+// creating our first tensor
+const dataArray = [8, 6, 7, 5, 3, 0, 9]
+const first = tf.tensor(dataArray) // ①
+
+// does the same thing
+const first_again = tf.tensor1d(dataArray) // ②
 ```
 
 ①
@@ -79,7 +84,20 @@
 如果您希望强制创建的张量具有特定类型，请随时利用 `tf.tensor` 函数的第三个参数，该参数明确定义了张量的类型结构。
 
 ```py
-// creating a 'float32' tensor (the default) constfirst=tf.tensor([1.1,2.2,3.3],null,'float32')①// an 'int32' tensor constfirst_again=tf.tensor([1,2,3],null,'int32')②// inferred type for boolean constthe_truth=tf.tensor([true,false,false])③// Guess what this does constguess=tf.tensor([true,false,false],null,'int32')④// What about this? constguess_again=tf.tensor([1,3.141592654,false])⑤
+// creating a 'float32' tensor (the default)
+const first = tf.tensor([1.1, 2.2, 3.3], null, 'float32') // ①
+
+// an 'int32' tensor
+const first_again = tf.tensor([1, 2, 3], null, 'int32') // ②
+
+// inferred type for boolean
+const the_truth = tf.tensor([true, false, false]) // ③
+
+// Guess what this does
+const guess = tf.tensor([true, false, false], null, 'int32') // ④
+
+// What about this?
+const guess_again = tf.tensor([1, 3.141592654, false]) // ⑤
 ```
 
 ①
@@ -107,7 +125,18 @@
 让我们应用我们所学到的知识：
 
 ```py
-constsecond=tf.tensor1d([8,6,7,5,3,0,9])①// Whoopsie! try{constnope=tf.tensor1d([[1],[2]])②}catch(e){console.log("That's a negative Ghost Rider")}console.log("Rank:",second.rank)③console.log("Size:",second.size)④console.log("Data Type:",second.dtype)⑤
+const second = tf.tensor1d([8, 6, 7, 5, 3, 0, 9]) // ①
+
+// Whoopsie!
+try {
+  const nope = tf.tensor1d([[1],[2]]) // ②
+} catch (e) {
+  console.log("That's a negative Ghost Rider")
+}
+
+console.log("Rank:", second.rank) // ③
+console.log("Size:", second.size) // ④
+console.log("Data Type:", second.dtype) // ⑤
 ```
 
 ①
@@ -161,7 +190,18 @@ constsecond=tf.tensor1d([8,6,7,5,3,0,9])①// Whoopsie! try{constnope=tf.tensor1
 既然您有了一个目标，让我们编写一些代码将棋盘转换为张量。我们甚至将探索张量创建的附加参数。
 
 ```py
-// This code creates a 1D `Float32` tensor consta=tf.tensor([1,0,0,0,-1,0,1,0,0])// This code creates a 2D `Float32` tensor constb=tf.tensor([[1,0,0],[0,-1,0],[1,0,0]])// This does the same as the above but with a 1D input // array that is converted into a 2D `Float32` tensor constc=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3])①// This code turns the 1D input array into a 2D Int32 tensor constd=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3],'int32')②
+// This code creates a 1D `Float32` tensor
+const a = tf.tensor([1, 0, 0, 0, -1, 0, 1, 0, 0])
+
+// This code creates a 2D `Float32` tensor
+const b = tf.tensor([[1, 0, 0],[0, -1, 0],[1, 0, 0]])
+
+// This does the same as the above but with a 1D input
+// array that is converted into a 2D `Float32` tensor
+const c = tf.tensor([1, 0, 0, 0, -1, 0, 1, 0, 0], [3, 3]) // ①
+
+// This code turns the 1D input array into a 2D Int32 tensor
+const d = tf.tensor([1, 0, 0, 0, -1, 0, 1, 0, 0], [3, 3], 'int32') // ②
 ```
 
 ①
@@ -268,9 +308,30 @@ console.log(tf.memory().numBytes)
 您将很快习惯清理张量。确保学习以下代码，它将演示 `tidy()` 和 `keep()` 的使用：
 
 ```py
-// Start at zero tensors console.log('start',tf.memory().numTensors)letkeeper,chaser,seeker,beater// Now we'll create tensors inside a tidy tf.tidy(()=>{①keeper=tf.tensor([1,2,3])chaser=tf.tensor([1,2,3])seeker=tf.tensor([1,2,3])beater=tf.tensor([1,2,3])// Now we're at four tensors in memory ②console.log('inside tidy',tf.memory().numTensors)// protect a tensor
-tf.keep(keeper)// returned tensors survive
-returnchaser})// Down to two ③console.log('after tidy',tf.memory().numTensors)keeper.dispose()④chaser.dispose()⑤// Back to zero console.log('end',tf.memory().numTensors)
+// Start at zero tensors
+console.log('start', tf.memory().numTensors)
+
+let keeper, chaser, seeker, beater
+// Now we'll create tensors inside a tidy
+tf.tidy(() => { // ①
+  keeper = tf.tensor([1,2,3])
+  chaser = tf.tensor([1,2,3])
+  seeker = tf.tensor([1,2,3])
+  beater = tf.tensor([1,2,3])
+  // Now we're at four tensors in memory ②
+  console.log('inside tidy', tf.memory().numTensors)
+
+  // protect a tensor
+  tf.keep(keeper)
+  // returned tensors survive
+  return chaser
+})
+
+// Down to two ③
+console.log('after tidy', tf.memory().numTensors)
+
+keeper.dispose() // ④
+chaser.dispose() // ⑤
 ```
 
 ①
@@ -323,7 +384,21 @@ for (let i = 0; i < 10; i++) {
 以下代码探讨了使用先前描述的方法转换、打印和解析张量并进行张量操作的过程：
 
 ```py
-constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.tensor([[1,2,3],[4,5,6]])// this will show the structure but not the data console.log(snap)①// this will print the data but not the tensor structure crackle.print()②// Now let's go back to JavaScript console.log('Welcome Back Array!',pop.arraySync())③console.log('Welcome Back Typed!',pop.dataSync())④// clean up our remaining tensors! tf.dispose([snap,crackle,pop])
+const snap = tf.tensor([1,2,3])
+const crackle = tf.tensor([3.141592654])
+const pop = tf.tensor([[1,2,3],[4,5,6]])
+
+// this will show the structure but not the data
+console.log(snap) // ①
+// this will print the data but not the tensor structure
+crackle.print() // ②
+
+// Now let's go back to JavaScript
+console.log('Welcome Back Array!', pop.arraySync()) // ③
+console.log('Welcome Back Typed!', pop.dataSync()) // ④
+
+// clean up our remaining tensors!
+tf.dispose([snap, crackle, pop])
 ```
 
 ①
@@ -453,7 +528,43 @@ Welcome Back Typed!
 以下是数据：
 
 ```py
-constusers=['Gant','Todd','Jed','Justin']①constbands=![2'Nirvana','Nine Inch Nails','Backstreet Boys','N Sync','Night Club','Apashe','STP']constfeatures=![3'Grunge','Rock','Industrial','Boy Band','Dance','Techno']// User votes ④constuser_votes=tf.tensor([[10,9,1,1,8,7,8],[6,8,2,2,0,10,0],[0,2,10,9,3,7,0],[7,4,2,3,6,5,5]])// Music Styles ⑤constband_feats=tf.tensor([[1,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,1,0,0],[0,0,1,0,0,1],[0,0,1,0,0,1],[1,1,0,0,0,0]])
+const users = ['Gant', 'Todd',  'Jed', 'Justin'] // ①
+const bands = [ // ②
+  'Nirvana',
+  'Nine Inch Nails',
+  'Backstreet Boys',
+  'N Sync',
+  'Night Club',
+  'Apashe',
+  'STP'
+]
+const features = [ // ③
+  'Grunge',
+  'Rock',
+  'Industrial',
+  'Boy Band',
+  'Dance',
+  'Techno'
+]
+
+// User votes ④
+const user_votes = tf.tensor([
+  [10, 9, 1, 1, 8, 7, 8],
+  [6, 8, 2, 2, 0, 10, 0],
+  [0, 2, 10, 9, 3, 7, 0],
+  [7, 4, 2, 3, 6, 5, 5]
+])
+
+// Music Styles 5
+const band_feats = tf.tensor([
+  [1, 1, 0, 0, 0, 0],
+  [1, 0, 1, 0, 0, 0],
+  [0, 0, 0, 1, 1, 0],
+  [0, 0, 0, 1, 0, 0],
+  [0, 0, 1, 0, 0, 1],
+  [0, 0, 1, 0, 0, 1],
+  [1, 1, 0, 0, 0, 0]
+])
 ```
 
 ①
@@ -506,7 +617,15 @@ Tensor
 最后，让我们把这些数据带回 JavaScript。编写这段代码可以这样写：
 
 ```py
-// Let's make them pretty consttop_user_features=tf.topk(user_feats,features.length)// Back to JavaScript consttop_genres=top_user_features.indices.arraySync()①// print the results users.map((u,i)=>{constrankedCategories=top_genres[i].map(v=>features[v])②console.log(u,rankedCategories)})
+// Let's make them pretty
+const top_user_features = tf.topk(user_feats, features.length)
+// Back to JavaScript
+const top_genres = top_user_features.indices.arraySync() // ①
+// print the results
+users.map((u, i) => {
+  const rankedCategories = top_genres[i].map(v => features[v]) // ②
+  console.log(u, rankedCategories)
+})
 ```
 
 ①

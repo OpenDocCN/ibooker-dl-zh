@@ -339,8 +339,24 @@ import * as toxicity from "@tensorflow-models/toxicity";
 以下是加载模型并对三个句子进行分类的示例。这个确切的示例可以在[GitHub 上的章节代码](https://oreil.ly/sTs5a)的相关部分中以三种不同形式找到。
 
 ```py
-// minimum positive prediction confidence // If this isn't passed, the default is 0.85 constthreshold=0.5;// Load the model ①toxicity.load(threshold).then((model)=>{constsentences=["You are a poopy head!","I like turtles","Shut up!"];// Ask the model to classify inputs ②model.classify(sentences).then((predictions)=>{// semi-pretty-print results
-console.log(JSON.stringify(predictions,null,2));③});});
+// minimum positive prediction confidence
+// If this isn't passed, the default is 0.85
+const threshold = 0.5;
+
+// Load the model ①
+toxicity.load(threshold).then((model) => {
+  const sentences = [
+    "You are a poopy head!",
+    "I like turtles",
+    "Shut up!"
+  ];
+
+  // Ask the model to classify inputs ②
+  model.classify(sentences).then((predictions) => {
+    // semi-pretty-print results
+    console.log(JSON.stringify(predictions, null, 2)); // ③
+  });
+});
 ```
 
 ①
