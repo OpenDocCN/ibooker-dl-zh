@@ -137,7 +137,7 @@ def get_file_list(root_dir):
 然后，我们提供数据集的路径并调用该函数：
 
 ```py
-*`# path to the datasets`*
+# path to the datasets
 root_dir = '../../datasets/caltech101'
 filenames = sorted(get_file_list(root_dir))
 ```
@@ -250,7 +250,7 @@ plt.imshow(mpimg.imread(filenames[indices[1]]))
 for i in range(6):
     random_image_index = random.randint(0,num_images)
     distances, indices = neighbors.kneighbors([featureList[random_image_index]])
-    *`# don't take the first closest image as it will be the same image`*
+    # don't take the first closest image as it will be the same image
     similar_image_paths = [filenames[random_image_index]] +
                           [filenames[indices[0][i]] for i in range(1,4)]
     plot_images(similar_image_paths, distances[0])
@@ -267,13 +267,13 @@ for i in range(6):
 为了做到这一点，我们需要降低特征向量的维度，因为不可能在两个维度（纸张）中绘制一个 2,048 维向量（特征长度）。t-分布随机邻居嵌入（t-SNE）算法将高维特征向量降至 2D，提供数据集的鸟瞰视图，有助于识别聚类和附近图像。t-SNE 难以扩展到大型数据集，因此通过主成分分析（PCA）降低维度然后调用 t-SNE 是一个好主意：
 
 ```py
-*`# Perform PCA over the features`*
-num_feature_dimensions=100      *`# Set the number of features`*
+# Perform PCA over the features
+num_feature_dimensions=100      # Set the number of features
 pca = PCA(n_components = num_feature_dimensions)
 pca.fit(featureList)
 feature_list_compressed = pca.transform(featureList)
 
-*`# For speed and clarity, we'll analyze about first half of the dataset.`*
+# For speed and clarity, we'll analyze about first half of the dataset.
 selected_features = feature_list_compressed[:4000]
 selected_class_ids = class_ids[:4000]
 selected_filenames = filenames[:4000]
@@ -282,7 +282,7 @@ tsne_results =
 TSNE(n_components=2,verbose=1,metric='euclidean')
     .fit_transform(selected_features)
 
-*`# Plot a scatter plot from the generated t-SNE results`*
+# Plot a scatter plot from the generated t-SNE results
 colormap = plt.cm.get_cmap('coolwarm')
 scatter_plot = plt.scatter(tsne_results[:,0],tsne_results[:,1], c =
                selected_class_ids, cmap=colormap)
@@ -438,11 +438,11 @@ pca_accuracy = []
 pca_time = []
 
 for dimensions in pca_dimensions:
-    *`# Perform PCA`*
+    # Perform PCA
     pca = PCA(n_components = dimensions)
     pca.fit(feature_list)
     feature_list_compressed = pca.transform(feature_list[:])
-    *`# Calculate accuracy over the compressed features`*
+    # Calculate accuracy over the compressed features
     accuracy, time_taken = accuracy_calculator(feature_list_compressed[:])
     pca_time.append(time_taken)
     pca_accuracy.append(accuracy)
@@ -558,7 +558,7 @@ annoy_index = AnnoyIndex(num_dimensions) *`# Length of item vector that will be`
 `indexed`*
 for i in range(num_items):
     annoy_index.add_item(i, dataset[i])
-annoy_index.build(40) *`# 40 trees`*
+annoy_index.build(40) # 40 trees
 ```
 
 现在让我们看看搜索一个图像的五个最近邻居需要多长时间：
@@ -699,7 +699,7 @@ input_shape = (224,224,3))
 input = Input(shape=(224, 224, 3))
 x = model(input)
 x = GlobalAveragePooling2D()(x)
-*`# No dense or dropout layers`*
+# No dense or dropout layers
 x = Dense(NUM_CLASSES, activation='softmax')(x)
 model_similarity_optimized = Model(inputs=input, outputs=x)
 ```

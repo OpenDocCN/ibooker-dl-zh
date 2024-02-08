@@ -123,7 +123,7 @@ Postgres 有许多扩展，值得探索，特别是对于处理大量数据的�
 通过给定的用户名/密码/数据库/主机组合，我们可以轻松地使用 Python 连接到 Postgres：
 
 ```py
-connection_str = "dbname='*`%s`*' user='*`%s`*' password='*`%s`*' host='*`%s`*'"
+connection_str = "dbname='%s' user='%s' password='%s' host='%s'"
 conn = psycopg2.connect(connection_str % (DB_NAME, USER, PWD, HOST))
 
 ```

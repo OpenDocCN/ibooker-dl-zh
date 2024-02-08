@@ -131,9 +131,9 @@ tfjs@latest/dist/tf.min.js"></script>
  const image = document.getElementById("image");
  const predictionOutput = document.getElementById("prediction_output");
 
- *`// Load the model.`*
+ // Load the model.
  mobilenet.load().then(model => {
-   *`// Classify the image. And output the predictions`*
+   // Classify the image. And output the predictions
    model.classify(image).then(predictions => {
      predictionOutput.innerText = predictions[0].className;
    });
@@ -154,7 +154,7 @@ const path = 'https://storage.googleapis.com/tfjs-
 models/tfjs/mobilenet_v1_1.0_224/model.json';
 
 model = tf.loadLayersModel(path).then(model => {
-    *`// Load model and output predictions here`*
+    // Load model and output predictions here
 });
 ```
 
@@ -233,7 +233,7 @@ const numLayers = mobilenet.layers.length; // 88
 // Create a new feature extraction model featureExtractionModel = tf.model({inputs: mobilenet.inputs, outputs:
 layer.output});
 
-featureExtractionModel.layers.length; *`// 82`*
+featureExtractionModel.layers.length; // 82
 ```
 
 在训练过程中，我们将保持特征提取模型不变。相反，我们在其顶部添加一组可训练的层来构建我们的分类器：

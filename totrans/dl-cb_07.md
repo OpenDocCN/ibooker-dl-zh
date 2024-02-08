@@ -273,10 +273,10 @@ char_cnn_model.evaluate(test_char_vectors, test_labels)
 完成后，您应该有两个密钥和两个允许访问 API 的密钥。让我们将它们存储在相应的变量中：
 
 ```py
-CONSUMER_KEY = '<*`your value`*>'
-CONSUMER_SECRET = '<*`your value`*>'
-ACCESS_TOKEN = '<*`your value`*>'
-ACCESS_SECRET = '<*`your value`*>'
+CONSUMER_KEY = '<your value>'
+CONSUMER_SECRET = '<your value>'
+ACCESS_TOKEN = '<your value>'
+ACCESS_SECRET = '<your value>'
 ```
 
 现在我们可以构建一个认证对象：

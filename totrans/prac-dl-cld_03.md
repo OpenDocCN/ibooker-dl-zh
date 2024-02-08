@@ -303,7 +303,7 @@ def model_maker():
     base_model = MobileNet(include_top=False, input_shape =
 (IMG_WIDTH,IMG_HEIGHT,3))
     for layer in base_model.layers[:]:
-        layer.trainable = False *`# Freeze the layers`*
+        layer.trainable = False # Freeze the layers
     input = Input(shape=(IMG_WIDTH, IMG_HEIGHT, 3))
     custom_model = base_model(input)
     custom_model = GlobalAveragePooling2D()(custom_model)
@@ -419,7 +419,7 @@ img_path = '../../sample_images/dog.jpg'
 img = image.load_img(img_path, target_size=(224,224))
 img_array = image.img_to_array(img)
 expanded_img_array = np.expand_dims(img_array, axis=0)
-preprocessed_img = preprocess_input(expanded_img_array) *`# Preprocess the image`*
+preprocessed_img = preprocess_input(expanded_img_array) # Preprocess the image
 prediction = model.predict(preprocessed_img)
 print(prediction)
 print(validation_generator.class_indices)
@@ -446,12 +446,12 @@ print(validation_generator.class_indices)
 在进行这之前，让我们对整个验证数据集进行预测。首先，我们正确设置管道配置：
 
 ```py
-*`# VARIABLES`*
+# VARIABLES
 IMG_WIDTH, IMG_HEIGHT = 224, 224
 VALIDATION_DATA_DIR = 'data/val_data/'
 VALIDATION_BATCH_SIZE = 64
 
-*`# DATA GENERATORS`*
+# DATA GENERATORS
 validation_datagen = ImageDataGenerator(
         preprocessing_function=preprocess_input)
 validation_generator = validation_datagen.flow_from_directory(
@@ -472,10 +472,10 @@ predictions = model.predict_generator(validation_generator)
 为了使我们的分析更容易，我们创建一个字典，存储每个图像的索引到预测和实际值（预期预测）：
 
 ```py
-*`# prediction_table is a dict with index, prediction, ground truth`*
+# prediction_table is a dict with index, prediction, ground truth
 prediction_table = {}
 for index, val in enumerate(predictions):
-    *`# get argmax index`*
+    # get argmax index
     index_of_highest_probability = np.argmax(val)
     value_of_highest_probability = val[index_of_highest_probability]
     prediction_table[index] = [value_of_highest_probability,
@@ -503,7 +503,7 @@ def display(sorted_indices, message):
 现在开始有趣的部分！哪些图像我们最有信心包含狗？让我们找到预测概率最高的图像（即最接近 1.0；参见图 3-9 中概率最高的图像）与预测类别狗（即 1）：
 
 ```py
-*`# Most confident predictions of 'dog'`*
+# Most confident predictions of 'dog'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=True, label=1, number_of_items=10,
 only_false_predictions=False)
@@ -518,7 +518,7 @@ display(indices[:10], message)
 这些图像确实非常像狗。概率如此之高的原因之一可能是图像中包含了多只狗，以及清晰、明确的视图。现在让我们尝试找出我们最不确定包含狗的图像（请参见图 3-10）：
 
 ```py
-*`# Least confident predictions of 'dog'`*
+# Least confident predictions of 'dog'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=False, label=1, number_of_items=10,
 only_false_predictions=False)
@@ -537,7 +537,7 @@ display(indices[:10], message)
 说到错误预测，当分类器信心较低时（即两类问题的概率接近 0.5 时），显然会出现错误预测。但我们不希望的是在我们的分类器对其预测非常确信时出现错误预测。让我们看看分类器确信包含狗的图像，尽管它们实际上是猫（参见图 3-11）：
 
 ```py
-*`# Incorrect predictions of 'dog'`*
+# Incorrect predictions of 'dog'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=True, label=1, number_of_items=10,
 only_false_predictions=True)
@@ -554,7 +554,7 @@ display(indices[:10], message)
 对猫类重复相同一组问题，哪些图像更像猫（参见图 3-12）？
 
 ```py
-*`# Most confident predictions of 'cat'`*
+# Most confident predictions of 'cat'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=True, label=0, number_of_items=10,
 only_false_predictions=False)
@@ -569,7 +569,7 @@ display(indices[:10], message)
 有趣的是，其中许多图像中有多只猫。这证实了我们之前的假设，即多个清晰、明确的猫的视图可以给出更高的概率。另一方面，哪些图像我们对包含猫最不确定（参见图 3-13）？
 
 ```py
-*`# Least confident predictions of 'cat'`*
+# Least confident predictions of 'cat'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=False, label=0, number_of_items=10,
 only_false_predictions=False)
@@ -586,7 +586,7 @@ display(indices[:10], message)
 最后，我们的分类器错误地确信包含猫的图像是哪些（参见图 3-14）？
 
 ```py
-*`# Incorrect predictions of 'cat'`*
+# Incorrect predictions of 'cat'
 indices = get_images_with_sorted_probabilities(prediction_table,
 get_highest_probability=True, label=0, number_of_items=10,
 only_false_predictions=True)

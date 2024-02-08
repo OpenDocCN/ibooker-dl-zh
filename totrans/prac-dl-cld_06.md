@@ -218,7 +218,7 @@ model.fit(train_data,
 为了加快读取速度，一个想法是将成千上万个文件合并成少数几个较大的文件。这正是 TFRecord 所做的。它将数据存储在高效的 Protocol Buffer（protobuf）对象中，使其更快速读取。让我们看看如何创建 TFRecord 文件：
 
 ```py
-*`# Create TFRecord files`*
+# Create TFRecord files
 
 import tensorflow as tf
 from PIL import Image
@@ -408,8 +408,8 @@ dataset = dataset.interleave(tf.data.TFRecordDataset, num_parallel_calls=4)
 根据我们的情况，我们可以使用以下两行中的一行：
 
 ```py
-dataset = dataset.cache()                     *`# in-memory`*
-dataset = dataset.cache(filename='tmp.cache') *`# on-disk`*
+dataset = dataset.cache()                     # in-memory
+dataset = dataset.cache(filename='tmp.cache') # on-disk
 ```
 
 值得注意的是，内存中的缓存是易失性的，因此只在每次运行的第二个 epoch 中显示性能改进。另一方面，基于文件的缓存将使每次运行更快（超出第一次运行的第一个 epoch）。
@@ -786,11 +786,11 @@ $ conda install tensorflow-mkl
 比较以下两个例子：
 
 ```py
-*`# Example 1`*
+# Example 1
 X = tf.multiply(A, B)
 Y = tf.multiply(C, D)
 
-*`# Example 2`*
+# Example 2
 X = tf.multiply(A, B)
 Y = tf.multiply(`X`, C)
 ```
@@ -1031,7 +1031,7 @@ Keras 提供了 API 来修剪我们的模型。这个过程可以在训练过程
 加载和初始化 GPU 驱动程序需要时间。您可能已经注意到，每次启动训练或推理作业时都会有延迟。对于频繁且短暂的作业来说，开销可能会迅速变得相对昂贵。想象一下一个图像分类程序，分类需要 10 秒，其中有 9.9 秒用于加载驱动程序。我们需要的是 GPU 驱动程序在后台保持预初始化，并在我们的训练作业启动时随时准备好。这就是 NVIDIA GPU Persistence Daemon 发挥作用的地方：
 
 ```py
-$ nvidia-persistenced --user *`{YOUR_USERNAME}`*
+$ nvidia-persistenced --user {YOUR_USERNAME}
 ```
 
 我们的 GPU 在空闲时间会消耗更多的瓦特，但它们将在下次启动程序时准备好并可用。

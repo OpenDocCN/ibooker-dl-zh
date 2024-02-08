@@ -340,9 +340,9 @@ Goldfinger _ Weezer _ NoFx _ L/00 AWESOME.mp3 6
 现在在三个常量中输入您的各种细节：
 
 ```py
-CLIENT_ID = '<*`your client id`*>'
-CLIENT_SECRET = '<*`your secret`*>'
-USER_ID = '<*`your user id`*>'
+CLIENT_ID = '<your client id>'
+CLIENT_SECRET = '<your secret>'
+USER_ID = '<your user id>'
 
 ```
 

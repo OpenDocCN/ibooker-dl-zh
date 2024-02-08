@@ -204,7 +204,7 @@ $ tree .
 
 ```py
 $ sudo docker run -p 8500:8500 \
---mount type=bind,source=/home/{*`your_username`*}/what-if-stuff/colo/model/,
+--mount type=bind,source=/home/{your_username}/what-if-stuff/colo/model/,
  target=/models/colo \
 -e MODEL_NAME=colo -t tensorflow/serving
 ```
@@ -220,7 +220,7 @@ $ sudo docker run -p 8500:8500 \
 | 推断地址 | `ip_addr:8500` |
 | 模型名称 | `/models/colo` |
 | 模型类型 | 分类 |
-| 示例路径 | */home/{*`your_username`*}/what_if_stuff/colo/models/colo.tfrec*（注意：这必须是绝对路径） |
+| 示例路径 | */home/{your_username}/what_if_stuff/colo/models/colo.tfrec*（注意：这必须是绝对路径） |
 
 我们现在可以在 TensorBoard 中的浏览器中打开 What-If 工具，如图 5-5 所示。
 
@@ -233,7 +233,7 @@ What-If 工具还可以根据不同的分组对数据集进行可视化，如图
 ```py
 from witwidget.notebook.visualization import WitConfigBuilder
 
-*`# features are the test examples that we want to load into the tool`*
+# features are the test examples that we want to load into the tool
 models = [model2, model3, model4]
 config_builder =
 WitConfigBuilder(test_examples).set_estimator_and_feature_spec(model1, features)
@@ -901,7 +901,7 @@ clf.final_fit(x_train, y_train, x_test, y_test, retrain=True)
 y = clf.evaluate(x_test, y_test)
 print(y)
 
-*`# Save the model as a pickle file`*
+# Save the model as a pickle file
 clf.export_autokeras_model("model.pkl")
 
 visualize('.')

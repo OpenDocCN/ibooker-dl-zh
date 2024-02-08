@@ -152,7 +152,7 @@ def infer():
 
   predictions = model.predict(image)
   max_index = numpy.argmax(predictions)
-  *`# We know the labels from the model we trained previously`*
+  # We know the labels from the model we trained previously
   if max_index == 0:
      return "Cat"
   else:

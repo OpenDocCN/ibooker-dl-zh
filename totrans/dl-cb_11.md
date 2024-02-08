@@ -166,7 +166,7 @@ git clone https://github.com/yhenon/keras-frcnn.git
 在我们下载了 VOC 2007/2012 数据集并解压缩后，我们可以开始训练：
 
 ```py
-python train_frcnn.py -p <*`downloaded``-``data``-``set`*>
+python train_frcnn.py -p <downloaded``-``data``-``set>
 
 ```
 

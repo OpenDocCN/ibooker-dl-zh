@@ -302,7 +302,7 @@ ML Kit 还使我们能够使用自定义训练的 TensorFlow Lite 模型进行�
 val image = FirebaseVisionImage.fromBitmap(bitmap)
 val detector = FirebaseVision.getInstance().visionLabelDetector
 val result = detector.detectInImage(image).addOnSuccessListener { labels ->
-    *`// Print labels`*
+    // Print labels
 }
 ```
 
@@ -600,7 +600,7 @@ Fritz 提供了一个移动 AI 开发的端到端解决方案，包括以下值�
     ```py
     let poseModel = FritzVisionPoseModel()
     guard let poseResult = try? poseModel.predict(image) else { return }
-    let imageWithPose = poseResult.drawPose() *`//` `O``v``e``r``l``a``y``s` `p``o``s``e` `o``n` `i``n``p``u``t``.`*
+    let imageWithPose = poseResult.drawPose() //` `O``v``e``r``l``a``y``s` `p``o``s``e` `o``n` `i``n``p``u``t``.
     ```
 
     ![Fritz SDK 在不同移动设备上的对象检测功能性能，相对于 iPhone X](img/00163.jpeg)

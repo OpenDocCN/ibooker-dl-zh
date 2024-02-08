@@ -647,12 +647,12 @@ import coremltools
 
 model_spec = coremltools.utils.load_spec("MyModel.mlmodel")
 
-*`# 16-bit conversion`*
+# 16-bit conversion
 model_fp16_spec =
 coremltools.utils.convert_neural_network_spec_weights_to_fp16(model_spec)
 coremltools.utils.save_spec(model_fp16_spec, "MyModel_FP16.mlmodel")
 
-*`# 8-bit or lower quantization`*
+# 8-bit or lower quantization
 num_bits = 8
 model_quant_spec =
 coremltools.models.neural_network.quantization_utils.quantize_weights(model_spec,
