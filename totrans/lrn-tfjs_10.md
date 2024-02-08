@@ -153,7 +153,8 @@ DataFrame 有能力将其内容打印到控制台，以及许多其他辅助函�
 让我们回顾一下以下代码，它将 CSV 文件读入 DataFrame，然后在控制台上打印几行：
 
 ```py
-constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");①df.head().print();②
+const df = await dfd.read_csv("file://../../extra/titanic data/train.csv");  // ①
+df.head().print(); // ②
 ```
 
 ①
@@ -227,7 +228,17 @@ empty_rate.print();
 要合并 CSV 文件，您将创建两个 DataFrame，然后沿着轴连接它们，就像对张量一样。您可能会感觉到张量训练引导您管理和清理数据的路径，并且这并非偶然。尽管术语可能略有不同，但您从前几章积累的概念和直觉将对您有所帮助。
 
 ```py
-// Load the training CSV constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");console.log("Train Size",df.shape[0])①// Load the test CSV constdft=awaitdfd.read_csv("file://../../extra/titanic data/test.csv");console.log("Test Size",dft.shape[0])②constmega=dfd.concat({df_list:[df,dft],axis: 0})mega.describe().print()③
+// Load the training CSV
+const df = await dfd.read_csv("file://../../extra/titanic data/train.csv");
+console.log("Train Size", df.shape[0]) // ①
+
+// Load the test CSV
+const dft = await dfd.read_csv("file://../../extra/titanic data/test.csv");
+console.log("Test Size", dft.shape[0]) // ②
+
+const mega = dfd.concat({df_list: [df, dft], axis: 0})
+mega.describe().print() // ③
+
 ```
 
 ①
@@ -286,7 +297,11 @@ console.log(`After mega-clean the row-count is now ${onlyFull.shape[0]}`);
 `Embarked`的值，供参考，分别是：C = 瑟堡，Q = 昆士敦，S = 南安普敦。有几种方法可以对其进行编码。一种方法是用数字等价物对其进行编码。Danfo.js 有一个`LabelEncoder`，它可以读取整个列，然后将值转换为数字编码的等价物。`LabelEncoder`将标签编码为介于`0`和`n-1`之间的值。要对`Embarked`列进行编码，您可以使用以下代码：
 
 ```py
-// Handle embarked characters - convert to numbers constencode=newdfd.LabelEncoder();①encode.fit(onlyFull["Embarked"]);②onlyFull["Embarked"]=encode.transform(onlyFull["Embarked"].values);③onlyFull.head().print();④
+// Handle embarked characters - convert to numbers
+const encode = new dfd.LabelEncoder(); // ①
+encode.fit(onlyFull["Embarked"]); // ②
+onlyFull["Embarked"] = encode.transform(onlyFull["Embarked"].values); // ③
+onlyFull.head().print(); // ④
 ```
 
 ①
@@ -366,7 +381,28 @@ const testY = dft["Survived"].tensor;
 模型的组成如下：
 
 ```py
-model.add(tf.layers.dense({inputShape,units: 120,activation:"relu",①kernelInitializer:"heNormal",②}));model.add(tf.layers.dense({units: 64,activation:"relu"}));model.add(tf.layers.dense({units: 32,activation:"relu"}));model.add(tf.layers.dense({units: 1,activation:"sigmoid",③}));model.compile({optimizer:"adam",loss:"binaryCrossentropy",④metrics:["accuracy"],⑤});
+model.add(
+  tf.layers.dense({
+    inputShape,
+    units: 120,
+    activation: "relu", // ①
+    kernelInitializer: "heNormal", // ②
+  })
+);
+model.add(tf.layers.dense({ units: 64, activation: "relu" }));
+model.add(tf.layers.dense({ units: 32, activation: "relu" }));
+model.add(
+  tf.layers.dense({
+    units: 1,
+    activation: "sigmoid", // ③
+  })
+);
+
+model.compile({
+  optimizer: "adam",
+  loss: "binaryCrossentropy", // ④
+  metrics: ["accuracy"],      // ⑤
+});
 ```
 
 ①
@@ -392,7 +428,11 @@ model.add(tf.layers.dense({inputShape,units: 120,activation:"relu",①kernelInit
 当您将模型`fit`到数据时，您可以识别测试数据，并获得模型以前从未见过的数据的结果。这有助于防止过拟合：
 
 ```py
-awaitmodel.fit(trainX,trainY,{batchSize: 32,epochs: 100,validationData:[testX,testY]①})
+await model.fit(trainX, trainY, {
+  batchSize: 32,
+  epochs: 100,
+  validationData: [testX, testY] // ①
+})
 ```
 
 ①
@@ -516,7 +556,13 @@ viz(`agehist`, x => survivors["Age"].plot(x).hist())
 要进行独热编码，Danfo.js 和 Pandas 都有一个`get_dummies`方法，可以将一列转换为多个列，其中只有一个列的值为 1。在 TensorFlow.js 中，进行独热编码的方法称为`oneHot`，但在 Danfo.js 中，`get_dummies`是向二进制变量致敬的方法，统计学中通常称为*虚拟变量*。编码结果后，您可以使用`drop`和`addColumn`进行切换：
 
 ```py
-// Handle person sex - convert to one-hot constsexOneHot=dfd.get_dummies(mega['Sex'])①sexOneHot.head().print()// Swap one column for two mega.drop({columns:['Sex'],axis: 1,inplace: true})②mega.addColumn({column:'male',value: sexOneHot['0']})③mega.addColumn({column:'female',value: sexOneHot['1']})
+// Handle person sex - convert to one-hot
+const sexOneHot = dfd.get_dummies(mega['Sex']) // ①
+sexOneHot.head().print()
+// Swap one column for two
+mega.drop({ columns: ['Sex'], axis: 1, inplace: true }) // ②
+mega.addColumn({ column: 'male', value: sexOneHot['0'] }) // ③
+mega.addColumn({ column: 'female', value: sexOneHot['1'] })
 ```
 
 ①
