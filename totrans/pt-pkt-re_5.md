@@ -40,7 +40,7 @@ def linear(input, weight, bias=None):
 
 ```py
 importtorch.nnasnnfromtorchimportTensorclassLinear(nn.Module):def__init__(self,in_features,out_features,bias):①super(Linear,self).__init__()self.in_features=in_featuresself.out_features=out_featuresself.weight=Parameter(torch.Tensor(out_features,in_features))ifbias:self.bias=Parameter(torch.Tensor(out_features))else:self.register_parameter('bias',None)self.reset_parameters()defreset_parameters(self):init.kaiming_uniform_(self.weight,a=math.sqrt(5))ifself.biasisnotNone:fan_in,_=\
-init._calculate_fan_in_and_fan_out(self.weight)bound=1/math.sqrt(fan_in)init.uniform_(self.bias,-bound,bound)defforward(self,input:Tensor)->Tensor:②returnF.linear(input,self.weight,self.bias)③
+init._calculate_fan_in_and_fan_out(self.weight)bound=1/math.sqrt(fan_in)init.uniform_(self.bias,-bound,bound)defforward(self,input:Tensor)->Tensor:②returnF.linear(input,self.weight,self.bias)// ③
 ```
 
 ①

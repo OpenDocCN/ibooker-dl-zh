@@ -112,12 +112,12 @@ test_df = test_df[cols]
 让我们从以下代码块开始`eval_config`，定义我们的调查：
 
 ```py
-eval_config = text_format.Parse("""    ①
-  model_specs {                        ②
+eval_config = text_format.Parse("""    // ①
+  model_specs {                        // ②
     prediction_key: 'predicted',
     label_key: 'survived'
   }
-  metrics_specs {                      ③
+  metrics_specs {                      // ③
     metrics {class_name: "AUC"}
     metrics {
       class_name: "FairnessIndicators"
@@ -126,11 +126,11 @@ eval_config = text_format.Parse("""    ①
     metrics { class_name: "ExampleCount" }
   }
 
-  slicing_specs {                      ④
+  slicing_specs {                      // ④
     feature_keys: ['sex', 'class']
   }
   slicing_specs {}
-  """, tfma.EvalConfig())              ⑤
+  """, tfma.EvalConfig())              // ⑤
 
 ```
 

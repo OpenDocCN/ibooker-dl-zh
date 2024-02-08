@@ -132,14 +132,14 @@
 ```py
 const pixelShift = async (inputTensor, mutations = []) => {
   // Add 1px white padding to height and width
-  const padded = inputTensor.pad( ①
+  const padded = inputTensor.pad( // ①
     [[1, 1],[1, 1],],
     1
   )
   const cutSize = inputTensor.shape
   for (let h = 0; h < 3; h++) {
-    for (let w = 0; w < 3; w++) { ②
-      mutations.push(padded.slice([h, w], cutSize)) ③
+    for (let w = 0; w < 3; w++) { // ②
+      mutations.push(padded.slice([h, w], cutSize)) // ③
     }
   }
   padded.dispose()
@@ -175,10 +175,10 @@ const pixelShift = async (inputTensor, mutations = []) => {
   for (let i = 0; i < startSize - 1; i++) {
     for (let j = i + 1; j < startSize; j++) {
       const overlay = tf.tidy(() => {
-        return tf.where( ①
-          tf.less(tensorArray[i], tensorArray[j]), ②
-          tensorArray[i], ③
-          tensorArray[j]  ④
+        return tf.where( // ①
+          tf.less(tensorArray[i], tensorArray[j]), // ②
+          tensorArray[i], // ③
+          tensorArray[j]  // ④
         )
       })
       tensorArray.push(overlay)
@@ -261,7 +261,7 @@ const createDataObject = async () => {
 现在您总共有将近两千张图片，可以尝试训练您的模型。数据应该被堆叠和洗牌：
 
 ```py
-const diceImages = [].concat(  ①
+const diceImages = [].concat(  // ①
   diceData['0'],
   diceData['1'],
   diceData['2'],
@@ -274,7 +274,7 @@ const diceImages = [].concat(  ①
 )
 
 // Now the answers to their corresponding index const answers = [].concat(
-  new Array(diceData['0'].length).fill(0),  ②
+  new Array(diceData['0'].length).fill(0),  // ②
   new Array(diceData['1'].length).fill(1),
   new Array(diceData['2'].length).fill(2),
   new Array(diceData['3'].length).fill(3),
@@ -285,7 +285,7 @@ const diceImages = [].concat(  ①
   new Array(diceData['8'].length).fill(8),
 )
 
-// Randomize these two sets together tf.util.shuffleCombo(diceImages, answers)  ③
+// Randomize these two sets together tf.util.shuffleCombo(diceImages, answers)  // ③
 ```
 
 ①
@@ -303,8 +303,8 @@ const diceImages = [].concat(  ①
 从这里，您可以拆分出一个测试集，也可以不拆分。如果您需要帮助，可以查看相关代码。一旦您按照自己的意愿拆分了数据，然后将这两个 JavaScript 数组转换为正确的张量：
 
 ```py
-const trainX = tf.tensor(diceImages).expandDims(3)  ①
-const trainY = tf.oneHot(answers, numOptions) ②
+const trainX = tf.tensor(diceImages).expandDims(3)  // ①
+const trainY = tf.oneHot(answers, numOptions) // ②
 ```
 
 ①
@@ -382,13 +382,13 @@ const numDice = 32
 const preSize = numDice * 10
 const cutData = async (id) => {
   const img = document.getElementById(id)
-  const imgTensor = tf.browser.fromPixels(img, 1) ①
-  const resized = tf.image.resizeNearestNeighbor( ②
+  const imgTensor = tf.browser.fromPixels(img, 1) // ①
+  const resized = tf.image.resizeNearestNeighbor( // ②
     imgTensor, [preSize,preSize]
   )
   const cutSize = numDice
-  const heightCuts = tf.split(resized, cutSize)   ③
-  const grid = heightCuts.map((sliver) =>         ④
+  const heightCuts = tf.split(resized, cutSize)   // ③
+  const grid = heightCuts.map((sliver) =>         // ④
     tf.split(sliver, cutSize, 1))
 
   return grid
@@ -426,7 +426,7 @@ const cutData = async (id) => {
 ```py
 const displayPredictions = async (answers) => {
   tf.tidy(() => {
-    const diceTensors = diceData.map( ①
+    const diceTensors = diceData.map( // ①
       (dt) => tf.tensor(dt)
     )
     const { indices } = tf.topk(answers)
@@ -436,16 +436,16 @@ const displayPredictions = async (answers) => {
     for (let y = 0; y < numDice; y++) {
       const tRow = []
       for (let x = 0; x < numDice; x++) {
-        const curIndex = y * numDice + x       ②
+        const curIndex = y * numDice + x       // ②
         tRow.push(diceTensors[answerIndices[curIndex]])
       }
-      const oneRow = tf.concat(tRow, 1)        ③
+      const oneRow = tf.concat(tRow, 1)        // ③
       tColumns.push(oneRow)
     }
-    const diceConstruct = tf.concat(tColumns)  ④
+    const diceConstruct = tf.concat(tColumns)  // ④
     // Print the reconstruction to the canvas
     const can = document.getElementById('display')
-    tf.browser.toPixels(diceConstruct, can)    ⑤
+    tf.browser.toPixels(diceConstruct, can)    // ⑤
   })
 }
 ```

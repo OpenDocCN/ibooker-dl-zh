@@ -64,7 +64,7 @@ device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")①model.to(devic
 
 ```py
 &#33;curl 'https://raw.githubusercontent.com/pytorch' \'/xla/master/contrib/scripts/env-setup.py'\
--opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ①
+-opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; // ①
 ```
 
 <1>这些是打算在笔记本中运行的命令。在命令行上运行时，请省略“!”。
@@ -743,7 +743,7 @@ prune.random_unstructured(model.conv1,
 您可以以不同方式修剪模块和参数。例如，您可能希望按模块或层类型修剪，并将修剪应用于卷积层和线性层的方式不同。以下代码演示了一种方法： 
 
 ```py
-model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)①elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)②
+model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)①elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)// ②
 ```
 
 ①

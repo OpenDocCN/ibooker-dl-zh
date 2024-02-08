@@ -164,7 +164,7 @@ print(test_data.data.shape) # ndarray
 在下面的代码示例中，我们将定义我们的 transforms 并使用这些 transforms 创建我们的`train_data`数据集：
 
 ```py
-fromtorchvisionimporttransformstrain_transforms=transforms.Compose(transforms.RandomCrop(32,padding=4),transforms.RandomHorizontalFlip(),transforms.ToTensor(),transforms.Normalize(mean=(0.4914,0.4822,0.4465),![1std=(0.2023,0.1994,0.2010))])train_data=CIFAR10(root="./train/",train=True,download=True,transform=train_transforms)②
+fromtorchvisionimporttransformstrain_transforms=transforms.Compose(transforms.RandomCrop(32,padding=4),transforms.RandomHorizontalFlip(),transforms.ToTensor(),transforms.Normalize(mean=(0.4914,0.4822,0.4465),![1std=(0.2023,0.1994,0.2010))])train_data=CIFAR10(root="./train/",train=True,download=True,transform=train_transforms)// ②
 ```
 
 ①
@@ -520,7 +520,7 @@ PyTorch 使用术语*module*来描述 NN 层或块。Python 使用这个术语�
 以下代码显示了如何通过实例化名为`simplenet`的模型对象来创建模型：
 
 ```py
-simplenet=SimpleNet()①print(simplenet)# out:# SimpleNet(#   (fc1): Linear(in_features=2048,#                 out_features=256, bias=True)#   (fc2): Linear(in_features=256,#                 out_features=64, bias=True)#   (fc3): Linear(in_features=64,#                 out_features=2, bias=True)# )input=torch.rand(2048)output=simplenet(input)②
+simplenet=SimpleNet()①print(simplenet)# out:# SimpleNet(#   (fc1): Linear(in_features=2048,#                 out_features=256, bias=True)#   (fc2): Linear(in_features=256,#                 out_features=64, bias=True)#   (fc3): Linear(in_features=64,#                 out_features=2, bias=True)# )input=torch.rand(2048)output=simplenet(input)// ②
 ```
 
 ①
@@ -767,7 +767,7 @@ PyTorch 相对于其他机器学习框架的一个关键优势是其灵活性，
 可以使用以下代码创建现代化的 LeNet5 模型版本：
 
 ```py
-fromtorchimportnnimporttorch.nn.functionalasFclassLeNet5(nn.Module):①def__init__(self):super(LeNet5,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,120)self.fc2=nn.Linear(120,84)self.fc3=nn.Linear(84,10)defforward(self,x):x=F.max_pool2d(F.relu(self.conv1(x)),(2,2))x=F.max_pool2d(F.relu(self.conv2(x)),2)x=x.view(-1,int(x.nelement()/x.shape[0]))x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnxdevice=('cuda'iftorch.cuda.is_available()else'cpu')②model=LeNet5().to(device=device)③
+fromtorchimportnnimporttorch.nn.functionalasFclassLeNet5(nn.Module):①def__init__(self):super(LeNet5,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,120)self.fc2=nn.Linear(120,84)self.fc3=nn.Linear(84,10)defforward(self,x):x=F.max_pool2d(F.relu(self.conv1(x)),(2,2))x=F.max_pool2d(F.relu(self.conv2(x)),2)x=x.view(-1,int(x.nelement()/x.shape[0]))x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnxdevice=('cuda'iftorch.cuda.is_available()else'cpu')②model=LeNet5().to(device=device)// ③
 ```
 
 ①

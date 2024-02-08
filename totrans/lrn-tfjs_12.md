@@ -136,11 +136,11 @@ feature_vector
 
 ```py
 console.log("Loading huge CSV - this will take a while");
-const numImages = 130; // between 1 and 150 // Get Y values const labels = await dfd.read_csv("chess_labels.csv", numImages); ①
-const Y = labels.tensor; ②
+const numImages = 130; // between 1 and 150 // Get Y values const labels = await dfd.read_csv("chess_labels.csv", numImages); // ①
+const Y = labels.tensor; // ②
 // Get X values (Chess images) const chessImages = await dfd.read_csv("chess_images.csv", numImages);
 const chessTensor = chessImages.tensor.reshape([
-  labels.shape[0], 224, 224, 3, ③
+  labels.shape[0], 224, 224, 3, // ③
 ]);
 console.log("Finished loading CSVs", chessTensor.shape, Y.shape);
 ```
@@ -205,9 +205,9 @@ Features stack 130,1664
 
 ```py
 // Create NN const transferModel = tf.sequential({
-  layers: [                              ①
+  layers: [                              // ①
     tf.layers.dense({
-      inputShape: [featureX.shape[1]],   ②
+      inputShape: [featureX.shape[1]],   // ②
       units: 64,
       activation: "relu",
     }),
@@ -403,9 +403,9 @@ KNN 分类器需要每个类别的示例。为了简化这个过程，我创建�
 
 ```py
 // domID is the DOM element ID // classID is the unique class index function addExample(domID, classID) {
-  const features = mobileNet.infer( ①
-    document.getElementById(domID), ②
-    true                            ③
+  const features = mobileNet.infer( // ①
+    document.getElementById(domID), // ②
+    true                            // ③
   );
   classifier.addExample(features, classID);
 }
@@ -441,8 +441,8 @@ addExample('sport3', 1)
 // Moment of truth const testImage = document.getElementById('test')
 const testFeature = mobileNet.infer(testImage, true);
 const predicted = await classifier.predictClass(testFeature)
-if (predicted.classIndex === 0) { ①
-  document.getElementById("result").innerText = "A Bunny" ②
+if (predicted.classIndex === 0) { // ①
+  document.getElementById("result").innerText = "A Bunny" // ②
 } else {
   document.getElementById("result").innerText = "A Sports Car"
 }

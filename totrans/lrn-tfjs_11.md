@@ -72,12 +72,12 @@
 
 ```py
 tf.layers.conv2d({
-  filters: 32, ①
-  kernelSize: 3, ②
-  strides: 1, ③
-  padding: 'same', ④
-  activation: 'relu',  ⑤
-  inputShape: [28, 28, 1] ⑥
+  filters: 32, // ①
+  kernelSize: 3, // ②
+  strides: 1, // ③
+  padding: 'same', // ④
+  activation: 'relu',  // ⑤
+  inputShape: [28, 28, 1] // ⑥
 })
 ```
 
@@ -141,8 +141,8 @@ tf.layers.conv2d({
 
 ```py
 tf.layers.maxPooling2d({
-  poolSize: 2, ①
-  strides: 2   ②
+  poolSize: 2, // ①
+  strides: 2   // ②
 })
 ```
 
@@ -252,21 +252,21 @@ tf.layers.maxPooling2d({
 
 ```py
   // Read images
-  const [X, Y] = await folderToTensors() ①
+  const [X, Y] = await folderToTensors() // ①
 
   // Create layers model
-  const model = getModel() ②
+  const model = getModel() // ②
 
   // Train
   await model.fit(X, Y, {
     batchSize: 256,
     validationSplit: 0.1,
     epochs: 20,
-    shuffle: true, ③
+    shuffle: true, // ③
   })
 
   // Save
-  model.save('file://model_result/sorting_hat') ④
+  model.save('file://model_result/sorting_hat') // ④
 
   // Cleanup!
   tf.dispose([X, Y, model])
@@ -496,23 +496,23 @@ model.compile({
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
-conv2d_Conv2D1 (Conv2D)      [null,28,28,16]           160         ①
+conv2d_Conv2D1 (Conv2D)      [null,28,28,16]           160         // ①
 _________________________________________________________________
-max_pooling2d_MaxPooling2D1  [null,14,14,16]           0           ②
+max_pooling2d_MaxPooling2D1  [null,14,14,16]           0           // ②
 _________________________________________________________________
-conv2d_Conv2D2 (Conv2D)      [null,14,14,32]           4640        ③
+conv2d_Conv2D2 (Conv2D)      [null,14,14,32]           4640        // ③
 _________________________________________________________________
 max_pooling2d_MaxPooling2D2  [null,7,7,32]             0
 _________________________________________________________________
-conv2d_Conv2D3 (Conv2D)      [null,7,7,64]             18496       ④
+conv2d_Conv2D3 (Conv2D)      [null,7,7,64]             18496       // ④
 _________________________________________________________________
 max_pooling2d_MaxPooling2D3  [null,3,3,64]             0
 _________________________________________________________________
-flatten_Flatten1 (Flatten)   [null,576]                0           ⑤
+flatten_Flatten1 (Flatten)   [null,576]                0           // ⑤
 _________________________________________________________________
-dense_Dense1 (Dense)         [null,128]                73856       ⑥
+dense_Dense1 (Dense)         [null,128]                73856       // ⑥
 _________________________________________________________________
-dense_Dense2 (Dense)         [null,10]                 1290        ⑦
+dense_Dense2 (Dense)         [null,10]                 1290        // ⑦
 =================================================================
 Total params: 98442
 Trainable params: 98442
@@ -641,15 +641,15 @@ context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
 ```py
 async function makePrediction(canvas, model) {
-  const drawTensor = tf.browser.fromPixels(canvas, 1) ①
-  const resize = tf.image.resizeNearestNeighbor(drawTensor, [28,28], true) ②
+  const drawTensor = tf.browser.fromPixels(canvas, 1) // ①
+  const resize = tf.image.resizeNearestNeighbor(drawTensor, [28,28], true) // ②
 
-  const batched = resize.expandDims() ③
+  const batched = resize.expandDims() // ③
   const results = await model.predict(batched)
   const predictions = await results.array()
 
   // Display
-  displayResults(predictions[0]) ④
+  displayResults(predictions[0]) // ④
   // Cleanup
   tf.dispose([drawTensor, resize, batched, results])
 }

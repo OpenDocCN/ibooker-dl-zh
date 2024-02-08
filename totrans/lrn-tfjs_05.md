@@ -640,7 +640,7 @@ TensorFlow.js 有两种优秀的方法用于调整图像大小，并且两者都
 
 ```py
 // Simple Tensor Flip
-const newSize = [768, 560] // 4x larger ①
+const newSize = [768, 560] // 4x larger // ①
 const littleGantImage = document.getElementById("littleGant");
 const nnCanvas = document.getElementById("nnCanvas");
 const blCanvas = document.getElementById("blCanvas");

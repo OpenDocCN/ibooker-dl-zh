@@ -520,7 +520,7 @@ print(resp.json())
 
 ```py
 fromflask_ngrokimportrun_with_ngrok①@app.route("/")defhome():return"<h1>Running Flask on Google Colab!</h1>"app.run()app=Flask(__name__)run_with_ngrok(app)②@app.route('/predict',methods=['POST'])defpredict():ifrequest.method=='POST':file=request.files['file']img_bytes=file.read()class_id,class_name=\
-get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_name':class_name})app.run()③
+get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_name':class_name})app.run()// ③
 ```
 
 ①
@@ -649,7 +649,7 @@ $ docker run --rm -it --gpus '"device=1"' \
 ```py
 importtorchimporttorchvisionfromtorch.utils.mobile_optimizer \ importoptimize_for_mobilemodel=torchvision.models.vgg16(pretrained=True)model.eval()example=torch.rand(1,3,224,224)①traced_script_module=\
 torch.jit.trace(model,example)②torchscript_model_optimized=\
-optimize_for_mobile(traced_script_module)③torchscript_model_optimized.save("model.pt")④
+optimize_for_mobile(traced_script_module)③torchscript_model_optimized.save("model.pt")// ④
 ```
 
 ①

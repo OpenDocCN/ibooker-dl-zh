@@ -666,7 +666,7 @@ PyTorch 与 TensorBoard 的集成最初是由一个名为 TensorBoardX 的开源
 首先让我们导入 PyTorch 的 TensorBoard 接口，并设置 PyTorch 以便与 TensorBoard 一起使用，如下所示的代码：
 
 ```py
-fromtorch.utils.tensorboardimportSummaryWriterwriter=SummaryWriter()①
+fromtorch.utils.tensorboardimportSummaryWriterwriter=SummaryWriter()// ①
 ```
 
 ①
@@ -676,7 +676,7 @@ fromtorch.utils.tensorboardimportSummaryWriterwriter=SummaryWriter()①
 我们只需从 PyTorch 的`tensorboard`包中导入`SummaryWriter`类，并实例化一个`SummaryWriter`对象。要将数据写入 TensorBoard，我们只需要调用`SummaryWriter`对象的方法。在模型训练时保存我们的损失数值，我们使用`add_scalar()`方法，如下面的代码所示：
 
 ```py
-N_EPOCHS=10forepochinrange(N_EPOCHS):epoch_loss=0.0forinputs,labelsintrainloader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()epoch_loss+=loss.item()print("Epoch: {} Loss: {}".format(epoch,epoch_loss/len(trainloader)))writer.add_scalar('Loss/train',epoch_loss/len(trainloader),epoch)①
+N_EPOCHS=10forepochinrange(N_EPOCHS):epoch_loss=0.0forinputs,labelsintrainloader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()epoch_loss+=loss.item()print("Epoch: {} Loss: {}".format(epoch,epoch_loss/len(trainloader)))writer.add_scalar('Loss/train',epoch_loss/len(trainloader),epoch)// ①
 ```
 
 ①

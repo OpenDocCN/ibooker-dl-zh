@@ -318,7 +318,7 @@ tf.tidy(() => { // ①
   chaser = tf.tensor([1,2,3])
   seeker = tf.tensor([1,2,3])
   beater = tf.tensor([1,2,3])
-  // Now we're at four tensors in memory ②
+  // Now we're at four tensors in memory // ②
   console.log('inside tidy', tf.memory().numTensors)
 
   // protect a tensor
@@ -327,7 +327,7 @@ tf.tidy(() => { // ①
   return chaser
 })
 
-// Down to two ③
+// Down to two // ③
 console.log('after tidy', tf.memory().numTensors)
 
 keeper.dispose() // ④
@@ -547,7 +547,7 @@ const features = [ // ③
   'Techno'
 ]
 
-// User votes ④
+// User votes // ④
 const user_votes = tf.tensor([
   [10, 9, 1, 1, 8, 7, 8],
   [6, 8, 2, 2, 0, 10, 0],

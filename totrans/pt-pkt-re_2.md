@@ -96,7 +96,7 @@ z = z.to("cpu")
 以下代码说明了创建张量的一些常见方法。首先，它展示了如何使用`torch.tensor()`从列表创建张量。此方法也可用于从其他数据结构（如元组、集合或 NumPy 数组）创建张量：
 
 ```py
-importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])①w=torch.tensor((1,2,3))②w=torch.tensor(numpy.array([1,2,3]))③# Initialized by sizew=torch.empty(100,200)④w=torch.zeros(100,200)⑤w=torch.ones(100,200)⑥
+importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])①w=torch.tensor((1,2,3))②w=torch.tensor(numpy.array([1,2,3]))③# Initialized by sizew=torch.empty(100,200)④w=torch.zeros(100,200)⑤w=torch.ones(100,200)// ⑥
 ```
 
 ①
@@ -135,7 +135,7 @@ importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])①w=torch.te
 
 创建一个 100×200 的张量，元素来自区间 0,1)上的均匀分布。
 
-![2 元素是均值为 0、方差为 1 的正态分布随机数。③
+![2 元素是均值为 0、方差为 1 的正态分布随机数。// ③
 
 元素是介于 5 和 10 之间的随机整数。
 

@@ -164,7 +164,7 @@ Torchvision 为计算机视觉和图像处理提供了许多著名的预训练�
 在微调我们的模型之前，让我们用以下代码配置我们的训练：
 
 ```py
-fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")①model=model.to(device)criterion=nn.CrossEntropyLoss()②optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)③exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)④
+fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")①model=model.to(device)criterion=nn.CrossEntropyLoss()②optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)③exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)// ④
 ```
 
 ①
@@ -217,7 +217,7 @@ running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"
 让我们通过将模型保存到文件来测试我们的模型并部署它。为了测试我们的模型，我们将显示一批图像，并展示我们的模型如何对它们进行分类，如下面的代码所示：
 
 ```py
-importmatplotlib.pyplotaspltdefimshow(inp,title=None):①inp=inp.numpy().transpose((1,2,0))②mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean③inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))④out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))⑤_,preds=torch.max(outputs,1)⑥imshow(out,title=[class_names[x]forxinpreds])⑦
+importmatplotlib.pyplotaspltdefimshow(inp,title=None):①inp=inp.numpy().transpose((1,2,0))②mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean③inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))④out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))⑤_,preds=torch.max(outputs,1)⑥imshow(out,title=[class_names[x]forxinpreds])// ⑦
 ```
 
 ①
@@ -296,7 +296,7 @@ generate_bigrams([
 
 ```py
 fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))①train_dataset=list(train_iter)②test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
-random_split(train_dataset,[num_train,len(train_dataset)-num_train])③
+random_split(train_dataset,[num_train,len(train_dataset)-num_train])// ③
 ```
 
 ①
@@ -339,7 +339,7 @@ print(train_data[data_index][1])
 接下来，我们需要将文本数据转换为数字数据，以便 NN 可以处理它。我们通过创建预处理函数和数据管道来实现这一点。数据管道将使用我们的`generate_bigrams()`函数、一个标记器和一个词汇表，如下所示的代码：
 
 ```py
-fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))②vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)③
+fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))②vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)// ③
 ```
 
 ①

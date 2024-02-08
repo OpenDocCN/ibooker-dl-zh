@@ -99,7 +99,7 @@ MobileNet 是一种用于低延迟、低功耗模型的特定架构。这使得�
 ```py
 tf.ready().then(() => {
   const modelPath =
-    "https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1"; // '①
+    "https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1"; // '// ①
   tf.tidy(() => {
     tf.loadGraphModel(modelPath, { fromTFHub: true }).then((model) => {
       const mysteryImage = document.getElementById("mystery");

@@ -343,7 +343,7 @@ import * as toxicity from "@tensorflow-models/toxicity";
 // If this isn't passed, the default is 0.85
 const threshold = 0.5;
 
-// Load the model ①
+// Load the model // ①
 toxicity.load(threshold).then((model) => {
   const sentences = [
     "You are a poopy head!",
@@ -351,7 +351,7 @@ toxicity.load(threshold).then((model) => {
     "Shut up!"
   ];
 
-  // Ask the model to classify inputs ②
+  // Ask the model to classify inputs // ②
   model.classify(sentences).then((predictions) => {
     // semi-pretty-print results
     console.log(JSON.stringify(predictions, null, 2)); // ③
