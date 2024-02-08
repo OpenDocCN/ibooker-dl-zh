@@ -7,10 +7,37 @@ MobileNet 模型可以检测各种不同类型的卡车。您可以通过查看�
 包含 HTML 和 JavaScript 的整个解决方案在这里：
 
 ```py
-<!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@1.0.0"></script>①<script>mobilenet.load().then(model=>{constimg=document.getElementById('myImage');②// Classify the image
-model.classify(img).then(predictions=>{console.log('Predictions: ',predictions);// Was there a truck?
-letfoundATruckpredictions.forEach(p=>{foundATruck=foundATruck||p.className.includes("truck")③})// TRUCK ALERT!
-if(foundATruck)alert("TRUCK DETECTED!")④});});</script></head><body><h1>Is this a truck?</h1><imgid="myImage"src="truck.jpg"width="100%"></img></body></html>
+<!DOCTYPE html>
+<html>
+  <head>
+    <script
+    src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js">
+  </script>
+    <script
+    src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@1.0.0">
+  </script> <!-- ① -->
+    <script>
+      mobilenet.load().then(model => {
+        const img = document.getElementById('myImage'); <!-- ② -->
+        // Classify the image
+        model.classify(img).then(predictions => {
+          console.log('Predictions: ', predictions);
+          // Was there a truck?
+          let foundATruck
+          predictions.forEach(p => {
+            foundATruck = foundATruck || p.className.includes("truck") <!-- ③ -->
+          })
+          // TRUCK ALERT!
+          if (foundATruck) alert("TRUCK DETECTED!") <!-- ④ -->
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <h1>Is this a truck?</h1>
+    <img id="myImage" src="truck.jpg" width="100%"></img>
+  </body>
+</html>
 ```
 
 ①
@@ -49,7 +76,9 @@ console.log(`There are ${result.length} unique values`, result)
 一种优雅的解决方案是对`randomUniform`创建的张量使用`topk`进行排序。由于`randomUniform`创建的值在`0`和`1`之间，并且`topk`沿着最后一个轴对值进行排序，您可以使用以下代码完成这个练习：
 
 ```py
-constrando=tf.randomUniform([400,400])①constsorted=tf.topk(rando,400).values②constanswer=sorted.reshape([400,400,1])③
+const rando = tf.randomUniform([400, 400]) // ①
+const sorted = tf.topk(rando, 400).values // ②
+const answer = sorted.reshape([400, 400, 1]) // ③
 ```
 
 ①
@@ -81,7 +110,23 @@ tf.topk(tf.randomUniform([400, 400]), 400).values
 以下代码可能引用原始人脸定位代码中创建的一些变量，特别是原始的`fromPixels`张量`myTensor`：
 
 ```py
-// Same bounding calculations but for the tensor consttHeight=myTensor.shape[0]①consttWidth=myTensor.shape[1]consttStartX=box[0]*tWidthconsttStartY=box[1]*tHeightconstcropLength=parseInt((box[2]-box[0])*tWidth,0)②constcropHeight=parseInt((box[3]-box[1])*tHeight,0)conststartPos=[tStartY,tStartX,0]constcropSize=[cropHeight,cropLength,3]constcropped=tf.slice(myTensor,startPos,cropSize)// Prepare for next model input constreadyFace=tf.image.resizeBilinear(cropped,[96,96],true).reshape([1,96,96,3]);③
+// Same bounding calculations but for the tensor
+const tHeight = myTensor.shape[0] // ①
+const tWidth = myTensor.shape[1]
+const tStartX = box[0] * tWidth
+const tStartY = box[1] * tHeight
+const cropLength = parseInt((box[2] - box[0]) * tWidth, 0)  // ②
+const cropHeight = parseInt((box[3] - box[1]) * tHeight, 0)
+
+const startPos = [tStartY, tStartX, 0]
+const cropSize = [cropHeight, cropLength, 3]
+
+const cropped = tf.slice(myTensor, startPos, cropSize)
+
+// Prepare for next model input
+const readyFace = tf.image
+  .resizeBilinear(cropped, [96, 96], true)
+  .reshape([1, 96, 96, 3]);  // ③
 ```
 
 ①
