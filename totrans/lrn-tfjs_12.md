@@ -135,7 +135,14 @@ feature_vector
 图像已经是 224 x 224，所以你可以用以下代码加载它们：
 
 ```py
-console.log("Loading huge CSV - this will take a while");constnumImages=130;// between 1 and 150 // Get Y values constlabels=awaitdfd.read_csv("chess_labels.csv",numImages);①constY=labels.tensor;②// Get X values (Chess images) constchessImages=awaitdfd.read_csv("chess_images.csv",numImages);constchessTensor=chessImages.tensor.reshape([labels.shape[0],224,224,3,③]);console.log("Finished loading CSVs",chessTensor.shape,Y.shape);
+console.log("Loading huge CSV - this will take a while");
+const numImages = 130; // between 1 and 150 // Get Y values const labels = await dfd.read_csv("chess_labels.csv", numImages); ①
+const Y = labels.tensor; ②
+// Get X values (Chess images) const chessImages = await dfd.read_csv("chess_images.csv", numImages);
+const chessTensor = chessImages.tensor.reshape([
+  labels.shape[0], 224, 224, 3, ③
+]);
+console.log("Finished loading CSVs", chessTensor.shape, Y.shape);
 ```
 
 ①
@@ -197,7 +204,16 @@ Features stack 130,1664
 ##### 示例 11-3\. 一个包含 64 层的小模型，最后一层是 6
 
 ```py
-// Create NN consttransferModel=tf.sequential({layers:![1tf.layers.dense({inputShape:[featureX.shape[1]],②units: 64,activation:"relu",}),tf.layers.dense({units: 6,activation:"softmax"}),],});
+// Create NN const transferModel = tf.sequential({
+  layers: [                              ①
+    tf.layers.dense({
+      inputShape: [featureX.shape[1]],   ②
+      units: 64,
+      activation: "relu",
+    }),
+    tf.layers.dense({ units: 6, activation: "softmax" }),
+  ],
+});
 ```
 
 ①
@@ -386,7 +402,13 @@ src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2">
 KNN 分类器需要每个类别的示例。为了简化这个过程，我创建了以下辅助函数：
 
 ```py
-// domID is the DOM element ID // classID is the unique class index functionaddExample(domID,classID){constfeatures=mobileNet.infer(①document.getElementById(domID),②true③);classifier.addExample(features,classID);}
+// domID is the DOM element ID // classID is the unique class index function addExample(domID, classID) {
+  const features = mobileNet.infer( ①
+    document.getElementById(domID), ②
+    true                            ③
+  );
+  classifier.addExample(features, classID);
+}
 ```
 
 ①
@@ -416,7 +438,14 @@ addExample('sport3', 1)
 最后，预测的系统是相同的。获取图像的特征，并要求分类器根据 KNN 识别输入基于哪个类。
 
 ```py
-// Moment of truth consttestImage=document.getElementById('test')consttestFeature=mobileNet.infer(testImage,true);constpredicted=awaitclassifier.predictClass(testFeature)if(predicted.classIndex===0){①document.getElementById("result").innerText="A Bunny"②}else{document.getElementById("result").innerText="A Sports Car"}
+// Moment of truth const testImage = document.getElementById('test')
+const testFeature = mobileNet.infer(testImage, true);
+const predicted = await classifier.predictClass(testFeature)
+if (predicted.classIndex === 0) { ①
+  document.getElementById("result").innerText = "A Bunny" ②
+} else {
+  document.getElementById("result").innerText = "A Sports Car"
+}
 ```
 
 ①

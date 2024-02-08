@@ -71,7 +71,14 @@
 感谢 TensorFlow.js，添加卷积层与添加密集层一样简单，但称为`conv2d`，并具有自己的属性。
 
 ```py
-tf.layers.conv2d({filters: 32,①kernelSize: 3,②strides: 1,③padding:'same',④activation:'relu',⑤inputShape:[28,28,1]⑥})
+tf.layers.conv2d({
+  filters: 32, ①
+  kernelSize: 3, ②
+  strides: 1, ③
+  padding: 'same', ④
+  activation: 'relu',  ⑤
+  inputShape: [28, 28, 1] ⑥
+})
 ```
 
 ①
@@ -133,7 +140,10 @@ tf.layers.conv2d({filters: 32,①kernelSize: 3,②strides: 1,③padding:'same',�
 类似于`conv2d`，最大池化被添加为一层，通常紧跟在卷积之后：
 
 ```py
-tf.layers.maxPooling2d({poolSize: 2,①strides: 2②})
+tf.layers.maxPooling2d({
+  poolSize: 2, ①
+  strides: 2   ②
+})
 ```
 
 ①
@@ -241,12 +251,26 @@ tf.layers.maxPooling2d({poolSize: 2,①strides: 2②})
 ##### 示例 10-1\. 理想的设置
 
 ```py
-// Read images
-const[X,Y]=awaitfolderToTensors()①// Create layers model
-constmodel=getModel()②// Train
-awaitmodel.fit(X,Y,{batchSize: 256,validationSplit: 0.1,epochs: 20,shuffle: true,③})// Save
-model.save('file://model_result/sorting_hat')④// Cleanup!
-tf.dispose([X,Y,model])console.log('Tensors in memory',tf.memory().numTensors)
+  // Read images
+  const [X, Y] = await folderToTensors() ①
+
+  // Create layers model
+  const model = getModel() ②
+
+  // Train
+  await model.fit(X, Y, {
+    batchSize: 256,
+    validationSplit: 0.1,
+    epochs: 20,
+    shuffle: true, ③
+  })
+
+  // Save
+  model.save('file://model_result/sorting_hat') ④
+
+  // Cleanup!
+  tf.dispose([X, Y, model])
+  console.log('Tensors in memory', tf.memory().numTensors)
 ```
 
 ①
@@ -616,9 +640,19 @@ context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 一旦画布用白色背景初始化，你就可以对画布绘制进行预测了。
 
 ```py
-asyncfunctionmakePrediction(canvas,model){constdrawTensor=tf.browser.fromPixels(canvas,1)①constresize=tf.image.resizeNearestNeighbor(drawTensor,[28,28],true)②constbatched=resize.expandDims()③constresults=awaitmodel.predict(batched)constpredictions=awaitresults.array()// Display
-displayResults(predictions[0])④// Cleanup
-tf.dispose([drawTensor,resize,batched,results])}
+async function makePrediction(canvas, model) {
+  const drawTensor = tf.browser.fromPixels(canvas, 1) ①
+  const resize = tf.image.resizeNearestNeighbor(drawTensor, [28,28], true) ②
+
+  const batched = resize.expandDims() ③
+  const results = await model.predict(batched)
+  const predictions = await results.array()
+
+  // Display
+  displayResults(predictions[0]) ④
+  // Cleanup
+  tf.dispose([drawTensor, resize, batched, results])
+}
 ```
 
 ①

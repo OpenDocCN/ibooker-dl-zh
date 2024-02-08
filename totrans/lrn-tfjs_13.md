@@ -130,8 +130,21 @@
 在代码中实现这一点，想象一下增加骰子的大小，然后在周围滑动一个 12 x 12 的窗口，稍微偏离中心剪切图像的新版本：这是一种*填充和裁剪增强*。
 
 ```py
-constpixelShift=async(inputTensor,mutations=[])=>{// Add 1px white padding to height and width
-constpadded=inputTensor.pad(①[[1,1],[1,1],],1)constcutSize=inputTensor.shapefor(leth=0;h<3;h++){for(letw=0;w<3;w++){②mutations.push(padded.slice([h,w],cutSize))③}}padded.dispose()returnmutations}
+const pixelShift = async (inputTensor, mutations = []) => {
+  // Add 1px white padding to height and width
+  const padded = inputTensor.pad( ①
+    [[1, 1],[1, 1],],
+    1
+  )
+  const cutSize = inputTensor.shape
+  for (let h = 0; h < 3; h++) {
+    for (let w = 0; w < 3; w++) { ②
+      mutations.push(padded.slice([h, w], cutSize)) ③
+    }
+  }
+  padded.dispose()
+  return mutations
+}
 ```
 
 ①
@@ -157,7 +170,21 @@ constpadded=inputTensor.pad(①[[1,1],[1,1],],1)constcutSize=inputTensor.shapefo
 您可以通过随机组合这九个移位图像来创建新的变体。有很多方法可以组合这些图像中的任意两个。一种方法是使用`tf.where`，并将两个图像中较小的保留在它们的新组合图像中。这样可以保留任意两个移位骰子的黑色像素。
 
 ```py
-// Creates combinations take any two from array // (like Python itertools.combinations) constcombos=async(tensorArray)=>{conststartSize=tensorArray.lengthfor(leti=0;i<startSize-1;i++){for(letj=i+1;j<startSize;j++){constoverlay=tf.tidy(()=>{returntf.where(①tf.less(tensorArray[i],tensorArray[j]),②tensorArray[i],③tensorArray[j]④)})tensorArray.push(overlay)}}}
+// Creates combinations take any two from array // (like Python itertools.combinations) const combos = async (tensorArray) => {
+  const startSize = tensorArray.length
+  for (let i = 0; i < startSize - 1; i++) {
+    for (let j = i + 1; j < startSize; j++) {
+      const overlay = tf.tidy(() => {
+        return tf.where( ①
+          tf.less(tensorArray[i], tensorArray[j]), ②
+          tensorArray[i], ③
+          tensorArray[j]  ④
+        )
+      })
+      tensorArray.push(overlay)
+    }
+  }
+}
 ```
 
 ①
@@ -234,7 +261,31 @@ const createDataObject = async () => {
 现在您总共有将近两千张图片，可以尝试训练您的模型。数据应该被堆叠和洗牌：
 
 ```py
-constdiceImages=[].concat(①diceData['0'],diceData['1'],diceData['2'],diceData['3'],diceData['4'],diceData['5'],diceData['6'],diceData['7'],diceData['8'],)// Now the answers to their corresponding index constanswers=[].concat(newArray(diceData['0'].length).fill(0),②newArray(diceData['1'].length).fill(1),newArray(diceData['2'].length).fill(2),newArray(diceData['3'].length).fill(3),newArray(diceData['4'].length).fill(4),newArray(diceData['5'].length).fill(5),newArray(diceData['6'].length).fill(6),newArray(diceData['7'].length).fill(7),newArray(diceData['8'].length).fill(8),)// Randomize these two sets together tf.util.shuffleCombo(diceImages,answers)③
+const diceImages = [].concat(  ①
+  diceData['0'],
+  diceData['1'],
+  diceData['2'],
+  diceData['3'],
+  diceData['4'],
+  diceData['5'],
+  diceData['6'],
+  diceData['7'],
+  diceData['8'],
+)
+
+// Now the answers to their corresponding index const answers = [].concat(
+  new Array(diceData['0'].length).fill(0),  ②
+  new Array(diceData['1'].length).fill(1),
+  new Array(diceData['2'].length).fill(2),
+  new Array(diceData['3'].length).fill(3),
+  new Array(diceData['4'].length).fill(4),
+  new Array(diceData['5'].length).fill(5),
+  new Array(diceData['6'].length).fill(6),
+  new Array(diceData['7'].length).fill(7),
+  new Array(diceData['8'].length).fill(8),
+)
+
+// Randomize these two sets together tf.util.shuffleCombo(diceImages, answers)  ③
 ```
 
 ①
@@ -252,7 +303,8 @@ constdiceImages=[].concat(①diceData['0'],diceData['1'],diceData['2'],diceData[
 从这里，您可以拆分出一个测试集，也可以不拆分。如果您需要帮助，可以查看相关代码。一旦您按照自己的意愿拆分了数据，然后将这两个 JavaScript 数组转换为正确的张量：
 
 ```py
-consttrainX=tf.tensor(diceImages).expandDims(3)①consttrainY=tf.oneHot(answers,numOptions)②
+const trainX = tf.tensor(diceImages).expandDims(3)  ①
+const trainY = tf.oneHot(answers, numOptions) ②
 ```
 
 ①
@@ -326,7 +378,21 @@ const dicify = async () => {
 `cutData`方法将利用`tf.split`，它沿着一个轴将张量分割为 N 个子张量。您可以通过使用`tf.split`沿着每个轴将图像分割成一个补丁或图像网格来进行预测。
 
 ```py
-constnumDice=32constpreSize=numDice*10constcutData=async(id)=>{constimg=document.getElementById(id)constimgTensor=tf.browser.fromPixels(img,1)①constresized=tf.image.resizeNearestNeighbor(②imgTensor,[preSize,preSize])constcutSize=numDiceconstheightCuts=tf.split(resized,cutSize)③constgrid=heightCuts.map((sliver)=>④tf.split(sliver,cutSize,1))returngrid}
+const numDice = 32
+const preSize = numDice * 10
+const cutData = async (id) => {
+  const img = document.getElementById(id)
+  const imgTensor = tf.browser.fromPixels(img, 1) ①
+  const resized = tf.image.resizeNearestNeighbor( ②
+    imgTensor, [preSize,preSize]
+  )
+  const cutSize = numDice
+  const heightCuts = tf.split(resized, cutSize)   ③
+  const grid = heightCuts.map((sliver) =>         ④
+    tf.split(sliver, cutSize, 1))
+
+  return grid
+}
 ```
 
 ①
@@ -358,8 +424,30 @@ constnumDice=32constpreSize=numDice*10constcutData=async(id)=>{constimg=document
 从预测答案重建和创建大张量的代码可能如下所示：
 
 ```py
-constdisplayPredictions=async(answers)=>{tf.tidy(()=>{constdiceTensors=diceData.map(①(dt)=>tf.tensor(dt))const{indices}=tf.topk(answers)constanswerIndices=indices.dataSync()consttColumns=[]for(lety=0;y<numDice;y++){consttRow=[]for(letx=0;x<numDice;x++){constcurIndex=y*numDice+x②tRow.push(diceTensors[answerIndices[curIndex]])}constoneRow=tf.concat(tRow,1)③tColumns.push(oneRow)}constdiceConstruct=tf.concat(tColumns)④// Print the reconstruction to the canvas
-constcan=document.getElementById('display')tf.browser.toPixels(diceConstruct,can)⑤})}
+const displayPredictions = async (answers) => {
+  tf.tidy(() => {
+    const diceTensors = diceData.map( ①
+      (dt) => tf.tensor(dt)
+    )
+    const { indices } = tf.topk(answers)
+    const answerIndices = indices.dataSync()
+
+    const tColumns = []
+    for (let y = 0; y < numDice; y++) {
+      const tRow = []
+      for (let x = 0; x < numDice; x++) {
+        const curIndex = y * numDice + x       ②
+        tRow.push(diceTensors[answerIndices[curIndex]])
+      }
+      const oneRow = tf.concat(tRow, 1)        ③
+      tColumns.push(oneRow)
+    }
+    const diceConstruct = tf.concat(tColumns)  ④
+    // Print the reconstruction to the canvas
+    const can = document.getElementById('display')
+    tf.browser.toPixels(diceConstruct, can)    ⑤
+  })
+}
 ```
 
 ①
