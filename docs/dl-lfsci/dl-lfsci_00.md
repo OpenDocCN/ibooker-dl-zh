@@ -46,42 +46,6 @@
 
 如果您认为您使用的代码示例超出了合理使用范围或上述许可，请随时通过*permissions@oreilly.com*与我们联系。
 
-# O’Reilly 在线学习
-
-###### 注意
-
-近 40 年来，[*O’Reilly*](http://oreilly.com)提供技术和商业培训、知识和见解，帮助公司取得成功。
-
-我们独特的专家和创新者网络通过图书、文章、会议和我们的在线学习平台分享他们的知识和专长。O’Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O’Reilly 和其他 200 多家出版商的大量文本和视频。欲了解更多信息，请访问 [`oreilly.com`](http://www.oreilly.com)。
-
-# 如何联系我们
-
-请将有关此书的评论和问题发送给出版商：
-
-+   O’Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为这本书创建了一个网页，列出勘误、示例和任何额外信息。您可以在 [`bit.ly/deep-lrng-for-life-science`](http://bit.ly/deep-lrng-for-life-science) 访问此页面。
-
-要就此书发表评论或提出技术问题，请发送电子邮件至 bookquestions@oreilly.com。
-
-关于我们的图书、课程、会议和新闻的更多信息，请访问我们的网站：[`www.oreilly.com`](http://www.oreilly.com)。
-
-在 Facebook 上找到我们：[`facebook.com/oreilly`](http://facebook.com/oreilly)
-
-在 Twitter 上关注我们：[`twitter.com/oreillymedia`](http://twitter.com/oreillymedia)
-
-在 YouTube 上观看我们：[`www.youtube.com/oreillymedia`](http://www.youtube.com/oreillymedia)
-
 # 致谢
 
 我们要感谢 Nicole Tache，我们在 O’Reilly 的编辑，以及技术审阅员和测试审阅员对本书的宝贵贡献。此外，我们还要感谢 Karl Leswing 和 Zhenqin（Michael）Wu 对代码的贡献，以及 Johnny Israeli 对基因组学章节的宝贵建议。

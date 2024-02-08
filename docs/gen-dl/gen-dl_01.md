@@ -182,41 +182,6 @@
 
 如果您认为您使用的代码示例超出了合理使用范围或上述许可，请随时联系我们*permissions@oreilly.com*。
 
-# O’Reilly 在线学习
-
-###### 注意
-
-[*O’Reilly Media*](https://oreilly.com)已经提供技术和商业培训、知识和见解，帮助公司取得成功超过 40 年。
-
-我们独特的专家和创新者网络通过书籍、文章和我们的在线学习平台分享他们的知识和专长。O’Reilly 的在线学习平台为您提供按需访问实时培训课程、深入学习路径、交互式编码环境以及来自 O’Reilly 和其他 200 多家出版商的大量文本和视频。欲了解更多信息，请访问[*https://oreilly.com*](https://oreilly.com)。
-
-# 如何联系我们
-
-请将有关此书的评论和问题发送至出版商：
-
-+   O’Reilly Media, Inc.
-
-+   1005 Gravenstein Highway North
-
-+   Sebastopol, CA 95472
-
-+   800-998-9938（美国或加拿大）
-
-+   707-829-0515（国际或本地）
-
-+   707-829-0104（传真）
-
-我们为这本书制作了一个网页，列出勘误、示例和任何额外信息。您可以访问[*https://oreil.ly/generative-dl*](https://oreil.ly/generative-dl)查看这个页面。
-
-发送电子邮件*bookquestions@oreilly.com*评论或提出关于这本书的技术问题。
-
-有关我们的图书和课程的新闻和信息，请访问[*https://oreilly.com*](https://oreilly.com)。
-
-在 LinkedIn 上找到我们：[*https://linkedin.com/company/oreilly-media*](https://linkedin.com/company/oreilly-media)
-
-在 Twitter 上关注我们：[*https://twitter.com/oreillymedia*](https://twitter.com/oreillymedia)
-
-在 YouTube 上关注我们：[*https://youtube.com/oreillymedia*](https://youtube.com/oreillymedia)
 
 # 致谢
 
