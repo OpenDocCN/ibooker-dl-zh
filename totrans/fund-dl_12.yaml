@@ -1,0 +1,1371 @@
+- en: Chapter 12\. Memory Augmented Neural Networks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[Mostafa Samir](https://mostafa-samir.github.io)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: So far we’ve seen how effective an RNN can be at solving a complex problem like
+    machine translation. However, we’re still far from reaching its full potential!
+    In [Chapter 9](ch09.xhtml#ch07) we mentioned that it’s theoretically proven that
+    the RNN architecture is a universal functional representer; a more precise statement
+    of the same result is that RNNs are *Turing complete*. This simply means that
+    given proper wiring and adequate parameters, an RNN can learn to solve any computable
+    problem, which is basically any problem that can be solved by a computer algorithm
+    or, equivalently, a Turing machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Neural Turing Machines
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Though theoretically possible, it’s extremely difficult to achieve that kind
+    of universality in practice. This difficulty stems from the fact that we’re looking
+    at an immensely huge search space of possible wirings and parameter values of
+    RNNs, a space so vastly large for gradient descent to find an appropriate solution
+    for any arbitrary problem. However, in this chapter we’ll start exploring some
+    approaches at the edge of research that will allow us to start tapping into that
+    potential.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s think for a while about a very simple reading comprehension question
+    like the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The answer is so trivial: it’s two. But what actually happened in our brains
+    that allowed us to come up with the answer so trivially? If we thought about how
+    we could solve that comprehension question using a simple computer program, our
+    approach would probably go like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: It turns out that our brains tackle the same task in a similar way to that simple
+    computer program. Once we start reading, we start allocating memory (just as our
+    computer program) and store the pieces of information we receive. We start by
+    storing that location of Mary, which after the first sentence is the hallway.
+    In the second sentence we store the objects Mary is carrying, and by now it’s
+    only a glass of milk. Once we see the third sentence, our brain modifies the first
+    memory location to point to the office. By the end of the fourth sentence, the
+    second memory location is modified to include both the milk and the apple. When
+    we finally encounter the question, our brains quickly query the second memory
+    location and count the information there, which turns out to be two. In neuroscience
+    and cognitive psychology, such a system of transient storing and manipulation
+    of information is called a *working memory*, and it’s the main inspiration behind
+    the line of research we’ll be discussing in the rest of this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In 2014, Graves et al. from Google DeepMind started this line of work in a paper
+    called [“Neural Turing Machines”](https://arxiv.org/abs/1410.5401) in which they
+    introduced a new neural architecture with the same name, a *Neural Turing Machine*
+    (NTM), that consists of a controller neural network (usually an RNN) with an external
+    memory that resembles the brain’s working memory. For the close resemblance between
+    the working memory model and the computer model we just saw, [Figure 12-1](#architecture_of_a_modern_day_computer)
+    shows that the same resemblance holds for the NTM architecture, with the external
+    memory in place of the RAM, the read/write heads in place of the read/write buses,
+    and the controller network in place of the CPU, except for the fact that the controller
+    learns its program, unlike the CPU, which is fed its program. [Figure 12-1](#architecture_of_a_modern_day_computer)
+    has a single read head and a single write head, but an NTM can have several in
+    practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1201.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-1\. Comparing the architecture of a modern-day computer, which is
+    fed its program (left) to an NTM that learns its program (right)
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If we thought about NTMs in light of our earlier discussion of RNN’s Turing
+    completeness, we’ll find that augmenting the RNN with an external memory for transient
+    storage prunes a large portion out of that search space, as we now don’t care
+    about exploring RNNs that can both process and store the information; we’re just
+    looking for the RNNs that can process the information stored outside of them.
+    This pruning of the search space allows us to start tapping into some of the RNN
+    potentials that were locked away before augmenting it with a memory, evident by
+    the variety of tasks that the NTM could learn: from copying input sequences after
+    seeing them, to emulating N-gram models, to performing a priority sort on data.
+    We’ll even see by the end of the chapter how an extension to the NTM can learn
+    to do reading comprehension tasks like the one we saw earlier, with nothing more
+    than a gradient-based search.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention-Based Memory Access
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: To be able to train an NTM with a gradient-based search method, we need to make
+    sure that the whole architecture is differentiable so that we can compute the
+    gradient of some output loss with respect to the model’s parameters that process
+    the input. This property is called *end-to-end-differentiable*, with one end being
+    the inputs and the other the outputs. If we attempted to access the NTM’s memory
+    in the same way a digital computer accesses its RAM, via discrete values of addresses,
+    the discreteness of the addresses would introduce discontinuities in gradients
+    of the output, and hence we would lose the ability to train the model with a gradient-based
+    method. We need a continuous way to access the memory while being able to “focus”
+    on a specific location in it. This kind of continuous focusing can be achieved
+    via attention methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Instead of generating a discrete memory address, we let each head generate
+    a normalized softmax attention vector with the same size as the number of memory
+    locations. With this attention vector, we’ll be accessing all the memory locations
+    at the same time in a blurry manner, with each value in the vector telling us
+    how much we’re going to focus on the corresponding location, or how likely we’re
+    going to access it. For example, to read a vector at a time step *t* out of our
+    <math alttext="upper N times upper W"><mrow><mi>N</mi> <mo>×</mo> <mi>W</mi></mrow></math>
+     NTM’s memory matrix denoted by <math alttext="upper M Subscript t"><msub><mi>M</mi>
+    <mi>t</mi></msub></math>  (where *N* is the number of locations and <math alttext="upper
+    W"><mi>W</mi></math>  is the size of the location), we generate an attention vector,
+    or a weighting vector <math alttext="w Subscript t"><msub><mi>w</mi> <mi>t</mi></msub></math>
+     of size *N*, and our read vector can be calculated via the product:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="bold r Subscript t Baseline equals upper M Subscript t Superscript
+    down-tack Baseline w Subscript t"><mrow><msub><mi>𝐫</mi> <mi>t</mi></msub> <mo>=</mo>
+    <msubsup><mi>M</mi> <mi>t</mi> <mi>⊤</mi></msubsup> <msub><mi>w</mi> <mi>t</mi></msub></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where <math alttext="Superscript down-tack"><msup><mi>⊤</mi></msup></math>  denotes
+    the matrix transpose operation. [Figure 12-2](#demo_of_blurry_attention_based_reading)
+    shows how with the weights attending to a specific location, we can retrieve a
+    read vector that approximately contains the same information as the content of
+    that memory location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1202.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-2\. A demonstration of how a blurry attention-based reading can retrieve
+    a vector containing approximately the same information as in the focused-on location
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'A similar attention weighting method is used for the write head: a weighting
+    vector <math alttext="w Subscript t"><msub><mi>w</mi> <mi>t</mi></msub></math>
+    is generated and used for erasing specific information from the memory, as specified
+    by the controller in an erase vector <math alttext="e Subscript t"><msub><mi>e</mi>
+    <mi>t</mi></msub></math>  that has <math alttext="upper W"><mi>W</mi></math> values
+    between 0 and 1 specifying what to erase and what to keep. Then we use the same
+    weighting for writing to the erased memory matrix some new information, also specified
+    by the controller in a write vector <math alttext="v Subscript t"><msub><mi>v</mi>
+    <mi>t</mi></msub></math> containing <math alttext="upper W"><mi>W</mi></math>
+     values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper M Subscript t Baseline equals upper M Subscript t minus
+    1 Baseline ring left-parenthesis upper E minus w Subscript t Baseline e Subscript
+    t Superscript down-tack Baseline right-parenthesis plus w Subscript t Baseline
+    normal v Subscript t Superscript down-tack"><mrow><msub><mi>M</mi> <mi>t</mi></msub>
+    <mo>=</mo> <msub><mi>M</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>∘</mo> <mrow><mo>(</mo> <mi>E</mi> <mo>-</mo> <msub><mi>w</mi> <mi>t</mi></msub>
+    <msubsup><mi>e</mi> <mi>t</mi> <mi>⊤</mi></msubsup> <mo>)</mo></mrow> <mo>+</mo>
+    <msub><mi>w</mi> <mi>t</mi></msub> <msubsup><mi mathvariant="normal">v</mi> <mi>t</mi>
+    <mi>⊤</mi></msubsup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where <math alttext="upper E"><mi>E</mi></math>  is a matrix of ones and <math
+    alttext="ring"><mo>∘</mo></math> is element-wise multiplication. Similar to the
+    reading case, the weighting <math alttext="w Subscript t"><msub><mi>w</mi> <mi>t</mi></msub></math>
+    tells us where to focus our erasing (the first term of the equation) and writing
+    operations (the second term).
+  prefs: []
+  type: TYPE_NORMAL
+- en: NTM Memory Addressing Mechanisms
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now that we understand how NTMs access their memories in a continuous manner
+    via attention weighting, we’re left with how these weightings are generated and
+    what forms of memory addressing mechanisms they represent. We can understand that
+    by exploring what NTMs are expected to do with their memories, and based on the
+    model they are mimicking (the Turning machine), we expect them to be able to access
+    a location by the value it contains, and to be able to go forward or backward
+    from a given location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The first mode of behavior can be achieved with an access mechanism that we’ll
+    call *content-based addressing*. In this form of addressing, the controller emits
+    the value that it’s looking for, which we’ll call a key <math alttext="k Subscript
+    t"><msub><mi>k</mi> <mi>t</mi></msub></math> , then it measures its similarity
+    to the information stored in each location and focuses the attention on the most
+    similar one. This kind of weighting can be calculated via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*C*(*M*,*k*, *β*) = <math alttext="StartFraction exp left-parenthesis beta
+    script upper D left-parenthesis upper M comma k right-parenthesis right-parenthesis
+    Over sigma-summation Underscript i equals 0 Overscript upper N Endscripts exp
+    left-parenthesis beta script upper D left-parenthesis upper M left-bracket i right-bracket
+    comma k right-parenthesis right-parenthesis EndFraction"><mfrac><mrow><mo form="prefix">exp</mo><mo>(</mo><mi>β</mi><mi>𝒟</mi><mo>(</mo><mi>M</mi><mo>,</mo><mi>k</mi><mo>)</mo><mo>)</mo></mrow>
+    <mrow><msubsup><mo>∑</mo> <mrow><mi>i</mi><mo>=</mo><mn>0</mn></mrow> <mi>N</mi></msubsup>
+    <mo form="prefix">exp</mo><mrow><mo>(</mo><mi>β</mi><mi>𝒟</mi><mrow><mo>(</mo><mi>M</mi><mrow><mo>[</mo><mi>i</mi><mo>]</mo></mrow><mo>,</mo><mi>k</mi><mo>)</mo></mrow><mo>)</mo></mrow></mrow></mfrac></math>'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where *D* is some similarity measure, like the cosine similarity. The equation
+    is nothing more than a normalized softmax distribution over the similarity scores.
+    There is, however, an extra parameter <math alttext="beta"><mi>β</mi></math> that
+    is used to attenuate the attention weights if needed. We call that the *key strength*.
+    The main idea behind that parameter is that for some tasks, the key emitted by
+    the controller may not be close to any of the information in the memory, which
+    would result in seemingly uniform attention weights. [Figure 12-3](#indecisive_key_with_unit_strength_results)
+    shows how the key strength allows the controller to learn how to attenuate such
+    uniform attention to be more focused on a single location that is the most probable;
+    the controller then learns what value of the strength to emit with each possible
+    key it emits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1203.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-3\. An indecisive key with unit strength results in a nearly uniform
+    attention vector; increasing the strength for keys like that focuses the attention
+    on the most probable location
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To move forward and backward in the memory, we first need to know where we
+    are we standing now, and such information is located in the access weighting from
+    the last time step <math alttext="w Subscript t minus 1"><msub><mi>w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></math>
+    . So to preserve the information about our current location with the new content-based
+    weighting <math alttext="w Subscript t Superscript c"><msubsup><mi>w</mi> <mi>t</mi>
+    <mi>c</mi></msubsup></math>  we just got, we interpolate between the two weighting
+    using a scalar  <math alttext="g Subscript t"><msub><mi>g</mi> <mi>t</mi></msub></math>
+     that lies between 0 and 1:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="w Subscript t Superscript g Baseline equals g Subscript t Baseline
+    w Subscript t Superscript c Baseline plus left-parenthesis 1 minus g Subscript
+    t Baseline right-parenthesis w Subscript t minus 1"><mrow><msubsup><mi>w</mi>
+    <mi>t</mi> <mi>g</mi></msubsup> <mo>=</mo> <msub><mi>g</mi> <mi>t</mi></msub>
+    <msubsup><mi>w</mi> <mi>t</mi> <mi>c</mi></msubsup> <mo>+</mo> <mrow><mo>(</mo>
+    <mn>1</mn> <mo>-</mo> <msub><mi>g</mi> <mi>t</mi></msub> <mo>)</mo></mrow> <msub><mi>w</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: We call  <math alttext="g Subscript t"><msub><mi>g</mi> <mi>t</mi></msub></math>
+     the *interpolation gate*, and it’s also emitted by the controller to control
+    the kind of information we want to use in the current time step. When the gate’s
+    value is close to 1, we favor the addressing given by content lookup. However,
+    when it’s close to 0, we tend to pass the information about our current location
+    through and ignore the content-based addressing. The controller learns to use
+    this gate so that, for example, it could set it to 0 when iteration through consecutive
+    locations is desired and information about the current location is crucial. The
+    type of information the controller chooses to gate through is denoted by the *gated
+    weighting*  <math alttext="w Subscript t Superscript g"><msubsup><mi>w</mi> <mi>t</mi>
+    <mi>g</mi></msubsup></math> .
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To start moving around the memory we need a way to take our current gated weighting
+    and shift the focus from one location to another. This can be done by convoluting
+    the gated weighting with a *shift weighting* <math alttext="s Subscript t"><msub><mi>s</mi>
+    <mi>t</mi></msub></math> , also emitted by the controller. This shift weighting
+    is a normalized softmax attention vector of size  <math alttext="n plus 1"><mrow><mi>n</mi>
+    <mo>+</mo> <mn>1</mn></mrow></math> , where  <math alttext="n"><mi>n</mi></math>
+     is an even integer specifying the number of possible shifts around the focused-on
+    location in the gated weighting; for example, if it has a size of 3, then there
+    are two possible shifts around a location: one forward and one backward. [Figure 12-4](#shift_weighting_focused_on_the_rights)
+    shows how a shift weighting can move around the focused-on location in gated weighting.
+    The shifting occurs by convoluting the gated weighting by the shift weighting
+    in pretty much the same way we convoluted images with feature maps back in [Chapter 7](ch07.xhtml#convolutional_neural_networks).
+    The only exception is how we handle the case when the shift weightings go outside
+    the gated weighting. Instead of using padding like we did before, we use a rotational
+    convolution operator where overflown weights get applied to the values at the
+    other end of the gated weighting, as shown in the middle panel of [Figure 12-4](#shift_weighting_focused_on_the_rights).
+    This operation can be expressed element-wise as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="ModifyingAbove w With tilde Subscript t Baseline left-bracket
+    i right-bracket equals sigma-summation Underscript j equals 0 Overscript StartAbsoluteValue
+    s Subscript t Baseline EndAbsoluteValue Endscripts w Subscript t Superscript g
+    Baseline left-bracket left-parenthesis i plus StartFraction StartAbsoluteValue
+    s Subscript t Baseline EndAbsoluteValue minus 1 Over 2 EndFraction minus j right-parenthesis
+    mod upper N right-bracket s Subscript t Baseline left-bracket j right-bracket"><mrow><msub><mover
+    accent="true"><mi>w</mi> <mo>˜</mo></mover> <mi>t</mi></msub> <mrow><mo>[</mo>
+    <mi>i</mi> <mo>]</mo></mrow> <mo>=</mo> <msubsup><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>0</mn></mrow>
+    <mrow><mrow><mo>|</mo></mrow><msub><mi>s</mi> <mi>t</mi></msub> <mrow><mo>|</mo></mrow></mrow></msubsup>
+    <msubsup><mi>w</mi> <mi>t</mi> <mi>g</mi></msubsup> <mfenced separators="" open="["
+    close="]"><mfenced separators="" open="(" close=")"><mi>i</mi> <mo>+</mo> <mfrac><mrow><mrow><mo>|</mo></mrow><msub><mi>s</mi>
+    <mi>t</mi></msub> <mrow><mo>|</mo><mo>-</mo><mn>1</mn></mrow></mrow> <mn>2</mn></mfrac>
+    <mo>-</mo> <mi>j</mi></mfenced> <mo form="prefix">mod</mo> <mi>N</mi></mfenced>
+    <msub><mi>s</mi> <mi>t</mi></msub> <mfenced open="[" close="]"><mi>j</mi></mfenced></mrow></math>![](Images/fdl2_1204.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 12-4\. A shift weighting focused on the right shifts the gated weighting
+    one location to the right (left). Rotational convolution on a left-focused shift
+    weighting, shifting the gated weighting to the left (middle). A nonsharp centered
+    shift weighting keeps the gated weighting intact but disperses it (right).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'With the introduction of the shifting operation, our heads’ weightings can
+    now move around the memory freely forward and backward. However, a problem occurs
+    if at any time the shift weighting is not sharp enough. Because of the nature
+    of the convolution operation, a nonsharp shift weighting (as in the right panel
+    of [Figure 12-4](#shift_weighting_focused_on_the_rights)) disperses the original
+    gated weightings around its surroundings and results in a less-focused shifted
+    weighting. To overcome that blurring effect, we run the shifted weightings through
+    one last operation: a sharpening operation. The controller emits one last scalar 
+    <math alttext="gamma Subscript t Baseline greater-than-or-equal-to 1"><mrow><msub><mi>γ</mi>
+    <mi>t</mi></msub> <mo>≥</mo> <mn>1</mn></mrow></math>  that sharpens the shifted
+    weightings via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="w Subscript t Baseline equals StartFraction w overTilde Subscript
+    t Superscript gamma Super Subscript t Superscript Baseline Over sigma-summation
+    Underscript i equals 0 Overscript upper N Endscripts w overTilde Subscript t Baseline
+    left-bracket i right-bracket Superscript gamma Super Subscript t Superscript Baseline
+    EndFraction"><mrow><msub><mi>w</mi> <mi>t</mi></msub> <mo>=</mo> <mfrac><msubsup><mover
+    accent="true"><mi>w</mi> <mo>˜</mo></mover> <mi>t</mi> <msub><mi>γ</mi> <mi>t</mi></msub></msubsup>
+    <mrow><msubsup><mo>∑</mo> <mrow><mi>i</mi><mo>=</mo><mn>0</mn></mrow> <mi>N</mi></msubsup>
+    <msub><mover accent="true"><mi>w</mi> <mo>˜</mo></mover> <mi>t</mi></msub> <msup><mrow><mo>[</mo><mi>i</mi><mo>]</mo></mrow>
+    <msub><mi>γ</mi> <mi>t</mi></msub></msup></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Starting from interpolation down to the final weighting vector out of sharpening,
+    this process constitutes the second addressing mechanism of NTMs: the *location-based
+    mechanism*. Using a combination of both addressing mechanisms, an NTM is able
+    to utilize its memory to learn to solve various tasks. One of these tasks that
+    would allow us to get a deeper look into the NTM in action is the copy task shown
+    in [Figure 12-5](#viz_of_an_ntm_trained_on_the_copy_task). In this task, we present
+    the model with a sequence of random binary vectors that terminate with a special
+    end symbol. We then request the same input sequence to be copied to the output.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1205.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-5\. An NTM trained on the copy task^([1](ch12.xhtml#idm45934167096448))
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The visualization shows how at the input time, the NTM starts writing the inputs
+    step-by-step into consecutive locations in the memory. In the output time, the
+    NTM goes back at the first written vector and iterates through the next locations
+    to read and return the previously written input sequence. The original NTM paper
+    contains several other visualizations of NTMs trained on different problems that
+    are worth checking. These visualizations demonstrate the architecture’s ability
+    to utilize the addressing mechanisms to adapt to and learn to solve various tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll suffice with our current understanding of NTMs and skip its implementation.
+    Instead, we will spend the rest of the chapter exploring the drawbacks of NTMs
+    and how the novel architecture of the differentiable neural computer (DNC) was
+    able to overcome these drawbacks. We’ll conclude our discussion by implementing
+    that novel architecture on simple reading comprehension tasks like the one we
+    saw earlier.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Differentiable Neural Computers
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Despite the power of NTMs, they have a few limitations regarding their memory
+    mechanisms. The first of these limitations is that NTMs have no way to ensure
+    that no interference or overlap between written data would occur. This is due
+    to the nature of the “differentiable” writing operation in which we write new
+    data everywhere in the memory to some extent specified by the attention. Usually,
+    the attention mechanisms learn to focus the write weightings strongly on a single
+    memory location, and the NTM converges to a mostly interference-free behavior,
+    but that’s not guaranteed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, even when the NTM converges to an interference-free behavior, once
+    a memory location has been written to, there’s no way to reuse that location again,
+    even when the data stored in it becomes irrelevant. The inability to free and
+    reuse memory locations is the second limitation of the NTM architecture. This
+    results in new data being written to new locations that are likely to be contiguous,
+    as we saw with the copy task. This contiguous writing fashion is the only way
+    for an NTM to record any temporal information about the data being written: consecutive
+    data is stored in consecutive locations. If the write head jumped to another place
+    in the memory while writing some consecutive data, a read head won’t be able to
+    recover the temporal link between the data written before and after the jump:
+    this constitutes the third limitation of NTMs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In October 2016, Graves et al. from DeepMind published in *Nature* a paper
+    titled, [“Hybrid Computing Using a Neural Network with Dynamic External Memory,”](http://go.nature.com/2peM8m2)
+    in which they introduced a new memory-augmented neural architecture called *differentiable
+    neural computer* (DNC) that improves on NTMs and addresses the limitations we
+    just discussed. Similar to NTMs, DNCs consists of a controller that interacts
+    with an external memory. The memory consists of *N* words of size <math alttext="upper
+    W"><mi>W</mi></math> , making up an <math alttext="upper N times upper W"><mrow><mi>N</mi>
+    <mo>×</mo> <mi>W</mi></mrow></math>  matrix we’ll be calling  *M*. The controller
+    takes in an input vector of size <math alttext="upper X"><mi>X</mi></math> and
+    the *R* vectors of size <math alttext="upper W"><mi>W</mi></math>  read from memory
+    in the previous step, where *R* is the number of read heads. The controller then
+    processes them through a neural network and returns two pieces of information:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An *interface vector* that contains all the necessary information to query the
+    memory (i.e., write and read from it)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A *pre-output* vector of size *Y*
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The external memory then takes in the interface vector, performs the necessary
+    writing through a single write head, then reads *R* new vectors from the memory.
+    It returns the newly read vectors to the controller to be added with the pre-output
+    vector, producing the final output vector of size *Y*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 12-6](#overview_of_dncs_architecture_and_operation) summarizes the
+    operation of the DNC that we just described. We can see that unlike NTMs, DNCs
+    keep other data structures alongside the memory itself to keep track of the state
+    of the memory. As we’ll shortly see, with these data structures and some clever
+    new attention mechanisms, DNCs are able to successfully overcome NTM’s limitations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1206.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-6\. An overview of DNC’s architecture and operation
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'To make the whole architecture differentiable, DNCs access the memory through
+    weight vectors of size *N* whose elements determine how much the heads focus on
+    each memory location. There are *R* weightings for the read heads  <math alttext="normal
+    w Subscript t Superscript r comma 1 Baseline comma ellipsis comma normal w Subscript
+    t Superscript r comma upper R"><mrow><msubsup><mi mathvariant="normal">w</mi>
+    <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mn>1</mn></mrow></msubsup> <mo>,</mo> <mo>⋯</mo>
+    <mo>,</mo> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>R</mi></mrow></msubsup></mrow></math>
+    where  <math alttext="t"><mi>t</mi></math> denotes the time step. On the other
+    hand, there’s one write weighting  <math alttext="normal w Subscript t Superscript
+    w"><msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup></math>
+     for the single write head. Once we obtain these weightings, we can modify the
+    memory matrix and get updated via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="upper M Subscript t Baseline equals upper M Subscript t minus
+    1 Baseline ring left-parenthesis upper E minus normal w Subscript t Superscript
+    w Baseline e Subscript t Superscript down-tack Baseline right-parenthesis plus
+    normal w Subscript t Superscript w Baseline normal v Subscript t Superscript down-tack"><mrow><msub><mi>M</mi>
+    <mi>t</mi></msub> <mo>=</mo> <msub><mi>M</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>∘</mo> <mrow><mo>(</mo> <mi>E</mi> <mo>-</mo> <msubsup><mi mathvariant="normal">w</mi>
+    <mi>t</mi> <mi>w</mi></msubsup> <msubsup><mi>e</mi> <mi>t</mi> <mi>⊤</mi></msubsup>
+    <mo>)</mo></mrow> <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi>
+    <mi>w</mi></msubsup> <msubsup><mi mathvariant="normal">v</mi> <mi>t</mi> <mi>⊤</mi></msubsup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: and <math alttext="e Subscript t Baseline comma normal v Subscript t Baseline"><mrow><msub><mi>e</mi>
+    <mi>t</mi></msub> <mo>,</mo> <msub><mi mathvariant="normal">v</mi> <mi>t</mi></msub></mrow></math>
+     are the *erase* and *write* vectors we saw earlier with NTMs, coming from the
+    controller through the interface vector as instructions about what to erase from
+    and write to the memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As soon as we get the updated memory matrix  <math alttext="upper M Subscript
+    t"><msub><mi>M</mi> <mi>t</mi></msub></math> , we can read out the new read vectors 
+    <math alttext="normal r Subscript t Superscript 1 Baseline comma normal r Subscript
+    t Superscript 2 Baseline comma ellipsis comma normal r Subscript t Superscript
+    upper R"><mrow><msubsup><mi mathvariant="normal">r</mi> <mi>t</mi> <mn>1</mn></msubsup>
+    <mo>,</mo> <msubsup><mi mathvariant="normal">r</mi> <mi>t</mi> <mn>2</mn></msubsup>
+    <mo>,</mo> <mo>⋯</mo> <mo>,</mo> <msubsup><mi mathvariant="normal">r</mi> <mi>t</mi>
+    <mi>R</mi></msubsup></mrow></math>  using the following equation for each read
+    weighting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal r Subscript t Superscript i Baseline equals upper M Subscript
+    t Superscript down-tack Baseline normal w Subscript t Superscript r comma i"><mrow><msubsup><mi
+    mathvariant="normal">r</mi> <mi>t</mi> <mi>i</mi></msubsup> <mo>=</mo> <msubsup><mi>M</mi>
+    <mi>t</mi> <mi>⊤</mi></msubsup> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi>
+    <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Up until now, it seems that there’s nothing different from how NTMs write to
+    and read from memory. However, the differences will start to show up when we discuss
+    the attention mechanisms DNCs use to obtain their access weightings. While they
+    both share the content-based addressing mechanism *C*(*M*, *k*, *β*) defined earlier,
+    DNCs use more sophisticated mechanisms to attend more efficiently to the memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interference-Free Writing in DNCs
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The first limitation we discussed for NTMs was their inability to ensure an
+    interference-free writing behavior. An intuitive way to address this issue is
+    to design the architecture to focus strongly on a single, free memory location
+    and not wait for NTM to learn to do so. To keep track of which locations are free
+    and which are busy, we need to introduce a new data structure that can hold this
+    kind of information. We’ll call it the *usage vector.*
+  prefs: []
+  type: TYPE_NORMAL
+- en: The usage vector <math alttext="normal u Subscript t"><msub><mi mathvariant="normal">u</mi>
+    <mi>t</mi></msub></math>  is a vector of size *N*, where each element holds a
+    value between 0 and 1 that represents how much of the corresponding memory location
+    is used; with 0 indicating a completely free location, and 1 indicating a completely
+    used one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The usage vector initially contains zeros  <math alttext="normal u 0 equals
+    bold 0"><mrow><msub><mi mathvariant="normal">u</mi> <mn>0</mn></msub> <mo>=</mo>
+    <mn mathvariant="bold">0</mn></mrow></math> and gets updated with the usage information
+    across the steps. Using this information, it’s clear that the location to which
+    the weights should attend most strongly is the one with the least usage value.
+    To obtain such weighting, we need to first sort the usage vector and obtain the
+    list of location indices in ascending order of the usage; we call such a list
+    a *free list* and denote it by  <math alttext="phi Subscript t"><msub><mi>φ</mi>
+    <mi>t</mi></msub></math> . Using that free list, we can construct an intermediate
+    weighting called the *allocation weighting  <math alttext="normal a Subscript
+    t"><msub><mi mathvariant="normal">a</mi> <mi>t</mi></msub></math>* that would
+    determine which memory location should be allocated for new data. We calculate 
+    <math alttext="normal a Subscript t"><msub><mi mathvariant="normal">a</mi> <mi>t</mi></msub></math>
+     using:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal a Subscript t Baseline left-bracket phi Subscript t Baseline
+    left-bracket j right-bracket right-bracket equals left-parenthesis 1 minus normal
+    u Subscript t Baseline left-bracket phi Subscript t Baseline left-bracket j right-bracket
+    right-bracket right-parenthesis product Underscript i equals 1 Overscript j minus
+    1 Endscripts normal u Subscript t Baseline left-bracket phi Subscript t Baseline
+    left-bracket i right-bracket right-bracket where j element-of 1 comma ellipsis
+    comma upper N"><mrow><msub><mi mathvariant="normal">a</mi> <mi>t</mi></msub> <mrow><mo>[</mo>
+    <msub><mi>φ</mi> <mi>t</mi></msub> <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow>
+    <mo>]</mo></mrow> <mo>=</mo> <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msub><mi
+    mathvariant="normal">u</mi> <mi>t</mi></msub> <mrow><mo>[</mo> <msub><mi>φ</mi>
+    <mi>t</mi></msub> <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow> <mo>]</mo></mrow>
+    <mo>)</mo></mrow> <msubsup><mo>∏</mo> <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
+    <mrow><mi>j</mi><mo>-</mo><mn>1</mn></mrow></msubsup> <msub><mi mathvariant="normal">u</mi>
+    <mi>t</mi></msub> <mrow><mo>[</mo> <msub><mi>φ</mi> <mi>t</mi></msub> <mrow><mo>[</mo>
+    <mi>i</mi> <mo>]</mo></mrow> <mo>]</mo></mrow> <mtext>where</mtext> <mi>j</mi>
+    <mo>∈</mo> <mn>1</mn> <mo>,</mo> <mo>⋯</mo> <mo>,</mo> <mi>N</mi></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This equation may look incomprehensible at first glance. A good way to understand
+    it is to work through it with a numerical example, for example, when  <math alttext="normal
+    u Subscript t Baseline equals left-bracket 1 comma 0.7 comma 0.2 comma 0.4 right-bracket"><mrow><msub><mi
+    mathvariant="normal">u</mi> <mi>t</mi></msub> <mo>=</mo> <mrow><mo>[</mo> <mn>1</mn>
+    <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>7</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>2</mn>
+    <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>4</mn> <mo>]</mo></mrow></mrow></math> .
+    We’ll leave the details for you to go through. In the end, you should arrive at
+    the allocation weighting being  <math alttext="normal a Subscript t Baseline equals
+    left-bracket 0 comma 0.024 comma 0.8 comma 0.12 right-bracket"><mrow><msub><mi
+    mathvariant="normal">a</mi> <mi>t</mi></msub> <mo>=</mo> <mrow><mo>[</mo> <mn>0</mn>
+    <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>024</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo>
+    <mn>8</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>12</mn> <mo>]</mo></mrow></mrow></math>
+    . As we go through the calculations, we’ll begin to understand how this formula
+    works: the <math alttext="1 minus normal u Subscript t Baseline left-bracket phi
+    Subscript t Baseline left-bracket j right-bracket right-bracket"><mrow><mn>1</mn>
+    <mo>-</mo> <msub><mi mathvariant="normal">u</mi> <mi>t</mi></msub> <mrow><mo>[</mo>
+    <msub><mi>φ</mi> <mi>t</mi></msub> <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow>
+    <mo>]</mo></mrow></mrow></math> makes the location weight proportional to how
+    free it is. By noticing that the product  <math alttext="product Underscript i
+    equals 1 Overscript j minus 1 Endscripts normal u Subscript t Baseline left-bracket
+    phi Subscript t Baseline left-bracket j right-bracket right-bracket"><mrow><msubsup><mo>∏</mo>
+    <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow> <mrow><mi>j</mi><mo>-</mo><mn>1</mn></mrow></msubsup>
+    <msub><mi mathvariant="normal">u</mi> <mi>t</mi></msub> <mrow><mo>[</mo> <msub><mi>φ</mi>
+    <mi>t</mi></msub> <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow> <mo>]</mo></mrow></mrow></math>
+    gets smaller and smaller as we iterate through the free list (because we keep
+    multiplying small values between 0 and 1), we can see that this product decreases
+    the location weight even more as we go from the least used location to the most
+    used one, which finally results in the least used location having the largest
+    weight, while the most used one gets the smallest weight. So we’re able to guarantee
+    the ability to focus on a single location by design without the the need to hope
+    for the model to learn it on its own from scratch; this means more reliability
+    as well as faster training time.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'With the allocation weighting  <math alttext="normal a Subscript t"><msub><mi
+    mathvariant="normal">a</mi> <mi>t</mi></msub></math> and lookup weighting  <math
+    alttext="normal c Subscript t Superscript w"><msubsup><mi mathvariant="normal">c</mi>
+    <mi>t</mi> <mi>w</mi></msubsup></math>  we get from the content-based addressing
+    mechanism <math alttext="normal c Subscript t Superscript w Baseline equals script
+    upper C left-parenthesis upper M Subscript t minus 1 Baseline comma k Subscript
+    t Superscript w Baseline comma beta Subscript t Superscript w Baseline right-parenthesis"><mrow><msubsup><mi
+    mathvariant="normal">c</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>=</mo> <mi>𝒞</mi>
+    <mrow><mo>(</mo> <msub><mi>M</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>,</mo> <msubsup><mi>k</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>,</mo> <msubsup><mi>β</mi>
+    <mi>t</mi> <mi>w</mi></msubsup> <mo>)</mo></mrow></mrow></math> , where  <math
+    alttext="k Subscript t Superscript w Baseline comma beta Subscript t Superscript
+    w"><mrow><msubsup><mi>k</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>,</mo> <msubsup><mi>β</mi>
+    <mi>t</mi> <mi>w</mi></msubsup></mrow></math>  are the lookup key and the lookup
+    strength we receive through the interface vector, we can now construct our final
+    write weighting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal w Subscript t Superscript w Baseline equals g Subscript
+    t Superscript w Baseline left-bracket g Subscript t Superscript a Baseline normal
+    a Subscript t Baseline plus left-parenthesis 1 minus g Subscript t Superscript
+    a Baseline right-parenthesis normal c Subscript t Superscript w Baseline right-bracket"><mrow><msubsup><mi
+    mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>=</mo> <msubsup><mi>g</mi>
+    <mi>t</mi> <mi>w</mi></msubsup> <mfenced separators="" open="[" close="]"><msubsup><mi>g</mi>
+    <mi>t</mi> <mi>a</mi></msubsup> <msub><mi mathvariant="normal">a</mi> <mi>t</mi></msub>
+    <mo>+</mo> <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msubsup><mi>g</mi> <mi>t</mi>
+    <mi>a</mi></msubsup> <mo>)</mo></mrow> <msubsup><mi mathvariant="normal">c</mi>
+    <mi>t</mi> <mi>w</mi></msubsup></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where  <math alttext="g Subscript t Superscript w"><msubsup><mi>g</mi> <mi>t</mi>
+    <mi>w</mi></msubsup></math> and <math alttext="g Subscript t Superscript a"><msubsup><mi>g</mi>
+    <mi>t</mi> <mi>a</mi></msubsup></math>  are values between 0 and 1 and are called
+    the write and allocation gates, which we also get from the controller through
+    the interface vector. These gates control the writing operation, with  <math alttext="g
+    Subscript t Superscript w"><msubsup><mi>g</mi> <mi>t</mi> <mi>w</mi></msubsup></math>
+     determining if any writing is going to happen in the first place, and <math alttext="g
+    Subscript t Superscript a"><msubsup><mi>g</mi> <mi>t</mi> <mi>a</mi></msubsup></math>
+     specifying whether we’ll write to a new location using the allocation weighting
+    or modify an existing value specified by the lookup weighting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DNC Memory Reuse
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What if while we calculate the allocation weighting we find that all locations
+    are used, or in other words,  <math alttext="normal u Subscript t Baseline equals
+    bold 1"><mrow><msub><mi mathvariant="normal">u</mi> <mi>t</mi></msub> <mo>=</mo>
+    <mn mathvariant="bold">1</mn></mrow></math> ? This means that the allocation weightings
+    will turn out all zeros and no new data can be allocated to memory. This raises
+    the need for the ability to free and reuse the memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In order to know which locations can be freed and which cannot, we construct
+    a *retention vector*  <math alttext="psi Subscript t"><msub><mi>ψ</mi> <mi>t</mi></msub></math>
+     of size *N* that specifies how much of each location should be retained and not
+    get freed. Each element of this vector takes a value between 0 and 1, with 0 indicating
+    that the corresponding location can be freed, and 1 indicating that it should
+    be retained. This vector is calculated using:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="psi Subscript t Baseline equals product Underscript i equals
+    1 Overscript upper R Endscripts left-parenthesis bold 1 minus f Subscript t Superscript
+    i Baseline normal w Subscript t minus 1 Superscript r comma i Baseline right-parenthesis"><mrow><msub><mi>ψ</mi>
+    <mi>t</mi></msub> <mo>=</mo> <msubsup><mo>∏</mo> <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
+    <mi>R</mi></msubsup> <mrow><mo>(</mo> <mn mathvariant="bold">1</mn> <mo>-</mo>
+    <msubsup><mi>f</mi> <mi>t</mi> <mi>i</mi></msubsup> <msubsup><mi mathvariant="normal">w</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup>
+    <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: This equation is basically saying that the degree to which a memory location
+    should be freed is proportional to how much is read from it in the last time steps
+    by the various read heads (represented by the values of the read weightings <math
+    alttext="normal w Subscript t minus 1 Superscript r comma i"><msubsup><mi mathvariant="normal">w</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup></math>
+    ). However, continuously freeing a memory location once its data is read is not
+    generally preferable as we might still need the data afterward. We let the controller
+    decide when to free and when to retain a location after reading by emitting a
+    set of *R* free gates <math alttext="f Subscript t Superscript 1 Baseline comma
+    ellipsis comma f Subscript t Superscript upper R"><mrow><msubsup><mi>f</mi> <mi>t</mi>
+    <mn>1</mn></msubsup> <mo>,</mo> <mo>⋯</mo> <mo>,</mo> <msubsup><mi>f</mi> <mi>t</mi>
+    <mi>R</mi></msubsup></mrow></math> that have a value between 0 and 1\. This determines
+    how much freeing should be done based on the fact that the location was just read
+    from. The controller will then learn how to use these gates to achieve the behavior
+    it desires.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the retention vector is obtained, we can use it to update the usage vector
+    to reflect any freeing or retention made via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal u Subscript t Baseline equals left-parenthesis normal
+    u Subscript t minus 1 Baseline plus normal w Subscript t minus 1 Superscript w
+    Baseline minus normal u Subscript t minus 1 Baseline ring normal w Subscript t
+    minus 1 Superscript w Baseline right-parenthesis ring psi Subscript t"><mrow><msub><mi
+    mathvariant="normal">u</mi> <mi>t</mi></msub> <mo>=</mo> <mfenced separators=""
+    open="(" close=")"><msub><mi mathvariant="normal">u</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mi>w</mi></msubsup> <mo>-</mo> <msub><mi mathvariant="normal">u</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>∘</mo> <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mi>w</mi></msubsup></mfenced> <mo>∘</mo> <msub><mi>ψ</mi> <mi>t</mi></msub></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This equation can be read as follows: a location will be used if it has been
+    retained (its value in  <math alttext="psi Subscript t Baseline almost-equals
+    1"><mrow><msub><mi>ψ</mi> <mi>t</mi></msub> <mo>≈</mo> <mn>1</mn></mrow></math>
+    ) and either it’s already in use or has just been written to (indicated by its
+    value in  <math alttext="normal u Subscript t minus 1 Baseline plus normal w Subscript
+    t minus 1 Superscript w"><mrow><msub><mi mathvariant="normal">u</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mi>w</mi></msubsup></mrow></math> ). Subtracting the element-wise product  <math
+    alttext="normal u Subscript t minus 1 Baseline ring normal w Subscript t minus
+    1 Superscript w"><mrow><msub><mi mathvariant="normal">u</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>∘</mo> <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mi>w</mi></msubsup></mrow></math> brings the whole expression back between 0
+    and 1 to be a valid usage value in case the addition between the previous usage
+    got the write weighting past 1.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By doing this usage update step before calculating the allocation, we can introduce
+    some free memory for possible new data. We’re also able to use and reuse a limited
+    amount of memory efficiently and overcome the second limitation of NTMs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Temporal Linking of DNC Writes
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With the dynamic memory management mechanisms that DNCs use, each time a memory
+    location is requested for allocation, we’re going to get the most unused location,
+    and there’ll be no positional relation between that location and the location
+    of the previous write. With this type of memory access, NTM’s way of preserving
+    temporal relation with contiguity is not suitable. We’ll need to keep an explicit
+    record of the order of the written data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This explicit recording is achieved in DNCs via two additional data structures
+    alongside the memory matrix and the usage vector. The first is called a *precedence
+    vector*  <math alttext="normal p Subscript t"><msub><mi mathvariant="normal">p</mi>
+    <mi>t</mi></msub></math> , an *N*-sized vector considered to be a probability
+    distribution over the memory locations, with each value indicating how likely
+    the corresponding location was the last one written to. The precedence is initially
+    set to <math alttext="normal p 0 equals bold 0"><mrow><msub><mi mathvariant="normal">p</mi>
+    <mn>0</mn></msub> <mo>=</mo> <mn mathvariant="bold">0</mn></mrow></math> and gets
+    updated in the following steps via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal p Subscript t Baseline equals left-parenthesis 1 minus
+    sigma-summation Underscript i equals 1 Overscript upper N Endscripts normal w
+    Subscript t Superscript w Baseline left-bracket i right-bracket right-parenthesis
+    normal p Subscript t minus 1 Baseline plus normal w Subscript t Superscript w"><mrow><msub><mi
+    mathvariant="normal">p</mi> <mi>t</mi></msub> <mo>=</mo> <mfenced separators=""
+    open="(" close=")"><mn>1</mn> <mo>-</mo> <msubsup><mo>∑</mo> <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>
+    <mi>N</mi></msubsup> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup>
+    <mrow><mo>[</mo> <mi>i</mi> <mo>]</mo></mrow></mfenced> <msub><mi mathvariant="normal">p</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub> <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi>
+    <mi>t</mi> <mi>w</mi></msubsup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Updating is done by first resetting the previous values of the precedence with
+    a reset factor that is proportionate to how much writing was just made to the
+    memory (indicated by the summation of the write weighting’s components). Then
+    the value of write weighting is added to the reset value so that a location with
+    a large write weighting (that is the most recent location written to) would also
+    get a large value in the precedence vector.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The second data structure we need to record temporal information is the *link
+    matrix*  <math alttext="normal upper L Subscript t"><msub><mi mathvariant="normal">L</mi>
+    <mi>t</mi></msub></math> . The link matrix is an  <math alttext="upper N times
+    upper N"><mrow><mi>N</mi> <mo>×</mo> <mi>N</mi></mrow></math>  matrix in which
+    the element  <math alttext="normal upper L Subscript t Baseline left-bracket i
+    comma j right-bracket"><mrow><msub><mi mathvariant="normal">L</mi> <mi>t</mi></msub>
+    <mrow><mo>[</mo> <mi>i</mi> <mo>,</mo> <mi>j</mi> <mo>]</mo></mrow></mrow></math>
+     has a value between 0,1, indicating how likely it is that location *i* was written
+    after location *j*. This matrix is also initialized to zeros, and the diagonal
+    elements are kept at zero throughout the time  <math alttext="normal upper L Subscript
+    t Baseline left-bracket i comma i right-bracket equals 0"><mrow><msub><mi mathvariant="normal">L</mi>
+    <mi>t</mi></msub> <mrow><mo>[</mo> <mi>i</mi> <mo>,</mo> <mi>i</mi> <mo>]</mo></mrow>
+    <mo>=</mo> <mn>0</mn></mrow></math> , as it’s meaningless to track if a location
+    was written after itself when the previous data has already been overwritten and
+    lost. However, each other element in the matrix is updated using:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal upper L Subscript t Baseline left-bracket i comma j right-bracket
+    equals left-parenthesis 1 minus normal w Subscript t Superscript w Baseline left-bracket
+    i right-bracket minus normal w Subscript t Superscript w Baseline left-bracket
+    j right-bracket right-parenthesis normal upper L Subscript t minus 1 Baseline
+    left-bracket i comma j right-bracket plus normal w Subscript t Superscript w Baseline
+    left-bracket i right-bracket normal p Subscript t minus 1 Baseline left-bracket
+    j right-bracket"><mrow><msub><mi mathvariant="normal">L</mi> <mi>t</mi></msub>
+    <mrow><mo>[</mo> <mi>i</mi> <mo>,</mo> <mi>j</mi> <mo>]</mo></mrow> <mo>=</mo>
+    <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msubsup><mi mathvariant="normal">w</mi>
+    <mi>t</mi> <mi>w</mi></msubsup> <mrow><mo>[</mo> <mi>i</mi> <mo>]</mo></mrow>
+    <mo>-</mo> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup>
+    <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow> <mo>)</mo></mrow> <msub><mi mathvariant="normal">L</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub> <mrow><mo>[</mo> <mi>i</mi>
+    <mo>,</mo> <mi>j</mi> <mo>]</mo></mrow> <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi>
+    <mi>t</mi> <mi>w</mi></msubsup> <mrow><mo>[</mo> <mi>i</mi> <mo>]</mo></mrow>
+    <msub><mi mathvariant="normal">p</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mrow><mo>[</mo> <mi>j</mi> <mo>]</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The equation follows the same pattern we saw with other update rules: first
+    the link element is reset by a factor proportional to how much writing had been
+    done on locations <math alttext="i comma j"><mrow><mi>i</mi> <mo>,</mo> <mi>j</mi></mrow></math>
+    . Then the link is updated by the correlation (represented here by multiplication)
+    between the write weighting at location *i* and the previous precedence value
+    of location *j*. This eliminates NTM’s third limitation; now we can keep track
+    of temporal information no matter how the write head hops around the memory.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding the DNC Read Head
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Once the write head has finished updating the memory matrix and the associated
+    data structures, the read head is now ready to work. Its operation is simple:
+    it needs to be able to look up values in the memory and be able to iterate forward
+    and backward in temporal ordering between data. The lookup ability can simply
+    be achieved with content-based addressing: for each read head *i*, we calculate
+    an intermediate weighting  <math alttext="normal c Subscript t Superscript r comma
+    i Baseline equals script upper C left-parenthesis upper M Subscript t Baseline
+    comma k Subscript t Superscript r comma i Baseline comma beta Subscript t Superscript
+    r comma i Baseline right-parenthesis"><mrow><msubsup><mi mathvariant="normal">c</mi>
+    <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup> <mo>=</mo> <mi>𝒞</mi>
+    <mrow><mo>(</mo> <msub><mi>M</mi> <mi>t</mi></msub> <mo>,</mo> <msubsup><mi>k</mi>
+    <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup> <mo>,</mo> <msubsup><mi>β</mi>
+    <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup> <mo>)</mo></mrow></mrow></math>
+    , where  <math alttext="k Subscript t Superscript r comma 1 Baseline comma ellipsis
+    comma k Subscript t Superscript r comma upper R"><mrow><msubsup><mi>k</mi> <mi>t</mi>
+    <mrow><mi>r</mi><mo>,</mo><mn>1</mn></mrow></msubsup> <mo>,</mo> <mo>⋯</mo> <mo>,</mo>
+    <msubsup><mi>k</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>R</mi></mrow></msubsup></mrow></math>
+    and <math alttext="beta Subscript t Superscript r comma 1 Baseline comma ellipsis
+    comma beta Subscript t Superscript r comma upper R"><mrow><msubsup><mi>β</mi>
+    <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mn>1</mn></mrow></msubsup> <mo>,</mo> <mo>⋯</mo>
+    <mo>,</mo> <msubsup><mi>β</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>R</mi></mrow></msubsup></mrow></math>
+     are two sets of *R* read keys and strengths received from the controller in the
+    interface vector.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To achieve forward and backward iterations, we need to make the weightings
+    go a step ahead or back from the location they recently read from. We can achieve
+    that for the forward iteration by multiplying the link matrix by the last read
+    weightings. This shifts the weights from the last read location to the location
+    of the last write specified by the link matrix and constructs an intermediate
+    forward weighting for each read head *i*: <math alttext="normal f Subscript t
+    Superscript i Baseline equals normal upper L Subscript t Baseline normal w Subscript
+    t minus 1 Superscript r comma i"><mrow><msubsup><mi mathvariant="normal">f</mi>
+    <mi>t</mi> <mi>i</mi></msubsup> <mo>=</mo> <msub><mi mathvariant="normal">L</mi>
+    <mi>t</mi></msub> <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup></mrow></math> . Similarly,
+    we construct an intermediate backward weighting by multiplying the transpose of
+    the link matrix by the last read weightings  <math alttext="normal b Subscript
+    t Superscript i Baseline equals normal upper L Subscript t minus 1 Superscript
+    down-tack Baseline normal w Subscript t minus 1 Superscript r comma i"><mrow><msubsup><mi
+    mathvariant="normal">b</mi> <mi>t</mi> <mi>i</mi></msubsup> <mo>=</mo> <msubsup><mi
+    mathvariant="normal">L</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow> <mi>⊤</mi></msubsup>
+    <msubsup><mi mathvariant="normal">w</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup></mrow></math> .'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can now construct the new read weightings for each read using the following
+    rule:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal w Subscript t Superscript r comma i Baseline equals pi
+    Subscript t Superscript i Baseline left-bracket 1 right-bracket normal b Subscript
+    t Superscript i Baseline plus pi Subscript t Superscript i Baseline left-bracket
+    2 right-bracket normal c Subscript t Superscript i Baseline plus pi Subscript
+    t Superscript i Baseline left-bracket 3 right-bracket normal f Subscript t Superscript
+    i"><mrow><msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup>
+    <mo>=</mo> <msubsup><mi>π</mi> <mi>t</mi> <mi>i</mi></msubsup> <mrow><mo>[</mo>
+    <mn>1</mn> <mo>]</mo></mrow> <msubsup><mi mathvariant="normal">b</mi> <mi>t</mi>
+    <mi>i</mi></msubsup> <mo>+</mo> <msubsup><mi>π</mi> <mi>t</mi> <mi>i</mi></msubsup>
+    <mrow><mo>[</mo> <mn>2</mn> <mo>]</mo></mrow> <msubsup><mi mathvariant="normal">c</mi>
+    <mi>t</mi> <mi>i</mi></msubsup> <mo>+</mo> <msubsup><mi>π</mi> <mi>t</mi> <mi>i</mi></msubsup>
+    <mrow><mo>[</mo> <mn>3</mn> <mo>]</mo></mrow> <msubsup><mi mathvariant="normal">f</mi>
+    <mi>t</mi> <mi>i</mi></msubsup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'where  <math alttext="pi Subscript t Superscript 1 Baseline comma ellipsis
+    comma pi Subscript t Superscript upper R"><mrow><msubsup><mi>π</mi> <mi>t</mi>
+    <mn>1</mn></msubsup> <mo>,</mo> <mo>⋯</mo> <mo>,</mo> <msubsup><mi>π</mi> <mi>t</mi>
+    <mi>R</mi></msubsup></mrow></math>  are called the *read modes*. Each of these
+    are a softmax distribution over three elements that come from the controller on
+    the interface vector. Its three values determine the emphasis the read head should
+    put on each read mechanism: backward, lookup, and forward, respectively. The controller
+    learns to use these modes to instruct the memory on how data should be read.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The DNC Controller Network
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Now that we’ve figured out the internal workings of the external memory in
+    the DNC architecture, we’re left with understanding how the controller that coordinates
+    all the memory operations work. The controller’s operation is simple: in its heart
+    there’s a neural network (recurrent or feed-forward) that takes in the input step
+    along with the read-vectors from the last step and outputs a vector whose size
+    depends on the architecture we chose for the network. Let’s denote that vector
+    by *N*(χ[t]), where *N* denotes whatever function is computed by the neural network,
+    and  <math alttext="chi Subscript t"><msub><mi>χ</mi> <mi>t</mi></msub></math>
+     denotes the concatenation of the input step and the last read vectors  <math
+    alttext="chi Subscript t Baseline equals left-bracket x Subscript t Baseline semicolon
+    normal r Subscript t minus 1 Superscript 1 Baseline semicolon ellipsis semicolon
+    normal r Subscript t minus 1 Superscript upper R Baseline right-bracket"><mrow><msub><mi>χ</mi>
+    <mi>t</mi></msub> <mo>=</mo> <mrow><mo>[</mo> <msub><mi>x</mi> <mi>t</mi></msub>
+    <mo>;</mo> <msubsup><mi mathvariant="normal">r</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow>
+    <mn>1</mn></msubsup> <mo>;</mo> <mo>⋯</mo> <mo>;</mo> <msubsup><mi mathvariant="normal">r</mi>
+    <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow> <mi>R</mi></msubsup> <mo>]</mo></mrow></mrow></math>
+    . This concatenation of the last read vectors serves a similar purpose as the
+    hidden state in a regular LSTM: to condition the output on the past.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: From that vector emitted from the neural network, we need two pieces of information.
+    The first one is the interface vector ζ[t]. As we saw, the interface vector holds
+    all the information for the memory to carry out its operation. We can look at
+    the ζ[t] vector as a concatenation of the individual elements we encountered before,
+    as depicted in [Figure 12-7](#interface_vector_decomposed).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1207.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-7\. The interface vector decomposed to its individual components
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'By summing up the sizes along the components, we can consider the  <math alttext="zeta
+    Subscript t"><msub><mi>ζ</mi> <mi>t</mi></msub></math>  vector as one big vector
+    of size <math alttext="upper R times upper W plus 3 upper W plus 5 upper R plus
+    3"><mrow><mi>R</mi> <mo>×</mo> <mi>W</mi> <mo>+</mo> <mn>3</mn> <mi>W</mi> <mo>+</mo>
+    <mn>5</mn> <mi>R</mi> <mo>+</mo> <mn>3</mn></mrow></math> . So in order to obtain
+    that vector from the network output, we construct a learnable <math alttext="StartAbsoluteValue
+    script upper N EndAbsoluteValue times left-parenthesis upper R times upper W plus
+    3 upper W plus 5 upper R plus 3 right-parenthesis"><mrow><mo>|</mo> <mi>𝒩</mi>
+    <mo>|</mo> <mo>×</mo> <mo>(</mo> <mi>R</mi> <mo>×</mo> <mi>W</mi> <mo>+</mo> <mn>3</mn>
+    <mi>W</mi> <mo>+</mo> <mn>5</mn> <mi>R</mi> <mo>+</mo> <mn>3</mn> <mo>)</mo></mrow></math>
+     weights matrix  <math alttext="upper W Subscript zeta"><msub><mi>W</mi> <mi>ζ</mi></msub></math>
+    , where  <math alttext="StartAbsoluteValue script upper N EndAbsoluteValue"><mrow><mo>|</mo>
+    <mi>𝒩</mi> <mo>|</mo></mrow></math>  is the size of the network’s output, such
+    that:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="zeta Subscript t Baseline equals upper W Subscript zeta Baseline
+    script upper N left-parenthesis chi Subscript t Baseline right-parenthesis"><mrow><msub><mi>ζ</mi>
+    <mi>t</mi></msub> <mo>=</mo> <msub><mi>W</mi> <mi>ζ</mi></msub> <mi>𝒩</mi> <mrow><mo>(</mo>
+    <msub><mi>χ</mi> <mi>t</mi></msub> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before passing that  <math alttext="zeta Subscript t"><msub><mi>ζ</mi> <mi>t</mi></msub></math>
+     vector to the memory, we need to make sure that each component has a valid value.
+    For example, all the gates as well as the erase vector must have values between
+    0 and 1, so we pass them through a sigmoid function to ensure that requirement:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="e Subscript t Baseline equals sigma left-parenthesis e Subscript
+    t Baseline right-parenthesis comma f Subscript t Superscript i Baseline equals
+    sigma left-parenthesis f Subscript t Superscript i Baseline right-parenthesis
+    comma g Subscript t Superscript a Baseline equals sigma left-parenthesis g Subscript
+    t Superscript a Baseline right-parenthesis comma g Subscript t Superscript w Baseline
+    equals sigma left-parenthesis g Subscript t Superscript w Baseline right-parenthesis
+    where sigma left-parenthesis z right-parenthesis equals StartFraction 1 Over 1
+    plus e Superscript negative z Baseline EndFraction"><mrow><msub><mi>e</mi> <mi>t</mi></msub>
+    <mo>=</mo> <mi>σ</mi> <mrow><mo>(</mo> <msub><mi>e</mi> <mi>t</mi></msub> <mo>)</mo></mrow>
+    <mo>,</mo> <msubsup><mi>f</mi> <mi>t</mi> <mi>i</mi></msubsup> <mo>=</mo> <mi>σ</mi>
+    <mrow><mo>(</mo> <msubsup><mi>f</mi> <mi>t</mi> <mi>i</mi></msubsup> <mo>)</mo></mrow>
+    <mo>,</mo> <msubsup><mi>g</mi> <mi>t</mi> <mi>a</mi></msubsup> <mo>=</mo> <mi>σ</mi>
+    <mrow><mo>(</mo> <msubsup><mi>g</mi> <mi>t</mi> <mi>a</mi></msubsup> <mo>)</mo></mrow>
+    <mo>,</mo> <msubsup><mi>g</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>=</mo> <mi>σ</mi>
+    <mrow><mo>(</mo> <msubsup><mi>g</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>)</mo></mrow>
+    <mtext>where</mtext> <mi>σ</mi> <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow>
+    <mo>=</mo> <mfrac><mn>1</mn> <mrow><mn>1</mn><mo>+</mo><msup><mi>e</mi> <mrow><mo>-</mo><mi>z</mi></mrow></msup></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Also, all the lookup strengths need to have a value larger than or equal to
+    1, so we pass them through a *oneplus *function first:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="beta Subscript t Superscript r comma i Baseline equals normal
+    o normal n normal e normal p normal l normal u normal s left-parenthesis beta
+    Subscript t Superscript r comma i Baseline right-parenthesis comma beta Subscript
+    t Superscript w Baseline equals normal o normal n normal e normal p normal l normal
+    u normal s left-parenthesis beta Subscript t Superscript w Baseline right-parenthesis
+    where normal o normal n normal e normal p normal l normal u normal s left-parenthesis
+    z right-parenthesis equals 1 plus log left-parenthesis 1 plus e Superscript z
+    Baseline right-parenthesis"><mrow><msubsup><mi>β</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup>
+    <mo>=</mo> <mi>oneplus</mi> <mrow><mo>(</mo> <msubsup><mi>β</mi> <mi>t</mi> <mrow><mi>r</mi><mo>,</mo><mi>i</mi></mrow></msubsup>
+    <mo>)</mo></mrow> <mo>,</mo> <msubsup><mi>β</mi> <mi>t</mi> <mi>w</mi></msubsup>
+    <mo>=</mo> <mi>oneplus</mi> <mrow><mo>(</mo> <msubsup><mi>β</mi> <mi>t</mi> <mi>w</mi></msubsup>
+    <mo>)</mo></mrow> <mtext>where</mtext> <mi>oneplus</mi> <mrow><mo>(</mo> <mi>z</mi>
+    <mo>)</mo></mrow> <mo>=</mo> <mn>1</mn> <mo>+</mo> <mo form="prefix">log</mo>
+    <mrow><mo>(</mo> <mn>1</mn> <mo>+</mo> <msup><mi>e</mi> <mi>z</mi></msup> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'And finally, the read modes must have a valid softmax distribution:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="pi Subscript t Superscript i Baseline equals normal s normal
+    o normal f normal t normal m normal a normal x left-parenthesis pi Subscript t
+    Superscript i Baseline right-parenthesis where normal s normal o normal f normal
+    t normal m normal a normal x left-parenthesis z right-parenthesis equals StartFraction
+    e Superscript z Baseline Over sigma-summation Underscript j Endscripts e Superscript
+    z Super Subscript j Superscript Baseline EndFraction"><mrow><msubsup><mi>π</mi>
+    <mi>t</mi> <mi>i</mi></msubsup> <mo>=</mo> <mi>softmax</mi> <mrow><mo>(</mo> <msubsup><mi>π</mi>
+    <mi>t</mi> <mi>i</mi></msubsup> <mo>)</mo></mrow> <mtext>where</mtext> <mi>softmax</mi>
+    <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><msup><mi>e</mi>
+    <mi>z</mi></msup> <mrow><msub><mo>∑</mo> <mi>j</mi></msub> <msup><mi>e</mi> <msub><mi>z</mi>
+    <mi>j</mi></msub></msup></mrow></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'By these transformations, the interface vector is now ready to be passed to
+    the memory; and while it guides the memory in its operations, we’ll be needing
+    a second piece of information from the neural network, the *pre-output* vector 
+    <math alttext="v Subscript t"><msub><mi>v</mi> <mi>t</mi></msub></math> . This
+    is a vector of the same size of the final output vector, but it’s not the final
+    output vector. By using another learnable  <math alttext="StartAbsoluteValue script
+    upper N EndAbsoluteValue times upper Y"><mrow><mo>|</mo> <mi>𝒩</mi> <mo>|</mo>
+    <mo>×</mo> <mi>Y</mi></mrow></math>  weights matrix <math alttext="upper W Subscript
+    y"><msub><mi>W</mi> <mi>y</mi></msub></math> , we can obtain the pre-output via:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="v Subscript t Baseline equals upper W Subscript y Baseline script
+    upper N left-parenthesis chi Subscript t Baseline right-parenthesis"><mrow><msub><mi>v</mi>
+    <mi>t</mi></msub> <mo>=</mo> <msub><mi>W</mi> <mi>y</mi></msub> <mi>𝒩</mi> <mrow><mo>(</mo>
+    <msub><mi>χ</mi> <mi>t</mi></msub> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This pre-output vector gives us the ability to condition our final output not
+    just on the network output, but also on the recently read vectors  <math alttext="normal
+    r Subscript t"><msub><mi mathvariant="normal">r</mi> <mi>t</mi></msub></math>
+     from memory. Via a third learnable <math alttext="left-parenthesis upper R times
+    upper W right-parenthesis times upper Y"><mrow><mo>(</mo> <mi>R</mi> <mo>×</mo>
+    <mi>W</mi> <mo>)</mo> <mo>×</mo> <mi>Y</mi></mrow></math>  weights matrix <math
+    alttext="upper W Subscript r"><msub><mi>W</mi> <mi>r</mi></msub></math> , we can
+    get the final output as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="y Subscript t Baseline equals v Subscript t Baseline plus upper
+    W Subscript r Baseline left-bracket normal r Subscript t Superscript 1 Baseline
+    semicolon ellipsis semicolon normal r Subscript t Superscript upper R Baseline
+    right-bracket"><mrow><msub><mi>y</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>v</mi>
+    <mi>t</mi></msub> <mo>+</mo> <msub><mi>W</mi> <mi>r</mi></msub> <mrow><mo>[</mo>
+    <msubsup><mi mathvariant="normal">r</mi> <mi>t</mi> <mn>1</mn></msubsup> <mo>;</mo>
+    <mo>⋯</mo> <mo>;</mo> <msubsup><mi mathvariant="normal">r</mi> <mi>t</mi> <mi>R</mi></msubsup>
+    <mo>]</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given that the controller knows nothing about the memory except for the word
+    size  <math alttext="upper W"><mi>W</mi></math> , an already learned controller
+    can be scaled to a larger memory with more locations without any need for retraining.
+    Also, the fact that we didn’t specify any particular structure for the neural
+    network or any particular loss function makes DNC a universal architecture that
+    can be applied to a variety of tasks and learning problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Visualizing the DNC in Action
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: One way to see DNC’s operation in action is to train it on a simple task that
+    would allow us to look at the weightings and the parameters’ values and visualize
+    them in an interpretable way. For this simple task, we’ll use the copy problem
+    we already saw with NTMs, but in a slightly modified form.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of trying to copy a single sequence of binary vectors, our task here
+    will be to copy a series of such sequences. In [Figure 12-8](#single_v_series_of_input_sequences), (a)
+    shows the single sequence input. After processing such single sequence input and
+    copying the same sequence to the output, the DNC would have finished its program,
+    and its memory would be reset in a way that will not allow us to see how it can
+    dynamically manage it. Instead we’ll treat a series of such sequences, shown in
+    [Figure 12-8](#single_v_series_of_input_sequences) (b), as a single input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1208.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-8\. Single sequence input versus a series of input sequences
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Figure 12-9](#viz_of_the_dnc_operation_on_copy_problem) shows a visualization
+    of the DNC operation after being trained on a series of length 4 where each sequence
+    contains five binary vectors and an end mark. The DNC used here has only 10 memory
+    locations, so there’s no way it can store all 20 vectors in the input. A feed-forward
+    controller is used to ensure that nothing would be stored in a recurrent state,
+    and only one read head is used to make the visualization more clear. These constraints
+    should force the DNC to learn how to deallocate and reuse memory to successfully
+    copy the whole input, and indeed it does.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can see in that visualization how the DNC is writing each vector of the five
+    in a sequence into a single memory location. As soon as the end mark is seen,
+    the read head starts reading from these locations in the exact same order of writing.
+    We can see how both the allocation and free gates alternate in activation between
+    writing and reading phases of each sequence in the series. From the usage vector
+    chart at the bottom, we can also see how after a memory location is written to,
+    its usage becomes exactly 1, and how it drops to 0 just after reading from that
+    location, indicating that it was freed and can be reused again.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1209.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-9\. Visualization of the DNC operation on the copy problem
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This visualization is part of the open source implementation of the DNC architecture
+    by [Mostafa Samir](https://oreil.ly/TtKJ8). In the next section we’ll learn the
+    important tips and tricks that will allow us to implement a simpler version of
+    DNC on the reading comprehension tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing the DNC in PyTorch
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Implementing the DNC architecture is essentially a direct application of the
+    math we just discussed. So with the full implementation in the code repository
+    associated with the book, we’ll just be focusing on the tricky parts and introduce
+    some new PyTorch practice while we’re at it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main part of the implementation resides in the *mem_ops.py* file where
+    all of the attention and access mechanisms are implemented. This file is then
+    imported to be used with the controller. Two operations that might be a little
+    tricky to implement are the link matrix update and the allocation weighting calculation.
+    Both of these operations can be naively implemented with `for` loops, but using
+    `for` loops in creating a computational graph is generally not a good idea. Let’s
+    take the link matrix update operation first and see how it looks with a loop-based
+    implementation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: After that computational graph is fully defined, it’s then fed with concrete
+    values and executed. With that in mind, we can see, as depicted in [Figure 12-10](#computational_graph_of_the_link_matrix),
+    how in most of the iterations of the `for` loop, a new set of nodes representing
+    the loop body gets added in the computational graph. So for  *N* memory locations,
+    we end up with <math alttext="upper N squared minus upper N"><mrow><msup><mi>N</mi>
+    <mn>2</mn></msup> <mo>-</mo> <mi>N</mi></mrow></math>  identical copies of the
+    same nodes, each for each iteration, each taking up a chunk of our RAM and needing
+    its own time to be processed before the next can be. When *N* is a small number,
+    say 5, we get 20 identical copies, which is not so bad. However, if we want to
+    use a larger memory, like with <math alttext="upper N equals 256"><mrow><mi>N</mi>
+    <mo>=</mo> <mn>256</mn></mrow></math> , we get 65,280 identical copies of the
+    nodes, which is catastrophic for both the memory usage and the execution time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1210.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-10\. The computational graph of the link matrix update operation built
+    with the `for` loop implementation
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'One possible way to overcome such an issue is *vectorization*. In vectorization,
+    we take an array operation that is originally defined in terms of individual elements
+    and rewrite it as an operation on the whole array at once. For the link matrix
+    update, we can rewrite the operation as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="normal upper L Subscript t Baseline equals left-bracket left-parenthesis
+    1 minus normal w Subscript t Superscript w Baseline circled-plus normal w Subscript
+    t Superscript w Baseline right-parenthesis ring normal upper L Subscript t minus
+    1 Baseline plus normal w Subscript t Superscript w Baseline normal p Subscript
+    t minus 1 Baseline right-bracket ring left-parenthesis 1 minus upper I right-parenthesis"><mrow><msub><mi
+    mathvariant="normal">L</mi> <mi>t</mi></msub> <mo>=</mo> <mfenced separators=""
+    open="[" close="]"><mfenced separators="" open="(" close=")"><mn>1</mn> <mo>-</mo>
+    <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup> <mo>⊕</mo>
+    <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup></mfenced>
+    <mo>∘</mo> <msub><mi mathvariant="normal">L</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>+</mo> <msubsup><mi mathvariant="normal">w</mi> <mi>t</mi> <mi>w</mi></msubsup>
+    <msub><mi mathvariant="normal">p</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></mfenced>
+    <mo>∘</mo> <mfenced separators="" open="(" close=")"><mn>1</mn> <mo>-</mo> <mi>I</mi></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Where  <math alttext="upper I"><mi>I</mi></math>  is the identity matrix, and
+    the product <math alttext="normal w Subscript t Superscript w Baseline normal
+    p Subscript t minus 1"><mrow><msubsup><mi mathvariant="normal">w</mi> <mi>t</mi>
+    <mi>w</mi></msubsup> <msub><mi mathvariant="normal">p</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></mrow></math>
+     is an outer product. To achieve this vectorization, we define a new operator,
+    the pairwise-addition of vectors, denoted by  <math alttext="circled-plus"><mo>⊕</mo></math>
+    . This new operator is simply defined as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math alttext="u circled-plus v equals Start 3 By 3 Matrix 1st Row 1st Column
+    u 1 plus v 1 2nd Column  ellipsis 3rd Column u 1 plus v Subscript n Baseline 2nd
+    Row 1st Column  ellipsis 2nd Column  ellipsis 3rd Column  ellipsis 3rd Row 1st
+    Column u Subscript n Baseline plus v 1 2nd Column  ellipsis 3rd Column u Subscript
+    n Baseline plus v Subscript n EndMatrix"><mrow><mi>u</mi> <mo>⊕</mo> <mi>v</mi>
+    <mo>=</mo> <mfenced open="(" close=")"><mtable><mtr><mtd><mrow><msub><mi>u</mi>
+    <mn>1</mn></msub> <mo>+</mo> <msub><mi>v</mi> <mn>1</mn></msub></mrow></mtd> <mtd><mo>⋯</mo></mtd>
+    <mtd><mrow><msub><mi>u</mi> <mn>1</mn></msub> <mo>+</mo> <msub><mi>v</mi> <mi>n</mi></msub></mrow></mtd></mtr>
+    <mtr><mtd><mo>⋮</mo></mtd> <mtd><mo>⋱</mo></mtd> <mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><mrow><msub><mi>u</mi>
+    <mi>n</mi></msub> <mo>+</mo> <msub><mi>v</mi> <mn>1</mn></msub></mrow></mtd> <mtd><mo>⋯</mo></mtd>
+    <mtd><mrow><msub><mi>u</mi> <mi>n</mi></msub> <mo>+</mo> <msub><mi>v</mi> <mi>n</mi></msub></mrow></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This operator adds a little bit to the memory requirements of the implementation,
+    but not as much as the case in the loop-based implementation. With this vectorized
+    reformulation of the update rule, we rewrite a more memory- and time-efficient
+    implementation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A similar process could be made for the allocation weightings rule. Instead
+    of having a single rule for each element in the weighting vector, we can decompose
+    it into a few operations that work on the whole vector at once:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While sorting the usage vector to get the free list, we also grab the sorted
+    usage vector itself.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We calculate the cumulative product vector of the sorted usage. Each element
+    of that vector is the same as the product term in our original element-wise rule.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We multiply the cumulative product vector by (1 – the sorted usage vector).
+    The resulting vector is the allocation weighting but in the sorted order, not
+    the original order of the memory location.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: For each element of that out-of-order allocation weighting, we take its value
+    and put it in the corresponding index in the free list. The resulting vector is
+    now the correct allocation weighting that we want.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[Figure 12-11](#fig0744) summarizes this process with a numerical example.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](Images/fdl2_1211.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 12-11\. The vectorized process of calculating the allocation weightings
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: It may seem that we still need loops for the sorting operation in step 1 and
+    for reordering the weights in step 4, but fortunately PyTorch provides symbolic
+    operations that would allow us to carry out these operations without the need
+    for a Python loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For sorting we’ll be using `torch.topk`. This operation takes a tensor and
+    a number <math alttext="k"><mi>k</mi></math> , and returns both the sorted top
+    <math alttext="k"><mi>k</mi></math> values in descending order and the indices
+    of these values. To get the sorted usage vector in ascending order, we need to
+    get the top *N* values of the negative of the usage vector. We can bring back
+    the sorted values to their original signs by multiplying the resulting vector
+    by <math alttext="negative 1"><mrow><mo>-</mo> <mn>1</mn></mrow></math> :'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For reordering the allocation weights, we first create an empty tensor array
+    of size N to be the container of the weights in their correct order, and then
+    put the values in their correct places using the instance method `scatter(indices,
+    values)`. This method takes in its second argument a tensor, and scatters the
+    values along its first dimension across the array, with the first argument being
+    a list of indices of the locations to which we want to scatter the corresponding
+    values. In our case here, the first argument is the free list, and the second
+    is the out-of-order allocation weightings. Once we get the array with the weights
+    in the correct places, we use another instance method, `pack()`, to wrap up the
+    whole array into a `Tensor` object:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The last part of the implementation that requires looping is the controller
+    loop itself—the loop that goes over each step of the input sequence to process
+    it. Because vectorization works only when operations are defined element-wise,
+    the controller’s loop can’t be vectorized. Fortunately, PyTorch still provides
+    us with a method to escape Python’s `for` loops and their massive performance
+    hit; this method is the *symbolic loop. *A symbolic loop works like most of our
+    symbolic operations:  instead of unrolling the actual loop into the graph, it
+    defines a node that would be executed as a loop when the graph is executed.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll leave the symbolic loop implementation in PyTorch up to the reader. More
+    information on how you can use symbolic loops in PyTorch can be found in the torch.fx
+    [documentation](https://oreil.ly/qtgBt).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The TensorFlow implementation of our symbolic loop can be found in the *train_babi.py*
+    file in the code repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Teaching a DNC to Read and Comprehend
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Earlier in the chapter, when we were talking about neural n-grams, we said that
+    it’s not of the complexity of an AI that can answer questions after reading a
+    story. Now we have reached the point where we can build such a system because
+    this is exactly what DNCs do when applied on the bAbI dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The bAbI dataset is a synthetic dataset consisting of 20 sets of stories, questions
+    on those stories, and their answers. Each set represents a specific and unique
+    task of reasoning and inference from text. In the version we’ll use, each task
+    contains 10,000 questions for training and 1,000 questions for testing. For example,
+    the following story (from which the passage we saw earlier was adapted) is from
+    the *lists-and-sets* task where the answers to the questions are lists/sets of
+    objects mentioned in the story:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is taken directly from the dataset, and as you can see, a story is organized
+    into numbered sentences that start from 1\. Each question ends with a question
+    mark, and the words that directly follow the question mark are the answers. If
+    an answer consists of more than one word, the words are separated by commas. The
+    numbers that follow the answers are supervisory signals that point to the sentences
+    that contain the answers’ words.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make the tasks more challenging, we’ll discard these supervisory signals
+    and let the system learn to read the text and figure out the answer on its own.
+    Following the DNC paper, we’ll preprocess our dataset by removing all the numbers
+    and punctuation except for “?” and “.”, bringing all the words to lowercase, and
+    replacing the answer words with dashes “-” in the input sequence. After this we
+    get 159 unique words and marks (lexicons) across all the tasks, so we’ll encode
+    each lexicon as a one-hot vector of size 159, no embeddings, just the plain words
+    directly. Finally, we combine all of the 200,000 training questions to train the
+    model jointly on them, and we keep each task’s test questions separate to test
+    the trained model afterward on each task individually. This whole process is implemented
+    in the *preprocess.py* file in the code repository.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To train the model, we randomly sample a story from the encoded training data,
+    pass it through the DNC with an LSTM controller, and get the corresponding output
+    sequence. We then measure the loss between the output sequence and the desired
+    sequence using the softmax cross-entropy loss, but only on the steps that contain
+    answers. All the other steps are ignored by weighting the loss with a weights
+    vector that has 1 at the answer’s steps and 0 elsewhere. This process is implemented
+    in the *train_babi.py* file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the model is trained, we test its performance on the remaining test questions.
+    Our metric will be the percentage of questions the model failed to answer in each
+    task. An answer to a question is the word with the largest softmax value in the
+    output, or the most probable word. A question is considered to be answered correctly
+    if all of its answer’s words are the correct words. If the model failed to answer
+    more than 5% of a task’s questions, we consider that the model failed on that
+    task. The testing procedure is found in the *test_babi.py* file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After training the model for about 500,000 iterations (caution—it takes a long
+    time!), we can see that it’s performing pretty well on most of the tasks. At the
+    same time, it’s performing badly on more difficult tasks like *pathfinding*, where
+    the task is to answer questions about how to get from one place to another. The
+    following report compares our model’s results to the mean values reported in the
+    original DNC paper:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we’ve explored the cutting edge of deep learning research with
+    NTMs and DNCs, culminating with the implementation of a model that can solve an
+    involved reading comprehension task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the final chapter of this book, we’ll begin to explore a very different space
+    of problems known as reinforcement learning. We’ll build an intuition for this
+    new class of tasks and develop an algorithmic foundation to tackle these problems
+    using the deep learning tools we’ve developed thus far.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([1](ch12.xhtml#idm45934167096448-marker)) Source: [Graves et al. “Neural
+    Turing Machines.” (2014)](https://arxiv.org/abs/1410.5401)'
+  prefs: []
+  type: TYPE_NORMAL
