@@ -163,45 +163,45 @@ Create React App 是一个用于简单 React 网站的流行工具。如果您�
 这段代码可以在 GitHub 仓库的[*chapter5/simple/simple-ttt-model*](https://oreil.ly/38zZx)找到，看起来是这样的：
 
 ```py
-tf.ready().then(()=>{![1](img/1.png)constmodelPath="model/ttt_model.json"![2](img/2.png)tf.tidy(()=>{tf.loadLayersModel(modelPath).then(model=>{![3](img/3.png)// Three board states
-constemptyBoard=tf.zeros([9])![4](img/4.png)constbetterBlockMe=tf.tensor([-1,0,0,1,1,-1,0,0,-1])![5](img/5.png)constgoForTheKill=tf.tensor([1,0,1,0,-1,-1,-1,0,1])![6](img/6.png)// Stack states into a shape [3, 9]
-constmatches=tf.stack([emptyBoard,betterBlockMe,goForTheKill])![7](img/7.png)constresult=model.predict(matches)![8](img/8.png)// Log the results
-result.reshape([3,3,3]).print()![9](img/9.png)})})})
+tf.ready().then(()=>{①constmodelPath="model/ttt_model.json"②tf.tidy(()=>{tf.loadLayersModel(modelPath).then(model=>{③// Three board states
+constemptyBoard=tf.zeros([9])④constbetterBlockMe=tf.tensor([-1,0,0,1,1,-1,0,0,-1])⑤constgoForTheKill=tf.tensor([1,0,1,0,-1,-1,-1,0,1])⑥// Stack states into a shape [3, 9]
+constmatches=tf.stack([emptyBoard,betterBlockMe,goForTheKill])⑦constresult=model.predict(matches)⑧// Log the results
+result.reshape([3,3,3]).print()⑨})})})
 ```
 
-![1](img/#co_introducing_models_CO1-1)
+①
 
 使用`tf.ready`，当 TensorFlow.js 准备好时解析。不需要 DOM 访问。
 
-![2](img/#co_introducing_models_CO1-2)
+②
 
 虽然模型是两个文件，但只需要识别 JSON 文件。它了解并加载任何额外的模型文件。
 
-![3](img/#co_introducing_models_CO1-3)
+③
 
 `loadLayersModel`模型解析为完全加载的模型。
 
-![4](img/#co_introducing_models_CO1-4)
+④
 
 一个空棋盘是九个零，代表情景 A。
 
-![5](img/#co_introducing_models_CO1-5)
+⑤
 
 编码为 X 等于`-1`代表情景 B。
 
-![6](img/#co_introducing_models_CO1-6)
+⑥
 
 编码为 X 等于`1`代表情景 C。
 
-![7](img/#co_introducing_models_CO1-7)
+⑦
 
 使用`tf.stack`将三个 1D 张量组合成一个 2D 张量。
 
-![8](img/#co_introducing_models_CO1-8)
+⑧
 
 使用`.predict`来要求模型识别最佳的下一步。
 
-![9](img/#co_introducing_models_CO1-9)
+⑨
 
 原始输出将被形状化为`[3, 9]`，但这是一个很好的情况，通过重新塑造输出使其更易读。打印结果在三个 3 x 3 的网格中，这样我们可以像游戏棋盘一样阅读它们。
 
@@ -296,48 +296,48 @@ Google 已经开始免费托管像 Inception v3 这样的模型在其自己的 C
 ```py
 
 tf.ready().then(()=>{constmodelPath="https://tfhub.dev/google/tfjs-model/imagenet/inception_v3/classification/3
-    /default/1";![1](img/1.png)tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{![2](img/2.png)constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// Inception v3 expects an image resized to 299x299
-constreadyfied=tf.image.resizeBilinear(myTensor,[299,299],true)![3](img/3.png).div(255)![4](img/4.png).reshape([1,299,299,3]);![5](img/5.png)constresult=model.predict(readyfied);![6](img/6.png)result.print();![7](img/7.png)const{values,indices}=tf.topk(result,3);![8](img/8.png)indices.print();![9](img/9.png)// Let's hear those winners
-constwinners=indices.dataSync();console.log(`![10](img/10.png) First place ${INCEPTION_CLASSES[winners[0]]},  Second place ${INCEPTION_CLASSES[winners[1]]},  Third place ${INCEPTION_CLASSES[winners[2]]}`);});});});
+    /default/1";①tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{②constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// Inception v3 expects an image resized to 299x299
+constreadyfied=tf.image.resizeBilinear(myTensor,[299,299],true)③.div(255)④.reshape([1,299,299,3]);⑤constresult=model.predict(readyfied);⑥result.print();⑦const{values,indices}=tf.topk(result,3);⑧indices.print();⑨// Let's hear those winners
+constwinners=indices.dataSync();console.log(`⑩ First place ${INCEPTION_CLASSES[winners[0]]},  Second place ${INCEPTION_CLASSES[winners[1]]},  Third place ${INCEPTION_CLASSES[winners[2]]}`);});});});
 ```
 
-![1](img/#comarker1)
+①
 
 这是 Inception 模型的 TFHub 的 URL。
 
-![2](img/#comarker2)
+②
 
 加载图模型并将 `fromTFHub` 设置为 true。
 
-![3](img/#comarker3)
+③
 
 图片被调整为 299 x 299。
 
-![4](img/#comarker4)
+④
 
 将 `fromPixels` 的结果转换为介于 0 和 1 之间的值（对数据进行归一化）。
 
-![5](img/#comarker5)
+⑤
 
 将 3D 张量转换为单批次 4D 张量，就像模型期望的那样。
 
-![6](img/#comarker6)
+⑥
 
 对图片进行预测。
 
-![7](img/#comarker7)
+⑦
 
 打印内容太多被截断了。
 
-![8](img/#comarker8)
+⑧
 
 恢复前三个值作为我们的猜测。
 
-![9](img/#comarker9)
+⑨
 
 打印前三个预测索引。
 
-![10](img/#comarker10)
+⑩
 
 将索引映射到它们的标签并打印出来。`INCEPTION_CLASSES` 是一个标签数组，映射到模型输出。
 
@@ -400,14 +400,14 @@ result.print();
 对于这节课，CSS 已经直接嵌入到 HTML 中以方便。图像和画布布局如下：
 
 ```py
-<divstyle="position: relative; height: 80vh">![1](img/1.png)<imgid="pet"src="/dog1.jpg"height="100%"/><canvasid="detection"style="position: absolute; left: 0;"><canvas/>![2](img/2.png)</div>
+<divstyle="position: relative; height: 80vh">①<imgid="pet"src="/dog1.jpg"height="100%"/><canvasid="detection"style="position: absolute; left: 0;"><canvas/>②</div>
 ```
 
-![1](img/#co_introducing_models_CO2-1)
+①
 
 包含的`div`是相对定位的，并且锁定在页面高度的 80%处。
 
-![2](img/#co_introducing_models_CO2-2)
+②
 
 画布以绝对位置放置在图像上。
 
@@ -420,26 +420,26 @@ result.print();
 使用起点、覆盖矩形的宽度和高度，您可以用几行代码在画布上按比例绘制它。记住，张量输出是一个百分比，需要在每个维度上进行缩放。
 
 ```py
-// Draw box on canvas constdetection=document.getElementById("detection");constimgWidth=petImage.width;constimgHeight=petImage.height;detection.width=imgWidth;![1](img/1.png)detection.height=imgHeight;constbox=result.dataSync();![2](img/2.png)conststartX=box[0]*imgWidth;![3](img/3.png)conststartY=box[1]*imgHeight;constwidth=(box[2]-box[0])*imgWidth;![4](img/4.png)constheight=(box[3]-box[1])*imgHeight;constctx=detection.getContext("2d");ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.strokeRect(startX,startY,width,height);![5](img/5.png)
+// Draw box on canvas constdetection=document.getElementById("detection");constimgWidth=petImage.width;constimgHeight=petImage.height;detection.width=imgWidth;①detection.height=imgHeight;constbox=result.dataSync();②conststartX=box[0]*imgWidth;③conststartY=box[1]*imgHeight;constwidth=(box[2]-box[0])*imgWidth;④constheight=(box[3]-box[1])*imgHeight;constctx=detection.getContext("2d");ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.strokeRect(startX,startY,width,height);⑤
 ```
 
-![1](img/#co_introducing_models_CO3-1)
+①
 
 使检测画布与其所覆盖的图像大小相同。
 
-![2](img/#co_introducing_models_CO3-2)
+②
 
 获取边界框结果。
 
-![3](img/#co_introducing_models_CO3-3)
+③
 
 将起点 X 和 Y 缩放回图像。
 
-![4](img/#co_introducing_models_CO3-4)
+④
 
 通过从 X[1]减去 X[2]来找到框的宽度，然后通过图像宽度进行缩放。Y[1]和 Y[2]也是如此。
 
-![5](img/#co_introducing_models_CO3-5)
+⑤
 
 现在使用画布的 2D 上下文来绘制所需的矩形。
 

@@ -37,18 +37,18 @@
 在 TPU 上运行与在 CPU 或 GPU 上运行非常相似。让我们回顾一下如何在 GPU 上训练模型的以下代码：
 
 ```py
-device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")![1](img/1.png)model.to(device)![2](img/2.png)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)![3](img/3.png)labels=labels.to(device)![3](img/3.png)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()
+device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")①model.to(device)②forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)③labels=labels.to(device)③optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO1-1)
+①
 
 如果有 GPU 可用，请将设备配置为 GPU。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO1-2)
+②
 
 将模型发送到设备。
 
-![3](img/#co_pytorch_acceleration_and_optimization_CO1-3)
+③
 
 将输入和标签发送到 GPU。
 
@@ -64,7 +64,7 @@ device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")![1](img/1.png)mo
 
 ```py
 &#33;curl 'https://raw.githubusercontent.com/pytorch' \'/xla/master/contrib/scripts/env-setup.py'\
--opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ![1](img/1.png)
+-opytorch-xla-env-setup.py&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ①
 ```
 
 <1>这些是打算在笔记本中运行的命令。在命令行上运行时，请省略“!”。
@@ -82,10 +82,10 @@ device = xm.xla_device()
 设备设置完成后，其余代码完全相同：
 
 ```py
-model.to(device)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)labels=labels.to(device)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()print(output.device)![1](img/1.png)# out: xla:1
+model.to(device)forepochinrange(n_epochs):fordataintrainloader:input,labels=datainput=input.to(device)labels=labels.to(device)optimizer.zero_grad()output=model(input)loss=criterion(input,labels)loss.backward()optimizer.step()print(output.device)①# out: xla:1
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO2-1)
+①
 
 如果 Colab 配置为 TPU，您应该看到 `xla:1`。
 
@@ -162,26 +162,26 @@ from torch.nn.parallel \
 请注意，我们正在使用三个新库—*torch.distributed*、*torch.multiprocessing*和*torch.nn.parallel*。以下代码向您展示如何创建一个分布式训练循环：
 
 ```py
-defdist_training_loop(rank,world_size,dataloader,model,loss_fn,optimizer):dist.init_process_group("gloo",rank=rank,world_size=world_size)![1](img/1.png)model=model.to(rank)![2](img/2.png)ddp_model=DDP(model,device_ids=[rank])![3](img/3.png)optimizer=optimizer(ddp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(rank)labels=labels.to(rank)![4](img/4.png)optimizer.zero_grad()outputs=ddp_model(input)![5](img/5.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()dist.destroy_process_group()
+defdist_training_loop(rank,world_size,dataloader,model,loss_fn,optimizer):dist.init_process_group("gloo",rank=rank,world_size=world_size)①model=model.to(rank)②ddp_model=DDP(model,device_ids=[rank])③optimizer=optimizer(ddp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(rank)labels=labels.to(rank)④optimizer.zero_grad()outputs=ddp_model(input)⑤loss=loss_fn(outputs,labels)loss.backward()optimizer.step()dist.destroy_process_group()
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO3-1)
+①
 
 使用`world_size`进程设置一个进程组。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO3-2)
+②
 
 将模型移动到 ID 为`rank`的 GPU。
 
-![3](img/#co_pytorch_acceleration_and_optimization_CO3-3)
+③
 
 将模型包装在 DDP 中。
 
-![4](img/#co_pytorch_acceleration_and_optimization_CO3-4)
+④
 
 将输入和标签移动到 ID 为`rank`的 GPU。
 
-![5](img/#co_pytorch_acceleration_and_optimization_CO3-5)
+⑤
 
 调用 DDP 模型进行前向传递。
 
@@ -221,24 +221,24 @@ GPU 设备不能在进程之间共享。
 以下代码演示了 AlexNet 的双 GPU 实现：
 
 ```py
-classTwoGPUAlexNet(AlexNet):def__init__(self):super(ModelParallelAlexNet,self).__init__(num_classes=num_classes,*args,**kwargs)self.features.to('cuda:0')self.avgpool.to('cuda:0')self.classifier.to('cuda:1')self.split_size=split_sizedefforward(self,x):splits=iter(x.split(self.split_size,dim=0))s_next=next(splits)s_prev=self.seq1(s_next).to('cuda:1')ret=[]fors_nextinsplits:s_prev=self.seq2(s_prev)![1](img/1.png)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))s_prev=self.seq1(s_next).to('cuda:1')![2](img/2.png)s_prev=self.seq2(s_prev)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))returntorch.cat(ret)
+classTwoGPUAlexNet(AlexNet):def__init__(self):super(ModelParallelAlexNet,self).__init__(num_classes=num_classes,*args,**kwargs)self.features.to('cuda:0')self.avgpool.to('cuda:0')self.classifier.to('cuda:1')self.split_size=split_sizedefforward(self,x):splits=iter(x.split(self.split_size,dim=0))s_next=next(splits)s_prev=self.seq1(s_next).to('cuda:1')ret=[]fors_nextinsplits:s_prev=self.seq2(s_prev)①ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))s_prev=self.seq1(s_next).to('cuda:1')②s_prev=self.seq2(s_prev)ret.append(self.fc(s_prev.view(s_prev.size(0),-1)))returntorch.cat(ret)
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO4-1)
+①
 
 `s_prev` 在 `cuda:1` 上运行。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO4-2)
+②
 
 `s_next` 在 `cuda:0` 上运行，可以与 `s_prev` 并行运行。
 
 因为我们从 `AlexNet` 类派生一个子类，我们继承了它的模型结构，所以不需要创建我们自己的层。相反，我们需要描述模型的哪些部分放在 GPU0 上，哪些部分放在 GPU1 上。然后我们需要在 `forward()` 方法中通过每个 GPU 管道传递数据来实现 GPU 流水线。当训练模型时，您需要将标签放在最后一个 GPU 上，如下面的代码所示：
 
 ```py
-model=TwoGPUAlexNet()loss_fn=nn.MSELoss()optimizer=optim.SGD(model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader;input=input.to("cuda:0")labels=labels.to("cuda:1")![1](img/1.png)optimizer.zero_grad()outputs=model(input)loss_fn(outputs,labels).backward()optimizer.step()
+model=TwoGPUAlexNet()loss_fn=nn.MSELoss()optimizer=optim.SGD(model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader;input=input.to("cuda:0")labels=labels.to("cuda:1")①optimizer.zero_grad()outputs=model(input)loss_fn(outputs,labels).backward()optimizer.step()
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO5-1)
+①
 
 将输入发送到 GPU0，将标签发送到 GPU1。
 
@@ -283,18 +283,18 @@ class Simple2GPUModel(nn.Module):
 以下代码显示了训练循环的更改：
 
 ```py
-defmodel_parallel_training(rank,world_size):print(f"Running DDP with a model parallel")setup(rank,world_size)# set up mp_model and devices for this processdev0=rank*2dev1=rank*2+1mp_model=Simple2GPUModel(dev0,dev1)ddp_mp_model=DDP(mp_model)![1](img/1.png)loss_fn=nn.MSELoss()optimizer=optim.SGD(ddp_mp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(dev0),labels=labels,to(dev1)![2](img/2.png)optimizer.zero_grad()outputs=ddp_mp_model(input)![3](img/3.png)loss=loss_fn(outputs,labels)loss.backward()optimizer.step()cleanup()
+defmodel_parallel_training(rank,world_size):print(f"Running DDP with a model parallel")setup(rank,world_size)# set up mp_model and devices for this processdev0=rank*2dev1=rank*2+1mp_model=Simple2GPUModel(dev0,dev1)ddp_mp_model=DDP(mp_model)①loss_fn=nn.MSELoss()optimizer=optim.SGD(ddp_mp_model.parameters(),lr=0.001)forepochsinrange(n_epochs):forinput,labelsindataloader:input=input.to(dev0),labels=labels,to(dev1)②optimizer.zero_grad()outputs=ddp_mp_model(input)③loss=loss_fn(outputs,labels)loss.backward()optimizer.step()cleanup()
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO6-1)
+①
 
 将模型包装在 `DDP` 中。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO6-2)
+②
 
 将输入和标签移动到适当的设备 ID。
 
-![3](img/#co_pytorch_acceleration_and_optimization_CO6-3)
+③
 
 输出在 `dev1` 上。
 
@@ -319,20 +319,20 @@ c10d 组件是一个用于在进程之间传输张量的通信库。c10d 被 DDP
 要在多台机器上运行，我们使用一个指定配置的启动脚本来运行 DDP。启动脚本包含在 `torch.distributed` 中，并且可以按照以下代码执行。假设您有两个节点，节点 0 和节点 1。节点 0 是主节点，IP 地址为 192.168.1.1，空闲端口为 1234。在节点 0 上，您将运行以下脚本：
 
 ```py
->>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=0![1](img/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
+>>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=0①--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO7-1)
+①
 
 `node_rank` 被设置为节点 0。
 
 在节点 1 上，您将运行下一个脚本。请注意，此节点的等级是 `1`：
 
 ```py
->>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=1![1](img/1.png)--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
+>>>python-mtorch.distributed.launch--nproc_per_node=NUM_GPUS--nnodes=2--node_rank=1①--master_addr="192.168.1.1"--master_port=1234TRAINING_SCRIPT.py(--arg1--arg2--arg3)
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO8-1)
+①
 
 `node_rank` 被设置为节点 1。
 
@@ -369,14 +369,14 @@ Ray Tune 支持最先进的超参数搜索算法和分布式训练。它不断�
 让我们重新定义我们的模型，以便我们可以配置全连接层中节点的数量，如下面的代码所示：
 
 ```py
-importtorch.nnasnnimporttorch.nn.functionalasFclassNet(nn.Module):def__init__(self,nodes_1=120,nodes_2=84):super(Net,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.pool=nn.MaxPool2d(2,2)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,nodes_1)![1](img/1.png)self.fc2=nn.Linear(nodes_1,nodes_2)![2](img/2.png)self.fc3=nn.Linear(nodes_2,10)defforward(self,x):x=self.pool(F.relu(self.conv1(x)))x=self.pool(F.relu(self.conv2(x)))x=x.view(-1,16*5*5)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnx
+importtorch.nnasnnimporttorch.nn.functionalasFclassNet(nn.Module):def__init__(self,nodes_1=120,nodes_2=84):super(Net,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.pool=nn.MaxPool2d(2,2)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,nodes_1)①self.fc2=nn.Linear(nodes_1,nodes_2)②self.fc3=nn.Linear(nodes_2,10)defforward(self,x):x=self.pool(F.relu(self.conv1(x)))x=self.pool(F.relu(self.conv2(x)))x=x.view(-1,16*5*5)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnx
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO9-1)
+①
 
 配置`fc1`中的节点。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO9-2)
+②
 
 配置`fc2`中的节点。
 
@@ -440,19 +440,19 @@ def load_data(data_dir="./data"):
 现在我们可以将训练循环封装成一个函数，*train_model()*，如下面的代码所示。这是一个大段的代码；但是，这应该对您来说很熟悉：
 
 ```py
-fromtorchimportoptimfromtorchimportnnfromtorch.utils.dataimportrandom_splitdeftrain_model(config):device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")model=Net(config['nodes_1'],config['nodes_2']).to(device=device)![1](img/1.png)criterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),lr=config['lr'],momentum=0.9)![2](img/2.png)trainset,testset=load_data()test_abs=int(len(trainset)*0.8)train_subset,val_subset=random_split(trainset,[test_abs,len(trainset)-test_abs])trainloader=torch.utils.data.DataLoader(train_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](img/3.png)valloader=torch.utils.data.DataLoader(val_subset,batch_size=int(config["batch_size"]),shuffle=True)![3](img/3.png)forepochinrange(10):train_loss=0.0epoch_steps=0fordataintrainloader:inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()val_loss=0.0total=0correct=0fordatainvalloader:withtorch.no_grad():inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,predicted=torch.max(outputs.data,1)total+=labels.size(0)correct+=\
+fromtorchimportoptimfromtorchimportnnfromtorch.utils.dataimportrandom_splitdeftrain_model(config):device=torch.device("cuda"iftorch.cuda.is_available()else"cpu")model=Net(config['nodes_1'],config['nodes_2']).to(device=device)①criterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),lr=config['lr'],momentum=0.9)②trainset,testset=load_data()test_abs=int(len(trainset)*0.8)train_subset,val_subset=random_split(trainset,[test_abs,len(trainset)-test_abs])trainloader=torch.utils.data.DataLoader(train_subset,batch_size=int(config["batch_size"]),shuffle=True)③valloader=torch.utils.data.DataLoader(val_subset,batch_size=int(config["batch_size"]),shuffle=True)③forepochinrange(10):train_loss=0.0epoch_steps=0fordataintrainloader:inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()val_loss=0.0total=0correct=0fordatainvalloader:withtorch.no_grad():inputs,labels=datainputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,predicted=torch.max(outputs.data,1)total+=labels.size(0)correct+=\
 (predicted==labels).sum().item()loss=criterion(outputs,labels)val_loss+=loss.cpu().numpy()print(f'epoch: {epoch} ',f'train_loss: ',f'{train_loss/len(trainloader)}',f'val_loss: ',f'{val_loss/len(valloader)}',f'val_acc: {correct/total}')tune.report(loss=(val_loss/len(valloader)),accuracy=correct/total)
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO10-1)
+①
 
 使模型层可配置。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO10-2)
+②
 
 使学习率可配置。
 
-![3](img/#co_pytorch_acceleration_and_optimization_CO10-3)
+③
 
 使批量大小可配置。
 
@@ -743,14 +743,14 @@ prune.random_unstructured(model.conv1,
 您可以以不同方式修剪模块和参数。例如，您可能希望按模块或层类型修剪，并将修剪应用于卷积层和线性层的方式不同。以下代码演示了一种方法： 
 
 ```py
-model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)![1](img/1.png)elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)![2](img/2.png)
+model=LeNet5().to(device)forname,moduleinmodel.named_modules():ifisinstance(module,torch.nn.Conv2d):prune.random_unstructured(module,name='weight',amount=0.3)①elifisinstance(module,torch.nn.Linear):prune.random_unstructured(module,name='weight',amount=0.5)②
 ```
 
-![1](img/#co_pytorch_acceleration_and_optimization_CO11-1)
+①
 
 通过 30%修剪所有 2D 卷积层。
 
-![2](img/#co_pytorch_acceleration_and_optimization_CO11-2)
+②
 
 通过 50%修剪所有线性层。
 

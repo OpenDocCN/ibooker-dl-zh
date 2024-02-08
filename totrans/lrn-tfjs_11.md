@@ -71,30 +71,30 @@
 感谢 TensorFlow.js，添加卷积层与添加密集层一样简单，但称为`conv2d`，并具有自己的属性。
 
 ```py
-tf.layers.conv2d({filters: 32,![1](img/1.png)kernelSize: 3,![2](img/2.png)strides: 1,![3](img/3.png)padding:'same',![4](img/4.png)activation:'relu',![5](img/5.png)inputShape:[28,28,1]![6](img/6.png)})
+tf.layers.conv2d({filters: 32,①kernelSize: 3,②strides: 1,③padding:'same',④activation:'relu',⑤inputShape:[28,28,1]⑥})
 ```
 
-![1](img/#co_image_training_CO1-1)
+①
 
 确定要运行多少个滤波器。
 
-![2](img/#co_image_training_CO1-2)
+②
 
 `kernelSize`控制滤波器的大小。这里的`3`表示 3 x 3 的滤波器。
 
-![3](img/#co_image_training_CO1-3)
+③
 
 小小的 3 x 3 滤波器不适合您的图像，因此需要在图像上滑动。步幅是滤波器每次滑动的像素数。
 
-![4](img/#co_image_training_CO1-4)
+④
 
 填充允许卷积在`strides`和`kernelSize`不能均匀地分割成图像宽度和高度时决定如何处理。当将填充设置为`same`时，会在图像周围添加零，以保持生成的卷积图像的大小不变。
 
-![5](img/#co_image_training_CO1-5)
+⑤
 
 然后将结果通过您选择的激活函数运行。
 
-![6](img/#co_image_training_CO1-6)
+⑥
 
 输入是一个图像张量，因此输入图像是模型的三维形状。这不是卷积的必需限制，正如您在第六章中学到的那样，但如果您不是在制作完全卷积模型，则建议这样做。
 
@@ -133,14 +133,14 @@ tf.layers.conv2d({filters: 32,![1](img/1.png)kernelSize: 3,![2](img/2.png)stride
 类似于`conv2d`，最大池化被添加为一层，通常紧跟在卷积之后：
 
 ```py
-tf.layers.maxPooling2d({poolSize: 2,![1](img/1.png)strides: 2![2](img/2.png)})
+tf.layers.maxPooling2d({poolSize: 2,①strides: 2②})
 ```
 
-![1](img/#co_image_training_CO2-1)
+①
 
 `poolSize`是窗口大小，就像`kernelSize`一样。之前的例子都是 2（代表 2 x 2）。
 
-![2](img/#co_image_training_CO2-2)
+②
 
 `strides`是在每次操作中向右和向下移动窗口的距离。这也可以写成`strides: [2, 2]`。
 
@@ -242,26 +242,26 @@ tf.layers.maxPooling2d({poolSize: 2,![1](img/1.png)strides: 2![2](img/2.png)})
 
 ```py
 // Read images
-const[X,Y]=awaitfolderToTensors()![1](img/1.png)// Create layers model
-constmodel=getModel()![2](img/2.png)// Train
-awaitmodel.fit(X,Y,{batchSize: 256,validationSplit: 0.1,epochs: 20,shuffle: true,![3](img/3.png)})// Save
-model.save('file://model_result/sorting_hat')![4](img/4.png)// Cleanup!
+const[X,Y]=awaitfolderToTensors()①// Create layers model
+constmodel=getModel()②// Train
+awaitmodel.fit(X,Y,{batchSize: 256,validationSplit: 0.1,epochs: 20,shuffle: true,③})// Save
+model.save('file://model_result/sorting_hat')④// Cleanup!
 tf.dispose([X,Y,model])console.log('Tensors in memory',tf.memory().numTensors)
 ```
 
-![1](img/#co_image_training_CO3-1)
+①
 
 创建一个简单的函数将图片加载到所需的 X 和 Y 张量中。
 
-![2](img/#co_image_training_CO3-2)
+②
 
 创建一个适合的 CNN 层模型。
 
-![3](img/#co_image_training_CO3-3)
+③
 
 使用`shuffle`属性，该属性会对当前批次进行混洗。
 
-![4](img/#co_image_training_CO3-4)
+④
 
 将生成的训练模型保存在本地。
 
@@ -472,23 +472,23 @@ model.compile({
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
-conv2d_Conv2D1 (Conv2D)      [null,28,28,16]           160         ![1](img/1.png)
+conv2d_Conv2D1 (Conv2D)      [null,28,28,16]           160         ①
 _________________________________________________________________
-max_pooling2d_MaxPooling2D1  [null,14,14,16]           0           ![2](img/2.png)
+max_pooling2d_MaxPooling2D1  [null,14,14,16]           0           ②
 _________________________________________________________________
-conv2d_Conv2D2 (Conv2D)      [null,14,14,32]           4640        ![3](img/3.png)
+conv2d_Conv2D2 (Conv2D)      [null,14,14,32]           4640        ③
 _________________________________________________________________
 max_pooling2d_MaxPooling2D2  [null,7,7,32]             0
 _________________________________________________________________
-conv2d_Conv2D3 (Conv2D)      [null,7,7,64]             18496       ![4](img/4.png)
+conv2d_Conv2D3 (Conv2D)      [null,7,7,64]             18496       ④
 _________________________________________________________________
 max_pooling2d_MaxPooling2D3  [null,3,3,64]             0
 _________________________________________________________________
-flatten_Flatten1 (Flatten)   [null,576]                0           ![5](img/5.png)
+flatten_Flatten1 (Flatten)   [null,576]                0           ⑤
 _________________________________________________________________
-dense_Dense1 (Dense)         [null,128]                73856       ![6](img/6.png)
+dense_Dense1 (Dense)         [null,128]                73856       ⑥
 _________________________________________________________________
-dense_Dense2 (Dense)         [null,10]                 1290        ![7](img/7.png)
+dense_Dense2 (Dense)         [null,10]                 1290        ⑦
 =================================================================
 Total params: 98442
 Trainable params: 98442
@@ -496,31 +496,31 @@ Non-trainable params: 0
 _________________________________________________________________
 ```
 
-![1](img/#co_image_training_CO4-1)
+①
 
 第一个卷积层的输入为`[stacksize, 28, 28, 1]`，卷积输出为`[stacksize, 28, 28, 16]`。大小相同是因为我们使用了`padding: 'same'`，而 16 是当我们指定`filters: 16`时得到的 16 个不同的滤波器结果。您可以将其视为每个堆栈中的每个图像的 16 个新滤波图像。这为网络提供了 160 个新参数进行训练。可训练参数的计算方式为(图像数量) * (卷积核窗口) * (输出图像) + (输出图像)，计算结果为`1 * (3x3) * 16 + 16 = 160`。
 
-![2](img/#co_image_training_CO4-2)
+②
 
 最大池化将滤波后的图像行和列大小减半，从而将像素分成四分之一。由于算法是固定的，因此此层没有任何可训练参数。
 
-![3](img/#co_image_training_CO4-3)
+③
 
 卷积和池化再次发生，并且在每个级别都使用更多的滤波器。图像的大小正在缩小，可训练参数的数量迅速增长，即`16 * (3x3) * 32 + 32 = 4,640`。
 
-![4](img/#co_image_training_CO4-4)
+④
 
 在这里，有一个最终的卷积和池化。池化奇数会导致大于 50%的减少。
 
-![5](img/#co_image_training_CO4-5)
+⑤
 
 将 64 个 3 x 3 图像展平为一个由 576 个单元组成的单层。
 
-![6](img/#co_image_training_CO4-6)
+⑥
 
 这 576 个单元中的每一个都与 128 个单元的层密切连接。使用传统的线+节点计算，这将得到`(576 * 128) + 128 = 73,856`个可训练参数。
 
-![7](img/#co_image_training_CO4-7)
+⑦
 
 最后，最后一层有 10 个可能的值对应每个类别。
 
@@ -616,24 +616,24 @@ context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 一旦画布用白色背景初始化，你就可以对画布绘制进行预测了。
 
 ```py
-asyncfunctionmakePrediction(canvas,model){constdrawTensor=tf.browser.fromPixels(canvas,1)![1](img/1.png)constresize=tf.image.resizeNearestNeighbor(drawTensor,[28,28],true)![2](img/2.png)constbatched=resize.expandDims()![3](img/3.png)constresults=awaitmodel.predict(batched)constpredictions=awaitresults.array()// Display
-displayResults(predictions[0])![4](img/4.png)// Cleanup
+asyncfunctionmakePrediction(canvas,model){constdrawTensor=tf.browser.fromPixels(canvas,1)①constresize=tf.image.resizeNearestNeighbor(drawTensor,[28,28],true)②constbatched=resize.expandDims()③constresults=awaitmodel.predict(batched)constpredictions=awaitresults.array()// Display
+displayResults(predictions[0])④// Cleanup
 tf.dispose([drawTensor,resize,batched,results])}
 ```
 
-![1](img/#co_image_training_CO5-1)
+①
 
 当你读取画布时，不要忘记标识你只对单个通道感兴趣；否则，你需要在继续之前将 3D 张量转换为 1D 张量。
 
-![2](img/#co_image_training_CO5-2)
+②
 
 使用最近邻算法将图像调整为 28 x 28 的大小，以输入到模型中。最近邻引起的像素化在这里并不重要，所以这是一个明智的选择，因为它比 `resizeBilinear` 更快。
 
-![3](img/#co_image_training_CO5-3)
+③
 
 模型期望一个批次数据，所以准备数据作为一个批次的数据。这将创建一个 `[1, 28, 28, 1]` 的输入张量。
 
-![4](img/#co_image_training_CO5-4)
+④
 
 预测结果已经作为一个包含 10 个数字的批次返回到 JavaScript。想出一种创造性的方式来展示结果。
 

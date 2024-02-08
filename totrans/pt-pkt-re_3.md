@@ -58,30 +58,30 @@ train_data = CIFAR10(root="./train/",
 
 ```py
 
-print(train_data)![1](img/1.png)# out:# Dataset CIFAR10#     Number of datapoints: 50000#     Root location: ./train/#     Split: Trainprint(len(train_data))![2](img/2.png)# out: 50000print(train_data.data.shape)# ndarray ![3](img/3.png)# out: (50000, 32, 32, 3)print(train_data.targets)# list ![4](img/4.png)# out: [6, 9, ...,  1, 1]print(train_data.classes)![5](img/5.png)# out: ['airplane', 'automobile', 'bird',#       'cat', 'deer', 'dog', 'frog',#       'horse', 'ship', 'truck']print(train_data.class_to_idx)![6](img/6.png)# out:# {'airplane': 0, 'automobile': 1, 'bird': 2,#  'cat': 3, 'deer': 4, 'dog': 5, 'frog': 6,#  'horse': 7, 'ship': 8, 'truck': 9}
+print(train_data)①# out:# Dataset CIFAR10#     Number of datapoints: 50000#     Root location: ./train/#     Split: Trainprint(len(train_data))②# out: 50000print(train_data.data.shape)# ndarray ③# out: (50000, 32, 32, 3)print(train_data.targets)# list ④# out: [6, 9, ...,  1, 1]print(train_data.classes)⑤# out: ['airplane', 'automobile', 'bird',#       'cat', 'deer', 'dog', 'frog',#       'horse', 'ship', 'truck']print(train_data.class_to_idx)⑥# out:# {'airplane': 0, 'automobile': 1, 'bird': 2,#  'cat': 3, 'deer': 4, 'dog': 5, 'frog': 6,#  'horse': 7, 'ship': 8, 'truck': 9}
 ```
 
-![1](img/#comarker11)
+①
 
 打印对象会返回其一般信息。
 
-![2](img/#comarker22)
+②
 
 使用`len()`检查数据样本的数量。
 
-![3](img/#comarker33)
+③
 
 数据是一个包含 50,000 个 32×32 像素彩色图像的 NumPy 数组。
 
-![4](img/#comarker44)
+④
 
 目标是一个包含 50,000 个数据标签的列表。
 
-![5](img/#comarker55)
+⑤
 
 你可以使用`classes`将数值标签映射到类名。
 
-![6](img/#comarker66)
+⑥
 
 你可以使用`class_to_idx`将类名映射到索引值。
 
@@ -164,14 +164,14 @@ print(test_data.data.shape) # ndarray
 在下面的代码示例中，我们将定义我们的 transforms 并使用这些 transforms 创建我们的`train_data`数据集：
 
 ```py
-fromtorchvisionimporttransformstrain_transforms=transforms.Compose(transforms.RandomCrop(32,padding=4),transforms.RandomHorizontalFlip(),transforms.ToTensor(),transforms.Normalize(mean=(0.4914,0.4822,0.4465),![1std=(0.2023,0.1994,0.2010))])train_data=CIFAR10(root="./train/",train=True,download=True,transform=train_transforms)![2](img/2.png)
+fromtorchvisionimporttransformstrain_transforms=transforms.Compose(transforms.RandomCrop(32,padding=4),transforms.RandomHorizontalFlip(),transforms.ToTensor(),transforms.Normalize(mean=(0.4914,0.4822,0.4465),![1std=(0.2023,0.1994,0.2010))])train_data=CIFAR10(root="./train/",train=True,download=True,transform=train_transforms)②
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO1-1)
+①
 
 这里的均值和标准差值是根据数据集本身预先确定的。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO1-2)
+②
 
 创建数据集时设置`transform`参数。
 
@@ -490,18 +490,18 @@ torch.hub.list(
 PyTorch 最强大的功能之一是其 Python 模块`torch.nn`，它使得设计和尝试新模型变得容易。以下代码说明了如何使用`torch.nn`创建一个简单模型。在这个例子中，我们将创建一个名为 SimpleNet 的全连接模型。它包括一个输入层、一个隐藏层和一个输出层，接收 2,048 个输入值并返回 2 个用于分类的输出值：
 
 ```py
-importtorch.nnasnnimporttorch.nn.functionalasFclassSimpleNet(nn.Module):def__init__(self):![1](img/1.png)super(SimpleNet,self).__init__()![2](img/2.png)self.fc1=nn.Linear(2048,256)self.fc2=nn.Linear(256,64)self.fc3=nn.Linear(64,2)defforward(self,x):![3](img/3.png)x=x.view(-1,2048)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=F.softmax(self.fc3(x),dim=1)returnx
+importtorch.nnasnnimporttorch.nn.functionalasFclassSimpleNet(nn.Module):def__init__(self):①super(SimpleNet,self).__init__()②self.fc1=nn.Linear(2048,256)self.fc2=nn.Linear(256,64)self.fc3=nn.Linear(64,2)defforward(self,x):③x=x.view(-1,2048)x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=F.softmax(self.fc3(x),dim=1)returnx
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO2-1)
+①
 
 通常将层创建为类属性
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO2-2)
+②
 
 调用基类的`__init__()`函数来初始化参数
 
-![3](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO2-3)
+③
 
 需要定义模型如何处理数据
 
@@ -520,14 +520,14 @@ PyTorch 使用术语*module*来描述 NN 层或块。Python 使用这个术语�
 以下代码显示了如何通过实例化名为`simplenet`的模型对象来创建模型：
 
 ```py
-simplenet=SimpleNet()![1](img/1.png)print(simplenet)# out:# SimpleNet(#   (fc1): Linear(in_features=2048,#                 out_features=256, bias=True)#   (fc2): Linear(in_features=256,#                 out_features=64, bias=True)#   (fc3): Linear(in_features=64,#                 out_features=2, bias=True)# )input=torch.rand(2048)output=simplenet(input)![2](img/2.png)
+simplenet=SimpleNet()①print(simplenet)# out:# SimpleNet(#   (fc1): Linear(in_features=2048,#                 out_features=256, bias=True)#   (fc2): Linear(in_features=256,#                 out_features=64, bias=True)#   (fc3): Linear(in_features=64,#                 out_features=2, bias=True)# )input=torch.rand(2048)output=simplenet(input)②
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO3-1)
+①
 
 实例化或创建模型。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO3-2)
+②
 
 通过模型运行数据（前向传递）。
 
@@ -767,18 +767,18 @@ PyTorch 相对于其他机器学习框架的一个关键优势是其灵活性，
 可以使用以下代码创建现代化的 LeNet5 模型版本：
 
 ```py
-fromtorchimportnnimporttorch.nn.functionalasFclassLeNet5(nn.Module):![1](img/1.png)def__init__(self):super(LeNet5,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,120)self.fc2=nn.Linear(120,84)self.fc3=nn.Linear(84,10)defforward(self,x):x=F.max_pool2d(F.relu(self.conv1(x)),(2,2))x=F.max_pool2d(F.relu(self.conv2(x)),2)x=x.view(-1,int(x.nelement()/x.shape[0]))x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnxdevice=('cuda'iftorch.cuda.is_available()else'cpu')![2](img/2.png)model=LeNet5().to(device=device)![3](img/3.png)
+fromtorchimportnnimporttorch.nn.functionalasFclassLeNet5(nn.Module):①def__init__(self):super(LeNet5,self).__init__()self.conv1=nn.Conv2d(3,6,5)self.conv2=nn.Conv2d(6,16,5)self.fc1=nn.Linear(16*5*5,120)self.fc2=nn.Linear(120,84)self.fc3=nn.Linear(84,10)defforward(self,x):x=F.max_pool2d(F.relu(self.conv1(x)),(2,2))x=F.max_pool2d(F.relu(self.conv2(x)),2)x=x.view(-1,int(x.nelement()/x.shape[0]))x=F.relu(self.fc1(x))x=F.relu(self.fc2(x))x=self.fc3(x)returnxdevice=('cuda'iftorch.cuda.is_available()else'cpu')②model=LeNet5().to(device=device)③
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO4-1)
+①
 
 定义模型类。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO4-2)
+②
 
 如果有 GPU 可用，请使用。
 
-![3](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO4-3)
+③
 
 创建模型并将其移动到 GPU（如果可用）。
 
@@ -789,10 +789,10 @@ fromtorchimportnnimporttorch.nn.functionalasFclassLeNet5(nn.Module):![1](img/1.p
 为了定义损失函数和优化器，我们使用`torch.optim`和`torch.nn`包，如下面的代码所示：
 
 ```py
-fromtorchimportoptimfromtorchimportnncriterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),![1](img/1.png)lr=0.001,momentum=0.9)
+fromtorchimportoptimfromtorchimportnncriterion=nn.CrossEntropyLoss()optimizer=optim.SGD(model.parameters(),①lr=0.001,momentum=0.9)
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO5-1)
+①
 
 确保传入`model.parameters()`作为您的模型。
 
@@ -805,38 +805,38 @@ PyTorch 优化器要求您使用`parameters()`方法传入模型参数（即`mod
 以下 PyTorch 代码演示了基本的训练循环：
 
 ```py
-N_EPOCHS=10forepochinrange(N_EPOCHS):![1](img/1.png)epoch_loss=0.0forinputs,labelsintrainloader:inputs=inputs.to(device)![2](img/2.png)labels=labels.to(device)optimizer.zero_grad()![3](img/3.png)outputs=model(inputs)![4](img/4.png)loss=criterion(outputs,labels)![5](img/5.png)loss.backward()![6](img/6.png)optimizer.step()![7](img/7.png)epoch_loss+=loss.item()![8](img/8.png)print("Epoch: {} Loss: {}".format(epoch,epoch_loss/len(trainloader)))# out: (results will vary and make take minutes)# Epoch: 0 Loss: 1.8982970092773437# Epoch: 1 Loss: 1.6062103009033204# Epoch: 2 Loss: 1.484384165763855# Epoch: 3 Loss: 1.3944422281837463# Epoch: 4 Loss: 1.334191104450226# Epoch: 5 Loss: 1.2834235876464843# Epoch: 6 Loss: 1.2407222446250916# Epoch: 7 Loss: 1.2081411465930938# Epoch: 8 Loss: 1.1832368299865723# Epoch: 9 Loss: 1.1534993273162841
+N_EPOCHS=10forepochinrange(N_EPOCHS):①epoch_loss=0.0forinputs,labelsintrainloader:inputs=inputs.to(device)②labels=labels.to(device)optimizer.zero_grad()③outputs=model(inputs)④loss=criterion(outputs,labels)⑤loss.backward()⑥optimizer.step()⑦epoch_loss+=loss.item()⑧print("Epoch: {} Loss: {}".format(epoch,epoch_loss/len(trainloader)))# out: (results will vary and make take minutes)# Epoch: 0 Loss: 1.8982970092773437# Epoch: 1 Loss: 1.6062103009033204# Epoch: 2 Loss: 1.484384165763855# Epoch: 3 Loss: 1.3944422281837463# Epoch: 4 Loss: 1.334191104450226# Epoch: 5 Loss: 1.2834235876464843# Epoch: 6 Loss: 1.2407222446250916# Epoch: 7 Loss: 1.2081411465930938# Epoch: 8 Loss: 1.1832368299865723# Epoch: 9 Loss: 1.1534993273162841
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-1)
+①
 
 外部训练循环；循环 10 个 epochs。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-2)
+②
 
 如果可用，将输入和标签移动到 GPU。
 
-![3](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-3)
+③
 
 在每次反向传播之前将梯度清零，否则它们会累积。
 
-![4](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-4)
+④
 
 执行前向传播。
 
-![5](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-5)
+⑤
 
 计算损失。
 
-![6](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-6)
+⑥
 
 执行反向传播；计算梯度。
 
-![7](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-7)
+⑦
 
 根据梯度调整参数。
 
-![8](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO6-8)
+⑧
 
 累积批量损失，以便我们可以在整个 epoch 上进行平均。
 
@@ -960,14 +960,14 @@ optimizer = optim.SGD(model.parameters(),
 以下代码显示了先前的基本训练示例，并添加了验证：
 
 ```py
-N_EPOCHS=10forepochinrange(N_EPOCHS):# Trainingtrain_loss=0.0model.train()![1](img/1.png)forinputs,labelsintrainloader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()# Validationval_loss=0.0model.eval()![2](img/2.png)forinputs,labelsinvalloader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)loss=criterion(outputs,labels)val_loss+=loss.item()print("Epoch: {} Train Loss: {} Val Loss: {}".format(epoch,train_loss/len(trainloader),val_loss/len(valloader)))
+N_EPOCHS=10forepochinrange(N_EPOCHS):# Trainingtrain_loss=0.0model.train()①forinputs,labelsintrainloader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)loss=criterion(outputs,labels)loss.backward()optimizer.step()train_loss+=loss.item()# Validationval_loss=0.0model.eval()②forinputs,labelsinvalloader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)loss=criterion(outputs,labels)val_loss+=loss.item()print("Epoch: {} Train Loss: {} Val Loss: {}".format(epoch,train_loss/len(trainloader),val_loss/len(valloader)))
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO7-1)
+①
 
 为训练配置模型。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO7-2)
+②
 
 为测试配置模型。
 
@@ -1004,27 +1004,27 @@ N_EPOCHS=10forepochinrange(N_EPOCHS):# Trainingtrain_loss=0.0model.train()![1](i
 CIFAR-10 提供了自己的测试数据集，我们在本章前面创建了`test_data`和一个 testloader。让我们通过我们的测试循环运行测试数据，如下所示的代码：
 
 ```py
-num_correct=0.0forx_test_batch,y_test_batchintestloader:model.eval()![1](img/1.png)y_test_batch=y_test_batch.to(device)x_test_batch=x_test_batch.to(device)y_pred_batch=model(x_test_batch)![2](img/2.png)_,predicted=torch.max(y_pred_batch,1)![3](img/3.png)num_correct+=(predicted==y_test_batch).float().sum()![4](img/4.png)accuracy=num_correct/(len(testloader)\
-*testloader.batch_size)![5](img/5.png)print(len(testloader),testloader.batch_size)# out: 625 16print("Test Accuracy: {}".format(accuracy))# out: Test Accuracy: 0.6322000026702881
+num_correct=0.0forx_test_batch,y_test_batchintestloader:model.eval()①y_test_batch=y_test_batch.to(device)x_test_batch=x_test_batch.to(device)y_pred_batch=model(x_test_batch)②_,predicted=torch.max(y_pred_batch,1)③num_correct+=(predicted==y_test_batch).float().sum()④accuracy=num_correct/(len(testloader)\
+*testloader.batch_size)⑤print(len(testloader),testloader.batch_size)# out: 625 16print("Test Accuracy: {}".format(accuracy))# out: Test Accuracy: 0.6322000026702881
 ```
 
-![1](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO8-1)
+①
 
 将模型设置为测试模式。
 
-![2](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO8-2)
+②
 
 预测每个批次的结果。
 
-![3](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO8-3)
+③
 
 选择具有最高概率的类索引。
 
-![4](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO8-4)
+④
 
 将预测与真实标签进行比较并计算正确预测的数量。
 
-![5](img/#co_deep_learning_development___span_class__keep_together__with_pytorch__span__CO8-5)
+⑤
 
 计算正确预测的百分比（准确率）。
 

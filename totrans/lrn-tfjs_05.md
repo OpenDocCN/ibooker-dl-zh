@@ -128,14 +128,14 @@ const checkySmalls = tf.tensor([
 ```py
 // 2 x 2 checker pattern
 constlil=tf.tensor(![1[[1],[0]],[[0],[1]]]);// tile it
-constbig=lil.tile([100,100,1])![2](img/2.png)
+constbig=lil.tile([100,100,1])②
 ```
 
-![1](img/#co_image_tensors_CO1-1)
+①
 
 方格图案是一个二维的黑白张量。这可以是任何优雅的图案或颜色。
 
-![2](img/#co_image_tensors_CO1-2)
+②
 
 瓷砖大小为 100 x 100，因为重复的图案是 2 x 2，这导致了一个 200 x 200 的图像张量。
 
@@ -194,19 +194,19 @@ constbig=lil.tile([100,100,1])![2](img/2.png)
 现在您可以通过 ID 访问此画布，并将其传递给我们的`browser.toPixels`方法。
 
 ```py
-constbigMess=tf.randomUniform([400,400,3]);![1](img/1.png)constmyCanvas=document.getElementById("randomness");![2](img/2.png)tf.browser.toPixels(bigMess,myCanvas).then(()=>{![3](img/3.png)// It's not bad practice to clean up and make sure we got everything
+constbigMess=tf.randomUniform([400,400,3]);①constmyCanvas=document.getElementById("randomness");②tf.browser.toPixels(bigMess,myCanvas).then(()=>{③// It's not bad practice to clean up and make sure we got everything
 bigMess.dispose();console.log("Make sure we cleaned up",tf.memory().numTensors);});
 ```
 
-![1](img/#co_image_tensors_CO2-1)
+①
 
 创建一个 RGB 400 x 400 图像张量
 
-![2](img/#co_image_tensors_CO2-2)
+②
 
 在文档对象模型（DOM）中获取对我们画布的引用
 
-![3](img/#co_image_tensors_CO2-3)
+③
 
 使用我们的张量和画布调用`browser.toPixels`
 
@@ -241,18 +241,18 @@ bigMess.dispose();console.log("Make sure we cleaned up",tf.memory().numTensors);
 在`img`放置并 DOM 加载完成后，您可以调用`browser.fromPixels`获取结果：
 
 ```py
-// Simply read from the DOM constgantImage=document.getElementById('gant')![1](img/1.png)constgantTensor=tf.browser.fromPixels(gantImage)![2](img/2.png)console.log(![3](img/3.png)`Successful conversion from DOM to a ${gantTensor.shape} tensor`)
+// Simply read from the DOM constgantImage=document.getElementById('gant')①constgantTensor=tf.browser.fromPixels(gantImage)②console.log(③`Successful conversion from DOM to a ${gantTensor.shape} tensor`)
 ```
 
-![1](img/#co_image_tensors_CO3-1)
+①
 
 获取对`img`标签的引用。
 
-![2](img/#co_image_tensors_CO3-2)
+②
 
 从图像创建张量。
 
-![3](img/#co_image_tensors_CO3-3)
+③
 
 记录证明我们现在有了一个张量！这将打印以下内容：
 
@@ -267,30 +267,30 @@ Successful conversion from DOM to a 372,500,3 tensor
 完美！但是如果我们的图像不在页面的元素中怎么办？只要服务器允许跨域加载 (`Access-Control-Allow-Origin "*"`)，您就可以动态加载和处理外部图像。这就是 [JavaScript 图像对象示例](https://oreil.ly/dSjiI) 的用武之地。我们可以这样将图像转换为张量：
 
 ```py
-// Now load an image object in JavaScript constcake=newImage()![1](img/1.png)cake.crossOrigin='anonymous'![2](img/2.png)cake.src='/cake.jpg'![3](img/3.png)cake.onload=()=>{![4](img/4.png)constcakeTensor=tf.browser.fromPixels(cake)![5](img/5.png)console.log(![6](img/6.png)`Successful conversion from Image() to a ${cakeTensor.shape} tensor`)}
+// Now load an image object in JavaScript constcake=newImage()①cake.crossOrigin='anonymous'②cake.src='/cake.jpg'③cake.onload=()=>{④constcakeTensor=tf.browser.fromPixels(cake)⑤console.log(⑥`Successful conversion from Image() to a ${cakeTensor.shape} tensor`)}
 ```
 
-![1](img/#co_image_tensors_CO4-1)
+①
 
 创建一个新的 Image web API 对象。
 
-![2](img/#co_image_tensors_CO4-2)
+②
 
 这在这里是不必要的，因为文件在服务器上，但通常需要设置此选项以访问外部 URL。
 
-![3](img/#co_image_tensors_CO4-3)
+③
 
 给出图像的路径。
 
-![4](img/#co_image_tensors_CO4-4)
+④
 
 等待图像完全加载到对象中，然后再尝试将其转换为张量。
 
-![5](img/#co_image_tensors_CO4-5)
+⑤
 
 将图像转换为张量。
 
-![6](img/#co_image_tensors_CO4-6)
+⑥
 
 打印我们的张量形状以确保一切按计划进行。这将打印以下内容：`从 Image() 成功转换为 578,500,3 张量`。
 
@@ -321,60 +321,60 @@ Successful conversion from DOM to a 372,500,3 tensor
 从张量中写入 JPG，就像在[*GitHub 的第四章节中的 *chapter4/node/node-encode*](https://oreil.ly/Nn9nX)中发现的那样，可以简单地这样做：
 
 ```py
-constbigMess=tf.randomUniform([400,400,3],0,255);![1](img/1.png)tf.node.encodeJpeg(bigMess).then((f)=>{![2](img/2.png)fs.writeFileSync("simple.jpg",f);![3](img/3.png)console.log("Basic JPG 'simple.jpg' written");});
+constbigMess=tf.randomUniform([400,400,3],0,255);①tf.node.encodeJpeg(bigMess).then((f)=>{②fs.writeFileSync("simple.jpg",f);③console.log("Basic JPG 'simple.jpg' written");});
 ```
 
-![1](img/#co_image_tensors_CO5-1)
+①
 
 创建一个 400 x 400 的图像张量，其中包含随机的 RGB 像素。
 
-![2](img/#co_image_tensors_CO5-2)
+②
 
 使用张量输入调用 `node.encodeJpeg`。
 
-![3](img/#co_image_tensors_CO5-3)
+③
 
 生成的数据将使用文件系统库写入。
 
 因为您要写入的文件是 JPG，您可以启用各种配置选项。让我们再写入另一张图片，并在此过程中修改默认设置：
 
 ```py
-constbigMess=tf.randomUniform([400,400,3],0,255);tf.node.encodeJpeg(bigMess,"rgb",![1](img/1.png)90,![2](img/2.png)true,![3](img/3.png)true,![4](img/4.png)true,![5](img/5.png)"cm",![6](img/6.png)250,![7](img/7.png)250,![8](img/8.png)"Generated by TFJS Node!"![9](img/9.png)).then((f)=>{fs.writeFileSync("advanced.jpg",f);console.log("Full featured JPG 'advanced.jpg' written");});
+constbigMess=tf.randomUniform([400,400,3],0,255);tf.node.encodeJpeg(bigMess,"rgb",①90,②true,③true,④true,⑤"cm",⑥250,⑦250,⑧"Generated by TFJS Node!"⑨).then((f)=>{fs.writeFileSync("advanced.jpg",f);console.log("Full featured JPG 'advanced.jpg' written");});
 ```
 
-![1](img/#co_image_tensors_CO6-1)
+①
 
 `format`：您可以使用`grayscale`或`rgb`覆盖默认的颜色通道，而不是匹配输入张量。
 
-![2](img/#co_image_tensors_CO6-2)
+②
 
 `quality`：调整 JPG 的质量。较低的数字会降低质量，通常是为了减小文件大小。
 
-![3](img/#co_image_tensors_CO6-3)
+③
 
 `progressive`：JPG 具有从上到下加载或逐渐清晰的渐进加载能力。将其设置为 true 可以启用渐进加载格式。
 
-![4](img/#co_image_tensors_CO6-4)
+④
 
 `optimizeSize`：花费一些额外的周期来优化图像大小，而不会修改质量。
 
-![5](img/#co_image_tensors_CO6-5)
+⑤
 
 `chromaDownsampling`：这是一个技巧，其中照明比颜色更重要。它修改了数据的原始分布，使其对人眼更清晰。
 
-![6](img/#co_image_tensors_CO6-6)
+⑥
 
 `densityUnit`：选择每英寸或每厘米的像素；一些奇怪的人反对公制系统。
 
-![7](img/#co_image_tensors_CO6-7)
+⑦
 
 `xDensity`：设置 x 轴上的像素密度单位。
 
-![8](img/#co_image_tensors_CO6-8)
+⑧
 
 `yDensity`：设置 y 轴上的像素密度单位。
 
-![9](img/#co_image_tensors_CO6-9)
+⑨
 
 `xmpMetadata`：这是一个非可见的消息，存储在图像元数据中。通常，这是为许可和寻宝活动保留的。
 
@@ -430,18 +430,18 @@ Node 提供了解码 BMP、JPG、PNG 甚至 GIF 文件格式的功能。但是�
 这个示例代码依赖于一个名为*cake.jpg*的文件进行加载和解码为张量。此演示中使用的代码和图像资源可在 GitHub 的第四章[*chapter4/node/node-decode*](https://oreil.ly/k8jjE)中找到。
 
 ```py
-import*astffrom'@tensorflow/tfjs-node'import*asfsfrom'fs'import*aspathfrom'path'constFILE_PATH='files'constcakeImagePath=path.join(FILE_PATH,'cake.jpg')constcakeImage=fs.readFileSync(cakeImagePath)![1](img/1.png)tf.tidy(()=>{constcakeTensor=tf.node.decodeImage(cakeImage)![2](img/2.png)console.log(`Success: local file to a ${cakeTensor.shape} tensor`)constcakeBWTensor=tf.node.decodeImage(cakeImage,1)![3](img/3.png)console.log(`Success: local file to a ${cakeBWTensor.shape} tensor`)})
+import*astffrom'@tensorflow/tfjs-node'import*asfsfrom'fs'import*aspathfrom'path'constFILE_PATH='files'constcakeImagePath=path.join(FILE_PATH,'cake.jpg')constcakeImage=fs.readFileSync(cakeImagePath)①tf.tidy(()=>{constcakeTensor=tf.node.decodeImage(cakeImage)②console.log(`Success: local file to a ${cakeTensor.shape} tensor`)constcakeBWTensor=tf.node.decodeImage(cakeImage,1)③console.log(`Success: local file to a ${cakeBWTensor.shape} tensor`)})
 ```
 
-![1](img/#co_image_tensors_CO7-1)
+①
 
 您使用文件系统库将指定的文件加载到内存中。
 
-![2](img/#co_image_tensors_CO7-2)
+②
 
 您将图像解码为与导入图像的颜色通道数量相匹配的张量。
 
-![3](img/#co_image_tensors_CO7-3)
+③
 
 您将此图像解码为灰度张量。
 
@@ -489,10 +489,10 @@ console.log(`Success: local file to a ${gantCakeTensor.shape} tensor`)
 在本章的相应源代码中，您显示一幅图像，然后在旁边的画布上镜像该图像。您可以在 GitHub 的[*simple/simple-image-manipulation/mirror.html*](https://oreil.ly/83b9B)中访问此示例。此操作的完整代码如下：
 
 ```py
-// Simple Tensor Flip constlemonadeImage=document.getElementById("lemonade");constlemonadeCanvas=document.getElementById("lemonadeCanvas");constlemonadeTensor=tf.browser.fromPixels(lemonadeImage);constflippedLemonadeTensor=tf.reverse(lemonadeTensor,1)![1](img/1.png)tf.browser.toPixels(flippedLemonadeTensor,lemonadeCanvas).then(()=>{lemonadeTensor.dispose();flippedLemonadeTensor.dispose();})
+// Simple Tensor Flip constlemonadeImage=document.getElementById("lemonade");constlemonadeCanvas=document.getElementById("lemonadeCanvas");constlemonadeTensor=tf.browser.fromPixels(lemonadeImage);constflippedLemonadeTensor=tf.reverse(lemonadeTensor,1)①tf.browser.toPixels(flippedLemonadeTensor,lemonadeCanvas).then(()=>{lemonadeTensor.dispose();flippedLemonadeTensor.dispose();})
 ```
 
-![1](img/#co_image_tensors_CO8-1)
+①
 
 reverse 函数将轴索引`1`翻转以反转图像。
 
@@ -519,26 +519,26 @@ Figure 4-8 显示了在轴`1`上使用`tf.reverse`的结果。
 您可以使用以下代码在单个图像上执行`tf.image.flipLeftRight`：
 
 ```py
-// Batch Tensor Flip constcakeImage=document.getElementById("cake");constcakeCanvas=document.getElementById("cakeCanvas");constflipCake=tf.tidy(()=>{constcakeTensor=tf.expandDims(![1](img/1.png)tf.browser.fromPixels(cakeImage)![2](img/2.png).asType("float32")![3](img/3.png));returntf.squeeze(tf.image.flipLeftRight(cakeTensor))![4](img/4.png).asType("int32");![5](img/5.png)})tf.browser.toPixels(flipCake,cakeCanvas).then(()=>{flipCake.dispose();});
+// Batch Tensor Flip constcakeImage=document.getElementById("cake");constcakeCanvas=document.getElementById("cakeCanvas");constflipCake=tf.tidy(()=>{constcakeTensor=tf.expandDims(①tf.browser.fromPixels(cakeImage)②.asType("float32")③);returntf.squeeze(tf.image.flipLeftRight(cakeTensor))④.asType("int32");⑤})tf.browser.toPixels(flipCake,cakeCanvas).then(()=>{flipCake.dispose();});
 ```
 
-![1](img/#co_image_tensors_CO9-1)
+①
 
 张量的维度被扩展。
 
-![2](img/#co_image_tensors_CO9-2)
+②
 
 将 3D 图像导入为张量。
 
-![3](img/#co_image_tensors_CO9-3)
+③
 
 在撰写本节时，`image.flipLeftRight`期望图像是一个`float32`张量。这可能会在未来发生变化。
 
-![4](img/#co_image_tensors_CO9-4)
+④
 
 翻转图像批次，然后在完成后将其压缩回 3D 张量。
 
-![5](img/#co_image_tensors_CO9-5)
+⑤
 
 `image.flipLeftRight`返回`0-255`的值，因此您需要确保发送给`browser.toPixels`的张量是`int32`，这样它才能正确渲染。
 
@@ -557,30 +557,30 @@ TensorFlow.js 有两种优秀的方法用于调整图像大小，并且两者都
 直白地说，`resizeBilinear`会模糊，而`resizeNearestNeighbor`会像素化，当它们需要为新数据进行外推时。让我们使用这两种方法放大图像并进行比较。您可以在[*simple/simple-image-manipulation/resize.html*](https://oreil.ly/ieQLD)中查看此示例。
 
 ```py
-// Simple Tensor Flip constnewSize=[768,560]// 4x larger ![1](img/1.png)constlittleGantImage=document.getElementById("littleGant");constnnCanvas=document.getElementById("nnCanvas");constblCanvas=document.getElementById("blCanvas");constgantTensor=tf.browser.fromPixels(littleGantImage);constnnResizeTensor=tf.image.resizeNearestNeighbor(![2](img/2.png)gantTensor,newSize,true![3](img/3.png))tf.browser.toPixels(nnResizeTensor,nnCanvas).then(()=>{nnResizeTensor.dispose();})constblResizeTensor=tf.image.resizeBilinear(![4](img/4.png)gantTensor,newSize,true![5](img/5.png))constblResizeTensorInt=blResizeTensor.asType('int32')![6](img/6.png)tf.browser.toPixels(blResizeTensorInt,blCanvas).then(()=>{blResizeTensor.dispose();blResizeTensorInt.dispose();})// All done with ya gantTensor.dispose();
+// Simple Tensor Flip constnewSize=[768,560]// 4x larger ①constlittleGantImage=document.getElementById("littleGant");constnnCanvas=document.getElementById("nnCanvas");constblCanvas=document.getElementById("blCanvas");constgantTensor=tf.browser.fromPixels(littleGantImage);constnnResizeTensor=tf.image.resizeNearestNeighbor(②gantTensor,newSize,true③)tf.browser.toPixels(nnResizeTensor,nnCanvas).then(()=>{nnResizeTensor.dispose();})constblResizeTensor=tf.image.resizeBilinear(④gantTensor,newSize,true⑤)constblResizeTensorInt=blResizeTensor.asType('int32')⑥tf.browser.toPixels(blResizeTensorInt,blCanvas).then(()=>{blResizeTensor.dispose();blResizeTensorInt.dispose();})// All done with ya gantTensor.dispose();
 ```
 
-![1](img/#co_image_tensors_CO10-1)
+①
 
 将图像大小增加 4 倍，以便您可以看到这两者之间的差异。
 
-![2](img/#co_image_tensors_CO10-2)
+②
 
 使用最近邻算法调整大小。
 
-![3](img/#co_image_tensors_CO10-3)
+③
 
 第三个参数是`alignCorners`；请始终将其设置为 true。¹
 
-![4](img/#co_image_tensors_CO10-4)
+④
 
 使用双线性算法调整大小。
 
-![5](img/#co_image_tensors_CO10-5)
+⑤
 
 始终将此设置为`true`（参见*3*）。
 
-![6](img/#co_image_tensors_CO10-6)
+⑥
 
 截至目前，`resizeBilinear`返回一个`float32`，你需要进行转换。
 
@@ -605,18 +605,18 @@ TensorFlow.js 有两种优秀的方法用于调整图像大小，并且两者都
 通过给定切片的起始位置和大小，你可以在任何轴上裁剪出你想要的任何部分。你可以在 GitHub 上的[*simple/simple-image-manipulation/crop.html*](https://oreil.ly/QDmBD)找到这个例子。要裁剪单个图像，请使用以下代码：
 
 ```py
-// Simple Tensor Crop conststartingPoint=[0,40,0];![1](img/1.png)constnewSize=[265,245,3];![2](img/2.png)constlemonadeImage=document.getElementById("lemonade");constlemonadeCanvas=document.getElementById("lemonadeCanvas");constlemonadeTensor=tf.browser.fromPixels(lemonadeImage);constcropped=tf.slice(lemonadeTensor,startingPoint,newSize)![3](img/3.png)tf.browser.toPixels(cropped,lemonadeCanvas).then(()=>{cropped.dispose();})lemonadeTensor.dispose();
+// Simple Tensor Crop conststartingPoint=[0,40,0];①constnewSize=[265,245,3];②constlemonadeImage=document.getElementById("lemonade");constlemonadeCanvas=document.getElementById("lemonadeCanvas");constlemonadeTensor=tf.browser.fromPixels(lemonadeImage);constcropped=tf.slice(lemonadeTensor,startingPoint,newSize)③tf.browser.toPixels(cropped,lemonadeCanvas).then(()=>{cropped.dispose();})lemonadeTensor.dispose();
 ```
 
-![1](img/#co_image_tensors_CO11-1)
+①
 
 从下方`0`像素开始，向右`40`像素，并且在红色通道上。
 
-![2](img/#co_image_tensors_CO11-2)
+②
 
 获取接下来的`265`像素高度，`245`像素宽度，以及所有三个 RGB 值。
 
-![3](img/#co_image_tensors_CO11-3)
+③
 
 将所有内容传入`tf.slice`方法。
 

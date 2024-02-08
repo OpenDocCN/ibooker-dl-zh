@@ -112,12 +112,12 @@ test_df = test_df[cols]
 让我们从以下代码块开始`eval_config`，定义我们的调查：
 
 ```py
-eval_config = text_format.Parse("""    ![1](img/1.png)
-  model_specs {                        ![2](img/2.png)
+eval_config = text_format.Parse("""    ①
+  model_specs {                        ②
     prediction_key: 'predicted',
     label_key: 'survived'
   }
-  metrics_specs {                      ![3](img/3.png)
+  metrics_specs {                      ③
     metrics {class_name: "AUC"}
     metrics {
       class_name: "FairnessIndicators"
@@ -126,31 +126,31 @@ eval_config = text_format.Parse("""    ![1](img/1.png)
     metrics { class_name: "ExampleCount" }
   }
 
-  slicing_specs {                      ![4](img/4.png)
+  slicing_specs {                      ④
     feature_keys: ['sex', 'class']
   }
   slicing_specs {}
-  """, tfma.EvalConfig())              ![5](img/5.png)
+  """, tfma.EvalConfig())              ⑤
 
 ```
 
-![1](img/#comarker1)
+①
 
 `eval_config`对象必须格式化为协议缓冲区数据类型，这就是为什么您需要导入`text_format`来解析定义。
 
-![2](img/#comarker2)
+②
 
 指定`model_specs`以记录要比较的两列：“predicted”和“survived”。
 
-![3](img/#comarker3)
+③
 
 定义分类准确性的指标以及基于生存概率分配生存状态的三个阈值。
 
-![4](img/#comarker4)
+④
 
 这是您声明要用来调查模型偏差的特征的地方。`slicing_specs`中的`feature_keys`保存要检查偏差的特征列表：在我们的案例中是“sex”和“class”。由于性别有两个唯一值，而不同的班级有三个不同的类别，公平性指标将评估六个不同交互组的模型偏差。如果只列出一个特征，公平性指标将仅评估该特征上的偏差。
 
-![5](img/#comarker5)
+⑤
 
 所有这些信息都包含在`“““ ”””`三重双引号中，这使得它成为一个纯文本表示。这个文本字符串被合并到`tfma.EvalConfig`消息中。
 

@@ -519,19 +519,19 @@ print(resp.json())
 要使用`ngrok`运行我们的 Flask 应用程序，我们只需要添加两行代码，如下注释所示：
 
 ```py
-fromflask_ngrokimportrun_with_ngrok![1](img/1.png)@app.route("/")defhome():return"<h1>Running Flask on Google Colab!</h1>"app.run()app=Flask(__name__)run_with_ngrok(app)![2](img/2.png)@app.route('/predict',methods=['POST'])defpredict():ifrequest.method=='POST':file=request.files['file']img_bytes=file.read()class_id,class_name=\
-get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_name':class_name})app.run()![3](img/3.png)
+fromflask_ngrokimportrun_with_ngrok①@app.route("/")defhome():return"<h1>Running Flask on Google Colab!</h1>"app.run()app=Flask(__name__)run_with_ngrok(app)②@app.route('/predict',methods=['POST'])defpredict():ifrequest.method=='POST':file=request.files['file']img_bytes=file.read()class_id,class_name=\
+get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_name':class_name})app.run()③
 ```
 
-![1](img/#co_deploying_pytorch_to_production_CO1-1)
+①
 
 导入`ngrok`库。
 
-![2](img/#co_deploying_pytorch_to_production_CO1-2)
+②
 
 当应用程序运行时启动`ngrok`。
 
-![3](img/#co_deploying_pytorch_to_production_CO1-3)
+③
 
 由于我们在 Colab 中运行，我们不需要检查`main`。
 
@@ -647,24 +647,24 @@ $ docker run --rm -it --gpus '"device=1"' \
 首先我们将使用追踪将我们的 VGG16 模型转换为 TorchScript 并保存为*model.pt*，如下面的代码所示：
 
 ```py
-importtorchimporttorchvisionfromtorch.utils.mobile_optimizer \ importoptimize_for_mobilemodel=torchvision.models.vgg16(pretrained=True)model.eval()example=torch.rand(1,3,224,224)![1](img/1.png)traced_script_module=\
-torch.jit.trace(model,example)![2](img/2.png)torchscript_model_optimized=\
-optimize_for_mobile(traced_script_module)![3](img/3.png)torchscript_model_optimized.save("model.pt")![4](img/4.png)
+importtorchimporttorchvisionfromtorch.utils.mobile_optimizer \ importoptimize_for_mobilemodel=torchvision.models.vgg16(pretrained=True)model.eval()example=torch.rand(1,3,224,224)①traced_script_module=\
+torch.jit.trace(model,example)②torchscript_model_optimized=\
+optimize_for_mobile(traced_script_module)③torchscript_model_optimized.save("model.pt")④
 ```
 
-![1](img/#co_deploying_pytorch_to_production_CO2-1)
+①
 
 使用随机数据定义`example`。
 
-![2](img/#co_deploying_pytorch_to_production_CO2-2)
+②
 
 将`model`转换为 TorchScript。
 
-![3](img/#co_deploying_pytorch_to_production_CO2-3)
+③
 
 优化代码的新步骤。
 
-![4](img/#co_deploying_pytorch_to_production_CO2-4)
+④
 
 保存模型。
 

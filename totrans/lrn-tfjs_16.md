@@ -7,25 +7,25 @@ MobileNet 模型可以检测各种不同类型的卡车。您可以通过查看�
 包含 HTML 和 JavaScript 的整个解决方案在这里：
 
 ```py
-<!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@1.0.0"></script>![1](img/1.png)<script>mobilenet.load().then(model=>{constimg=document.getElementById('myImage');![2](img/2.png)// Classify the image
+<!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@1.0.0"></script>①<script>mobilenet.load().then(model=>{constimg=document.getElementById('myImage');②// Classify the image
 model.classify(img).then(predictions=>{console.log('Predictions: ',predictions);// Was there a truck?
-letfoundATruckpredictions.forEach(p=>{foundATruck=foundATruck||p.className.includes("truck")![3](img/3.png)})// TRUCK ALERT!
-if(foundATruck)alert("TRUCK DETECTED!")![4](img/4.png)});});</script></head><body><h1>Is this a truck?</h1><imgid="myImage"src="truck.jpg"width="100%"></img></body></html>
+letfoundATruckpredictions.forEach(p=>{foundATruck=foundATruck||p.className.includes("truck")③})// TRUCK ALERT!
+if(foundATruck)alert("TRUCK DETECTED!")④});});</script></head><body><h1>Is this a truck?</h1><imgid="myImage"src="truck.jpg"width="100%"></img></body></html>
 ```
 
-![1](img/#co_chapter_challenge_answers_CO1-1)
+①
 
 从 CDN 加载 MobileNet 模型。
 
-![2](img/#co_chapter_challenge_answers_CO1-2)
+②
 
 通过 ID 访问 DOM 上的图像。由于等待模型加载，DOM 可能已经加载了一段时间。
 
-![3](img/#co_chapter_challenge_answers_CO1-3)
+③
 
 如果在任何预测中检测到*truck*这个词，将`foundATruck`设置为 true。
 
-![4](img/#co_chapter_challenge_answers_CO1-4)
+④
 
 真相时刻！只有在`foundATruck`为 true 时才会弹出警报。
 
@@ -49,18 +49,18 @@ console.log(`There are ${result.length} unique values`, result)
 一种优雅的解决方案是对`randomUniform`创建的张量使用`topk`进行排序。由于`randomUniform`创建的值在`0`和`1`之间，并且`topk`沿着最后一个轴对值进行排序，您可以使用以下代码完成这个练习：
 
 ```py
-constrando=tf.randomUniform([400,400])![1](img/1.png)constsorted=tf.topk(rando,400).values![2](img/2.png)constanswer=sorted.reshape([400,400,1])![3](img/3.png)
+constrando=tf.randomUniform([400,400])①constsorted=tf.topk(rando,400).values②constanswer=sorted.reshape([400,400,1])③
 ```
 
-![1](img/#co_chapter_challenge_answers_CO2-1)
+①
 
 创建一个 2D 的 400 x 400 张量，其中包含介于`0`和`1`之间的随机值。
 
-![2](img/#co_chapter_challenge_answers_CO2-2)
+②
 
 使用`topk`对最后一个维度（宽度）进行排序，并返回所有 400 个值。
 
-![3](img/#co_chapter_challenge_answers_CO2-3)
+③
 
 可选：将张量重塑为 3D 值。
 
@@ -81,18 +81,18 @@ tf.topk(tf.randomUniform([400, 400]), 400).values
 以下代码可能引用原始人脸定位代码中创建的一些变量，特别是原始的`fromPixels`张量`myTensor`：
 
 ```py
-// Same bounding calculations but for the tensor consttHeight=myTensor.shape[0]![1](img/1.png)consttWidth=myTensor.shape[1]consttStartX=box[0]*tWidthconsttStartY=box[1]*tHeightconstcropLength=parseInt((box[2]-box[0])*tWidth,0)![2](img/2.png)constcropHeight=parseInt((box[3]-box[1])*tHeight,0)conststartPos=[tStartY,tStartX,0]constcropSize=[cropHeight,cropLength,3]constcropped=tf.slice(myTensor,startPos,cropSize)// Prepare for next model input constreadyFace=tf.image.resizeBilinear(cropped,[96,96],true).reshape([1,96,96,3]);![3](img/3.png)
+// Same bounding calculations but for the tensor consttHeight=myTensor.shape[0]①consttWidth=myTensor.shape[1]consttStartX=box[0]*tWidthconsttStartY=box[1]*tHeightconstcropLength=parseInt((box[2]-box[0])*tWidth,0)②constcropHeight=parseInt((box[3]-box[1])*tHeight,0)conststartPos=[tStartY,tStartX,0]constcropSize=[cropHeight,cropLength,3]constcropped=tf.slice(myTensor,startPos,cropSize)// Prepare for next model input constreadyFace=tf.image.resizeBilinear(cropped,[96,96],true).reshape([1,96,96,3]);③
 ```
 
-![1](img/#co_chapter_challenge_answers_CO3-1)
+①
 
 请注意，张量的顺序是高度然后宽度。它们的格式类似于数学矩阵，而不是图像特定的宽度乘以高度的标准。
 
-![2](img/#co_chapter_challenge_answers_CO3-2)
+②
 
 减去比率可能会留下浮点值；您需要将这些值四舍五入到特定的像素索引。在这种情况下，答案是使用`parseInt`来去除任何小数。
 
-![3](img/#co_chapter_challenge_answers_CO3-3)
+③
 
 显然，批处理，然后取消批处理，然后重新批处理是低效的。在可能的情况下，您应该将所有操作保持批处理，直到绝对必要。
 

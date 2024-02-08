@@ -131,18 +131,18 @@
 
 ```py
 constpixelShift=async(inputTensor,mutations=[])=>{// Add 1px white padding to height and width
-constpadded=inputTensor.pad(![1](img/1.png)[[1,1],[1,1],],1)constcutSize=inputTensor.shapefor(leth=0;h<3;h++){for(letw=0;w<3;w++){![2](img/2.png)mutations.push(padded.slice([h,w],cutSize))![3](img/3.png)}}padded.dispose()returnmutations}
+constpadded=inputTensor.pad(①[[1,1],[1,1],],1)constcutSize=inputTensor.shapefor(leth=0;h<3;h++){for(letw=0;w<3;w++){②mutations.push(padded.slice([h,w],cutSize))③}}padded.dispose()returnmutations}
 ```
 
-![1](img/#co_dicify__capstone_project_CO1-1)
+①
 
 `.pad`为现有张量添加一个值为`1`的白色边框。
 
-![2](img/#co_dicify__capstone_project_CO1-2)
+②
 
 为了生成九个新的移位值，每次都会移动切片位置的起点。
 
-![3](img/#co_dicify__capstone_project_CO1-3)
+③
 
 切片的子张量每次都会成为一个新的 12 x 12 值，起点不同。
 
@@ -157,22 +157,22 @@ constpadded=inputTensor.pad(![1](img/1.png)[[1,1],[1,1],],1)constcutSize=inputTe
 您可以通过随机组合这九个移位图像来创建新的变体。有很多方法可以组合这些图像中的任意两个。一种方法是使用`tf.where`，并将两个图像中较小的保留在它们的新组合图像中。这样可以保留任意两个移位骰子的黑色像素。
 
 ```py
-// Creates combinations take any two from array // (like Python itertools.combinations) constcombos=async(tensorArray)=>{conststartSize=tensorArray.lengthfor(leti=0;i<startSize-1;i++){for(letj=i+1;j<startSize;j++){constoverlay=tf.tidy(()=>{returntf.where(![1](img/1.png)tf.less(tensorArray[i],tensorArray[j]),![2](img/2.png)tensorArray[i],![3](img/3.png)tensorArray[j]![4](img/4.png))})tensorArray.push(overlay)}}}
+// Creates combinations take any two from array // (like Python itertools.combinations) constcombos=async(tensorArray)=>{conststartSize=tensorArray.lengthfor(leti=0;i<startSize-1;i++){for(letj=i+1;j<startSize;j++){constoverlay=tf.tidy(()=>{returntf.where(①tf.less(tensorArray[i],tensorArray[j]),②tensorArray[i],③tensorArray[j]④)})tensorArray.push(overlay)}}}
 ```
 
-![1](img/#co_dicify__capstone_project_CO2-1)
+①
 
 `tf.where`就像在每个元素上运行条件。
 
-![2](img/#co_dicify__capstone_project_CO2-2)
+②
 
 当第一个参数小于第二个参数时，`tf.less`返回 true。
 
-![3](img/#co_dicify__capstone_project_CO2-3)
+③
 
 如果`where`中的条件为 true，则返回`arrCopy[i]`中的值。
 
-![4](img/#co_dicify__capstone_project_CO2-4)
+④
 
 如果`where`中的条件为 false，则返回`arrCopy[j]`中的值。
 
@@ -234,32 +234,32 @@ const createDataObject = async () => {
 现在您总共有将近两千张图片，可以尝试训练您的模型。数据应该被堆叠和洗牌：
 
 ```py
-constdiceImages=[].concat(![1](img/1.png)diceData['0'],diceData['1'],diceData['2'],diceData['3'],diceData['4'],diceData['5'],diceData['6'],diceData['7'],diceData['8'],)// Now the answers to their corresponding index constanswers=[].concat(newArray(diceData['0'].length).fill(0),![2](img/2.png)newArray(diceData['1'].length).fill(1),newArray(diceData['2'].length).fill(2),newArray(diceData['3'].length).fill(3),newArray(diceData['4'].length).fill(4),newArray(diceData['5'].length).fill(5),newArray(diceData['6'].length).fill(6),newArray(diceData['7'].length).fill(7),newArray(diceData['8'].length).fill(8),)// Randomize these two sets together tf.util.shuffleCombo(diceImages,answers)![3](img/3.png)
+constdiceImages=[].concat(①diceData['0'],diceData['1'],diceData['2'],diceData['3'],diceData['4'],diceData['5'],diceData['6'],diceData['7'],diceData['8'],)// Now the answers to their corresponding index constanswers=[].concat(newArray(diceData['0'].length).fill(0),②newArray(diceData['1'].length).fill(1),newArray(diceData['2'].length).fill(2),newArray(diceData['3'].length).fill(3),newArray(diceData['4'].length).fill(4),newArray(diceData['5'].length).fill(5),newArray(diceData['6'].length).fill(6),newArray(diceData['7'].length).fill(7),newArray(diceData['8'].length).fill(8),)// Randomize these two sets together tf.util.shuffleCombo(diceImages,answers)③
 ```
 
-![1](img/#co_dicify__capstone_project_CO3-1)
+①
 
 通过连接单个数据数组来创建大量数据数组。
 
-![2](img/#co_dicify__capstone_project_CO3-2)
+②
 
 然后，您创建与每个数据集大小完全相同的答案数组，并使用`Array`的`.fill`来填充它们。
 
-![3](img/#co_dicify__capstone_project_CO3-3)
+③
 
 然后，您可以将这两个数组一起随机化。
 
 从这里，您可以拆分出一个测试集，也可以不拆分。如果您需要帮助，可以查看相关代码。一旦您按照自己的意愿拆分了数据，然后将这两个 JavaScript 数组转换为正确的张量：
 
 ```py
-consttrainX=tf.tensor(diceImages).expandDims(3)![1](img/1.png)consttrainY=tf.oneHot(answers,numOptions)![2](img/2.png)
+consttrainX=tf.tensor(diceImages).expandDims(3)①consttrainY=tf.oneHot(answers,numOptions)②
 ```
 
-![1](img/#co_dicify__capstone_project_CO4-1)
+①
 
 创建堆叠张量，并为简单起见，通过在索引三处扩展维度将其返回为三维图像。
 
-![2](img/#co_dicify__capstone_project_CO4-2)
+②
 
 然后，将数字答案进行独热编码为张量，以适应 softmax 模型输出。
 
@@ -326,22 +326,22 @@ const dicify = async () => {
 `cutData`方法将利用`tf.split`，它沿着一个轴将张量分割为 N 个子张量。您可以通过使用`tf.split`沿着每个轴将图像分割成一个补丁或图像网格来进行预测。
 
 ```py
-constnumDice=32constpreSize=numDice*10constcutData=async(id)=>{constimg=document.getElementById(id)constimgTensor=tf.browser.fromPixels(img,1)![1](img/1.png)constresized=tf.image.resizeNearestNeighbor(![2](img/2.png)imgTensor,[preSize,preSize])constcutSize=numDiceconstheightCuts=tf.split(resized,cutSize)![3](img/3.png)constgrid=heightCuts.map((sliver)=>![4](img/4.png)tf.split(sliver,cutSize,1))returngrid}
+constnumDice=32constpreSize=numDice*10constcutData=async(id)=>{constimg=document.getElementById(id)constimgTensor=tf.browser.fromPixels(img,1)①constresized=tf.image.resizeNearestNeighbor(②imgTensor,[preSize,preSize])constcutSize=numDiceconstheightCuts=tf.split(resized,cutSize)③constgrid=heightCuts.map((sliver)=>④tf.split(sliver,cutSize,1))returngrid}
 ```
 
-![1](img/#co_dicify__capstone_project_CO5-1)
+①
 
 您只需要将图像的灰度版本从像素转换过来。
 
-![2](img/#co_dicify__capstone_project_CO5-2)
+②
 
 图像被调整大小，以便可以被所需数量的骰子均匀分割。
 
-![3](img/#co_dicify__capstone_project_CO5-3)
+③
 
 图像沿着第一个轴（高度）被切割。
 
-![4](img/#co_dicify__capstone_project_CO5-4)
+④
 
 然后将这些列沿着宽度轴切割，以创建一组张量。
 
@@ -358,27 +358,27 @@ constnumDice=32constpreSize=numDice*10constcutData=async(id)=>{constimg=document
 从预测答案重建和创建大张量的代码可能如下所示：
 
 ```py
-constdisplayPredictions=async(answers)=>{tf.tidy(()=>{constdiceTensors=diceData.map(![1](img/1.png)(dt)=>tf.tensor(dt))const{indices}=tf.topk(answers)constanswerIndices=indices.dataSync()consttColumns=[]for(lety=0;y<numDice;y++){consttRow=[]for(letx=0;x<numDice;x++){constcurIndex=y*numDice+x![2](img/2.png)tRow.push(diceTensors[answerIndices[curIndex]])}constoneRow=tf.concat(tRow,1)![3](img/3.png)tColumns.push(oneRow)}constdiceConstruct=tf.concat(tColumns)![4](img/4.png)// Print the reconstruction to the canvas
-constcan=document.getElementById('display')tf.browser.toPixels(diceConstruct,can)![5](img/5.png)})}
+constdisplayPredictions=async(answers)=>{tf.tidy(()=>{constdiceTensors=diceData.map(①(dt)=>tf.tensor(dt))const{indices}=tf.topk(answers)constanswerIndices=indices.dataSync()consttColumns=[]for(lety=0;y<numDice;y++){consttRow=[]for(letx=0;x<numDice;x++){constcurIndex=y*numDice+x②tRow.push(diceTensors[answerIndices[curIndex]])}constoneRow=tf.concat(tRow,1)③tColumns.push(oneRow)}constdiceConstruct=tf.concat(tColumns)④// Print the reconstruction to the canvas
+constcan=document.getElementById('display')tf.browser.toPixels(diceConstruct,can)⑤})}
 ```
 
-![1](img/#co_dicify__capstone_project_CO6-1)
+①
 
 要绘制的`diceTensors`从`diceData`中加载并转换。
 
-![2](img/#co_dicify__capstone_project_CO6-2)
+②
 
 要从 1D 返回到 2D，需要为每一行计算索引。
 
-![3](img/#co_dicify__capstone_project_CO6-3)
+③
 
 行是通过沿着宽度轴进行连接而创建的。
 
-![4](img/#co_dicify__capstone_project_CO6-4)
+④
 
 列是通过沿着默认（高度）轴连接行来制作的。
 
-![5](img/#co_dicify__capstone_project_CO6-5)
+⑤
 
 哒哒！新构建的张量可以显示出来了。
 

@@ -39,19 +39,19 @@ def linear(input, weight, bias=None):
 然而，我们通常会使用`nn.Module`类来对我们的神经网络进行子类化。当我们创建一个`nn.Module`子类时，我们获得了`nn.Module`对象的所有内置优势。在这种情况下，我们从`nn.Module`派生`nn.Linear`类，如下面的代码所示：
 
 ```py
-importtorch.nnasnnfromtorchimportTensorclassLinear(nn.Module):def__init__(self,in_features,out_features,bias):![1](img/1.png)super(Linear,self).__init__()self.in_features=in_featuresself.out_features=out_featuresself.weight=Parameter(torch.Tensor(out_features,in_features))ifbias:self.bias=Parameter(torch.Tensor(out_features))else:self.register_parameter('bias',None)self.reset_parameters()defreset_parameters(self):init.kaiming_uniform_(self.weight,a=math.sqrt(5))ifself.biasisnotNone:fan_in,_=\
-init._calculate_fan_in_and_fan_out(self.weight)bound=1/math.sqrt(fan_in)init.uniform_(self.bias,-bound,bound)defforward(self,input:Tensor)->Tensor:![2](img/2.png)returnF.linear(input,self.weight,self.bias)![3](img/3.png)
+importtorch.nnasnnfromtorchimportTensorclassLinear(nn.Module):def__init__(self,in_features,out_features,bias):①super(Linear,self).__init__()self.in_features=in_featuresself.out_features=out_featuresself.weight=Parameter(torch.Tensor(out_features,in_features))ifbias:self.bias=Parameter(torch.Tensor(out_features))else:self.register_parameter('bias',None)self.reset_parameters()defreset_parameters(self):init.kaiming_uniform_(self.weight,a=math.sqrt(5))ifself.biasisnotNone:fan_in,_=\
+init._calculate_fan_in_and_fan_out(self.weight)bound=1/math.sqrt(fan_in)init.uniform_(self.bias,-bound,bound)defforward(self,input:Tensor)->Tensor:②returnF.linear(input,self.weight,self.bias)③
 ```
 
-![1](img/#co_customizing_pytorch_CO1-1)
+①
 
 初始化输入和输出大小、权重和偏置。
 
-![2](img/#co_customizing_pytorch_CO1-2)
+②
 
 定义前向传递。
 
-![3](img/#co_customizing_pytorch_CO1-3)
+③
 
 使用`linear()`的功能定义。
 
@@ -159,28 +159,28 @@ class MyReLU(nn.Module):
 这是函数版本：
 
 ```py
-importtorch.nn.functionalasF![1](img/1.png)classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.fc1=nn.Linear(D_in,H)self.fc2=nn.Linear(H,D_out)defforward(self,x):x=F.relu(self.fc1(x))![2](img/2.png)returnself.fc2(x)
+importtorch.nn.functionalasF①classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.fc1=nn.Linear(D_in,H)self.fc2=nn.Linear(H,D_out)defforward(self,x):x=F.relu(self.fc1(x))②returnself.fc2(x)
 ```
 
-![1](img/#co_customizing_pytorch_CO2-1)
+①
 
 导入函数包的常见方式。
 
-![2](img/#co_customizing_pytorch_CO2-2)
+②
 
 这里使用了 ReLU 的函数版本。
 
 这是类版本：
 
 ```py
-classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.net=nn.Sequential(![1](img/1.png)nn.Linear(D_in,H),nn.ReLU(),![2](img/2.png)nn.Linear(H,D_out))defforward(self,x):returnself.net(x)
+classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.net=nn.Sequential(①nn.Linear(D_in,H),nn.ReLU(),②nn.Linear(H,D_out))defforward(self,x):returnself.net(x)
 ```
 
-![1](img/#co_customizing_pytorch_CO3-1)
+①
 
 我们使用`nn.Sequential()`因为所有组件都是类。
 
-![2](img/#co_customizing_pytorch_CO3-2)
+②
 
 我们正在使用 ReLU 的类版本。
 
@@ -189,14 +189,14 @@ classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self)._
 我们可以创建自己的自定义 ComplexReLU 激活函数来处理我们之前创建的`ComplexLinear`层中的复数值。以下代码展示了函数版本和类版本：
 
 ```py
-defcomplex_relu(in_r,in_i):![1](img/1.png)return(F.relu(in_r),F.relu(in_i))classComplexReLU(nn.Module):![2](img/2.png)def__init__(self):super(ComplexReLU,self).__init__()defforward(self,in_r,in_i):returncomplex_relu(in_r,in_i)
+defcomplex_relu(in_r,in_i):①return(F.relu(in_r),F.relu(in_i))classComplexReLU(nn.Module):②def__init__(self):super(ComplexReLU,self).__init__()defforward(self,in_r,in_i):returncomplex_relu(in_r,in_i)
 ```
 
-![1](img/#co_customizing_pytorch_CO4-1)
+①
 
 函数版本
 
-![2](img/#co_customizing_pytorch_CO4-2)
+②
 
 类版本
 
@@ -293,10 +293,10 @@ def alexnet(pretrained=False,
 这使我们能够直接调用该类来计算给定 NN 输出和真实值的损失。然后我们可以一次计算所有 NN 参数的梯度，即进行反向传播。以下代码展示了如何在代码中实现这一点：
 
 ```py
-loss_fcn=nn.MSELoss()![1](img/1.png)loss=loss_fcn(outputs,targets)loss.backward()
+loss_fcn=nn.MSELoss()①loss=loss_fcn(outputs,targets)loss.backward()
 ```
 
-![1](img/#co_customizing_pytorch_CO5-1)
+①
 
 有时称为`criterion`
 
@@ -375,23 +375,23 @@ optim.SGD([
 PyTorch 提供了一个`torch.optim.Optimizer`基类，以便轻松创建自定义优化器。以下是`Optimizer`基类的简化版本：
 
 ```py
-fromcollectionsimportdefaultdictclassOptimizer(object):def__init__(self,params,defaults):self.defaults=defaultsself.state=defaultdict(dict)![1](img/1.png)self.param_groups=[]![2](img/2.png)param_groups=list(params)iflen(param_groups)==0:raiseValueError("""optimizer got an
-                empty parameter list""")ifnotisinstance(param_groups[0],dict):param_groups=[{'params':param_groups}]forparam_groupinparam_groups:self.add_param_group(param_group)def__getstate__(self):return{'defaults':self.defaults,'state':self.state,'param_groups':self.param_groups,}def__setstate__(self,state):self.__dict__.update(state)defzero_grad(self):![3](img/3.png)forgroupinself.param_groups:forpingroup['params']:ifp.gradisnotNone:p.grad.detach_()p.grad.zero_()defstep(self,closure):![4](img/4.png)raiseNotImplementedError
+fromcollectionsimportdefaultdictclassOptimizer(object):def__init__(self,params,defaults):self.defaults=defaultsself.state=defaultdict(dict)①self.param_groups=[]②param_groups=list(params)iflen(param_groups)==0:raiseValueError("""optimizer got an
+                empty parameter list""")ifnotisinstance(param_groups[0],dict):param_groups=[{'params':param_groups}]forparam_groupinparam_groups:self.add_param_group(param_group)def__getstate__(self):return{'defaults':self.defaults,'state':self.state,'param_groups':self.param_groups,}def__setstate__(self,state):self.__dict__.update(state)defzero_grad(self):③forgroupinself.param_groups:forpingroup['params']:ifp.gradisnotNone:p.grad.detach_()p.grad.zero_()defstep(self,closure):④raiseNotImplementedError
 ```
 
-![1](img/#co_customizing_pytorch_CO6-1)
+①
 
 根据需要定义`state`。
 
-![2](img/#co_customizing_pytorch_CO6-2)
+②
 
 根据需要定义 `param_groups`。
 
-![3](img/#co_customizing_pytorch_CO6-3)
+③
 
 根据需要定义 `zero_grad()`。
 
-![4](img/#co_customizing_pytorch_CO6-4)
+④
 
 您需要编写自己的 `step()`。
 
@@ -491,18 +491,18 @@ with torch.no_grad():
 让我们为我们的循环添加一些额外的功能。可能性是无限的，但这个示例将演示一些简单的任务，比如打印信息、重新配置模型以及在训练过程中调整超参数。让我们走一遍以下代码，看看如何实现这一点：
 
 ```py
-forepochinrange(n_epochs):total_train_loss=0.0![1](img/1.png)total_val_loss=0.0![1](img/1.png)if(epoch==epoch//2):optimizer=optim.SGD(model.parameters(),lr=0.001)![2](img/2.png)# Trainingmodel.train()![3](img/3.png)fordataintrain_dataloader:input,targets=dataoptimizer.zero_grad()output=model(input)train_loss=criterion(output,targets)train_loss.backward()optimizer.step()total_train_loss+=train_loss![1](img/1.png)# Validationmodel.eval()![3](img/3.png)withtorch.no_grad():forinput,targetsinval_dataloader:output=model(input)val_loss=criterion(output,targets)total_val_loss+=val_loss![1](img/1.png)print("""Epoch: {} Train Loss: {} Val Loss {}""".format(epoch,total_train_loss,total_val_loss))![1](img/1.png)# Testingmodel.eval()withtorch.no_grad():forinput,targetsintest_dataloader:output=model(input)test_loss=criterion(output,targets)
+forepochinrange(n_epochs):total_train_loss=0.0①total_val_loss=0.0①if(epoch==epoch//2):optimizer=optim.SGD(model.parameters(),lr=0.001)②# Trainingmodel.train()③fordataintrain_dataloader:input,targets=dataoptimizer.zero_grad()output=model(input)train_loss=criterion(output,targets)train_loss.backward()optimizer.step()total_train_loss+=train_loss①# Validationmodel.eval()③withtorch.no_grad():forinput,targetsinval_dataloader:output=model(input)val_loss=criterion(output,targets)total_val_loss+=val_loss①print("""Epoch: {} Train Loss: {} Val Loss {}""".format(epoch,total_train_loss,total_val_loss))①# Testingmodel.eval()withtorch.no_grad():forinput,targetsintest_dataloader:output=model(input)test_loss=criterion(output,targets)
 ```
 
-![1](img/#co_customizing_pytorch_CO7-1)
+①
 
 打印 epoch、训练和验证损失的示例
 
-![2](img/#co_customizing_pytorch_CO7-3)
+②
 
 重新配置模型的示例（最佳实践）
 
-![3](img/#co_customizing_pytorch_CO7-4)
+③
 
 修改训练过程中的超参数示例
 

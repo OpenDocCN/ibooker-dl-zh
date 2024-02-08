@@ -339,19 +339,19 @@ import * as toxicity from "@tensorflow-models/toxicity";
 以下是加载模型并对三个句子进行分类的示例。这个确切的示例可以在[GitHub 上的章节代码](https://oreil.ly/sTs5a)的相关部分中以三种不同形式找到。
 
 ```py
-// minimum positive prediction confidence // If this isn't passed, the default is 0.85 constthreshold=0.5;// Load the model ![1](img/1.png)toxicity.load(threshold).then((model)=>{constsentences=["You are a poopy head!","I like turtles","Shut up!"];// Ask the model to classify inputs ![2](img/2.png)model.classify(sentences).then((predictions)=>{// semi-pretty-print results
-console.log(JSON.stringify(predictions,null,2));![3](img/3.png)});});
+// minimum positive prediction confidence // If this isn't passed, the default is 0.85 constthreshold=0.5;// Load the model ①toxicity.load(threshold).then((model)=>{constsentences=["You are a poopy head!","I like turtles","Shut up!"];// Ask the model to classify inputs ②model.classify(sentences).then((predictions)=>{// semi-pretty-print results
+console.log(JSON.stringify(predictions,null,2));③});});
 ```
 
-![1](img/#co_introducing_tensorflow_js_CO1-1)
+①
 
 模型加载到浏览器中并带有阈值。
 
-![2](img/#co_introducing_tensorflow_js_CO1-2)
+②
 
 加载的模型被要求对输入进行分类。
 
-![3](img/#co_introducing_tensorflow_js_CO1-3)
+③
 
 使用 JavaScript 对象表示法很好地打印了对象。
 

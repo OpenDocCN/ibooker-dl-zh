@@ -57,14 +57,14 @@
 ##### 示例 3-1。创建您的第一个张量
 
 ```py
-// creating our first tensor constdataArray=[8,6,7,5,3,0,9]constfirst=tf.tensor(dataArray)![1](img/1.png)// does the same thing constfirst_again=tf.tensor1d(dataArray)![2](img/2.png)
+// creating our first tensor constdataArray=[8,6,7,5,3,0,9]constfirst=tf.tensor(dataArray)①// does the same thing constfirst_again=tf.tensor1d(dataArray)②
 ```
 
-![1](img/#co_introducing_tensors_CO1-1)
+①
 
 `tf.tensor` 如果传入一个一维数组，将创建一个一维张量。如果传入一个二维数组，将创建一个二维张量。
 
-![2](img/#co_introducing_tensors_CO1-2)
+②
 
 `tf.tensor1d` 如果传入一个一维数组，将创建一个一维张量。如果传入一个二维数组，将报错。
 
@@ -79,26 +79,26 @@
 如果您希望强制创建的张量具有特定类型，请随时利用 `tf.tensor` 函数的第三个参数，该参数明确定义了张量的类型结构。
 
 ```py
-// creating a 'float32' tensor (the default) constfirst=tf.tensor([1.1,2.2,3.3],null,'float32')![1](img/1.png)// an 'int32' tensor constfirst_again=tf.tensor([1,2,3],null,'int32')![2](img/2.png)// inferred type for boolean constthe_truth=tf.tensor([true,false,false])![3](img/3.png)// Guess what this does constguess=tf.tensor([true,false,false],null,'int32')![4](img/4.png)// What about this? constguess_again=tf.tensor([1,3.141592654,false])![5](img/5.png)
+// creating a 'float32' tensor (the default) constfirst=tf.tensor([1.1,2.2,3.3],null,'float32')①// an 'int32' tensor constfirst_again=tf.tensor([1,2,3],null,'int32')②// inferred type for boolean constthe_truth=tf.tensor([true,false,false])③// Guess what this does constguess=tf.tensor([true,false,false],null,'int32')④// What about this? constguess_again=tf.tensor([1,3.141592654,false])⑤
 ```
 
-![1](img/#co_introducing_tensors_CO2-1)
+①
 
 这个张量被创建为 `Float32` 张量。在这种情况下，第三个参数是多余的。
 
-![2](img/#co_introducing_tensors_CO2-2)
+②
 
 生成的张量是 Int32 类型的，如果没有第三个参数，它将是一个 `Float32` 类型的。
 
-![3](img/#co_introducing_tensors_CO2-3)
+③
 
 生成的张量是一个布尔型张量。
 
-![4](img/#co_introducing_tensors_CO2-4)
+④
 
 生成的张量是一个 Int32 张量，布尔值被转换为 `0` 表示 false，`1` 表示 true。因此，变量 guess 包含数据 `[1, 0, 0]`。
 
-![5](img/#co_introducing_tensors_CO2-5)
+⑤
 
 您可能认为这个疯狂的数组会报错，但输入值中的每个值都会转换为相应的 `Float32`，生成的张量数据为 `[1, 3.1415927, 0]`。
 
@@ -107,26 +107,26 @@
 让我们应用我们所学到的知识：
 
 ```py
-constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](img/1.png)// Whoopsie! try{constnope=tf.tensor1d([[1],[2]])![2](img/2.png)}catch(e){console.log("That's a negative Ghost Rider")}console.log("Rank:",second.rank)![3](img/3.png)console.log("Size:",second.size)![4](img/4.png)console.log("Data Type:",second.dtype)![5](img/5.png)
+constsecond=tf.tensor1d([8,6,7,5,3,0,9])①// Whoopsie! try{constnope=tf.tensor1d([[1],[2]])②}catch(e){console.log("That's a negative Ghost Rider")}console.log("Rank:",second.rank)③console.log("Size:",second.size)④console.log("Data Type:",second.dtype)⑤
 ```
 
-![1](img/#co_introducing_tensors_CO3-1)
+①
 
 这将创建一个成功的张量。您应该知道数据类型，维度和大小。
 
-![2](img/#co_introducing_tensors_CO3-2)
+②
 
 由于您正在使用`tensor1d`创建一个秩为二的张量，这将导致`catch`运行并记录一条消息。
 
-![3](img/#co_introducing_tensors_CO3-3)
+③
 
 简单数组的秩为一，因此它将打印`1`。
 
-![4](img/#co_introducing_tensors_CO3-4)
+④
 
 大小是数组的长度，将打印`7`。
 
-![5](img/#co_introducing_tensors_CO3-5)
+⑤
 
 从数字数组的张量数据类型将打印`float32`。
 
@@ -161,14 +161,14 @@ constsecond=tf.tensor1d([8,6,7,5,3,0,9])![1](img/1.png)// Whoopsie! try{constnop
 既然您有了一个目标，让我们编写一些代码将棋盘转换为张量。我们甚至将探索张量创建的附加参数。
 
 ```py
-// This code creates a 1D `Float32` tensor consta=tf.tensor([1,0,0,0,-1,0,1,0,0])// This code creates a 2D `Float32` tensor constb=tf.tensor([[1,0,0],[0,-1,0],[1,0,0]])// This does the same as the above but with a 1D input // array that is converted into a 2D `Float32` tensor constc=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3])![1](img/1.png)// This code turns the 1D input array into a 2D Int32 tensor constd=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3],'int32')![2](img/2.png)
+// This code creates a 1D `Float32` tensor consta=tf.tensor([1,0,0,0,-1,0,1,0,0])// This code creates a 2D `Float32` tensor constb=tf.tensor([[1,0,0],[0,-1,0],[1,0,0]])// This does the same as the above but with a 1D input // array that is converted into a 2D `Float32` tensor constc=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3])①// This code turns the 1D input array into a 2D Int32 tensor constd=tf.tensor([1,0,0,0,-1,0,1,0,0],[3,3],'int32')②
 ```
 
-![1](img/#co_introducing_tensors_CO4-1)
+①
 
 张量的第二个参数可以标识输入数据的期望形状。在这里，通过指定希望数据为 3 x 3 的秩二结构，将 1D 数组转换为 2D 张量。
 
-![2](img/#co_introducing_tensors_CO4-2)
+②
 
 张量的第三个参数标识您想要在推断的数据类型上使用的数据类型。由于您正在存储整数，因此可以指定类型`int32`。但是，默认的`float32`类型的范围非常大，可以轻松处理我们的数字。
 
@@ -268,28 +268,28 @@ console.log(tf.memory().numBytes)
 您将很快习惯清理张量。确保学习以下代码，它将演示 `tidy()` 和 `keep()` 的使用：
 
 ```py
-// Start at zero tensors console.log('start',tf.memory().numTensors)letkeeper,chaser,seeker,beater// Now we'll create tensors inside a tidy tf.tidy(()=>{![1](img/1.png)keeper=tf.tensor([1,2,3])chaser=tf.tensor([1,2,3])seeker=tf.tensor([1,2,3])beater=tf.tensor([1,2,3])// Now we're at four tensors in memory ![2](img/2.png)console.log('inside tidy',tf.memory().numTensors)// protect a tensor
+// Start at zero tensors console.log('start',tf.memory().numTensors)letkeeper,chaser,seeker,beater// Now we'll create tensors inside a tidy tf.tidy(()=>{①keeper=tf.tensor([1,2,3])chaser=tf.tensor([1,2,3])seeker=tf.tensor([1,2,3])beater=tf.tensor([1,2,3])// Now we're at four tensors in memory ②console.log('inside tidy',tf.memory().numTensors)// protect a tensor
 tf.keep(keeper)// returned tensors survive
-returnchaser})// Down to two ![3](img/3.png)console.log('after tidy',tf.memory().numTensors)keeper.dispose()![4](img/4.png)chaser.dispose()![5](img/5.png)// Back to zero console.log('end',tf.memory().numTensors)
+returnchaser})// Down to two ③console.log('after tidy',tf.memory().numTensors)keeper.dispose()④chaser.dispose()⑤// Back to zero console.log('end',tf.memory().numTensors)
 ```
 
-![1](img/#co_introducing_tensors_CO6-1)
+①
 
 `tidy` 方法接受一个同步函数，并监视在此封闭中创建的张量。您不能在此处使用异步函数或承诺。如果您需要任何异步操作，您将不得不显式调用 `.dispose`。
 
-![2](img/#co_introducing_tensors_CO6-2)
+②
 
 所有四个张量都已有效加载到内存中。
 
-![3](img/#co_introducing_tensors_CO6-3)
+③
 
 即使您没有显式调用 `dispose`，`tidy` 已经正确销毁了创建的两个张量（那两个没有被保留或返回的张量）。如果您现在尝试访问它们，将会收到错误信息。
 
-![4](img/#co_introducing_tensors_CO6-4)
+④
 
 显式销毁您在 `tidy` 中使用 `tf.keep` 保存的张量。
 
-![5](img/#co_introducing_tensors_CO6-5)
+⑤
 
 显式销毁您从 `tidy` 返回的张量。
 
@@ -323,10 +323,10 @@ for (let i = 0; i < 10; i++) {
 以下代码探讨了使用先前描述的方法转换、打印和解析张量并进行张量操作的过程：
 
 ```py
-constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.tensor([[1,2,3],[4,5,6]])// this will show the structure but not the data console.log(snap)![1](img/1.png)// this will print the data but not the tensor structure crackle.print()![2](img/2.png)// Now let's go back to JavaScript console.log('Welcome Back Array!',pop.arraySync())![3](img/3.png)console.log('Welcome Back Typed!',pop.dataSync())![4](img/4.png)// clean up our remaining tensors! tf.dispose([snap,crackle,pop])
+constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.tensor([[1,2,3],[4,5,6]])// this will show the structure but not the data console.log(snap)①// this will print the data but not the tensor structure crackle.print()②// Now let's go back to JavaScript console.log('Welcome Back Array!',pop.arraySync())③console.log('Welcome Back Typed!',pop.dataSync())④// clean up our remaining tensors! tf.dispose([snap,crackle,pop])
 ```
 
-![1](img/#co_introducing_tensors_CO7-1)
+①
 
 这个日志显示了保存张量及其相关属性的 JavaScript 结构。您可以看到形状，`isDisposedInternal`为 false，因为它尚未被处理，但这只是一个指向数据的指针，而不是包含数据。这个日志打印如下：
 
@@ -347,7 +347,7 @@ constsnap=tf.tensor([1,2,3])constcrackle=tf.tensor([3.141592654])constpop=tf.ten
 }
 ```
 
-![2](img/#co_introducing_tensors_CO7-2)
+②
 
 在张量上调用`.print`会直接将内部值的实际打印输出到控制台。这个日志打印如下：
 
@@ -356,7 +356,7 @@ Tensor
     [3.1415927]
 ```
 
-![3](img/#co_introducing_tensors_CO7-3)
+③
 
 `.arraySync`将 2D 张量的值作为 2D JavaScript 数组返回给我们。这个日志打印如下：
 
@@ -376,7 +376,7 @@ Welcome Back Array!
 ]
 ```
 
-![4](img/#co_introducing_tensors_CO7-4)
+④
 
 `.dataSync`给我们提供了 2D 张量的值作为一个 1D [Float32Array](https://oreil.ly/ozV2H)对象，有效地将数据展平。记录一个类型化数组看起来像一个具有索引作为属性的对象。这个日志打印：
 
@@ -453,26 +453,26 @@ Welcome Back Typed!
 以下是数据：
 
 ```py
-constusers=['Gant','Todd','Jed','Justin']![1](img/1.png)constbands=![2'Nirvana','Nine Inch Nails','Backstreet Boys','N Sync','Night Club','Apashe','STP']constfeatures=![3'Grunge','Rock','Industrial','Boy Band','Dance','Techno']// User votes ![4](img/4.png)constuser_votes=tf.tensor([[10,9,1,1,8,7,8],[6,8,2,2,0,10,0],[0,2,10,9,3,7,0],[7,4,2,3,6,5,5]])// Music Styles ![5](img/5.png)constband_feats=tf.tensor([[1,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,1,0,0],[0,0,1,0,0,1],[0,0,1,0,0,1],[1,1,0,0,0,0]])
+constusers=['Gant','Todd','Jed','Justin']①constbands=![2'Nirvana','Nine Inch Nails','Backstreet Boys','N Sync','Night Club','Apashe','STP']constfeatures=![3'Grunge','Rock','Industrial','Boy Band','Dance','Techno']// User votes ④constuser_votes=tf.tensor([[10,9,1,1,8,7,8],[6,8,2,2,0,10,0],[0,2,10,9,3,7,0],[7,4,2,3,6,5,5]])// Music Styles ⑤constband_feats=tf.tensor([[1,1,0,0,0,0],[1,0,1,0,0,0],[0,0,0,1,1,0],[0,0,0,1,0,0],[0,0,1,0,0,1],[0,0,1,0,0,1],[1,1,0,0,0,0]])
 ```
 
-![1](img/#co_introducing_tensors_CO8-1)
+①
 
 这四个名称标签只是简单地存储在一个普通的 JavaScript 数组中。
 
-![2](img/#co_introducing_tensors_CO8-2)
+②
 
 你已经要求我们的用户对七支乐队进行评分。
 
-![3](img/#co_introducing_tensors_CO8-3)
+③
 
 一些简单的音乐流派可以用来描述我们的七支乐队，同样存储在一个 JavaScript 数组中。
 
-![4](img/#co_introducing_tensors_CO8-4)
+④
 
 这是我们的第一个张量，一个二级描述，每个用户的投票从`1`到`10`，其中“我不认识这支乐队”为`0`。
 
-![5](img/#co_introducing_tensors_CO8-5)
+⑤
 
 这个张量也是一个二维张量，用于识别与每个给定乐队匹配的流派。每行索引代表了可以分类为真/假的流派的编码。
 
@@ -506,14 +506,14 @@ Tensor
 最后，让我们把这些数据带回 JavaScript。编写这段代码可以这样写：
 
 ```py
-// Let's make them pretty consttop_user_features=tf.topk(user_feats,features.length)// Back to JavaScript consttop_genres=top_user_features.indices.arraySync()![1](img/1.png)// print the results users.map((u,i)=>{constrankedCategories=top_genres[i].map(v=>features[v])![2](img/2.png)console.log(u,rankedCategories)})
+// Let's make them pretty consttop_user_features=tf.topk(user_feats,features.length)// Back to JavaScript consttop_genres=top_user_features.indices.arraySync()①// print the results users.map((u,i)=>{constrankedCategories=top_genres[i].map(v=>features[v])②console.log(u,rankedCategories)})
 ```
 
-![1](img/#co_introducing_tensors_CO9-1)
+①
 
 你将索引张量返回到一个二维 JavaScript 数组以获取结果。
 
-![2](img/#co_introducing_tensors_CO9-2)
+②
 
 你正在将索引映射回音乐流派。
 

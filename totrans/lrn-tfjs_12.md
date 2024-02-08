@@ -135,18 +135,18 @@ feature_vector
 图像已经是 224 x 224，所以你可以用以下代码加载它们：
 
 ```py
-console.log("Loading huge CSV - this will take a while");constnumImages=130;// between 1 and 150 // Get Y values constlabels=awaitdfd.read_csv("chess_labels.csv",numImages);![1](img/1.png)constY=labels.tensor;![2](img/2.png)// Get X values (Chess images) constchessImages=awaitdfd.read_csv("chess_images.csv",numImages);constchessTensor=chessImages.tensor.reshape([labels.shape[0],224,224,3,![3](img/3.png)]);console.log("Finished loading CSVs",chessTensor.shape,Y.shape);
+console.log("Loading huge CSV - this will take a while");constnumImages=130;// between 1 and 150 // Get Y values constlabels=awaitdfd.read_csv("chess_labels.csv",numImages);①constY=labels.tensor;②// Get X values (Chess images) constchessImages=awaitdfd.read_csv("chess_images.csv",numImages);constchessTensor=chessImages.tensor.reshape([labels.shape[0],224,224,3,③]);console.log("Finished loading CSVs",chessTensor.shape,Y.shape);
 ```
 
-![1](img/#co_transfer_learning_CO1-1)
+①
 
 `read_csv`的第二个参数限制了行数到指定的数字。
 
-![2](img/#co_transfer_learning_CO1-2)
+②
 
 然后将 DataFrames 转换为张量。
 
-![3](img/#co_transfer_learning_CO1-3)
+③
 
 图像被展平以变成序列化，但现在被重新塑造成一个四维的 RGB 图像批次。
 
@@ -197,14 +197,14 @@ Features stack 130,1664
 ##### 示例 11-3\. 一个包含 64 层的小模型，最后一层是 6
 
 ```py
-// Create NN consttransferModel=tf.sequential({layers:![1tf.layers.dense({inputShape:[featureX.shape[1]],![2](img/2.png)units: 64,activation:"relu",}),tf.layers.dense({units: 6,activation:"softmax"}),],});
+// Create NN consttransferModel=tf.sequential({layers:![1tf.layers.dense({inputShape:[featureX.shape[1]],②units: 64,activation:"relu",}),tf.layers.dense({units: 6,activation:"softmax"}),],});
 ```
 
-![1](img/#co_transfer_learning_CO2-1)
+①
 
 这个 Layers 模型使用了一个与你习惯的略有不同的语法。而不是调用`.add`，所有的层都被呈现在初始配置的数组中。这种语法对于像这样的小模型很好。
 
-![2](img/#co_transfer_learning_CO2-2)
+②
 
 模型的`inputShape`被动态设置为`1,664`，以防你想通过更新模型 URL 来改变模型的深度乘数。
 
@@ -386,18 +386,18 @@ src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2">
 KNN 分类器需要每个类别的示例。为了简化这个过程，我创建了以下辅助函数：
 
 ```py
-// domID is the DOM element ID // classID is the unique class index functionaddExample(domID,classID){constfeatures=mobileNet.infer(![1](img/1.png)document.getElementById(domID),![2](img/2.png)true![3](img/3.png));classifier.addExample(features,classID);}
+// domID is the DOM element ID // classID is the unique class index functionaddExample(domID,classID){constfeatures=mobileNet.infer(①document.getElementById(domID),②true③);classifier.addExample(features,classID);}
 ```
 
-![1](img/#co_transfer_learning_CO3-1)
+①
 
 `infer`方法返回值，而不是富 JavaScript 对象的检测。
 
-![2](img/#co_transfer_learning_CO3-2)
+②
 
 页面上的图像`id`将告诉 MobileNet 要调整大小和处理哪个图像。张量逻辑被 JavaScript 隐藏，但本书的许多章节已经解释了实际发生的事情。
 
-![3](img/#co_transfer_learning_CO3-3)
+③
 
 MobileNet 模型返回图像的特征（有时称为*嵌入*）。如果未设置，则返回 1,000 个原始值的张量（有时称为*对数*）。
 
@@ -416,14 +416,14 @@ addExample('sport3', 1)
 最后，预测的系统是相同的。获取图像的特征，并要求分类器根据 KNN 识别输入基于哪个类。
 
 ```py
-// Moment of truth consttestImage=document.getElementById('test')consttestFeature=mobileNet.infer(testImage,true);constpredicted=awaitclassifier.predictClass(testFeature)if(predicted.classIndex===0){![1](img/1.png)document.getElementById("result").innerText="A Bunny"![2](img/2.png)}else{document.getElementById("result").innerText="A Sports Car"}
+// Moment of truth consttestImage=document.getElementById('test')consttestFeature=mobileNet.infer(testImage,true);constpredicted=awaitclassifier.predictClass(testFeature)if(predicted.classIndex===0){①document.getElementById("result").innerText="A Bunny"②}else{document.getElementById("result").innerText="A Sports Car"}
 ```
 
-![1](img/#co_transfer_learning_CO4-1)
+①
 
 `classIndex`是作为`addExample`中传递的数字。如果添加第三个类别，那么新的索引将成为可能的输出。
 
-![2](img/#co_transfer_learning_CO4-2)
+②
 
 网页文本从“???”更改为结果。
 

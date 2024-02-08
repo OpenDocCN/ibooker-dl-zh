@@ -170,35 +170,35 @@ _________________________________________________________________
 现在您已经熟悉了高级概念，您可能迫不及待地想用代码解决这个问题。以下是用数据训练模型的代码，然后立即要求模型为值`10`提供答案，如前所述。
 
 ```py
-// Inputs constxs=tf.tensor([-1,0,1,2,3,4]);![1](img/1.png)// Answers we want from inputs constys=tf.tensor([-4,-2,0,2,4,6]);// Create a model constmodel=tf.sequential();![2](img/2.png)model.add(![3](img/3.png)tf.layers.dense({inputShape: 1,units: 1}));model.compile({![4](img/4.png)optimizer:"sgd",loss:"meanSquaredError"});// Print out the model structure model.summary();// Train model.fit(xs,ys,{epochs: 300}).then(history=>{![5](img/5.png)constinputTensor=tf.tensor([10]);constanswer=model.predict(inputTensor);![6](img/6.png)console.log(`10 results in ${Math.round(answer.dataSync())}`);// cleanup
-tf.dispose([xs,ys,model,answer,inputTensor]);![7](img/7.png)});
+// Inputs constxs=tf.tensor([-1,0,1,2,3,4]);①// Answers we want from inputs constys=tf.tensor([-4,-2,0,2,4,6]);// Create a model constmodel=tf.sequential();②model.add(③tf.layers.dense({inputShape: 1,units: 1}));model.compile({④optimizer:"sgd",loss:"meanSquaredError"});// Print out the model structure model.summary();// Train model.fit(xs,ys,{epochs: 300}).then(history=>{⑤constinputTensor=tf.tensor([10]);constanswer=model.predict(inputTensor);⑥console.log(`10 results in ${Math.round(answer.dataSync())}`);// cleanup
+tf.dispose([xs,ys,model,answer,inputTensor]);⑦});
 ```
 
-![1](img/#co_training_models_CO1-1)
+①
 
 数据准备在具有输入和期望输出的张量中完成。
 
-![2](img/#co_training_models_CO1-2)
+②
 
 开始一个顺序模型。
 
-![3](img/#co_training_models_CO1-3)
+③
 
 添加唯一的具有一个输入和一个输出的层，如前所述。
 
-![4](img/#co_training_models_CO1-4)
+④
 
 使用给定的优化器和损失函数完成顺序模型。
 
-![5](img/#co_training_models_CO1-5)
+⑤
 
 模型被告知用`fit`进行 300 个 epochs 的训练。这是一个微不足道的时间量，当`fit`完成时，它返回的承诺会被解决。
 
-![6](img/#co_training_models_CO1-6)
+⑥
 
 要求训练模型为输入张量`10`提供答案。您需要四舍五入答案以获得整数结果。
 
-![7](img/#co_training_models_CO1-7)
+⑦
 
 在获得答案后立即处理所有内容。
 
@@ -273,22 +273,22 @@ const ys = tf.tensor(jsys);
 要添加这一层并为其提供激活函数，您将在序列中指定一个新的密集层：
 
 ```py
-model.add(tf.layers.dense({inputShape: 1,![1](img/1.png)units: 20,![2](img/2.png)activation:"relu"![3](img/3.png)}));model.add(tf.layers.dense({units: 1![4](img/4.png)}));
+model.add(tf.layers.dense({inputShape: 1,①units: 20,②activation:"relu"③}));model.add(tf.layers.dense({units: 1④}));
 ```
 
-![1](img/#co_training_models_CO2-1)
+①
 
 第一层将输入张量定义为一个单一数字。
 
-![2](img/#co_training_models_CO2-2)
+②
 
 指定层应该有 20 个节点。
 
-![3](img/#co_training_models_CO2-3)
+③
 
 为您的层指定一个花哨的激活函数。
 
-![4](img/#co_training_models_CO2-4)
+④
 
 添加最终的单单元层以获取输出值。
 
@@ -323,18 +323,18 @@ TensorFlow.js 拥有各种令人惊奇的工具，可帮助您识别训练进度
 由于您已经熟悉一个 epoch（对训练数据的完整运行），这是您在本例中将使用的时刻。这是一个简洁但有效的获取某种控制台消息的方法。
 
 ```py
-constprintCallback={![1](img/1.png)onEpochEnd:(epoch,log)=>{![2](img/2.png)console.log(epoch,log);![3](img/3.png)}};
+constprintCallback={①onEpochEnd:(epoch,log)=>{②console.log(epoch,log);③}};
 ```
 
-![1](img/#co_training_models_CO3-1)
+①
 
 创建包含您想要连接的所有生命周期方法的回调对象。
 
-![2](img/#co_training_models_CO3-2)
+②
 
 `onEpochEnd`是训练支持的许多已识别的生命周期回调之一。其他枚举在框架的[`fit`部分](https://oreil.ly/NoVqS)文档中。
 
-![3](img/#co_training_models_CO3-3)
+③
 
 打印审查的值。通常，您会对这些信息进行更深入的处理。
 
@@ -397,10 +397,10 @@ model.compile({
 情况看起来不错，但还有一个功能我们应该添加，有时可以显著缩短训练时间。在一台相当不错的机器上，这 100 个时期大约需要 100 秒才能运行。您可以通过一行批处理数据来加快训练速度。当您将`batchSize`属性分配给`fit`配置时，训练速度会大大加快。尝试在 fit 调用中添加批处理大小：
 
 ```py
-awaitmodel.fit(xs,ys,{epochs: 100,callbacks: printCallback,batchSize: 64![1](img/1.png)});
+awaitmodel.fit(xs,ys,{epochs: 100,callbacks: printCallback,batchSize: 64①});
 ```
 
-![1](img/#co_training_models_CO4-1)
+①
 
 对于我的机器，64 的`batchSize`将训练时间从 100 秒减少到 50 秒。
 

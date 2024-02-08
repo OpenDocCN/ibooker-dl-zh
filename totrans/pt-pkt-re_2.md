@@ -96,30 +96,30 @@ z = z.to("cpu")
 以下代码说明了创建张量的一些常见方法。首先，它展示了如何使用`torch.tensor()`从列表创建张量。此方法也可用于从其他数据结构（如元组、集合或 NumPy 数组）创建张量：
 
 ```py
-importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])![1](img/1.png)w=torch.tensor((1,2,3))![2](img/2.png)w=torch.tensor(numpy.array([1,2,3]))![3](img/3.png)# Initialized by sizew=torch.empty(100,200)![4](img/4.png)w=torch.zeros(100,200)![5](img/5.png)w=torch.ones(100,200)![6](img/6.png)
+importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])①w=torch.tensor((1,2,3))②w=torch.tensor(numpy.array([1,2,3]))③# Initialized by sizew=torch.empty(100,200)④w=torch.zeros(100,200)⑤w=torch.ones(100,200)⑥
 ```
 
-![1](img/#co_tensors_CO1-1)
+①
 
 从列表中
 
-![2](img/#co_tensors_CO1-2)
+②
 
 从元组中
 
-![3](img/#co_tensors_CO1-3)
+③
 
 从 NumPy 数组中
 
-![4](img/#co_tensors_CO1-4)
+④
 
 未初始化；元素值不可预测
 
-![5](img/#co_tensors_CO1-5)
+⑤
 
 所有元素初始化为 0.0
 
-![6](img/#co_tensors_CO1-6)
+⑥
 
 所有元素初始化为 1.0
 
@@ -128,14 +128,14 @@ importnumpy# Created from preexisting arraysw=torch.tensor([1,2,3])![1](img/1.pn
 如果您想要使用随机值初始化张量，PyTorch 支持一组强大的函数，例如`torch.rand()`、`torch.randn()`和`torch.randint()`，如下面的代码所示：
 
 ```py
-# Initialized by size with random valuesw=torch.rand(100,200)![1](img/1.png)w=torch.randn(100,200)![2](img/2.png)w=torch.randint(5,10,(100,200))![3](img/3.png)# Initialized with specified data type or devicew=torch.empty((100,200),dtype=torch.float64,device="cuda")# Initialized to have the same size, data type,#   and device as another tensorx=torch.empty_like(w)
+# Initialized by size with random valuesw=torch.rand(100,200)①w=torch.randn(100,200)②w=torch.randint(5,10,(100,200))③# Initialized with specified data type or devicew=torch.empty((100,200),dtype=torch.float64,device="cuda")# Initialized to have the same size, data type,#   and device as another tensorx=torch.empty_like(w)
 ```
 
-![1](img/#co_tensors_CO2-1)
+①
 
 创建一个 100×200 的张量，元素来自区间 0,1)上的均匀分布。
 
-![2 元素是均值为 0、方差为 1 的正态分布随机数。![3](img/#co_tensors_CO2-3)
+![2 元素是均值为 0、方差为 1 的正态分布随机数。③
 
 元素是介于 5 和 10 之间的随机整数。
 
@@ -218,18 +218,18 @@ PyTorch 受欢迎的一个特点是它非常符合 Python 风格且面向对象�
 在深度学习开发中，了解数据及其计算所使用的数据类型非常重要。因此，在创建张量时，应该控制所使用的数据类型。如前所述，所有张量元素具有相同的数据类型。您可以在创建张量时使用`dtype`参数指定数据类型，或者可以使用适当的转换方法或`to()`方法将张量转换为新的`dtype`，如下面的代码所示：
 
 ```py
-# Specify the data type at creation using dtypew=torch.tensor([1,2,3],dtype=torch.float32)# Use the casting method to cast to a new data typew.int()# w remains a float32 after the castw=w.int()# w changes to an int32 after the cast# Use the to() method to cast to a new typew=w.to(torch.float64)![1](img/1.png)w=w.to(dtype=torch.float64)![2](img/2.png)# Python automatically converts data types during# operationsx=torch.tensor([1,2,3],dtype=torch.int32)y=torch.tensor([1,2,3],dtype=torch.float32)z=x+y![3](img/3.png)print(z.dtype)# out: torch.float32
+# Specify the data type at creation using dtypew=torch.tensor([1,2,3],dtype=torch.float32)# Use the casting method to cast to a new data typew.int()# w remains a float32 after the castw=w.int()# w changes to an int32 after the cast# Use the to() method to cast to a new typew=w.to(torch.float64)①w=w.to(dtype=torch.float64)②# Python automatically converts data types during# operationsx=torch.tensor([1,2,3],dtype=torch.int32)y=torch.tensor([1,2,3],dtype=torch.float32)z=x+y③print(z.dtype)# out: torch.float32
 ```
 
-![1](img/#co_tensors_CO3-1)
+①
 
 传入数据类型。
 
-![2](img/#co_tensors_CO3-2)
+②
 
 直接使用`dtype`定义数据类型。
 
-![3](img/#co_tensors_CO3-3)
+③
 
 Python 会自动将`x`转换为`float32`，并将`z`返回为`float32`。
 

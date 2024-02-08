@@ -164,22 +164,22 @@ Torchvision 为计算机视觉和图像处理提供了许多著名的预训练�
 在微调我们的模型之前，让我们用以下代码配置我们的训练：
 
 ```py
-fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")![1](img/1.png)model=model.to(device)criterion=nn.CrossEntropyLoss()![2](img/2.png)optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)![3](img/3.png)exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)![4](img/4.png)
+fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")①model=model.to(device)criterion=nn.CrossEntropyLoss()②optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)③exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)④
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO1-1)
+①
 
 如果有的话，将模型移动到 GPU 上。
 
-![2](img/#co_neural_network_development_reference_designs_CO1-2)
+②
 
 定义我们的损失函数。
 
-![3](img/#co_neural_network_development_reference_designs_CO1-3)
+③
 
 定义我们的优化器算法。
 
-![4](img/#co_neural_network_development_reference_designs_CO1-4)
+④
 
 使用学习率调度器。
 
@@ -188,25 +188,25 @@ fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda
 以下代码展示了整个训练循环，包括验证：
 
 ```py
-num_epochs=25forepochinrange(num_epochs):model.train()![1](img/1.png)running_loss=0.0running_corrects=0forinputs,labelsintrain_loader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)loss.backward()optimizer.step()running_loss+=loss.item()/inputs.size(0)running_corrects+=\
+num_epochs=25forepochinrange(num_epochs):model.train()①running_loss=0.0running_corrects=0forinputs,labelsintrain_loader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)loss.backward()optimizer.step()running_loss+=loss.item()/inputs.size(0)running_corrects+=\
 torch.sum(preds==labels.data)\
-/inputs.size(0)exp_lr_scheduler.step()![2](img/2.png)train_epoch_loss=\
+/inputs.size(0)exp_lr_scheduler.step()②train_epoch_loss=\
 running_loss/len(train_loader)train_epoch_acc=\
-running_corrects/len(train_loader)model.eval()![3](img/3.png)running_loss=0.0running_corrects=0forinputs,labelsinval_loader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)running_loss+=loss.item()/inputs.size(0)running_corrects+=\
+running_corrects/len(train_loader)model.eval()③running_loss=0.0running_corrects=0forinputs,labelsinval_loader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)running_loss+=loss.item()/inputs.size(0)running_corrects+=\
 torch.sum(preds==labels.data)\
 /inputs.size(0)epoch_loss=running_loss/len(val_loader)epoch_acc=\
 running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"" Val: Loss: {:.4f}"" Acc: {:.4f}".format(train_epoch_loss,train_epoch_acc,epoch_loss,epoch_acc))
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO2-1)
+①
 
 训练循环。
 
-![2](img/#co_neural_network_development_reference_designs_CO2-2)
+②
 
 为下一个训练周期调整学习率的计划。
 
-![3](img/#co_neural_network_development_reference_designs_CO2-3)
+③
 
 验证循环。
 
@@ -217,34 +217,34 @@ running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"
 让我们通过将模型保存到文件来测试我们的模型并部署它。为了测试我们的模型，我们将显示一批图像，并展示我们的模型如何对它们进行分类，如下面的代码所示：
 
 ```py
-importmatplotlib.pyplotaspltdefimshow(inp,title=None):![1](img/1.png)inp=inp.numpy().transpose((1,2,0))![2](img/2.png)mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean![3](img/3.png)inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))![4](img/4.png)out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))![5](img/5.png)_,preds=torch.max(outputs,1)![6](img/6.png)imshow(out,title=[class_names[x]forxinpreds])![7](img/7.png)
+importmatplotlib.pyplotaspltdefimshow(inp,title=None):①inp=inp.numpy().transpose((1,2,0))②mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean③inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))④out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))⑤_,preds=torch.max(outputs,1)⑥imshow(out,title=[class_names[x]forxinpreds])⑦
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO3-1)
+①
 
 定义一个新的函数来绘制我们的张量图像。
 
-![2](img/#co_neural_network_development_reference_designs_CO3-2)
+②
 
 切换从 C × H × W 到 H × W × C 的图像格式以进行绘图。
 
-![3](img/#co_neural_network_development_reference_designs_CO3-3)
+③
 
 撤销我们在转换过程中进行的归一化，以便正确查看图像。
 
-![4](img/#co_neural_network_development_reference_designs_CO3-4)
+④
 
 从我们的验证数据集中获取一批图像。
 
-![5](img/#co_neural_network_development_reference_designs_CO3-5)
+⑤
 
 使用我们微调的 ResNet18 进行分类。
 
-![6](img/#co_neural_network_development_reference_designs_CO3-6)
+⑥
 
 选择“获胜”类别。
 
-![7](img/#co_neural_network_development_reference_designs_CO3-7)
+⑦
 
 显示输入图像及其预测类别。
 
@@ -295,19 +295,19 @@ generate_bigrams([
 现在我们已经定义了我们的预处理函数，我们可以构建我们的 IMDb 数据集，如下所示的代码：
 
 ```py
-fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))![1](img/1.png)train_dataset=list(train_iter)![2](img/2.png)test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
-random_split(train_dataset,[num_train,len(train_dataset)-num_train])![3](img/3.png)
+fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))①train_dataset=list(train_iter)②test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
+random_split(train_dataset,[num_train,len(train_dataset)-num_train])③
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO4-1)
+①
 
 从 IMDb 数据集加载数据。
 
-![2](img/#co_neural_network_development_reference_designs_CO4-2)
+②
 
 将迭代器重新定义为列表。
 
-![3](img/#co_neural_network_development_reference_designs_CO4-3)
+③
 
 将训练数据分为两组，70%用于训练，30%用于验证。
 
@@ -339,18 +339,18 @@ print(train_data[data_index][1])
 接下来，我们需要将文本数据转换为数字数据，以便 NN 可以处理它。我们通过创建预处理函数和数据管道来实现这一点。数据管道将使用我们的`generate_bigrams()`函数、一个标记器和一个词汇表，如下所示的代码：
 
 ```py
-fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))![2](img/2.png)vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)![3](img/3.png)
+fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))②vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)③
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO5-1)
+①
 
 定义我们的分词器（如何分割文本）。
 
-![2](img/#co_neural_network_development_reference_designs_CO5-2)
+②
 
 列出我们训练数据中使用的所有标记，并计算每个标记出现的次数。
 
-![3](img/#co_neural_network_development_reference_designs_CO5-3)
+③
 
 创建一个词汇表（可能标记的列表）并定义如何将标记转换为数字。
 
@@ -490,24 +490,24 @@ model = FastText(
 我们不会从头开始训练我们的嵌入层，而是使用预训练的嵌入来初始化层的权重。这个过程类似于我们在“使用迁移学习进行图像分类”示例中使用预训练权重的方式：
 
 ```py
-pretrained_embeddings=vocab.vectors![1](img/1.png)model.embedding.weight.data.copy_(pretrained_embeddings)![2](img/2.png)EMBEDDING_DIM=100unk_idx=vocab['<UNK>']![3](img/3.png)pad_idx=vocab['<PAD>']model.embedding.weight.data[unk_idx]=\
-torch.zeros(EMBEDDING_DIM)![4](img/4.png)model.embedding.weight.data[pad_idx]=\
+pretrained_embeddings=vocab.vectors①model.embedding.weight.data.copy_(pretrained_embeddings)②EMBEDDING_DIM=100unk_idx=vocab['<UNK>']③pad_idx=vocab['<PAD>']model.embedding.weight.data[unk_idx]=\
+torch.zeros(EMBEDDING_DIM)④model.embedding.weight.data[pad_idx]=\
 torch.zeros(EMBEDDING_DIM)
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO6-1)
+①
 
 从我们的词汇表中加载预训练的嵌入。
 
-![2](img/#co_neural_network_development_reference_designs_CO6-2)
+②
 
 初始化嵌入层的权重。
 
-![3](img/#co_neural_network_development_reference_designs_CO6-3)
+③
 
 将未知标记的嵌入权重初始化为零。
 
-![4](img/#co_neural_network_development_reference_designs_CO6-4)
+④
 
 将填充标记的嵌入权重初始化为零。
 
@@ -602,11 +602,11 @@ for epoch in range(5):
 我们的测试循环如下所示：
 
 ```py
-test_loss=0test_acc=0model.eval()![1](img/1.png)withtorch.no_grad():![1](img/1.png)forlabel,text,_intest_dataloader:predictions=model(text).squeeze(1)loss=criterion(predictions,label)rounded_preds=torch.round(torch.sigmoid(predictions))correct=\
+test_loss=0test_acc=0model.eval()①withtorch.no_grad():①forlabel,text,_intest_dataloader:predictions=model(text).squeeze(1)loss=criterion(predictions,label)rounded_preds=torch.round(torch.sigmoid(predictions))correct=\
 (rounded_preds==label).float()acc=correct.sum()/len(correct)test_loss+=loss.item()test_acc+=acc.item()print("Test: Loss: %.4f Acc: %.4f"%(test_loss/len(test_dataloader),test_acc/len(test_dataloader)))# out: (your results will vary)#   Test: Loss: 0.3821 Acc: 0.8599
 ```
 
-![1](img/#co_neural_network_development_reference_designs_CO7-1)
+①
 
 对于这个模型来说并不是必需的，但是是一个好的实践。
 
@@ -872,34 +872,34 @@ test_out_images = []
 现在我们可以执行训练循环。如果 GAN 是稳定的，随着更多时代的训练，它应该会改进。以下是训练循环的代码：
 
 ```py
-N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerate(dataloader):if(i%200==0):print(f'batch: {i} of {len(dataloader)}')# Train Discriminator with an all-real batch.netD.zero_grad()real_images=batch[0].to(device)*2.-1.output=netD(real_images).view(-1)![1](img/1.png)errD_real=criterion(output,real_labels)D_x=output.mean().item()# Train Discriminator with an all-fake batch.noise=torch.randn((BATCH_SIZE,CODING_SIZE))noise=noise.view(-1,100,1,1).to(device)fake_images=netG(noise)output=netD(fake_images).view(-1)![2](img/2.png)errD_fake=criterion(output,fake_labels)D_G_z1=output.mean().item()errD=errD_real+errD_fakeerrD.backward(retain_graph=True)![3](img/3.png)optimizerD.step()# Train Generator to generate better fakes.netG.zero_grad()output=netD(fake_images).view(-1)![4](img/4.png)errG=criterion(output,real_labels)![5](img/5.png)errG.backward()![6](img/6.png)D_G_z2=output.mean().item()optimizerG.step()# Save losses for plotting later.G_losses.append(errG.item())D_losses.append(errD.item())D_real.append(D_x)D_fake.append(D_G_z2)test_images=netG(z).to('cpu').detach()![7](img/7.png)test_out_images.append(test_images)
+N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerate(dataloader):if(i%200==0):print(f'batch: {i} of {len(dataloader)}')# Train Discriminator with an all-real batch.netD.zero_grad()real_images=batch[0].to(device)*2.-1.output=netD(real_images).view(-1)①errD_real=criterion(output,real_labels)D_x=output.mean().item()# Train Discriminator with an all-fake batch.noise=torch.randn((BATCH_SIZE,CODING_SIZE))noise=noise.view(-1,100,1,1).to(device)fake_images=netG(noise)output=netD(fake_images).view(-1)②errD_fake=criterion(output,fake_labels)D_G_z1=output.mean().item()errD=errD_real+errD_fakeerrD.backward(retain_graph=True)③optimizerD.step()# Train Generator to generate better fakes.netG.zero_grad()output=netD(fake_images).view(-1)④errG=criterion(output,real_labels)⑤errG.backward()⑥D_G_z2=output.mean().item()optimizerG.step()# Save losses for plotting later.G_losses.append(errG.item())D_losses.append(errD.item())D_real.append(D_x)D_fake.append(D_G_z2)test_images=netG(z).to('cpu').detach()⑦test_out_images.append(test_images)
 ```
 
-![1](img/1.png)
+①
 
 将真实图像传递给“鉴别器”。
 
-![2](img/2.png)
+②
 
 将假图像传递给“鉴别器”。
 
-![3](img/3.png)
+③
 
 运行反向传播并更新“鉴别器”。
 
-![4](img/4.png)
+④
 
 将假图像传递给更新后的“鉴别器”。
 
-![5](img/5.png)
+⑤
 
 “生成器”的损失基于“鉴别器”错误的情况。
 
-![6](img/6.png)
+⑥
 
 运行反向传播并更新“生成器”。
 
-![7](img/7.png)
+⑦
 
 创建一批图像并在每个时代后保存它们。
 

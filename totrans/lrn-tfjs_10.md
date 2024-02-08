@@ -153,14 +153,14 @@ DataFrame 有能力将其内容打印到控制台，以及许多其他辅助函�
 让我们回顾一下以下代码，它将 CSV 文件读入 DataFrame，然后在控制台上打印几行：
 
 ```py
-constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");![1](img/1.png)df.head().print();![2](img/2.png)
+constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");①df.head().print();②
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO1-1)
+①
 
 `read_csv`方法可以从 URL 或本地文件 URI 中读取。
 
-![2](img/#co_classification_models_and_data_analysis_CO1-2)
+②
 
 DataFrame 可以限制为前五行，然后打印。
 
@@ -227,18 +227,18 @@ empty_rate.print();
 要合并 CSV 文件，您将创建两个 DataFrame，然后沿着轴连接它们，就像对张量一样。您可能会感觉到张量训练引导您管理和清理数据的路径，并且这并非偶然。尽管术语可能略有不同，但您从前几章积累的概念和直觉将对您有所帮助。
 
 ```py
-// Load the training CSV constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");console.log("Train Size",df.shape[0])![1](img/1.png)// Load the test CSV constdft=awaitdfd.read_csv("file://../../extra/titanic data/test.csv");console.log("Test Size",dft.shape[0])![2](img/2.png)constmega=dfd.concat({df_list:[df,dft],axis: 0})mega.describe().print()![3](img/3.png)
+// Load the training CSV constdf=awaitdfd.read_csv("file://../../extra/titanic data/train.csv");console.log("Train Size",df.shape[0])①// Load the test CSV constdft=awaitdfd.read_csv("file://../../extra/titanic data/test.csv");console.log("Test Size",dft.shape[0])②constmega=dfd.concat({df_list:[df,dft],axis: 0})mega.describe().print()③
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO2-1)
+①
 
 打印“训练集大小为 891”
 
-![2](img/#co_classification_models_and_data_analysis_CO2-2)
+②
 
 打印“测试集大小为 418”
 
-![3](img/#co_classification_models_and_data_analysis_CO2-3)
+③
 
 显示一个包含 1,309 的表
 
@@ -286,22 +286,22 @@ console.log(`After mega-clean the row-count is now ${onlyFull.shape[0]}`);
 `Embarked`的值，供参考，分别是：C = 瑟堡，Q = 昆士敦，S = 南安普敦。有几种方法可以对其进行编码。一种方法是用数字等价物对其进行编码。Danfo.js 有一个`LabelEncoder`，它可以读取整个列，然后将值转换为数字编码的等价物。`LabelEncoder`将标签编码为介于`0`和`n-1`之间的值。要对`Embarked`列进行编码，您可以使用以下代码：
 
 ```py
-// Handle embarked characters - convert to numbers constencode=newdfd.LabelEncoder();![1](img/1.png)encode.fit(onlyFull["Embarked"]);![2](img/2.png)onlyFull["Embarked"]=encode.transform(onlyFull["Embarked"].values);![3](img/3.png)onlyFull.head().print();![4](img/4.png)
+// Handle embarked characters - convert to numbers constencode=newdfd.LabelEncoder();①encode.fit(onlyFull["Embarked"]);②onlyFull["Embarked"]=encode.transform(onlyFull["Embarked"].values);③onlyFull.head().print();④
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO3-1)
+①
 
 创建一个新的`LabelEncoder`实例。
 
-![2](img/#co_classification_models_and_data_analysis_CO3-2)
+②
 
 适合对`Embarked`列的内容进行编码的实例。
 
-![3](img/#co_classification_models_and_data_analysis_CO3-3)
+③
 
 将列转换为值，然后立即用生成的列覆盖当前列。
 
-![4](img/#co_classification_models_and_data_analysis_CO3-4)
+④
 
 打印前五行以验证替换是否发生。
 
@@ -366,36 +366,36 @@ const testY = dft["Survived"].tensor;
 模型的组成如下：
 
 ```py
-model.add(tf.layers.dense({inputShape,units: 120,activation:"relu",![1](img/1.png)kernelInitializer:"heNormal",![2](img/2.png)}));model.add(tf.layers.dense({units: 64,activation:"relu"}));model.add(tf.layers.dense({units: 32,activation:"relu"}));model.add(tf.layers.dense({units: 1,activation:"sigmoid",![3](img/3.png)}));model.compile({optimizer:"adam",loss:"binaryCrossentropy",![4](img/4.png)metrics:["accuracy"],![5](img/5.png)});
+model.add(tf.layers.dense({inputShape,units: 120,activation:"relu",①kernelInitializer:"heNormal",②}));model.add(tf.layers.dense({units: 64,activation:"relu"}));model.add(tf.layers.dense({units: 32,activation:"relu"}));model.add(tf.layers.dense({units: 1,activation:"sigmoid",③}));model.compile({optimizer:"adam",loss:"binaryCrossentropy",④metrics:["accuracy"],⑤});
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO4-1)
+①
 
 每一层都使用 ReLU 激活，直到最后一层。
 
-![2](img/#co_classification_models_and_data_analysis_CO4-2)
+②
 
 这一行告诉模型根据算法初始化权重，而不是简单地将模型的初始权重设置为完全随机。这有时可以帮助模型更接近答案。在这种情况下并不是关键，但这是 TensorFlow.js 的一个有用功能。
 
-![3](img/#co_classification_models_and_data_analysis_CO4-3)
+③
 
 最后一层使用 Sigmoid 激活来打印一个介于零和一之间的数字（生存或未生存）。
 
-![4](img/#co_classification_models_and_data_analysis_CO4-4)
+④
 
 在训练二元分类器时，最好使用一个与二元分类一起工作的花哨命名的函数来评估损失。
 
-![5](img/#co_classification_models_and_data_analysis_CO4-5)
+⑤
 
 这显示了日志中的准确性，而不仅仅是损失。
 
 当您将模型`fit`到数据时，您可以识别测试数据，并获得模型以前从未见过的数据的结果。这有助于防止过拟合：
 
 ```py
-awaitmodel.fit(trainX,trainY,{batchSize: 32,epochs: 100,validationData:[testX,testY]![1](img/1.png)})
+awaitmodel.fit(trainX,trainY,{batchSize: 32,epochs: 100,validationData:[testX,testY]①})
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO5-1)
+①
 
 提供模型应该在每个 epoch 上验证的数据。
 
@@ -516,18 +516,18 @@ viz(`agehist`, x => survivors["Age"].plot(x).hist())
 要进行独热编码，Danfo.js 和 Pandas 都有一个`get_dummies`方法，可以将一列转换为多个列，其中只有一个列的值为 1。在 TensorFlow.js 中，进行独热编码的方法称为`oneHot`，但在 Danfo.js 中，`get_dummies`是向二进制变量致敬的方法，统计学中通常称为*虚拟变量*。编码结果后，您可以使用`drop`和`addColumn`进行切换：
 
 ```py
-// Handle person sex - convert to one-hot constsexOneHot=dfd.get_dummies(mega['Sex'])![1](img/1.png)sexOneHot.head().print()// Swap one column for two mega.drop({columns:['Sex'],axis: 1,inplace: true})![2](img/2.png)mega.addColumn({column:'male',value: sexOneHot['0']})![3](img/3.png)mega.addColumn({column:'female',value: sexOneHot['1']})
+// Handle person sex - convert to one-hot constsexOneHot=dfd.get_dummies(mega['Sex'])①sexOneHot.head().print()// Swap one column for two mega.drop({columns:['Sex'],axis: 1,inplace: true})②mega.addColumn({column:'male',value: sexOneHot['0']})③mega.addColumn({column:'female',value: sexOneHot['1']})
 ```
 
-![1](img/#co_classification_models_and_data_analysis_CO6-1)
+①
 
 使用`get_dummies`对列进行编码
 
-![2](img/#co_classification_models_and_data_analysis_CO6-2)
+②
 
 在`Sex`列上使用`inplace`删除
 
-![3](img/#co_classification_models_and_data_analysis_CO6-3)
+③
 
 添加新列，将标题切换为男性/女性
 

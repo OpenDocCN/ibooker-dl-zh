@@ -97,23 +97,23 @@ MobileNet 是一种用于低延迟、低功耗模型的特定架构。这使得�
 你可以通过几行代码查看图像的结果。以下代码就是这样做的，也可以在[本章的源代码](https://oreil.ly/JLo5C)中找到：
 
 ```py
-tf.ready().then(()=>{constmodelPath="https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1";![1](img/1.png)tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// SSD Mobilenet batch of 1
-constsingleBatch=tf.expandDims(myTensor,0);![2](img/2.png)model.executeAsync(singleBatch).then((result)=>{console.log("First",result[0].shape);![3](img/3.png)result[0].print();console.log("Second",result[1].shape);![4](img/4.png)result[1].print();});});});});
+tf.ready().then(()=>{constmodelPath="https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1";①tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// SSD Mobilenet batch of 1
+constsingleBatch=tf.expandDims(myTensor,0);②model.executeAsync(singleBatch).then((result)=>{console.log("First",result[0].shape);③result[0].print();console.log("Second",result[1].shape);④result[1].print();});});});});
 ```
 
-![1](img/#co_advanced_models_and_ui_CO1-1)
+①
 
 这是 JavaScript 模型的 TFHub URL。
 
-![2](img/#co_advanced_models_and_ui_CO1-2)
+②
 
 输入在秩上扩展为一个批次，形状为[1, 高度, 宽度, 3]。
 
-![3](img/#co_advanced_models_and_ui_CO1-3)
+③
 
 得到的张量是[1, 1917, 90]，其中返回了 1,917 个检测结果，每行中的 90 个概率值加起来为 1。
 
-![4](img/#co_advanced_models_and_ui_CO1-4)
+④
 
 张量的形状为[1, 1917, 4]，为 1,917 个检测提供了边界框。
 
@@ -245,27 +245,27 @@ const nmsDetections = await tf.image.nonMaxSuppressionWithScoreAsync(
 结果将是一个具有两个属性的对象。`selectedIndices`属性将是一个张量，其中包含通过筛选的框的索引，`selectedScores`将是它们对应的分数。您可以循环遍历所选结果并绘制边界框。
 
 ```py
-constchosen=awaitnmsDetections.selectedIndices.data();![1](img/1.png)chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;constdetectedIndex=maxIndices[detection];![2](img/2.png)constdetectedClass=CLASSES[detectedIndex];![3](img/3.png)constdetectedScore=scores[detection];constdBox=boxes[detection];console.log(detectedClass,detectedScore);![4](img/4.png)// No negative values for start positions
-conststartY=dBox[0]>0?dBox[0]*imgHeight : 0;![5](img/5.png)conststartX=dBox[1]>0?dBox[1]*imgWidth : 0;constheight=(dBox[2]-dBox[0])*imgHeight;constwidth=(dBox[3]-dBox[1])*imgWidth;ctx.strokeRect(startX,startY,width,height);});
+constchosen=awaitnmsDetections.selectedIndices.data();①chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;constdetectedIndex=maxIndices[detection];②constdetectedClass=CLASSES[detectedIndex];③constdetectedScore=scores[detection];constdBox=boxes[detection];console.log(detectedClass,detectedScore);④// No negative values for start positions
+conststartY=dBox[0]>0?dBox[0]*imgHeight : 0;⑤conststartX=dBox[1]>0?dBox[1]*imgWidth : 0;constheight=(dBox[2]-dBox[0])*imgHeight;constwidth=(dBox[3]-dBox[1])*imgWidth;ctx.strokeRect(startX,startY,width,height);});
 ```
 
-![1](img/#co_advanced_models_and_ui_CO2-1)
+①
 
 从结果中高得分的框的索引创建一个普通的 JavaScript 数组。
 
-![2](img/#co_advanced_models_and_ui_CO2-2)
+②
 
 从先前的`topk`调用中获取最高得分的索引。
 
-![3](img/#co_advanced_models_and_ui_CO2-3)
+③
 
 将类别作为数组导入以匹配给定的结果索引。这种结构就像上一章中 Inception 示例中的代码一样。
 
-![4](img/#co_advanced_models_and_ui_CO2-4)
+④
 
 记录在画布中被框定的内容，以便验证结果。
 
-![5](img/#co_advanced_models_and_ui_CO2-5)
+⑤
 
 禁止负数，以便框至少从帧开始。否则，一些框将从左上角被切断。
 
@@ -318,30 +318,30 @@ UI 已经取得了很大进展。覆盖层应该能够识别检测和它们的�
 重要的是文本在背景框之后绘制，否则框将覆盖文本。对于我们的目的，标签将使用略有不同颜色的绿色绘制，而不是边界框。
 
 ```py
-// Draw the label background. ctx.fillStyle="#0B0";ctx.font="16px sans-serif";![1](img/1.png)ctx.textBaseline="top";![2](img/2.png)consttextHeight=16;consttextPad=4;![3](img/3.png)constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(![4](img/4.png)startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top. ctx.fillStyle="#000000";![5](img/5.png)ctx.fillText(label,startX,startY);![6](img/6.png)
+// Draw the label background. ctx.fillStyle="#0B0";ctx.font="16px sans-serif";①ctx.textBaseline="top";②consttextHeight=16;consttextPad=4;③constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(④startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top. ctx.fillStyle="#000000";⑤ctx.fillText(label,startX,startY);⑥
 ```
 
-![1](img/#co_advanced_models_and_ui_CO3-1)
+①
 
 设置标签使用的字体和大小。
 
-![2](img/#co_advanced_models_and_ui_CO3-2)
+②
 
 设置`textBaseline`如上所述。
 
-![3](img/#co_advanced_models_and_ui_CO3-3)
+③
 
 添加一点水平填充以在`fillRect`渲染中使用。
 
-![4](img/#co_advanced_models_and_ui_CO3-4)
+④
 
 使用相同的`startX`和`startY`绘制矩形，这与绘制边界框时使用的相同。
 
-![5](img/#co_advanced_models_and_ui_CO3-5)
+⑤
 
 将`fillStyle`更改为黑色以进行文本渲染。
 
-![6](img/#co_advanced_models_and_ui_CO3-6)
+⑥
 
 最后，绘制文本。这可能也应该略微填充。
 
@@ -366,17 +366,17 @@ UI 已经取得了很大进展。覆盖层应该能够识别检测和它们的�
 总的来说，绘制边界框、标签框和标签的单个循环如下所示：
 
 ```py
-chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.globalCompositeOperation='destination-over';![1](img/1.png)constdetectedIndex=maxIndices[detection];constdetectedClass=CLASSES[detectedIndex];constdetectedScore=scores[detection];constdBox=boxes[detection];// No negative values for start positions
+chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.globalCompositeOperation='destination-over';①constdetectedIndex=maxIndices[detection];constdetectedClass=CLASSES[detectedIndex];constdetectedScore=scores[detection];constdBox=boxes[detection];// No negative values for start positions
 conststartY=dBox[0]>0?dBox[0]*imgHeight : 0;conststartX=dBox[1]>0?dBox[1]*imgWidth : 0;constheight=(dBox[2]-dBox[0])*imgHeight;constwidth=(dBox[3]-dBox[1])*imgWidth;ctx.strokeRect(startX,startY,width,height);// Draw the label background.
-ctx.globalCompositeOperation='source-over';![2](img/2.png)ctx.fillStyle="#0B0";consttextHeight=16;consttextPad=4;constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top.
+ctx.globalCompositeOperation='source-over';②ctx.fillStyle="#0B0";consttextHeight=16;consttextPad=4;constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top.
 ctx.fillStyle="#000000";ctx.fillText(label,startX,startY);});
 ```
 
-![1](img/#co_advanced_models_and_ui_CO4-1)
+①
 
 在任何现有内容下绘制。
 
-![2](img/#co_advanced_models_and_ui_CO4-2)
+②
 
 在任何现有内容上绘制。
 
@@ -397,26 +397,26 @@ ctx.fillStyle="#000000";ctx.fillText(label,startX,startY);});
 ##### 示例 6-1。分解代码库
 
 ```py
-asyncfunctiondoStuff() {try{constmodel=awaitloadModel()![1](img/1.png)constmysteryVideo=document.getElementById('mystery')![2](img/2.png)constcamDetails=awaitsetupWebcam(mysteryVideo)![3](img/3.png)performDetections(model,mysteryVideo,camDetails)![4](img/4.png)}catch(e){console.error(e)![5](img/5.png)}}
+asyncfunctiondoStuff() {try{constmodel=awaitloadModel()①constmysteryVideo=document.getElementById('mystery')②constcamDetails=awaitsetupWebcam(mysteryVideo)③performDetections(model,mysteryVideo,camDetails)④}catch(e){console.error(e)⑤}}
 ```
 
-![1](img/#co_advanced_models_and_ui_CO5-1)
+①
 
 加载模型时最长的延迟应该首先发生，且仅发生一次。
 
-![2](img/#co_advanced_models_and_ui_CO5-2)
+②
 
 为了效率，你可以一次捕获视频元素，并将该引用传递到需要的地方。
 
-![3](img/#co_advanced_models_and_ui_CO5-3)
+③
 
 设置网络摄像头应该只发生一次。
 
-![4](img/#co_advanced_models_and_ui_CO5-4)
+④
 
 `performDetections`方法可以在检测网络摄像头中的内容并绘制框时无限循环。
 
-![5](img/#co_advanced_models_and_ui_CO5-5)
+⑤
 
 不要让所有这些`awaits`吞没错误。
 
@@ -443,31 +443,31 @@ asyncfunctiondoStuff() {try{constmodel=awaitloadModel()![1](img/1.png)constmyste
 为了我们的目的，我们只会设置默认的网络摄像头。这对应于示例 6-1 中的第四点。如果你对`getUserMedia`不熟悉，请花点时间分析视频元素如何连接到网络摄像头。这也是你可以将画布上下文设置移动到适应视频元素的时间。
 
 ```py
-asyncfunctionsetupWebcam(videoRef){if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){constwebcamStream=awaitnavigator.mediaDevices.getUserMedia({![1](img/1.png)audio: false,video:{facingMode:'user',},})if('srcObject'invideoRef){![2](img/2.png)videoRef.srcObject=webcamStream}else{videoRef.src=window.URL.createObjectURL(webcamStream)}returnnewPromise((resolve,_)=>{![3](img/3.png)videoRef.onloadedmetadata=()=>{![4](img/4.png)// Prep Canvas
-constdetection=document.getElementById('detection')constctx=detection.getContext('2d')constimgWidth=videoRef.clientWidth![5](img/5.png)constimgHeight=videoRef.clientHeightdetection.width=imgWidthdetection.height=imgHeightctx.font='16px sans-serif'ctx.textBaseline='top'resolve([ctx,imgHeight,imgWidth])![6](img/6.png)}})}else{alert('No webcam - sorry!')}}
+asyncfunctionsetupWebcam(videoRef){if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){constwebcamStream=awaitnavigator.mediaDevices.getUserMedia({①audio: false,video:{facingMode:'user',},})if('srcObject'invideoRef){②videoRef.srcObject=webcamStream}else{videoRef.src=window.URL.createObjectURL(webcamStream)}returnnewPromise((resolve,_)=>{③videoRef.onloadedmetadata=()=>{④// Prep Canvas
+constdetection=document.getElementById('detection')constctx=detection.getContext('2d')constimgWidth=videoRef.clientWidth⑤constimgHeight=videoRef.clientHeightdetection.width=imgWidthdetection.height=imgHeightctx.font='16px sans-serif'ctx.textBaseline='top'resolve([ctx,imgHeight,imgWidth])⑥}})}else{alert('No webcam - sorry!')}}
 ```
 
-![1](img/#co_advanced_models_and_ui_CO6-1)
+①
 
 这些是网络摄像头用户媒体配置约束。这里可以应用[几个选项](https://oreil.ly/MkWml)，但为简单起见，保持得很简单。
 
-![2](img/#co_advanced_models_and_ui_CO6-2)
+②
 
 这个条件检查是为了支持不支持新的`srcObject`配置的旧浏览器。根据你的支持需求，这可能会被弃用。
 
-![3](img/#co_advanced_models_and_ui_CO6-3)
+③
 
 在视频加载完成之前无法访问视频，因此该事件被包装在一个 promise 中，以便等待。
 
-![4](img/#co_advanced_models_and_ui_CO6-4)
+④
 
 这是你需要等待的事件，然后才能将视频元素传递给`tf.fromPixels`。
 
-![5](img/#co_advanced_models_and_ui_CO6-5)
+⑤
 
 在设置画布时，注意使用`clientWidth`而不是`width`。
 
-![6](img/#co_advanced_models_and_ui_CO6-6)
+⑥
 
 promise 解析后，你将需要将信息传递给检测和绘制循环。
 
