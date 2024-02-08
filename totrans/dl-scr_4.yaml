@@ -1,0 +1,1383 @@
+- en: Chapter 4\. Extensions
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In the last chapter, after having spent two chapters reasoning from first principles
+    about what deep learning models are and how they should work, we finally built
+    our first deep learning model and trained it to solve the relatively simple problem
+    of predicting house prices given numeric features about houses. On most real-world
+    problems, however, successfully training deep learning models isn’t so easy: while
+    these models can conceivably find an optimal solution to any problem that can
+    be framed as a supervised learning problem, in practice they often fail, and indeed
+    there are few theoretical guarantees that a given model architecture will in fact
+    find a good solution to a given problem. Still, there are some well-understood
+    techniques that make neural network training more likely to succeed; these will
+    be the focus of this chapter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll start out by reviewing what neural networks are “trying to do” mathematically:
+    find the minimum of a function. Then I’ll show a series of techniques that can
+    help the networks achieve this, demonstrating their effectiveness on the classic
+    MNIST dataset of handwritten digits. We’ll start with a loss function that is
+    used throughout classification problems in deep learning, showing that it significantly
+    accelerates learning (we’ve only covered regression problems thus far in this
+    book because we hadn’t yet introduced this loss function and thus haven’t been
+    able to do classification problems justice). On a similar note, we’ll cover activation
+    functions other than sigmoid and show why *they* might also accelerate learning,
+    while discussing the trade-offs involved with activation functions in general.
+    Next, we’ll cover momentum, the most important (and straightforward) extension
+    of the stochastic gradient descent optimization technique we’ve been using thus
+    far, as well as briefly discussing what more advanced optimizers can do. We’ll
+    end by covering three techniques that are unrelated to each other but that are
+    all essential: learning rate decay, weight initialization, and dropout. As we’ll
+    see, each of these techniques will help our neural network find successively more
+    optimal solutions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In the first chapter, we followed the “diagram-math-code” model for introducing
+    each concept. Here, there isn’t an obvious diagram for each technique, so we’ll
+    instead begin with the “intuition” for each technique, then follow up with the
+    math (which will typically be much simpler than in the first chapter), and end
+    with the code, which will really entail incorporating the technique into the framework
+    we’ve built and thus describing precisely how it interacts with the building blocks
+    we formalized in the last chapter. In this spirit, we’ll start the chapter with
+    some “overall” intuition on what neural networks are trying to do: find the minimum
+    of a function.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some Intuition About Neural Networks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we’ve seen, neural networks contain a bunch of weights; given these weights,
+    along with some input data `X` and `y`, we can compute a resulting “loss.” [Figure 4-1](#fig_04_01)
+    shows this extremely high-level (but still correct) view of neural networks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0401](assets/dlfs_0401.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-1\. A simple way to think of a neural network with weights
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In reality, each individual weight has some complex, nonlinear relationship
+    with the features `X`, the target `y`, the other weights, and ultimately the loss
+    `L`. If we plotted this out, varying the value of the weight while holding constant
+    the values of the other weights, `X`, and `y`, and plotted the resulting value
+    of the loss `L`, we could see something like what is shown in [Figure 4-2](#fig_04_02).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0402](assets/dlfs_0402.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-2\. A neural network’s weights versus its loss
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When we start to train neural networks, we initialize each weight to have a
+    value somewhere along the x-axis in [Figure 4-2](#fig_04_02). Then, using the
+    gradients we calculate during backpropagation, we iteratively update the weight,
+    with our first update based on the slope of this curve at the initial value we
+    happened to choose.^([1](ch04.html#idm45732621297880)) [Figure 4-3](#fig_04_03)
+    shows this geometric interpretation of what it means to update the weights in
+    a neural network based on the gradients and the learning rate. The blue arrows
+    on the left represent repeatedly applying this update rule with a smaller learning
+    rate than the red arrows on the right; note that in both cases, the updates in
+    the horizontal direction are proportional to the slope of the curve at the value
+    of the weight (steeper slope means a larger update).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Neural net diagram](assets/dlfs_0403.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-3\. Updating the weights of a neural network as a function of the gradients
+    and the learning rate, depicted geometrically
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'The goal of training a deep learning model is to move each weight to the “global”
+    value for which the loss is minimized. As we can see from [Figure 4-3](#fig_04_03),
+    if the steps we take are too small, we risk ending up in a “local” minimum, which
+    is less optimal than the global one (the path of a weight that follows that scenario
+    is illustrated by the blue arrows). If the steps are too large, we risk “repeatedly
+    hopping over” the global minimum, even if we are near it (this scenario is represented
+    by the red arrows). This is the fundamental trade-off of tuning learning rates:
+    if they are too small, we can get stuck in a local minimum; if they are too large,
+    they can skip over the global minimum.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In reality, the picture is far more complicated than this. One reason is that
+    there are thousands, if not millions, of weights in a neural network, so we are
+    searching for a global minimum in a space that has thousands or millions of dimensions.
+    Moreover, since we update the weights on each iteration as well as passing in
+    a different `X` and `y`, *the curve we are trying to find the minimum of is constantly
+    changing!* The latter is one of the main reasons neural networks were met with
+    skepticism for so many years; it didn’t seem like iteratively updating the weights
+    in this way could actually find a globally desirable solution. Yann LeCun et al.
+    say it best in a [2015 *Nature* article](https://www.nature.com/articles/nature14539):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In particular, it was commonly thought that simple gradient descent would get
+    trapped in poor local minima—weight configurations for which no small change would
+    reduce the average error. In practice, poor local minima are rarely a problem
+    with large networks. Regardless of the initial conditions, the system nearly always
+    reaches solutions of very similar quality. Recent theoretical and empirical results
+    strongly suggest that local minima are not a serious issue in general.
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: So *in practice*, [Figure 4-3](#fig_04_03) provides both a good mental model
+    for why learning rates should not be too large or too small and adequate intuition
+    for why many of the tricks we’re going to learn in this chapter actually work.
+    Equipped with this intuition of what neural networks are trying to do, let’s start
+    examining these tricks. We’ll start with a loss function, the *softmax cross entropy*
+    loss function, that works in large part because of its ability to provide steeper
+    gradients to the weights than the mean squared error loss function we saw in the
+    prior chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Softmax Cross Entropy Loss Function
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In [Chapter 3](ch03.html#deep_learning_from_scratch), we used mean squared
+    error (MSE) as our loss function. This function had the nice property that it
+    was convex, meaning the further the prediction was from the target, the steeper
+    would be the initial gradient that the `Loss` sent backward to the network `Layer`s
+    and thus the greater would be all the gradients received by the parameters. It
+    turns out that in classification problems, however, we can do better than this,
+    since in such problems *we know that the values our network outputs should be
+    interpreted as probabilities*; thus, not only should each value be between 0 and
+    1, but the vector of probabilities should sum to 1 for each observation we have
+    fed through our network. The softmax cross entropy loss function exploits this
+    to produce steeper gradients than the mean squared error loss for the same inputs.
+    This function has two components: the first is the *softmax* function, and the
+    second component is the “cross entropy” loss; we’ll cover each of these in turn.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Component #1: The Softmax Function'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'For a classification problem with `N` possible classes, we’ll have our neural
+    network output a vector of `N` values for each observation. For a problem with
+    three classes, these values could, for example, be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: Math
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Again, since this is a classification problem, we know that this *should* be
+    interpreted as a vector of probabilities (the probability of this observation
+    belonging to class 1, 2, or 3, respectively). One way to transform these values
+    into a vector of probabilities would be to simply normalize them, summing and
+    dividing by the sum:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>Normalize</mtext> <mrow><mo>(</mo> <mfenced
+    close="]" open="["><mtable><mtr><mtd><msub><mi>x</mi> <mn>1</mn></msub></mtd></mtr>
+    <mtr><mtd><msub><mi>x</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>x</mi>
+    <mn>3</mn></msub></mtd></mtr></mtable></mfenced> <mo>)</mo></mrow> <mo>=</mo>
+    <mfenced close="]" open="["><mtable><mtr><mtd><mfrac><msub><mi>x</mi> <mn>1</mn></msub>
+    <mrow><msub><mi>x</mi> <mn>1</mn></msub> <mo>+</mo><msub><mi>x</mi> <mn>2</mn></msub>
+    <mo>+</mo><msub><mi>x</mi> <mn>3</mn></msub></mrow></mfrac></mtd></mtr> <mtr><mtd><mfrac><msub><mi>x</mi>
+    <mn>2</mn></msub> <mrow><msub><mi>x</mi> <mn>1</mn></msub> <mo>+</mo><msub><mi>x</mi>
+    <mn>2</mn></msub> <mo>+</mo><msub><mi>x</mi> <mn>3</mn></msub></mrow></mfrac></mtd></mtr>
+    <mtr><mtd><mfrac><msub><mi>x</mi> <mn>3</mn></msub> <mrow><msub><mi>x</mi> <mn>1</mn></msub>
+    <mo>+</mo><msub><mi>x</mi> <mn>2</mn></msub> <mo>+</mo><msub><mi>x</mi> <mn>3</mn></msub></mrow></mfrac></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, there turns out to be a way that both produces steeper gradients and
+    has some elegant mathematical properties: the softmax function. This function,
+    for a vector of length 3, would be defined as:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>Softmax</mtext> <mrow><mo>(</mo> <mfenced
+    close="]" open="["><mtable><mtr><mtd><msub><mi>x</mi> <mn>1</mn></msub></mtd></mtr>
+    <mtr><mtd><msub><mi>x</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>x</mi>
+    <mn>3</mn></msub></mtd></mtr></mtable></mfenced> <mo>)</mo></mrow> <mo>=</mo>
+    <mfenced close="]" open="["><mtable><mtr><mtd><mfrac><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>1</mn></msub></msup> <mrow><msup><mi>e</mi> <msub><mi>x</mi> <mn>1</mn></msub></msup>
+    <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>2</mn></msub></msup> <mo>+</mo><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac></mtd></mtr> <mtr><mtd><mfrac><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>2</mn></msub></msup> <mrow><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>1</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>2</mn></msub></msup>
+    <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac></mtd></mtr>
+    <mtr><mtd><mfrac><msup><mi>e</mi> <msub><mi>x</mi> <mn>3</mn></msub></msup> <mrow><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>1</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>2</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intuition
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The intuition behind the softmax function is that it more strongly amplifies
+    the maximum value relative to the other values, forcing the neural network to
+    be “less neutral” toward which prediction it thinks is the correct one in the
+    context of a classification problem. Let’s compare what both of these functions,
+    normalize and softmax, would do to our preceding vector of probabilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can see that the original maximum value—5—has a significantly higher value
+    than it would have upon simply normalizing the data, and the other two values
+    are lower than they were coming out of the `normalize` function. Thus, the `softmax`
+    function is partway between normalizing the values and actually applying the `max`
+    function (which in this case would result in an output of `array([1.0, 0.0, 0.0])`—hence
+    the name “softmax.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Component #2: The Cross Entropy Loss'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Recall that any loss function will take in a vector of probabilities <math><mfenced
+    close="]" open="["><mtable><mtr><mtd><msub><mi>p</mi> <mn>1</mn></msub></mtd></mtr>
+    <mtr><mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><msub><mi>p</mi> <mi>n</mi></msub></mtd></mtr></mtable></mfenced></math>
+    and a vector of actual values <math><mfenced close="]" open="["><mtable><mtr><mtd><msub><mi>y</mi>
+    <mn>1</mn></msub></mtd></mtr> <mtr><mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><msub><mi>y</mi>
+    <mi>n</mi></msub></mtd></mtr></mtable></mfenced></math> .
+  prefs: []
+  type: TYPE_NORMAL
+- en: Math
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The cross entropy loss function, for each index `i` in these vectors, is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>CE</mtext> <mrow><mo>(</mo> <msub><mi>p</mi>
+    <mi>i</mi></msub> <mo>,</mo> <msub><mi>y</mi> <mi>i</mi></msub> <mo>)</mo></mrow>
+    <mo>=</mo> <mo>-</mo> <msub><mi>y</mi> <mi>i</mi></msub> <mo>×</mo> <mtext>log</mtext>
+    <mrow><mo>(</mo> <msub><mi>p</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <mo>-</mo>
+    <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msub><mi>y</mi> <mi>i</mi></msub> <mo>)</mo></mrow>
+    <mo>×</mo> <mtext>log</mtext> <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msub><mi>p</mi>
+    <mi>i</mi></msub> <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intuition
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'To see why this makes sense as a loss function, consider that since every element
+    of *y* is either 0 or 1, the preceding equation reduces to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>CE</mtext> <mrow><mo>(</mo> <msub><mi>p</mi>
+    <mi>i</mi></msub> <mo>,</mo> <msub><mi>y</mi> <mi>i</mi></msub> <mo>)</mo></mrow>
+    <mo>=</mo> <mfenced close="" open="{" separators=""><mtable><mtr><mtd columnalign="left"><mrow><mo>-</mo>
+    <mi>l</mi> <mi>o</mi> <mi>g</mi> <mo>(</mo> <mn>1</mn> <mo>-</mo> <msub><mi>p</mi>
+    <mi>i</mi></msub> <mo>)</mo></mrow></mtd> <mtd columnalign="left"><mrow><mtext>if</mtext>
+    <msub><mi>y</mi> <mi>i</mi></msub> <mo>=</mo> <mn>0</mn></mrow></mtd></mtr> <mtr><mtd
+    columnalign="left"><mrow><mo>-</mo> <mi>l</mi> <mi>o</mi> <mi>g</mi> <mo>(</mo>
+    <msub><mi>p</mi> <mi>i</mi></msub> <mo>)</mo></mrow></mtd> <mtd columnalign="left"><mrow><mtext>if</mtext>
+    <msub><mi>y</mi> <mi>i</mi></msub> <mo>=</mo> <mn>1</mn></mrow></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we can break this down more easily. If *y* = 0, then the plot of the value
+    of this loss versus the value of the mean squared error loss over the interval
+    0 to 1 is as depicted in [Figure 4-4](#fig_04_04).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0404](assets/dlfs_0404.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-4\. Cross entropy loss versus MSE when <math><mrow><mi>y</mi> <mo>=</mo>
+    <mn>0</mn></mrow></math>
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Not only are the penalties for the cross entropy loss much higher over this
+    interval,^([2](ch04.html#idm45732621016264)) but they get steeper at a higher
+    rate; indeed, the value of the cross entropy loss approaches infinity as the difference
+    between our prediction and the target approaches 1! The plot for when *y* = 1
+    is similar, just “flipped” (that is, it’s rotated 180 degrees around the line
+    *x* = 0.5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, for problems where we know the output will be between 0 and 1, the cross
+    entropy loss produces steeper gradients than MSE. The real magic happens when
+    we combine this loss with the softmax function—first feeding the neural network
+    output through the softmax function to normalize it so the values add to 1, and
+    then feeding the resulting probabilities into the cross entropy loss function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s see what this looks like with the three-class scenario we’ve been using
+    so far; the expression for the component of the loss vector from *i* = 1—that
+    is, the first component of the loss for a given observation, which we’ll denote
+    as *SCE*[1]—is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><msub><mrow><mi>S</mi><mi>C</mi><mi>E</mi></mrow>
+    <mn>1</mn></msub> <mo>=</mo> <mo>-</mo> <msub><mi>y</mi> <mn>1</mn></msub> <mo>×</mo>
+    <mi>l</mi> <mi>o</mi> <mi>g</mi> <mrow><mo>(</mo> <mfrac><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>1</mn></msub></msup> <mrow><msup><mi>e</mi> <msub><mi>x</mi> <mn>1</mn></msub></msup>
+    <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>2</mn></msub></msup> <mo>+</mo><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac> <mo>)</mo></mrow> <mo>-</mo>
+    <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo> <msub><mi>y</mi> <mn>1</mn></msub> <mo>)</mo></mrow>
+    <mo>×</mo> <mi>l</mi> <mi>o</mi> <mi>g</mi> <mrow><mo>(</mo> <mn>1</mn> <mo>-</mo>
+    <mfrac><msup><mi>e</mi> <msub><mi>x</mi> <mn>1</mn></msub></msup> <mrow><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>1</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>2</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac>
+    <mo>)</mo></mrow></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Based on this expression, the gradient would seem to be a bit trickier for
+    this loss. Nevertheless, there’s an elegant expression that is both easy to write
+    mathematically and easy to implement:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mfrac><mrow><mi>∂</mi><msub><mrow><mi>S</mi><mi>C</mi><mi>E</mi></mrow>
+    <mn>1</mn></msub></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mn>1</mn></msub></mrow></mfrac>
+    <mo>=</mo> <mfrac><msup><mi>e</mi> <msub><mi>x</mi> <mn>1</mn></msub></msup> <mrow><msup><mi>e</mi>
+    <msub><mi>x</mi> <mn>1</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi>
+    <mn>2</mn></msub></msup> <mo>+</mo><msup><mi>e</mi> <msub><mi>x</mi> <mn>3</mn></msub></msup></mrow></mfrac>
+    <mo>-</mo> <msub><mi>y</mi> <mn>1</mn></msub></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That means that the *total* gradient to the softmax cross entropy is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>softmax</mtext> <mrow><mo>(</mo> <mfenced
+    close="]" open="["><mtable><mtr><mtd><msub><mi>x</mi> <mn>1</mn></msub></mtd></mtr>
+    <mtr><mtd><msub><mi>x</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>x</mi>
+    <mn>3</mn></msub></mtd></mtr></mtable></mfenced> <mo>)</mo></mrow> <mo>-</mo>
+    <mfenced close="]" open="["><mtable><mtr><mtd><msub><mi>y</mi> <mn>1</mn></msub></mtd></mtr>
+    <mtr><mtd><msub><mi>y</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>y</mi>
+    <mn>3</mn></msub></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That’s it! As promised, the resulting implementation is simple as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s code this up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'To recap [Chapter 3](ch03.html#deep_learning_from_scratch), any `Loss` class
+    is expected to receive two 2D arrays, one with the network’s predictions and the
+    other with the targets. The number of rows in each array is the batch size, and
+    the number of columns is the number of classes `n` in the classification problem;
+    a row in each represents an observation in the dataset, with the `n` values in
+    the row representing the neural network’s best guess for the probabilities of
+    that observation belonging to each of the `n` classes. Thus, we’ll have to apply
+    the `softmax` to *each row* in the `prediction` array. This leads to a first potential
+    issue: we’ll next feed the resulting numbers into the `log` function to compute
+    the loss. This should worry you, since *log*(*x*) goes to negative infinity as
+    *x* goes to 0, and similarly, 1 – *x* goes to infinity as *x* goes to 1\. To prevent
+    extremely large loss values that could lead to numeric instability, we’ll clip
+    the output of the softmax function to be no less than 10^(–7) and no greater than
+    10⁷.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we can put everything together!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Soon I’ll show via some experiments on the MNIST dataset how this loss is an
+    improvement on the mean squared error loss. But first let’s discuss the trade-offs
+    involved with choosing an activation function and see if there’s a better choice
+    than sigmoid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A Note on Activation Functions
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We argued in [Chapter 2](ch02.html#fundamentals) that sigmoid was a good activation
+    function because it:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Was a nonlinear and monotonic function
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Provided a “regularizing” effect on the model, forcing the intermediate features
+    down to a finite range, specifically between 0 and 1
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Nevertheless, sigmoid has a downside, similar to the downside of the mean squared
+    error loss: *it produces relatively flat gradients* during the backward pass.
+    The gradient that gets passed to the sigmoid function (or any function) on the
+    backward pass represents how much the function’s *output* ultimately affects the
+    loss; because the maximum slope of the sigmoid function is 0.25, these gradients
+    will *at best* be divided by 4 when sent backward to the previous operation in
+    the model. Worse still, when the input to the sigmoid function is less than –2
+    or greater than 2, the gradient those inputs receive will be almost 0, since *sigmoid*(*x*)
+    is almost flat at *x* = –2 or *x* = 2\. What this means is that any parameters
+    influencing these inputs will receive small gradients, and our network could learn
+    slowly as a result.^([3](ch04.html#idm45732620742360)) Furthermore, if multiple
+    sigmoid activation functions are used in successive layers of a neural network,
+    this problem will compound, further diminishing the gradients that weights earlier
+    in the neural network could receive.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What would an activation “at the other extreme”—one with the opposite strengths
+    and weaknesses—look like?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The other extreme: the Rectified Linear Unit'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The Rectified Linear Unit, or ReLU, activation is a commonly used activation
+    with the opposite strengths and weaknesses of sigmoid. ReLU is simply defined
+    to be 0 if *x* is less than 0, and *x* otherwise. A plot of this is shown in [Figure 4-5](#fig_04_05).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0405](assets/dlfs_0405.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-5\. ReLU activation
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This is a “valid” activation function in the sense that it is monotonic and
+    nonlinear. It produces much larger gradients than sigmoid—1 if the input to the
+    function is greater than 0, and 0 otherwise, for an average of 0.5—whereas the
+    *maximum* gradient sigmoid can produce is 0.25\. ReLU activation is a very popular
+    choice in deep neural network architectures, because its downside (that it draws
+    a sharp, somewhat arbitrary distinction between values less than or greater than
+    0) can be addressed by other techniques, including some that will be covered in
+    this chapter, and its benefits (of producing large gradients) are critical to
+    training the weights in the architectures of deep neural networks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Nevertheless, there’s an activation function that is a happy medium between
+    these two, and that we’ll use in the demos in this chapter: Tanh.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A happy medium: Tanh'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The Tanh function is shaped similarly to the sigmoid function but maps inputs
+    to values between –1 and 1\. [Figure 4-6](#fig_04_06) shows this function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0406](assets/dlfs_0406.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-6\. Tanh activation
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This function produces significantly steeper gradients than sigmoid; specifically,
+    the maximum gradient of Tanh turns out to be 1, in contrast to sigmoid’s 0.25\.
+    [Figure 4-7](#fig_04_07) shows the gradients of these two functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![dlfs 0407](assets/dlfs_0407.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-7\. Sigmoid derivative versus Tanh derivative
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In addition, just as <math><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo>
+    <mo>=</mo> <mi>s</mi> <mi>i</mi> <mi>g</mi> <mi>m</mi> <mi>o</mi> <mi>i</mi> <mi>d</mi>
+    <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> has the easy-to-express derivative
+    <math><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow>
+    <mo>=</mo> <mi>s</mi> <mi>i</mi> <mi>g</mi> <mi>m</mi> <mi>o</mi> <mi>i</mi> <mi>d</mi>
+    <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>×</mo> <mrow><mo>(</mo> <mn>1</mn>
+    <mo>-</mo> <mi>s</mi> <mi>i</mi> <mi>g</mi> <mi>m</mi> <mi>o</mi> <mi>i</mi> <mi>d</mi>
+    <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>
+    , so too does <math><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo> <mo>=</mo>
+    <mi>t</mi> <mi>a</mi> <mi>n</mi> <mi>h</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math>
+    have the easy-to-express derivative <math><mrow><msup><mi>f</mi> <mo>'</mo></msup>
+    <msup><mrow><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow><mo>=</mo><mo>(</mo><mn>1</mn><mo>-</mo><mi>t</mi><mi>a</mi><mi>n</mi><mi>h</mi><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow></mrow>
+    <mn>2</mn></msup></mrow></math> .
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The point here is that there are trade-offs involved with choosing an activation
+    function regardless of the architecture: we want an activation function that will
+    allow our network to learn nonlinear relationships between input and output, while
+    not adding unnecessary complexity that will make it harder for the network to
+    find a good solution. For example, the “Leaky ReLU” activation function allows
+    a slight negative slope when the input to the ReLU function is less than 0, enhancing
+    ReLU’s ability to send gradients backward, and the “ReLU6” activation function
+    caps the positive end of ReLU at 6, introducing even more nonlinearity into the
+    network. Still, both of these activation functions are more complex than ReLU;
+    and if the problem we are dealing with is relatively simple, those more sophisticated
+    activation functions could make it even harder for the network to learn. Thus,
+    in the models we demo in the rest of this book, we’ll simply use the Tanh activation
+    function, which balances these considerations well.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we’ve chosen an activation function, let’s use it to run some experiments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Experiments
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'We’ve justified using `Tanh` throughout our experiments, so let’s get back
+    to the original point of this section: showing why the softmax cross entropy loss
+    is so pervasive throughout deep learning.^([4](ch04.html#idm45732620666312)) We’ll
+    use the MNIST dataset, which consists of black-and-white images of handwritten
+    digits that are 28 × 28 pixels, with the value of each pixel ranging from 0 (white)
+    to 255 (black). Furthermore, the dataset is predivided into a training set of
+    60,000 images and a testing set of 10,000 additional images. In the book’s [GitHub
+    repo](https://oreil.ly/2H7rJvf), we show a helper function to read both the images
+    and their corresponding labels into training and testing sets using the following
+    line of code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Our goal will be to train a neural network to learn which of the 10 digits from
+    0 to 9 the image contains.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data Preprocessing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'For classification, we have to perform *one-hot encoding* to transform our
+    vectors representing the labels into an `ndarray` of the same shape as the predictions:
+    specifically, we’ll map the label “0” to a vector with a 1 in the first position
+    (at index 0) and 0s in all the other positions, “1” to a vector with a 1 in the
+    second position (at index 1), [and so on](https://oreil.ly/2KTRm3z):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mrow><mo>[</mo> <mn>0</mn> <mo>,</mo> <mn>2</mn>
+    <mo>,</mo> <mn>1</mn> <mo>]</mo></mrow> <mo>⇒</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mn>1</mn></mtd>
+    <mtd><mn>0</mn></mtd> <mtd><mn>0</mn></mtd> <mtd><mo>...</mo></mtd> <mtd><mn>0</mn></mtd></mtr>
+    <mtr><mtd><mn>0</mn></mtd> <mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd> <mtd><mo>...</mo></mtd>
+    <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd> <mtd><mn>0</mn></mtd>
+    <mtd><mo>...</mo></mtd> <mtd><mn>0</mn></mtd></mtr></mtable></mfenced></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, it is always helpful to scale our data to mean 0 and variance 1, just
+    as we did with the “real-world” datasets in the prior chapters. Here, however,
+    since each data point is an image, we won’t scale each *feature* to have mean
+    0 and variance 1, since that would result in the values of adjacent pixels being
+    changed by different amounts, which could distort the image! Instead, we’ll simply
+    provide a global scaling to our dataset that subtracts off the overall mean and
+    divides by the overall variance (note that we use the statistics from the training
+    set to scale the testing set):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We’ll have to define our model to have 10 outputs for each input: one for each
+    of the probabilities of our model belonging to each of the 10 classes. Since we
+    know each of our outputs will be a probability, we’ll give our model a `sigmoid`
+    activation on the last layer. Throughout this chapter, to illustrate whether the
+    “training tricks” we’re describing actually enhance our models’ ability to learn,
+    we’ll use a consistent model architecture of a two-layer neural network with the
+    number of neurons in the hidden layer close to the geometric mean of our number
+    of inputs (784) and our number of outputs (10): <math><mrow><mn>89</mn> <mo>≈</mo>
+    <msqrt><mrow><mn>784</mn> <mo>×</mo> <mn>10</mn></mrow></msqrt></mrow></math>
+    .'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s now turn to our first experiment, comparing a neural network trained
+    with simple mean squared error loss to one trained with softmax cross entropy
+    loss. The loss values you see displayed are per observation (recall that on average
+    cross entropy loss will have absolute loss values three times as large as mean
+    squared error loss). If we run:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'it gives us:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s test the claim we made earlier in the chapter: that the softmax cross
+    entropy loss function would help our model learn faster.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Experiment: Softmax Cross Entropy Loss'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First let’s change the preceding model to:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since we are now feeding the model outputs through the softmax function as part
+    of the loss, we no longer need to feed them through a sigmoid activation function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then we run it for model for 50 epochs, which gives us these results:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: Indeed, changing our loss function to one that gives much steeper gradients
+    alone gives a huge boost to the accuracy of our model!^([5](ch04.html#idm45732620238856))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, we can do significantly better than this, even without changing our
+    architecture. In the next section, we’ll cover momentum, the most important and
+    straightforward extension to the stochastic gradient descent optimization technique
+    we’ve been using up until now.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Momentum
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'So far, we’ve been using only one “update rule” for our weights at each time
+    step. Simply take the derivative of the loss with respect to the weights and move
+    the weights in the resulting correct direction. This means that our `_update_rule`
+    function in the `Optimizer` looked like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s first cover the intuition for why we might want to extend this update
+    rule to incorporate momentum.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Intuition for Momentum
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Recall [Figure 4-3](#fig_04_03), which plotted an individual parameter’s value
+    against the loss value from the network. Imagine a scenario in which the parameter’s
+    value is continually updated in the same direction because the loss continues
+    to decrease with each iteration. This would be analogous to the parameter “rolling
+    down a hill,” and the value of the update at each time step would be analogous
+    to the parameter’s “velocity.” In the real world, however, objects don’t instantaneously
+    stop and change directions; that’s because they have *momentum*, which is just
+    a concise way of saying their velocity at a given instant is a function not just
+    of the forces acting on them in that instant but also of their accumulated past
+    velocities, with more recent velocities weighted more heavily. This physical interpretation
+    is the motivation for applying momentum to our weight updates. In the next section
+    we’ll make this precise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementing Momentum in the Optimizer Class
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Basing our parameter updates on momentum means that *the parameter update at
+    each time step will be a weighted average of the parameter updates at past time
+    steps, with the weights decayed exponentially*. There will thus be a second parameter
+    we have to choose, the momentum parameter, which will determine the degree of
+    this decay; the higher it is, the more the weight update at each time step will
+    be based on the parameter’s accumulated momentum as opposed to its current velocity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Math
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Mathematically, if our momentum parameter is *μ*, and the gradient at each
+    time step is <math><msub><mi>∇</mi> <mi>t</mi></msub></math> , our weight update
+    is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>update</mtext> <mo>=</mo> <msub><mi>∇</mi>
+    <mi>t</mi></msub> <mo>+</mo> <mi>μ</mi> <mo>×</mo> <msub><mi>∇</mi> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>+</mo> <msup><mi>μ</mi> <mn>2</mn></msup> <mo>×</mo> <msub><mi>∇</mi> <mrow><mi>t</mi><mo>-</mo><mn>2</mn></mrow></msub>
+    <mo>+</mo> <mo>...</mo></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: If our momentum parameter was 0.9, for example, we would multiply the gradient
+    from one time step ago by 0.9, the one from two time steps ago by 0.9² = 0.81,
+    the one from three time steps ago by 0.9³ = 0.729, and so on, and then finally
+    add all of these to the gradient from the current time step to get the overall
+    weight update for the current time step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: How do we implement this? Do we have to compute an infinite sum every time we
+    want to update our weights?
+  prefs: []
+  type: TYPE_NORMAL
+- en: It turns out there is a cleverer way. Our `Optimizer` will keep track of a separate
+    quantity representing the *history* of parameter updates in addition to just receiving
+    a gradient at each time step. Then, at each time step, we’ll use the current gradient
+    to update this history and compute the actual parameter update as a function of
+    this history. Since momentum is loosely based on an analogy with physics, we’ll
+    call this quantity “velocity.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'How should we update velocity? It turns out we can use the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiply it by the momentum parameter.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Add the gradient.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'This results in the velocity taking on the following values at each time step,
+    starting at *t* = 1:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math><msub><mi>∇</mi> <mn>1</mn></msub></math>
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: <math><mrow><msub><mi>∇</mi> <mn>2</mn></msub> <mo>+</mo> <mi>μ</mi> <mo>×</mo>
+    <msub><mi>∇</mi> <mn>1</mn></msub></mrow></math>
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: <math><mrow><msub><mi>∇</mi> <mn>3</mn></msub> <mo>+</mo> <mi>μ</mi> <mo>×</mo>
+    <mrow><mo>(</mo> <msub><mi>∇</mi> <mn>2</mn></msub> <mo>+</mo> <mi>μ</mi> <mo>×</mo>
+    <msub><mi>∇</mi> <mn>1</mn></msub> <mo>)</mo></mrow> <mo>=</mo> <mi>μ</mi> <mo>×</mo>
+    <msub><mi>∇</mi> <mn>2</mn></msub> <mo>+</mo> <msup><mi>μ</mi> <mn>2</mn></msup>
+    <mo>×</mo> <msub><mi>∇</mi> <mn>1</mn></msub> <mrow><mo>)</mo></mrow></mrow></math>
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'With this, we can use the velocity as the parameter update! We can then incorporate
+    this into a new subclass of `Optimizer` that we’ll call `SGDMomentum`; this class
+    will have `step` and `_update_rule` functions that look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s see if this new optimizer can improve our network’s training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Experiment: Stochastic Gradient Descent with Momentum'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s train the same neural network with one hidden layer on the MNIST dataset,
+    changing nothing except using `optimizer = SGDMomentum(lr=0.1, momentum=0.9)`
+    as the optimizer instead of `optimizer = SGD(lr=0.1)`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can see that the loss is significantly lower and the accuracy significantly
+    higher, which is simply a result of adding momentum into our parameter update
+    rule!^([6](ch04.html#idm45732620023000))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, another way to modify our parameter update at each iteration would
+    be to modify our learning rate; while we can manually change our initial learning
+    rate, we can also automatically decay the learning rate as training proceeds using
+    some rule. The most common such rules are covered next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Learning Rate Decay
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[The learning rate] is often the single most important hyper-parameter and
+    one should always make sure that it has been tuned.'
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: ''
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: Yoshua Bengio, *Practical Recommendations for Gradient-Based Training of Deep
+    Architectures*, 2012
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: 'The motivation for decaying the learning rate as training progresses comes,
+    yet again, from [Figure 4-3](#fig_04_03) in the previous section: while we want
+    to “take big steps” toward the beginning of training, it is likely that as we
+    continue to iteratively update the weights, we will reach a point where we start
+    to “skip over” the minimum. Note that this won’t *necessarily* be a problem, since
+    if the relationship between our weights and the loss “smoothly declines” as we
+    approach the minimum, as in [Figure 4-3](#fig_04_03), the magnitude of the gradients
+    will automatically decrease as the slope decreases. Still, this may not happen,
+    and even if it does, learning rate decay can give us more fine-grained control
+    over this process.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Types of Learning Rate Decay
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There are different ways of decaying the learning rate. The simplest is linear
+    decay, where the learning rate declines linearly from its initial value to some
+    terminal value, with the actual decline being implemented at the end of each epoch.
+    More precisely, at time step *t*, if the learning rate we want to start with is
+    <math><msub><mi>α</mi> <mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>t</mi></mrow></msub></math>
+    , and our final learning rate is <math><msub><mi>α</mi> <mrow><mi>e</mi><mi>n</mi><mi>d</mi></mrow></msub></math>
+    , then our learning rate at each time step is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><msub><mi>α</mi> <mi>t</mi></msub> <mo>=</mo> <msub><mi>α</mi>
+    <mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>t</mi></mrow></msub> <mo>-</mo>
+    <mrow><mo>(</mo> <msub><mi>α</mi> <mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>t</mi></mrow></msub>
+    <mo>-</mo> <msub><mi>α</mi> <mrow><mi>e</mi><mi>n</mi><mi>d</mi></mrow></msub>
+    <mo>)</mo></mrow> <mo>×</mo> <mfrac><mi>t</mi> <mi>N</mi></mfrac></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: where *N* is the total number of epochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Another simple method that works about as well is exponential decay, in which
+    the learning rate declines by a constant *proportion* each epoch. The formula
+    here would simply be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><msub><mi>α</mi> <mi>t</mi></msub> <mo>=</mo> <mi>α</mi>
+    <mo>×</mo> <msup><mi>δ</mi> <mi>t</mi></msup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'where:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mi>δ</mi> <mo>=</mo> <msup><mfrac><msub><mi>α</mi>
+    <mrow><mi>e</mi><mi>n</mi><mi>d</mi></mrow></msub> <msub><mi>α</mi> <mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>t</mi></mrow></msub></mfrac>
+    <mfrac><mn>1</mn> <mrow><mi>N</mi><mo>-</mo><mn>1</mn></mrow></mfrac></msup></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Implementing these is straightforward: we’ll initialize our `Optimizer`s to
+    have a “final learning rate” `final_lr` that the initial learning rate will decay
+    toward throughout the epochs of training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, at the beginning of training, we can call a `_setup_decay` function that
+    calculates how much the learning rate will decay at each epoch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'These calculations will implement the linear and exponential learning rate
+    decay formulas we just saw:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, at the end of each epoch, we’ll actually decay the learning rate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we’ll call the `_decay_lr` function from the `Trainer` during the
+    `fit` function, at the end of each epoch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s run some experiments to see if this improves training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Experiments: Learning Rate Decay'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Next we try training the same model architecture with learning rate decay.
+    We initialize the learning rates so that the “average learning rate” over the
+    run is equal to the previous learning rate of 0.1: for the run with linear learning
+    rate decay, we initialize the learning rate to 0.15 and decay it down to 0.05,
+    and for the run with exponential decay, we initialize the learning rate to 0.2
+    and decay it down to 0.05\. For the linear decay run with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'we have:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For the run with exponential decay, with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'we have:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: The losses in the “best models” from these runs were 0.282 and 0.284, significantly
+    lower than the 0.338 that we had before!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next up: how and why to more intelligently initialize the weights of our model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Weight Initialization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: As we mentioned in the section on activation functions, several activation functions,
+    such as sigmoid and Tanh, have their steepest gradients when their inputs are
+    0, with the functions quickly flattening out as the inputs move away from 0\.
+    This can potentially limit the effectiveness of these functions, because if many
+    of the inputs have values far from 0, the weights attached to those inputs will
+    receive very small gradients on the backward pass.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This turns out to be a major problem in the neural networks we are now dealing
+    with. Consider the hidden layer in the MNIST network we’ve been looking at. This
+    layer will receive 784 inputs and then multiply them by a weight matrix, ending
+    up with some number `n` of neurons (and then optionally add a bias to each neuron).
+    [Figure 4-8](#distribution_of_inputs) shows the distribution of these `n` values
+    in the hidden layer of our neural network (with 784 inputs) before and after feeding
+    them through the `Tanh` activation function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Distribution of inputs to activation](assets/dlfs_0408.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-8\. Distribution of inputs to activation function and activations
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'After being fed through the activation function, most of the activations are
+    either –1 or 1! This is because each feature is mathematically defined to be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><msub><mi>f</mi> <mi>n</mi></msub> <mo>=</mo> <msub><mi>w</mi>
+    <mrow><mn>1</mn><mo>,</mo><mi>n</mi></mrow></msub> <mo>×</mo> <msub><mi>x</mi>
+    <mn>1</mn></msub> <mo>+</mo> <mo>...</mo> <mo>+</mo> <msub><mi>w</mi> <mrow><mn>784</mn><mo>,</mo><mi>n</mi></mrow></msub>
+    <mo>×</mo> <msub><mi>x</mi> <mn>784</mn></msub> <mo>+</mo> <msub><mi>b</mi> <mi>n</mi></msub></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since we initialized each weight to have variance 1 ( <math><mrow><mtext>Var</mtext>
+    <mo>(</mo> <msub><mi>w</mi> <mrow><mi>i</mi><mo>,</mo><mi>j</mi></mrow></msub>
+    <mo>)</mo> <mo>=</mo> <mn>1</mn></mrow></math> —and <math><mrow><mtext>Var</mtext>
+    <mo>(</mo> <msub><mi>b</mi> <mi>n</mi></msub> <mo>)</mo> <mo>=</mo> <mn>1</mn></mrow></math>
+    ) and <math><mrow><mtext>Var</mtext> <mrow><mo>(</mo> <msub><mi>X</mi> <mn>1</mn></msub>
+    <mo>+</mo> <msub><mi>X</mi> <mn>2</mn></msub> <mo>)</mo></mrow> <mo>=</mo> <mtext>Var</mtext>
+    <mrow><mo>(</mo> <msub><mi>X</mi> <mn>1</mn></msub> <mo>)</mo></mrow> <mo>+</mo>
+    <mtext>Var</mtext> <mrow><mo>(</mo> <msub><mi>X</mi> <mn>2</mn></msub> <mo>)</mo></mrow></mrow></math>
+    for independent random variables *X*[1] and *X*[2], we have:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mrow><mtext>Var</mtext> <mo>(</mo> <msub><mi>f</mi> <mi>n</mi></msub>
+    <mo>)</mo> <mo>=</mo> <mn>785</mn></mrow></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: That gives it a standard deviation ( <math><msqrt><mn>785</mn></msqrt></math>
+    ) of just over 28, which reflects the spread of the values we see in the top half
+    of [Figure 4-8](#distribution_of_inputs).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This tells us we have a problem. But is the problem simply that the features
+    that we feed into the activation functions can’t be “too spread out”? If that
+    were the problem, we could simply divide the features by some value to reduce
+    their variance. However, that invites an obvious question: how do we know what
+    to divide the values by? The answer is that the values should be scaled *based
+    on the number of neurons being fed into the layer*. If we had a multilayer neural
+    network, and one layer had 200 neurons and the next layer had 100, the 200-neuron
+    layer would pass values forward that had a wider distribution than the 100-neuron
+    layer. This is undesirable—we don’t want the *scale* of the features our neural
+    network learns during training to depend on the number of features passed forward,
+    for the same reason that we don’t want our network’s predictions to depend on
+    the scale of our input features. Our model’s predictions shouldn’t be affected,
+    for example, if we multiplied or divided all the values in a feature by 2.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are several ways to correct for this; here we’ll cover the single most
+    prevalent one, suggested by the prior paragraph: we can *adjust the initial variance
+    of the weights based on the number of neurons in the layers they connect so that
+    the values passed forward to the following layer during the forward pass* and
+    *backward to the prior layer during the backward pass* have roughly the same scale.
+    Yes, we have to think about the backward pass too, since the same problem exists
+    there: the variance of the gradients the layer receives during backpropagation
+    will depend directly on the number of features in the *following* layer since
+    that is the one that sends gradients backward to the layer in question.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Math and Code
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'How, specifically, do we balance these concerns? If each layer has <math><msub><mi>n</mi>
+    <mrow><mi>i</mi><mi>n</mi></mrow></msub></math> neurons feeding in and <math><msub><mi>n</mi>
+    <mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></math> neurons coming out,
+    the variance for each weight that would keep the variance of the resulting features
+    constant *just on the forward pass* would be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mfrac><mn>1</mn> <msub><mi>n</mi> <mrow><mi>i</mi><mi>n</mi></mrow></msub></mfrac></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similarly, the weight variance that would keep the variance of the features
+    constant on the backward pass would be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mfrac><mn>1</mn> <msub><mi>n</mi> <mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mfrac></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As a compromise between these, what is most often called *Glorot initialization*^([7](ch04.html#idm45732619408344))
+    involves initializing the variance of the weights in each layer to be:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <math display="block"><mfrac><mn>2</mn> <mrow><msub><mi>n</mi> <mrow><mi>i</mi><mi>n</mi></mrow></msub>
+    <mo>+</mo><msub><mi>n</mi> <mrow><mi>o</mi><mi>u</mi><mi>t</mi></mrow></msub></mrow></mfrac></math>
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Coding this up is simple—we add a `weight_init` argument to each layer, and
+    we add the following to our `_setup_layer` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now our models will look like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: with `weight_init="glorot"` specified for each layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Experiments: Weight Initialization'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Running the same models from the prior section but with the weights initialized
+    using Glorot initialization gives:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'for the model with linear learning rate decay, and:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: for the model with exponential learning rate decay. We see another significant
+    drop in the loss here, from the 0.282 and 0.284 we achieved earlier down to 0.244
+    and 0.245! Note that with all of these changes, *we haven’t been increasing the
+    size or training time of our model*; we’ve simply tweaked the training process
+    based on our intuition about what neural networks are trying to do that I showed
+    at the beginning of this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is one last technique we’ll cover in this chapter. As motivation, you
+    may have noticed that *none of the models we’ve used throughout this chapter were
+    deep learning models*; rather, they were simply neural networks with one hidden
+    layer. That is because without *dropout*, the technique we will now learn, deep
+    learning models are very challenging to train effectively without overfitting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dropout
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, I’ve shown several modifications to our neural network’s training
+    procedure that got it closer and closer to its global minimum. You may have noticed
+    that we haven’t tried the seemingly most obvious thing: adding more layers to
+    our network or more neurons per layer. The reason is that simply adding more “firepower”
+    to most neural network architectures can make it *more* difficult for the network
+    to find a solution that generalizes well. The intuition here is that, while adding
+    more capacity to a neural network allows it to model more complex relationships
+    between input and output, it also risks leading the network to a solution that
+    is overfit to the training data. *Dropout allows us to add capacity to our neural
+    networks while in most cases making it less likely that the network will overfit*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: What specifically *is* dropout?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Definition
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Dropout simply involves randomly choosing some proportion *p* of the neurons
+    in a layer and setting them equal to 0 during each forward pass of training. This
+    odd trick reduces the capacity of the network, but empirically in many cases it
+    can indeed prevent the network from overfitting. This is especially true in deeper
+    networks, where the features being learned are, by construction, multiple layers
+    of abstraction removed from the original features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Though dropout can help our network avoid overfitting during training, we still
+    want to give our network its “best shot” of making correct predictions when it
+    comes time to predict. So, the `Dropout` operation will have two “modes”: a “training”
+    mode in which dropout is applied, and an “inference” mode, in which it is not.
+    This causes another problem, however: applying dropout to a layer reduces the
+    overall magnitude of the values being passed forward by a factor of 1 – *p* on
+    average, meaning that if the weights in the following layers would normally expect
+    values with magnitude *M*, they are instead getting magnitude <math><mrow><mi>M</mi>
+    <mo>×</mo> <mo>(</mo> <mn>1</mn> <mo>-</mo> <mi>p</mi> <mo>)</mo></mrow></math>
+    . We want to mimic this magnitude shift when running the network in inference
+    mode, so, in addition to removing dropout, we’ll multiply *all* the values by
+    1 – *p*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make this more clear, let’s code it up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We can implement dropout as an `Operation` that we’ll tack onto the end of
+    each layer. It will look as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: On the forward pass, when applying dropout, we save a “mask” representing the
+    individual neurons that got set to 0\. Then, on the backward pass, we multiply
+    the gradient the operation receives by this mask. This is because dropout makes
+    the gradient 0 for the input values that are zeroed out (since changing their
+    values will now have no effect on the loss) and leaves the other gradients unchanged.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Adjusting the rest of our framework to accommodate dropout
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'You may have noticed that we included an `inference` flag in the `_output`
+    method that affects whether dropout is applied or not. For this flag to be called
+    properly, we actually have to add it in several other places throughout training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `Layer` and `NeuralNetwork` `forward` methods will take in `inference` as
+    an argument (`False` by default) and pass the flag into each `Operation`, so that
+    every `Operation` will behave differently in training mode than in inference mode.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Recall that in the `Trainer`, we evaluate the trained model on the testing
+    set every `eval_every` epochs. Now, every time we do that, we’ll evaluate with
+    the `inference` flag equal to `True`:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'Finally, we add a `dropout` keyword to the `Layer` class; the full signature
+    of the `__init__` function for the `Layer` class now looks like:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: 'and we append the `dropout` operation by adding the following to the class’s
+    `_setup_layer` function:'
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+- en: That’s it! Let’s see if dropout works.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Experiments: Dropout'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First, we see that adding dropout to our existing model does indeed decrease
+    the loss. Adding dropout of 0.8 (so that 20% of the neurons get set to 0) to the
+    first layer, so that our model looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'and training the model with the same hyperparameters as before (exponential
+    weight decay from an initial learning rate of 0.2 to a final learning rate of
+    0.05) results in:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is another significant decrease in loss over what we saw previously: the
+    model achieves a minimum loss of 0.196, compared to 0.244 before.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The real power of dropout comes when we add more layers. Let’s change the model
+    we’ve been using throughout this chapter to be a deep learning model, defining
+    the first hidden layer to have twice as many neurons as did our hidden layer before
+    (178) and our second hidden layer to have half as many (46). Our model looks like:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note the inclusion of dropout in the first two layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training this model with the same optimizer as before yields another significant
+    decrease in the minimum loss achieved—and an increase in accuracy!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'More importantly, however, this improvement isn’t possible without dropout.
+    Here are the results of training the same model with no dropout:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: Without dropout, the deep learning model performs *worse* than the model with
+    just one hidden layer—despite having more than twice as many parameters and taking
+    more than twice as long to train! This illustrates how essential dropout is for
+    training deep learning models effectively; indeed, dropout was an essential component
+    of the ImageNet-winning model from 2012 that kicked off the modern deep learning
+    era.^([8](ch04.html#idm45732618787368)) Without dropout, you might not be reading
+    this book!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conclusion
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, you have learned some of the most common techniques for improving
+    neural network training, learning both the intuition for why they work as well
+    as the low-level details of how they work. To summarize these, we’ll leave you
+    with a checklist of things you can try to squeeze some extra performance out of
+    your neural network, regardless of the domain:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add momentum—or one of many similarly effective advanced optimization techniques—to
+    your weight update rule.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Decay your learning rate over time using either linear or exponential decay
+    as shown in this chapter or a more modern technique such as cosine decay. In fact,
+    more effective learning rate schedules vary the learning rate based not just on
+    each epoch but also *on the loss on the testing set*, decreasing the learning
+    rate only when this loss fails to decrease. You should try implementing this as
+    an exercise!
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ensure the scale of your weight initialization is a function of the number of
+    neurons in your layer (this is done by default in most neural network libraries).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Add dropout, especially if your network contains multiple fully connected layers
+    in succession.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Next, we’ll shift to discussing advanced architectures specialized for specific
+    domains, starting with convolutional neural networks, which are specialized to
+    understand image data. Onward!
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch04.html#idm45732621297880-marker)) In addition, as we saw in [Chapter 3](ch03.html#deep_learning_from_scratch),
+    we multiply these gradients by a learning rate to give us more fine-grained control
+    over how much the weights change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([2](ch04.html#idm45732621016264-marker)) We can be more specific: the average
+    value of <math><mrow><mo>-</mo> <mi>l</mi> <mi>o</mi> <mi>g</mi> <mo>(</mo> <mn>1</mn>
+    <mo>-</mo> <mi>x</mi> <mo>)</mo></mrow></math> over the interval 0 to 1 turns
+    out to be 1, while the average value of *x*² over the same interval is just <math><mfrac><mn>1</mn>
+    <mn>3</mn></mfrac></math> .'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([3](ch04.html#idm45732620742360-marker)) To get an intuition for why this
+    can happen: imagine a weight *w* is contributing to a feature *f* (so that <math><mrow><mi>f</mi>
+    <mo>=</mo> <mi>w</mi> <mo>×</mo> <msub><mi>x</mi> <mn>1</mn></msub> <mo>+</mo>
+    <mo>...</mo></mrow></math> ), and during the forward pass of our neural network,
+    *f* = –10 for some observation. Because *sigmoid*(*x*) is so flat at *x* = –10,
+    changing the value of *w* will have almost no effect on the model prediction and
+    thus the loss.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch04.html#idm45732620666312-marker)) For example, TensorFlow’s MNIST classification
+    tutorial uses the `softmax_cross_entropy_with_logits` function, and PyTorch’s
+    `nn.CrossEntropyLoss` actually computes the softmax function inside it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch04.html#idm45732620238856-marker)) You may argue that the softmax cross
+    entropy loss is getting an “unfair advantage” here, since the softmax function
+    normalizes the values it receives so that they add to 1, whereas the mean squared
+    error loss simply gets 10 inputs that have been fed through the `sigmoid` function
+    and have not been normalized to add to 1\. However, on [the book’s website](https://oreil.ly/2H7rJvf)
+    I show that MSE still performs worse than the softmax cross entropy loss even
+    after normalizing the inputs to the mean squared error loss so that they sum to
+    1 for each observation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch04.html#idm45732620023000-marker)) Moreover, momentum is just one way
+    we can use information beyond the gradient from the current batch of data to update
+    the parameters; we briefly cover other update rules in [Appendix A](app01.html#appendix),
+    and you can see these update rules implemented in the Lincoln library included
+    on the [book’s GitHub repo](https://oreil.ly/2MhdQ1B).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([7](ch04.html#idm45732619408344-marker)) This is so known because it was
+    proposed by Glorot and Bengio in a 2010 paper: [“Understanding the difficulty
+    of training deep feedforward neural networks”](http://proceedings.mlr.press/v9/glorot10a/glorot10a.pdf).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch04.html#idm45732618787368-marker)) For more on this, see G. E. Hinton
+    et al., [“Improving neural networks by preventing co-adaptation of feature detectors”](https://arxiv.org/pdf/1207.0580.pdf).
+  prefs: []
+  type: TYPE_NORMAL
