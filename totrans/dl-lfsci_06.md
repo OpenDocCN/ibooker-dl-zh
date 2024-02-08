@@ -1,4 +1,4 @@
-# 第六章。基因组学的深度学习
+# 第六章：基因组学的深度学习
 
 每个生物体的核心是其基因组：包含制造生物体工作部分的所有指令的 DNA 分子。如果一个细胞是一台计算机，那么它的基因组序列就是它执行的软件。如果 DNA 可以被视为软件，信息是计算机处理的，那么我们肯定可以使用我们自己的计算机来分析这些信息并理解它是如何运作的？
 
@@ -306,4 +306,4 @@ for i in range(20):
 
 与生命科学的大多数其他领域相比，基因组学产生了大量的实验数据。例如，单个人类基因组序列包含超过 60 亿个碱基。传统的统计技术很难在所有这些数据中找到信号。它们经常需要简化假设，这些假设并不能反映基因组调控的复杂性。深度学习非常适合处理这些数据，并推动我们对生命细胞核心功能的理解。
 
-^(1) Huesken, D., J. Lange, C. Mickanin, J. Weiler, F. Asselbergs, J. Warner, B. Meloon, S. Engel, A. Rosenberg, D. Cohen, M. Labow, M. Reinhardt, F. Natt, and J. Hall, “Design of a Genome-Wide siRNA Library Using an Artificial Neural Network.” *Nature Biotechnology* 23:995–1001\. 2005\. *[`doi.org/10.1038/nbt1118`](https://doi.org/10.1038/nbt1118)*.
+¹ Huesken, D., J. Lange, C. Mickanin, J. Weiler, F. Asselbergs, J. Warner, B. Meloon, S. Engel, A. Rosenberg, D. Cohen, M. Labow, M. Reinhardt, F. Natt, and J. Hall, “Design of a Genome-Wide siRNA Library Using an Artificial Neural Network.” *Nature Biotechnology* 23:995–1001\. 2005\. *[`doi.org/10.1038/nbt1118`](https://doi.org/10.1038/nbt1118)*.

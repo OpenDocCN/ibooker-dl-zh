@@ -1,4 +1,4 @@
-# 第七章。基于能量的模型
+# 第七章：基于能量的模型
 
 基于能量的模型是一类广泛的生成模型，借鉴了建模物理系统的一个关键思想——即，事件的概率可以用玻尔兹曼分布来表示，这是一个特定函数，将实值能量函数归一化在 0 到 1 之间。这个分布最初是由路德维希·玻尔兹曼在 1868 年提出的，他用它来描述处于热平衡状态的气体。
 
@@ -120,7 +120,7 @@ model = models.Model(ebm_input, ebm_output) ![3](img/3.png)
 
 # 随机梯度 Langevin 动力学
 
-重要的是，当我们穿越样本空间时，我们还必须向输入添加少量随机噪声；否则，有可能陷入局部最小值。因此，该技术被称为随机梯度 Langevin 动力学。^(3)
+重要的是，当我们穿越样本空间时，我们还必须向输入添加少量随机噪声；否则，有可能陷入局部最小值。因此，该技术被称为随机梯度 Langevin 动力学。³
 
 我们可以将这种梯度下降可视化为 图 7-4 中所示，对于一个具有能量函数值的三维空间。路径是一个嘈杂的下降，沿着能量函数 <math alttext="upper E left-parenthesis x right-parenthesis"><mrow><mi>E</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></math> 的负梯度相对于输入 <math alttext="x"><mi>x</mi></math> 下降。在 MNIST 图像数据集中，我们有 1,024 个像素，因此在一个 1,024 维空间中导航，但是相同的原则适用！
 
@@ -190,13 +190,13 @@ def generate_samples(model, inp_imgs, steps, step_size, noise):
 
 现在我们知道如何从样本空间中采样一个新的低能量点，让我们将注意力转向训练模型。
 
-我们无法应用最大似然估计，因为能量函数不输出概率；它输出的是一个在样本空间中不积分为 1 的分数。相反，我们将应用 Geoffrey Hinton 在 2002 年首次提出的一种技术，称为*对比散度*，用于训练非归一化评分模型。^(4)
+我们无法应用最大似然估计，因为能量函数不输出概率；它输出的是一个在样本空间中不积分为 1 的分数。相反，我们将应用 Geoffrey Hinton 在 2002 年首次提出的一种技术，称为*对比散度*，用于训练非归一化评分模型。⁴
 
 我们希望最小化的值（一如既往）是数据的负对数似然：
 
 <math alttext="script upper L equals minus double-struck upper E Subscript x tilde normal d normal a normal t normal a Baseline left-bracket log p Subscript theta Baseline left-parenthesis bold x right-parenthesis right-bracket" display="block"><mrow><mi>ℒ</mi> <mo>=</mo> <mo>-</mo> <msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo> <mi>data</mi></mrow></msub> <mfenced separators="" open="[" close="]"><mo form="prefix">log</mo> <msub><mi>p</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mfenced></mrow></math>
 
-当 <math alttext="p Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>p</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math> 具有玻尔兹曼分布的形式，能量函数为 <math alttext="upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math> ，可以证明该值的梯度可以写成以下形式（Oliver Woodford 的“对比散度笔记”进行完整推导）：^(5)
+当 <math alttext="p Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>p</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math> 具有玻尔兹曼分布的形式，能量函数为 <math alttext="upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis"><mrow><msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mrow></math> ，可以证明该值的梯度可以写成以下形式（Oliver Woodford 的“对比散度笔记”进行完整推导）：⁵
 
 <math alttext="StartLayout 1st Row 1st Column normal nabla Subscript theta Baseline script upper L 2nd Column equals 3rd Column double-struck upper E Subscript x tilde normal d normal a normal t normal a Baseline left-bracket normal nabla Subscript theta Baseline upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis right-bracket minus double-struck upper E Subscript x tilde normal m normal o normal d normal e normal l Baseline left-bracket normal nabla Subscript theta Baseline upper E Subscript theta Baseline left-parenthesis bold x right-parenthesis right-bracket EndLayout" display="block"><mtable displaystyle="true"><mtr><mtd columnalign="right"><mrow><msub><mi>∇</mi> <mi>θ</mi></msub> <mi>ℒ</mi></mrow></mtd> <mtd><mo>=</mo></mtd> <mtd columnalign="left"><mrow><msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo> <mi>data</mi></mrow></msub> <mfenced separators="" open="[" close="]"><msub><mi>∇</mi> <mi>θ</mi></msub> <msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mfenced> <mo>-</mo> <msub><mi>𝔼</mi> <mrow><mi>x</mi><mo>∼</mo> <mi>model</mi></mrow></msub> <mfenced separators="" open="[" close="]"><msub><mi>∇</mi> <mi>θ</mi></msub> <msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>𝐱</mi> <mo>)</mo></mrow></mfenced></mrow></mtd></mtr></mtable></math>
 
@@ -409,7 +409,7 @@ gen_img = generate_samples(
 
 在前面的例子中，我们使用了使用对比散度和 Langevin 动力学采样器训练的深度 EBM。然而，早期的 EBM 模型并没有使用 Langevin 采样，而是依赖于其他技术和架构。
 
-最早的能量基模型之一是 *Boltzmann 机*。^(6) 这是一个全连接的无向神经网络，其中二进制单元要么是 *可见*（*v*），要么是 *隐藏*（*h*）。网络的给定配置的能量定义如下：
+最早的能量基模型之一是 *Boltzmann 机*。⁶ 这是一个全连接的无向神经网络，其中二进制单元要么是 *可见*（*v*），要么是 *隐藏*（*h*）。网络的给定配置的能量定义如下：
 
 <math alttext="upper E Subscript theta Baseline left-parenthesis v comma h right-parenthesis equals minus one-half left-parenthesis v Superscript upper T Baseline upper L v plus h Superscript upper T Baseline upper J h plus v Superscript upper T Baseline upper W h right-parenthesis" display="block"><mrow><msub><mi>E</mi> <mi>θ</mi></msub> <mrow><mo>(</mo> <mi>v</mi> <mo>,</mo> <mi>h</mi> <mo>)</mo></mrow> <mo>=</mo> <mo>-</mo> <mfrac><mn>1</mn> <mn>2</mn></mfrac> <mfenced separators="" open="(" close=")"><msup><mi>v</mi> <mi>T</mi></msup> <mi>L</mi> <mi>v</mi> <mo>+</mo> <msup><mi>h</mi> <mi>T</mi></msup> <mi>J</mi> <mi>h</mi> <mo>+</mo> <msup><mi>v</mi> <mi>T</mi></msup> <mi>W</mi> <mi>h</mi></mfenced></mrow></math>
 
@@ -421,7 +421,7 @@ gen_img = generate_samples(
 
 这个模型的扩展，*受限玻尔兹曼机*（RBM），移除了相同类型单元之间的连接，因此创建了一个两层的二部图。这使得 RBM 可以堆叠成*深度信念网络*，以建模更复杂的分布。然而，使用 RBM 对高维数据进行建模仍然是不切实际的，因为仍然需要长混合时间的吉布斯采样。
 
-直到 2000 年代末，EBM 才被证明具有对更高维数据集进行建模的潜力，并建立了一个构建深度 EBM 的框架。^(7) Langevin 动力学成为 EBM 的首选采样方法，后来演变成一种称为*得分匹配*的训练技术。这进一步发展成一种称为*去噪扩散概率模型*的模型类，为 DALL.E 2 和 ImageGen 等最先进的生成模型提供动力。我们将在第八章中更详细地探讨扩散模型。
+直到 2000 年代末，EBM 才被证明具有对更高维数据集进行建模的潜力，并建立了一个构建深度 EBM 的框架。⁷ Langevin 动力学成为 EBM 的首选采样方法，后来演变成一种称为*得分匹配*的训练技术。这进一步发展成一种称为*去噪扩散概率模型*的模型类，为 DALL.E 2 和 ImageGen 等最先进的生成模型提供动力。我们将在第八章中更详细地探讨扩散模型。
 
 # 摘要
 
@@ -431,16 +431,16 @@ gen_img = generate_samples(
 
 深度 EBM 的采样是通过 Langevin 动力学实现的，这是一种利用得分相对于输入图像的梯度逐渐将随机噪声转化为合理观察的技术，通过更新输入进行小步骤，沿着梯度下降。这改进了早期的方法，如受限玻尔兹曼机使用的吉布斯采样。
 
-^(1) 杜一伦和伊戈尔·莫达奇，“基于能量的模型的隐式生成和建模”，2019 年 3 月 20 日，[*https://arxiv.org/abs/1903.08689*](https://arxiv.org/abs/1903.08689)。
+¹ 杜一伦和伊戈尔·莫达奇，“基于能量的模型的隐式生成和建模”，2019 年 3 月 20 日，[*https://arxiv.org/abs/1903.08689*](https://arxiv.org/abs/1903.08689)。
 
-^(2) Prajit Ramachandran 等人，“搜索激活函数”，2017 年 10 月 16 日，[*https://arxiv.org/abs/1710.05941v2*](https://arxiv.org/abs/1710.05941v2)。
+² Prajit Ramachandran 等人，“搜索激活函数”，2017 年 10 月 16 日，[*https://arxiv.org/abs/1710.05941v2*](https://arxiv.org/abs/1710.05941v2)。
 
-^(3) Max Welling 和 Yee Whye Teh，“通过随机梯度 Langevin 动力学进行贝叶斯学习”，2011 年，[*https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf*](https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf)
+³ Max Welling 和 Yee Whye Teh，“通过随机梯度 Langevin 动力学进行贝叶斯学习”，2011 年，[*https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf*](https://www.stats.ox.ac.uk/~teh/research/compstats/WelTeh2011a.pdf)
 
-^(4) Geoffrey E. Hinton，“通过最小化对比散度训练专家乘积”，2002 年，[*https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf*](https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf)。
+⁴ Geoffrey E. Hinton，“通过最小化对比散度训练专家乘积”，2002 年，[*https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf*](https://www.cs.toronto.edu/~hinton/absps/tr00-004.pdf)。
 
-^(5) Oliver Woodford，“对比散度笔记”，2006 年，[*https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf*](https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf)。
+⁵ Oliver Woodford，“对比散度笔记”，2006 年，[*https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf*](https://www.robots.ox.ac.uk/~ojw/files/NotesOnCD.pdf)。
 
-^(6) David H. Ackley 等人，“玻尔兹曼机的学习算法”，1985 年，*认知科学* 9(1), 147-165。
+⁶ David H. Ackley 等人，“玻尔兹曼机的学习算法”，1985 年，*认知科学* 9(1), 147-165。
 
-^(7) Yann Lecun 等人，“基于能量的学习教程”，2006 年，*[*https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning*](https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning)*.
+⁷ Yann Lecun 等人，“基于能量的学习教程”，2006 年，*[*https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning*](https://www.researchgate.net/publication/200744586_A_tutorial_on_energy-based_learning)*.

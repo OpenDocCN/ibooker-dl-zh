@@ -1,4 +1,4 @@
-# 第六章。正规化流模型
+# 第六章：正规化流模型
 
 到目前为止，我们已经讨论了三类生成模型家族：变分自动编码器、生成对抗网络和自回归模型。每种模型都提出了不同的方法来解决建模分布 p(x)的挑战，要么通过引入一个可以轻松采样的潜变量（并在 VAE 中使用解码器或在 GAN 中使用生成器进行转换），要么通过可处理地将分布建模为前面元素值的函数（自回归模型）。
 
@@ -435,7 +435,7 @@ model.fit(
 
 ![](img/gdl2_0614.png)
 
-###### 图 6-14。GLOW 模型的随机样本（来源：[Kingma 和 Dhariwal，2018](https://arxiv.org/abs/1807.03039)）^(2)
+###### 图 6-14。GLOW 模型的随机样本（来源：[Kingma 和 Dhariwal，2018](https://arxiv.org/abs/1807.03039)）²
 
 ## FFJORD
 
@@ -447,7 +447,7 @@ RealNVP 和 GLOW 是离散时间归一化流模型，即它们通过一组离散
 
 ![](img/gdl2_0615.png)
 
-###### 图 6-15。FFJORD 通过由神经网络参数化的普通微分方程模拟数据分布与标准高斯之间的转换（来源：[Will Grathwohl 等人，2018](https://arxiv.org/abs/1810.01367)）^(3)
+###### 图 6-15。FFJORD 通过由神经网络参数化的普通微分方程模拟数据分布与标准高斯之间的转换（来源：[Will Grathwohl 等人，2018](https://arxiv.org/abs/1810.01367)）³
 
 # 总结
 
@@ -465,8 +465,8 @@ RealNVP 论文还展示了如何将这种技术应用于图像，通过在耦合
 
 总的来说，我们已经看到了归一化流是一个强大的生成建模家族，可以生成高质量的样本，同时保持能够可靠地描述数据密度函数的能力。
 
-^(1) Laurent Dinh 等人，“使用 Real NVP 进行密度估计”，2016 年 5 月 27 日，[*https://arxiv.org/abs/1605.08803v3*](https://arxiv.org/abs/1605.08803v3)。
+¹ Laurent Dinh 等人，“使用 Real NVP 进行密度估计”，2016 年 5 月 27 日，[*https://arxiv.org/abs/1605.08803v3*](https://arxiv.org/abs/1605.08803v3)。
 
-^(2) Diedrick P. Kingma 和 Prafulla Dhariwal，“Glow: 具有可逆 1x1 卷积的生成流”，2018 年 7 月 10 日，[*https://arxiv.org/abs/1807.03039*](https://arxiv.org/abs/1807.03039)。
+² Diedrick P. Kingma 和 Prafulla Dhariwal，“Glow: 具有可逆 1x1 卷积的生成流”，2018 年 7 月 10 日，[*https://arxiv.org/abs/1807.03039*](https://arxiv.org/abs/1807.03039)。
 
-^(3) Will Grathwohl 等人，“FFJORD: 用于可扩展可逆生成模型的自由形式连续动力学”，2018 年 10 月 22 日，[*https://arxiv.org/abs/1810.01367*](https://arxiv.org/abs/1810.01367)。
+³ Will Grathwohl 等人，“FFJORD: 用于可扩展可逆生成模型的自由形式连续动力学”，2018 年 10 月 22 日，[*https://arxiv.org/abs/1810.01367*](https://arxiv.org/abs/1810.01367)。

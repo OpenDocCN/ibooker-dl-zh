@@ -1,4 +1,4 @@
-# 第九章。序列分析模型
+# 第九章：序列分析模型
 
 Surya Bhupatiraju
 
@@ -335,7 +335,7 @@ Shift
 
 在全局归一化网络中，我们对分数的解释略有不同。我们不是通过 softmax 将分数转换为每个操作的概率分布，而是将所有假设动作序列的分数相加。确保我们选择正确的假设序列的一种方法是计算所有可能假设的总和，然后应用 softmax 层生成概率分布。理论上，我们可以使用与局部归一化网络中相同的交叉熵损失函数。然而，这种策略的问题在于可能的假设序列数量太大，难以处理。即使考虑到平均句子长度为 10，每个左右弧有 1 个移动和 7 个标签的保守总操作数为 15，这对应于 1,000,000,000,000,000 个可能的假设。
 
-为了使这个问题可解，如图 9-12 所示，我们应用一个固定大小的束搜索，直到我们要么（1）到达句子的结尾，要么（2）正确的动作序列不再包含在束中。然后，我们构建一个损失函数，试图通过最大化相对于其他假设的分数来尽可能将“黄金标准”动作序列（用蓝色突出显示）推到束的顶部。虽然我们不会在这里深入讨论如何构建这个损失函数的细节，但我们建议您参考 2016 年 Andor 等人的原始论文。^(3) 该论文还描述了一个更复杂的词性标注器，它使用全局归一化和束搜索来显著提高准确性（与我们在本章前面构建的词性标注器相比）。
+为了使这个问题可解，如图 9-12 所示，我们应用一个固定大小的束搜索，直到我们要么（1）到达句子的结尾，要么（2）正确的动作序列不再包含在束中。然后，我们构建一个损失函数，试图通过最大化相对于其他假设的分数来尽可能将“黄金标准”动作序列（用蓝色突出显示）推到束的顶部。虽然我们不会在这里深入讨论如何构建这个损失函数的细节，但我们建议您参考 2016 年 Andor 等人的原始论文。³ 该论文还描述了一个更复杂的词性标注器，它使用全局归一化和束搜索来显著提高准确性（与我们在本章前面构建的词性标注器相比）。
 
 ![](img/fdl2_0912.png)
 
@@ -998,13 +998,13 @@ loss += step_loss / steps_per_checkpoint current_step += 1
 
 随着最基本的架构被理解和实现，我们现在将继续研究 RNN 的令人兴奋的新发展，并开始探索更复杂的学习。
 
-# 自注意力和变压器
+# 自注意力和 Transformer
 
-早些时候，我们讨论了一种注意力形式，这种形式首次在 2015 年由 Bahdanau 等人提出。具体来说，我们使用一个简单的前馈神经网络来计算每个编码器隐藏状态与当前时间步的解码器状态的对齐分数。在本节中，我们将讨论一种称为*缩放点积注意力*的不同形式的注意力，它在*自注意力*中的使用，以及*变压器*，这是一种最近的语言建模突破。基于变压器的模型主要取代了 LSTM，并已被证明在许多序列到序列问题中具有更高的质量。
+早些时候，我们讨论了一种注意力形式，这种形式首次在 2015 年由 Bahdanau 等人提出。具体来说，我们使用一个简单的前馈神经网络来计算每个编码器隐藏状态与当前时间步的解码器状态的对齐分数。在本节中，我们将讨论一种称为*缩放点积注意力*的不同形式的注意力，它在*自注意力*中的使用，以及*Transformer*，这是一种最近的语言建模突破。基于 Transformer 的模型主要取代了 LSTM，并已被证明在许多序列到序列问题中具有更高的质量。
 
 点积注意力实际上就像听起来的那样简单——这种方法计算编码器隐藏状态之间的点积作为对齐分数。这些权重用于计算上下文向量，这是编码器隐藏状态的凸组合（通过 softmax）。为什么使用点积来衡量对齐？正如我们在第一章中学到的，两个向量的点积可以表示为两个向量的范数和它们之间夹角的余弦的乘积。当两个向量之间的夹角趋近于零时，余弦趋近于一。此外，从三角学中我们知道，当输入角度在 0 度到 180 度之间时，余弦的范围是 1 到-1，这是我们需要考虑的角度域的唯一部分。点积具有一个很好的性质，即当两个向量之间的夹角变小时，点积变大。这使我们能够将点积作为相似性的自然度量。
 
-2017 年，Vaswani 等人^(7)通过引入一个缩放因子——隐藏状态维度的平方根，对现有的点积注意力框架进行了修改。Vaswani 等人承认，随着隐藏状态表示在维度上变得越来越大，我们预计会看到更多高幅度的点积。为了理解包含这个缩放因子的原因，假设每个 <math alttext="h Subscript i"><msub><mi>h</mi> <mi>i</mi></msub></math> 的索引都是从均值为零、单位方差的随机变量中独立且相同地抽取的。让我们计算它们的点积的期望和方差：
+2017 年，Vaswani 等人⁷通过引入一个缩放因子——隐藏状态维度的平方根，对现有的点积注意力框架进行了修改。Vaswani 等人承认，随着隐藏状态表示在维度上变得越来越大，我们预计会看到更多高幅度的点积。为了理解包含这个缩放因子的原因，假设每个 <math alttext="h Subscript i"><msub><mi>h</mi> <mi>i</mi></msub></math> 的索引都是从均值为零、单位方差的随机变量中独立且相同地抽取的。让我们计算它们的点积的期望和方差：
 
 <math alttext="double-struck upper E left-bracket s Subscript t Superscript upper T Baseline h Subscript i Baseline right-bracket equals sigma-summation Underscript j equals 1 Overscript k Endscripts double-struck upper E left-bracket s Subscript t comma j Baseline asterisk h Subscript i comma j Baseline right-bracket"><mrow><mi>𝔼</mi> <mrow><mo>[</mo> <msubsup><mi>s</mi> <mi>t</mi> <mi>T</mi></msubsup> <msub><mi>h</mi> <mi>i</mi></msub> <mo>]</mo></mrow> <mo>=</mo> <msubsup><mo>∑</mo> <mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow> <mi>k</mi></msubsup> <mi>𝔼</mi> <mrow><mo>[</mo> <msub><mi>s</mi> <mrow><mi>t</mi><mo>,</mo><mi>j</mi></mrow></msub> <mo>*</mo> <msub><mi>h</mi> <mrow><mi>i</mi><mo>,</mo><mi>j</mi></mrow></msub> <mo>]</mo></mrow></mrow></math>
 
@@ -1038,16 +1038,16 @@ loss += step_loss / steps_per_checkpoint current_step += 1
 
 在本章中，我们深入探讨了序列分析的世界。我们分析了如何修改前馈网络以处理序列，发展了对 RNN 的深刻理解，并探讨了注意力机制如何实现从语言翻译到音频转录等令人难以置信的应用。序列分析是一个领域，不仅涉及自然语言问题，还涉及金融领域的主题，比如对金融资产回报的时间序列分析。任何涉及纵向分析或跨时间分析的领域都可以使用本章描述的序列分析应用。我们建议您通过在不同领域实施序列分析来加深对其的理解，并通过将自然语言技术的结果与各领域的最新技术进行比较。在某些情况下，本文介绍的技术可能不是最合适的建模选择，我们建议您深入思考为什么这里所做的建模假设可能不适用于广泛应用。序列分析是一个强大的工具，在几乎所有技术应用中都有一席之地，不仅仅是自然语言。
 
-^(1) Nivre, Joakim. “Incrementality in Deterministic Dependency Parsing.” *Proceedings of the Workshop on Incremental Parsing: Bringing Engineering and Cognition Together*. Association for Computational Linguistics, 2004; Chen, Danqi, and Christopher D. Manning. “A Fast and Accurate Dependency Parser Using Neural Networks.” *EMNLP*. 2014.
+¹ Nivre, Joakim. “Incrementality in Deterministic Dependency Parsing.” *Proceedings of the Workshop on Incremental Parsing: Bringing Engineering and Cognition Together*. Association for Computational Linguistics, 2004; Chen, Danqi, and Christopher D. Manning. “A Fast and Accurate Dependency Parser Using Neural Networks.” *EMNLP*. 2014.
 
-^(2) Andor, Daniel, et al. “Globally Normalized Transition-Based Neural Networks.” *arXiv preprint* *arXiv*:1603.06042 (2016).
+² Andor, Daniel, et al. “Globally Normalized Transition-Based Neural Networks.” *arXiv preprint* *arXiv*:1603.06042 (2016).
 
-^(3) 同上。
+³ 同上。
 
-^(4) Kilian, Joe, 和 Hava T. Siegelmann。“Sigmoid 神经网络的动态普适性。” *信息与计算* 128.1 (1996): 48-56。
+⁴ Kilian, Joe, 和 Hava T. Siegelmann。“Sigmoid 神经网络的动态普适性。” *信息与计算* 128.1 (1996): 48-56。
 
-^(5) Kiros, Ryan, 等。“Skip-Thought Vectors。” *神经信息处理系统的进展*。2015 年。
+⁵ Kiros, Ryan, 等。“Skip-Thought Vectors。” *神经信息处理系统的进展*。2015 年。
 
-^(6) Bahdanau, Dzmitry, Kyunghyun Cho, and Yoshua Bengio. “通过联合学习对齐和翻译的神经机器翻译。” *arXiv 预印本 arXiv*:1409.0473 (2014)。
+⁶ Bahdanau, Dzmitry, Kyunghyun Cho, and Yoshua Bengio. “通过联合学习对齐和翻译的神经机器翻译。” *arXiv 预印本 arXiv*:1409.0473 (2014)。
 
-^(7) Vaswani 等。“注意力就是一切。” *arXiv 预印本 arXiv*:1706.03762 2017 年。
+⁷ Vaswani 等。“注意力就是一切。” *arXiv 预印本 arXiv*:1706.03762 2017 年。

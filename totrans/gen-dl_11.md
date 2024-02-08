@@ -1,12 +1,12 @@
-# 第八章。扩散模型
+# 第八章：扩散模型
 
 与 GANs 并驾齐驱，扩散模型是过去十年中引入的最具影响力和影响力的生成建模技术之一。在许多基准测试中，扩散模型现在胜过以前的最先进 GANs，并迅速成为生成建模从业者的首选选择，特别是对于视觉领域（例如，OpenAI 的 DALL.E 2 和 Google 的 ImageGen 用于文本到图像生成）。最近，扩散模型在广泛任务中的应用呈现爆炸性增长，类似于 2017 年至 2020 年间 GAN 的普及。
 
-许多支撑扩散模型的核心思想与本书中已经探索过的早期类型的生成模型（例如，去噪自动编码器，基于能量的模型）有相似之处。事实上，名称*扩散*灵感来自热力学扩散的深入研究：在 2015 年，这一纯物理领域与深度学习之间建立了重要联系。^(1)
+许多支撑扩散模型的核心思想与本书中已经探索过的早期类型的生成模型（例如，去噪自动编码器，基于能量的模型）有相似之处。事实上，名称*扩散*灵感来自热力学扩散的深入研究：在 2015 年，这一纯物理领域与深度学习之间建立了重要联系。¹
 
-在基于分数的生成模型领域也取得了重要进展，^(2)^,^(3)这是能量基模型的一个分支，直接估计对数分布的梯度（也称为分数函数），以训练模型，作为使用对比散度的替代方法。特别是，杨松和斯特凡诺·厄尔蒙使用多个尺度的噪声扰动应用于原始数据，以确保模型-一个*噪声条件分数网络*（NCSN）在低数据密度区域表现良好。
+在基于分数的生成模型领域也取得了重要进展，²^,³这是能量基模型的一个分支，直接估计对数分布的梯度（也称为分数函数），以训练模型，作为使用对比散度的替代方法。特别是，杨松和斯特凡诺·厄尔蒙使用多个尺度的噪声扰动应用于原始数据，以确保模型-一个*噪声条件分数网络*（NCSN）在低数据密度区域表现良好。
 
-突破性的扩散模型论文于 2020 年夏天发表。^(4)在前人的基础上，该论文揭示了扩散模型和基于分数的生成模型之间的深刻联系，作者利用这一事实训练了一个可以在几个数据集上与 GANs 匹敌的扩散模型，称为*去噪扩散概率模型*（DDPM）。
+突破性的扩散模型论文于 2020 年夏天发表。⁴在前人的基础上，该论文揭示了扩散模型和基于分数的生成模型之间的深刻联系，作者利用这一事实训练了一个可以在几个数据集上与 GANs 匹敌的扩散模型，称为*去噪扩散概率模型*（DDPM）。
 
 本章将介绍理解去噪扩散模型工作原理的理论要求。然后，您将学习如何使用 Keras 构建自己的去噪扩散模型。
 
@@ -645,7 +645,7 @@ model.fit(
 
 让我们来分解一下。方程式右侧括号内的第一个项是估计的图像 <math alttext="x 0"><msub><mi>x</mi> <mn>0</mn></msub></math>，使用我们网络预测的噪声 <math alttext="epsilon Subscript theta Superscript left-parenthesis t right-parenthesis"><msubsup><mi>ϵ</mi> <mi>θ</mi> <mrow><mo>(</mo><mi>t</mi><mo>)</mo></mrow></msubsup></math> 计算得到。然后我们通过 <math alttext="t minus 1"><mrow><mi>t</mi> <mo>-</mo> <mn>1</mn></mrow></math> 信号率 <math alttext="StartRoot alpha overbar Subscript t minus 1 Baseline EndRoot"><msqrt><msub><mover accent="true"><mi>α</mi> <mo>¯</mo></mover> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub></msqrt></math> 缩放这个值，并重新应用预测的噪声，但这次是通过 <math alttext="t minus 1"><mrow><mi>t</mi> <mo>-</mo> <mn>1</mn></mrow></math> 噪声率 <math alttext="StartRoot 1 minus alpha overbar Subscript t minus 1 Baseline minus sigma Subscript t Superscript 2 Baseline EndRoot"><msqrt><mrow><mn>1</mn> <mo>-</mo> <msub><mover accent="true"><mi>α</mi> <mo>¯</mo></mover> <mrow><mi>t</mi><mo>-</mo><mn>1</mn></mrow></msub> <mo>-</mo> <msubsup><mi>σ</mi> <mi>t</mi> <mn>2</mn></msubsup></mrow></msqrt></math> 进行缩放。还添加了额外的高斯随机噪声 <math alttext="sigma Subscript t Baseline epsilon Subscript t"><mrow><msub><mi>σ</mi> <mi>t</mi></msub> <msub><mi>ϵ</mi> <mi>t</mi></msub></mrow></math>，其中 <math alttext="sigma Subscript t"><msub><mi>σ</mi> <mi>t</msub></math> 确定了我们希望生成过程有多随机。
 
-特殊情况 <math alttext="sigma Subscript t Baseline equals 0"><mrow><msub><mi>σ</mi> <mi>t</mi></msub> <mo>=</mo> <mn>0</mn></mrow></math> 对于所有的 <math alttext="t"><mi>t</mi></math> 对应于一种称为*去噪扩散隐式模型*（DDIM）的模型，由 Song 等人在 2020 年提出。^(9) 使用 DDIM，生成过程完全是确定性的—也就是说，相同的随机噪声输入将始终产生相同的输出。这是可取的，因为这样我们在潜在空间的样本和像素空间中生成的输出之间有一个明确定义的映射。
+特殊情况 <math alttext="sigma Subscript t Baseline equals 0"><mrow><msub><mi>σ</mi> <mi>t</mi></msub> <mo>=</mo> <mn>0</mn></mrow></math> 对于所有的 <math alttext="t"><mi>t</mi></math> 对应于一种称为*去噪扩散隐式模型*（DDIM）的模型，由 Song 等人在 2020 年提出。⁹ 使用 DDIM，生成过程完全是确定性的—也就是说，相同的随机噪声输入将始终产生相同的输出。这是可取的，因为这样我们在潜在空间的样本和像素空间中生成的输出之间有一个明确定义的映射。
 
 在我们的示例中，我们将实现一个 DDIM，从而使我们的生成过程确定性。DDIM 采样过程（反向扩散）的代码显示在示例 8-11 中。
 
@@ -784,20 +784,20 @@ class DiffusionModel(models.Model):
 
 我们看到，在逆过程中增加扩散步骤的数量会提高图像生成质量，但会降低速度。 我们还执行了潜在空间算术，以在两个图像之间插值。
 
-^(1) Jascha Sohl-Dickstein 等，“使用非平衡热力学进行深度无监督学习”，2015 年 3 月 12 日，[*https://arxiv.org/abs/1503.03585*](https://arxiv.org/abs/1503.03585)
+¹ Jascha Sohl-Dickstein 等，“使用非平衡热力学进行深度无监督学习”，2015 年 3 月 12 日，[*https://arxiv.org/abs/1503.03585*](https://arxiv.org/abs/1503.03585)
 
-^(2) 杨松和 Stefano Ermon，“通过估计数据分布的梯度进行生成建模”，2019 年 7 月 12 日，[*https://arxiv.org/abs/1907.05600*](https://arxiv.org/abs/1907.05600)。
+² 杨松和 Stefano Ermon，“通过估计数据分布的梯度进行生成建模”，2019 年 7 月 12 日，[*https://arxiv.org/abs/1907.05600*](https://arxiv.org/abs/1907.05600)。
 
-^(3) 杨松和 Stefano Ermon，“改进训练基于分数的生成模型的技术”，2020 年 6 月 16 日，[*https://arxiv.org/abs/2006.09011*](https://arxiv.org/abs/2006.09011)。
+³ 杨松和 Stefano Ermon，“改进训练基于分数的生成模型的技术”，2020 年 6 月 16 日，[*https://arxiv.org/abs/2006.09011*](https://arxiv.org/abs/2006.09011)。
 
-^(4) Jonathon Ho 等，“去噪扩散概率模型”，2020 年 6 月 19 日，[*https://arxiv.org/abs/2006.11239*](https://arxiv.org/abs/2006.11239)。
+⁴ Jonathon Ho 等，“去噪扩散概率模型”，2020 年 6 月 19 日，[*https://arxiv.org/abs/2006.11239*](https://arxiv.org/abs/2006.11239)。
 
-^(5) Alex Nichol 和 Prafulla Dhariwal，“改进去噪扩散概率模型”，2021 年 2 月 18 日，[*https://arxiv.org/abs/2102.09672*](https://arxiv.org/abs/2102.09672)。
+⁵ Alex Nichol 和 Prafulla Dhariwal，“改进去噪扩散概率模型”，2021 年 2 月 18 日，[*https://arxiv.org/abs/2102.09672*](https://arxiv.org/abs/2102.09672)。
 
-^(6) Ashish Vaswani 等，“注意力就是一切”，2017 年 6 月 12 日，[*https://arxiv.org/abs/1706.03762*](https://arxiv.org/abs/1706.03762)。
+⁶ Ashish Vaswani 等，“注意力就是一切”，2017 年 6 月 12 日，[*https://arxiv.org/abs/1706.03762*](https://arxiv.org/abs/1706.03762)。
 
-^(7) Ben Mildenhall 等，“NeRF：将场景表示为神经辐射场进行视图合成”，2020 年 3 月 1 日，[*https://arxiv.org/abs/2003.08934*](https://arxiv.org/abs/2003.08934)。
+⁷ Ben Mildenhall 等，“NeRF：将场景表示为神经辐射场进行视图合成”，2020 年 3 月 1 日，[*https://arxiv.org/abs/2003.08934*](https://arxiv.org/abs/2003.08934)。
 
-^(8) Kaiming He 等，“用于图像识别的深度残差学习”，2015 年 12 月 10 日，[*https://arxiv.org/abs/1512.03385*](https://arxiv.org/abs/1512.03385)。
+⁸ Kaiming He 等，“用于图像识别的深度残差学习”，2015 年 12 月 10 日，[*https://arxiv.org/abs/1512.03385*](https://arxiv.org/abs/1512.03385)。
 
-^(9) 宋嘉明等，“去噪扩散隐式模型”，2020 年 10 月 6 日，[*https://arxiv.org/abs/2010.02502*](https://arxiv.org/abs/2010.02502)`
+⁹ 宋嘉明等，“去噪扩散隐式模型”，2020 年 10 月 6 日，[*https://arxiv.org/abs/2010.02502*](https://arxiv.org/abs/2010.02502)`

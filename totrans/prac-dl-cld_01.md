@@ -1,4 +1,4 @@
-# 第一章 探索人工智能的领域
+# 第一章：探索人工智能的领域
 
 以下是 Dr. May Carson（图 1-1）关于人工智能（AI）在 21 世纪人类生活中角色变化的重要论文中的话：
 
@@ -709,4 +709,4 @@ TensorFlow 实现了许多前述承诺，从开发到部署形成了一个端到
 
 如果您正在阅读盗版副本，请考虑我们对您感到失望。
 
-^(2) [Robert Geirhos 等人](https://arxiv.org/pdf/1811.12231.pdf)
+² [Robert Geirhos 等人](https://arxiv.org/pdf/1811.12231.pdf)

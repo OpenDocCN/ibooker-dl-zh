@@ -1,4 +1,4 @@
-# 第六章。超越梯度下降
+# 第六章：超越梯度下降
 
 # 梯度下降的挑战
 
@@ -167,7 +167,7 @@ for alpha in torch.arange(-2, 2, 0.05):
 
 ###### 图 6-5\. 二维误差表面上的一个鞍点
 
-一般来说，在一个 <math alttext="d"><mi>d</mi></math> 维参数空间中，我们可以通过 <math alttext="d"><mi>d</mi></math> 个不同的轴切过一个临界点。一个临界点只有在每一个 <math alttext="d"><mi>d</mi></math> 个一维子空间中都出现为局部最小值时才能成为局部最小值。利用一个临界点在一维子空间中有三种不同类型的事实，我们意识到一个随机临界点在随机函数中的概率是 <math alttext="StartFraction 1 Over 3 Superscript d Baseline EndFraction"><mfrac><mn>1</mn> <msup><mn>3</mn> <mi>d</mi></msup></mfrac></math> 。这意味着一个具有 <math alttext="k"><mi>k</mi></math> 个临界点的随机函数有望有 <math alttext="StartFraction k Over 3 Superscript d Baseline EndFraction"><mfrac><mi>k</mi> <msup><mn>3</mn> <mi>d</mi></msup></mfrac></math> 个局部最小值。换句话说，随着参数空间的维度增加，局部最小值变得越来越稀有。对这个主题的更严格的处理超出了本书的范围，但在 2014 年由 Dauphin 等人进行了更深入的探讨。^(3)
+一般来说，在一个 <math alttext="d"><mi>d</mi></math> 维参数空间中，我们可以通过 <math alttext="d"><mi>d</mi></math> 个不同的轴切过一个临界点。一个临界点只有在每一个 <math alttext="d"><mi>d</mi></math> 个一维子空间中都出现为局部最小值时才能成为局部最小值。利用一个临界点在一维子空间中有三种不同类型的事实，我们意识到一个随机临界点在随机函数中的概率是 <math alttext="StartFraction 1 Over 3 Superscript d Baseline EndFraction"><mfrac><mn>1</mn> <msup><mn>3</mn> <mi>d</mi></msup></mfrac></math> 。这意味着一个具有 <math alttext="k"><mi>k</mi></math> 个临界点的随机函数有望有 <math alttext="StartFraction k Over 3 Superscript d Baseline EndFraction"><mfrac><mi>k</mi> <msup><mn>3</mn> <mi>d</mi></msup></mfrac></math> 个局部最小值。换句话说，随着参数空间的维度增加，局部最小值变得越来越稀有。对这个主题的更严格的处理超出了本书的范围，但在 2014 年由 Dauphin 等人进行了更深入的探讨。³
 
 那么，这对于优化深度学习模型意味着什么？对于随机梯度下降，目前还不清楚。看起来这些错误表面的平坦段是棘手的，但最终并不会阻止随机梯度下降收敛到一个好的答案。然而，对于试图直接解决梯度为零点的方法，这对于某些二阶优化方法在深度学习模型中的有用性构成了严重问题，我们将在后面讨论。
 
@@ -405,18 +405,18 @@ PyTorch 中 Adam 的默认超参数设置通常表现良好，但 Adam 对于超
 
 （[3] Dauphin, Yann N.等人。“在高维非凸优化中识别和攻击鞍点问题。”*神经信息处理系统的进展*。2014 年。
 
-^(4) Polyak, Boris T. “一些加速迭代方法收敛的方法。” *苏联计算数学和数学物理* 4.5 (1964): 1-17。
+⁴ Polyak, Boris T. “一些加速迭代方法收敛的方法。” *苏联计算数学和数学物理* 4.5 (1964): 1-17。
 
-^(5) Sutskever, Ilya, 等. “关于深度学习中初始化和动量的重要性。” *ICML* (3) 28 (2013): 1139-1147。
+⁵ Sutskever, Ilya, 等. “关于深度学习中初始化和动量的重要性。” *ICML* (3) 28 (2013): 1139-1147。
 
-^(6) Møller, Martin Fodslette. “一种用于快速监督学习的缩放共轭梯度算法。” *神经网络* 6.4 (1993): 525-533。
+⁶ Møller, Martin Fodslette. “一种用于快速监督学习的缩放共轭梯度算法。” *神经网络* 6.4 (1993): 525-533。
 
-^(7) Broyden, C. G. “解非线性联立方程的一种新方法。” *计算机杂志* 12.1 (1969): 94-99。
+⁷ Broyden, C. G. “解非线性联立方程的一种新方法。” *计算机杂志* 12.1 (1969): 94-99。
 
-^(8) Bonnans, Joseph-Frédéric, 等. *数值优化：理论和实践方面*。Springer Science & Business Media, 2006。
+⁸ Bonnans, Joseph-Frédéric, 等. *数值优化：理论和实践方面*。Springer Science & Business Media, 2006。
 
-^(9) Duchi, John, Elad Hazan, 和 Yoram Singer. “用于在线学习和随机优化的自适应次梯度方法。” *机器学习研究杂志* 12.Jul (2011): 2121-2159。
+⁹ Duchi, John, Elad Hazan, 和 Yoram Singer. “用于在线学习和随机优化的自适应次梯度方法。” *机器学习研究杂志* 12.Jul (2011): 2121-2159。
 
-^(10) Tieleman, Tijmen, 和 Geoffrey Hinton. “讲座 6.5-rmsprop：将梯度除以最近幅度的运行平均值。” *COURSERA：神经网络机器学习* 4.2 (2012)。
+¹⁰ Tieleman, Tijmen, 和 Geoffrey Hinton. “讲座 6.5-rmsprop：将梯度除以最近幅度的运行平均值。” *COURSERA：神经网络机器学习* 4.2 (2012)。
 
-^(11) Kingma, Diederik, 和 Jimmy Ba. “Adam：一种用于随机优化的方法。” *arXiv 预印本 arXiv*:1412.6980 (2014)。
+¹¹ Kingma, Diederik, 和 Jimmy Ba. “Adam：一种用于随机优化的方法。” *arXiv 预印本 arXiv*:1412.6980 (2014)。

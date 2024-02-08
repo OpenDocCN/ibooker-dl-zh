@@ -1,6 +1,6 @@
-# 第三章. 变分自动编码器
+# 第三章：变分自动编码器
 
-2013 年，Diederik P. Kingma 和 Max Welling 发表了一篇论文，奠定了一种称为*变分自动编码器*（VAE）的神经网络类型的基础。^(1) 这现在是最基本和最知名的深度学习架构之一，用于生成建模，也是我们进入生成式深度学习旅程的绝佳起点。
+2013 年，Diederik P. Kingma 和 Max Welling 发表了一篇论文，奠定了一种称为*变分自动编码器*（VAE）的神经网络类型的基础。¹ 这现在是最基本和最知名的深度学习架构之一，用于生成建模，也是我们进入生成式深度学习旅程的绝佳起点。
 
 在本章中，我们将首先构建一个标准的自动编码器，然后看看如何扩展这个框架以开发一个变分自动编码器。在这个过程中，我们将分析这两种模型，以了解它们在细粒度级别上的工作原理。通过本章的结束，您应该完全了解如何构建和操作基于自动编码器的模型，特别是如何从头开始构建一个变分自动编码器，以根据您自己的数据集生成图像。
 
@@ -660,7 +660,7 @@ TensorFlow 的*梯度带*是一种机制，允许在模型前向传递期间计�
 
 ![](img/gdl2_0315.png)
 
-###### 图 3-15。CelebA 数据集的一些示例（来源：[Liu 等，2015](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html))^(3)
+###### 图 3-15。CelebA 数据集的一些示例（来源：[Liu 等，2015](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html))³
 
 当我们开始探索这些特征如何在多维潜在空间中被捕获时，我们当然不需要标签来训练 VAE，但这些标签以后会很有用。一旦我们的 VAE 训练完成，我们就可以从潜在空间中进行采样，生成名人面孔的新示例。
 
@@ -870,8 +870,8 @@ z_new = z_A * (1- alpha) + z_B * alpha
 
 在下一章中，我们将探索一种不同类型的模型，这种模型仍然是生成图像建模的一种流行选择：生成对抗网络。
 
-^(1) Diederik P. Kingma 和 Max Welling，“自动编码变分贝叶斯”，2013 年 12 月 20 日，[*https://arxiv.org/abs/1312.6114*](https://arxiv.org/abs/1312.6114)。
+¹ Diederik P. Kingma 和 Max Welling，“自动编码变分贝叶斯”，2013 年 12 月 20 日，[*https://arxiv.org/abs/1312.6114*](https://arxiv.org/abs/1312.6114)。
 
-^(2) Vincent Dumoulin 和 Francesco Visin，“深度学习卷积算术指南”，2018 年 1 月 12 日，[*https://arxiv.org/abs/1603.07285*](https://arxiv.org/abs/1603.07285)。
+² Vincent Dumoulin 和 Francesco Visin，“深度学习卷积算术指南”，2018 年 1 月 12 日，[*https://arxiv.org/abs/1603.07285*](https://arxiv.org/abs/1603.07285)。
 
-^(3) Ziwei Liu 等，“大规模 CelebFaces 属性（CelebA）数据集”，2015 年，[*http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html*](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html)。
+³ Ziwei Liu 等，“大规模 CelebFaces 属性（CelebA）数据集”，2015 年，[*http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html*](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html)。

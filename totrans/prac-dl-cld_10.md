@@ -1,4 +1,4 @@
-# 第十章. 在浏览器中使用 TensorFlow.js 和 ml5.js 的人工智能
+# 第十章：在浏览器中使用 TensorFlow.js 和 ml5.js 的人工智能
 
 与客座作者 Zaid Alyafeai 合作撰写
 

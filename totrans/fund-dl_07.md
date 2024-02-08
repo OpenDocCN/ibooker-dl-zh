@@ -1,14 +1,14 @@
-# 第七章。卷积神经网络
+# 第七章：卷积神经网络
 
 # 人类视觉中的神经元
 
-人类的视觉感知能力是令人难以置信的先进。在几秒钟内，我们可以在视野范围内识别物体，毫不犹豫地，毫不费力。我们不仅可以命名我们看到的物体，还可以感知它们的深度，完美地区分它们的轮廓，并将物体与背景分开。不知何故，我们的眼睛接收到了原始的彩色数据体素，但我们的大脑将这些信息转化为更有意义的基元——线条、曲线和形状——这些基元可能表明，例如，我们正在看一只家猫。^(1)
+人类的视觉感知能力是令人难以置信的先进。在几秒钟内，我们可以在视野范围内识别物体，毫不犹豫地，毫不费力。我们不仅可以命名我们看到的物体，还可以感知它们的深度，完美地区分它们的轮廓，并将物体与背景分开。不知何故，我们的眼睛接收到了原始的彩色数据体素，但我们的大脑将这些信息转化为更有意义的基元——线条、曲线和形状——这些基元可能表明，例如，我们正在看一只家猫。¹
 
-人类视觉的基础是神经元。专门的神经元负责在人眼中捕捉光信息。^(2)然后，这些光信息经过预处理，传输到大脑的视觉皮层，最终被完全分析。神经元单独负责所有这些功能。因此，直觉上，将我们的神经网络模型扩展到构建更好的计算机视觉系统是有很多道理的。在本章中，我们将利用对人类视觉的理解来构建有效的深度学习模型，解决图像问题。但在我们深入研究之前，让我们看看更传统的图像分析方法以及它们为什么存在缺陷。
+人类视觉的基础是神经元。专门的神经元负责在人眼中捕捉光信息。²然后，这些光信息经过预处理，传输到大脑的视觉皮层，最终被完全分析。神经元单独负责所有这些功能。因此，直觉上，将我们的神经网络模型扩展到构建更好的计算机视觉系统是有很多道理的。在本章中，我们将利用对人类视觉的理解来构建有效的深度学习模型，解决图像问题。但在我们深入研究之前，让我们看看更传统的图像分析方法以及它们为什么存在缺陷。
 
 # 特征选择的缺陷
 
-让我们从考虑一个简单的计算机视觉问题开始。我给你一张随机选择的图像，比如图 7-1 中的图像。你的任务是告诉我这张图片中是否有一个人脸。这正是保罗·维奥拉和迈克尔·琼斯在他们 2001 年发表的开创性论文中解决的问题。^(3)
+让我们从考虑一个简单的计算机视觉问题开始。我给你一张随机选择的图像，比如图 7-1 中的图像。你的任务是告诉我这张图片中是否有一个人脸。这正是保罗·维奥拉和迈克尔·琼斯在他们 2001 年发表的开创性论文中解决的问题。³
 
 ![](img/fdl2_0701.png)
 
@@ -44,7 +44,7 @@ Viola 和 Jones 有一个洞察，即人脸具有一定的光亮和暗斑块模�
 
 ###### 图 7-3。随着图像尺寸的增加，层之间的连接密度呈不可控增加
 
-卷积网络利用我们分析图像的事实，并合理地限制深度网络的架构，从而大大减少模型中的参数数量。受到人类视觉工作方式的启发，卷积网络的层中的神经元以三维方式排列，因此层具有宽度、高度和深度，如图 7-4 所示。^(7)
+卷积网络利用我们分析图像的事实，并合理地限制深度网络的架构，从而大大减少模型中的参数数量。受到人类视觉工作方式的启发，卷积网络的层中的神经元以三维方式排列，因此层具有宽度、高度和深度，如图 7-4 所示。⁷
 
 正如我们将看到的，卷积层中的神经元仅连接到前一层的一个小区域，因此我们避免了全连接神经元的浪费。卷积层的功能可以简单地表达为：它处理一个三维信息体积，以产生一个新的三维信息体积。我们将在下一节更详细地看一下这是如何工作的。
 
@@ -54,7 +54,7 @@ Viola 和 Jones 有一个洞察，即人脸具有一定的光亮和暗斑块模�
 
 # 滤波器和特征图
 
-为了激发卷积层的基本原理，让我们建立对人类大脑如何将原始视觉信息拼接成我们周围世界理解的直觉。在这个领域最有影响力的研究之一来自 David Hubel 和 Torsten Wiesel，他们发现视觉皮层的部分负责检测边缘。1959 年，他们在猫的大脑中插入电极，并在屏幕上投射黑白图案。他们发现一些神经元只有在有垂直线时才会发射，其他神经元只有在有水平线时才会发射，还有一些神经元只有在线条呈特定角度时才会发射。^(8)
+为了激发卷积层的基本原理，让我们建立对人类大脑如何将原始视觉信息拼接成我们周围世界理解的直觉。在这个领域最有影响力的研究之一来自 David Hubel 和 Torsten Wiesel，他们发现视觉皮层的部分负责检测边缘。1959 年，他们在猫的大脑中插入电极，并在屏幕上投射黑白图案。他们发现一些神经元只有在有垂直线时才会发射，其他神经元只有在有水平线时才会发射，还有一些神经元只有在线条呈特定角度时才会发射。⁸
 
 进一步的研究确定了视觉皮层是分层组织的。每一层负责在前一层检测到的特征基础上构建——从线条到轮廓，再到形状，最终到整个对象。此外，在视觉皮层的每一层中，相同的特征检测器在整个区域中复制，以便在图像的所有部分检测特征。这些想法对卷积神经网络的设计产生了重大影响。
 
@@ -359,7 +359,7 @@ layer = nn.BatchNorm1d(num_features=32)
 
 在过去的十年中，图像处理中的各种归一化形式已经被研究和利用。其中最著名的是批量归一化。仅从前一节回顾一下，这种技术计算每个卷积层输出的通道均值和方差，使用计算出的统计数据对每个通道进行归一化，然后将归一化的输出馈送到下一个卷积层。因此，归一化输出中的任何给定通道在批次中将具有相同的均值和方差（分别为零和一）。在实践中，模型还将学习一个均值参数β和一个标准差参数γ，然后将它们应用于归一化的输出，使其在馈送到后续层之前具有均值β和标准差γ。这个过程用于减少任何给定通道从一个批次到下一个批次的分布偏移。请注意，这只是减少偏移而不是完全消除它，因为通道分布可能仍然在一个批次到下一个批次看起来完全不同，尽管它们具有相同的均值和方差。从理论上讲，并且根据经验观察，减少这种内部协变量偏移可以稳定训练并产生强大的性能增益。
 
-然而，在批量大小较大的情况下，通道均值和方差的计算会导致较大的内存成本。此外，批量归一化对批量大小的大小非常重要，因为较小的批量大小会由于嘈杂的均值和方差估计而显著降低性能。为了避免沿批处理维度进行计算带来的问题，*组归一化*被引入。^(12)组归一化不是沿着批处理维度进行归一化，而是沿着通道维度进行归一化，因此不受前述问题的影响。组归一化预定义了一些通道组，并且对于每个实例，在每个批次实例中计算每个通道组的均值μ和方差σ。每组计算出的β和γ参数集用于对归一化的条目集进行归一化。此外，类似于批量归一化，为每个条目集单独学习偏移/均值参数β和缩放/标准差参数γ。
+然而，在批量大小较大的情况下，通道均值和方差的计算会导致较大的内存成本。此外，批量归一化对批量大小的大小非常重要，因为较小的批量大小会由于嘈杂的均值和方差估计而显著降低性能。为了避免沿批处理维度进行计算带来的问题，*组归一化*被引入。¹²组归一化不是沿着批处理维度进行归一化，而是沿着通道维度进行归一化，因此不受前述问题的影响。组归一化预定义了一些通道组，并且对于每个实例，在每个批次实例中计算每个通道组的均值μ和方差σ。每组计算出的β和γ参数集用于对归一化的条目集进行归一化。此外，类似于批量归一化，为每个条目集单独学习偏移/均值参数β和缩放/标准差参数γ。
 
 这类似于另一种流行的技术，称为*层归一化*，它实际上是批量归一化，但是跨越通道维度的整个长度，而不是整个批处理维度的长度。请注意，层归一化也只是组归一化的一个特例，其中通道组的数量设置为一。图 7-16 比较了批量归一化、组归一化和层归一化。每个立方体中的被阻挡的部分展示了归一化发生的维度以及一起归一化的条目组。请注意，为了可视化目的，我们将标准的 4D 表示压缩为 3D。
 
@@ -445,11 +445,11 @@ class Net(nn.Module):
 
 我们可以在我们的滤波器中看到许多有趣的特征：垂直、水平和对角边缘，以及由另一种颜色包围的小点或斑点。我们可以确信我们的网络正在学习相关特征，因为这些滤波器不仅仅是噪音。
 
-我们还可以尝试可视化网络如何学习以图像形式聚类各种图像。为了说明这一点，我们采用一个在 ImageNet 挑战赛上训练过的大型网络，然后获取在每个图像的 softmax 之前完全连接层的隐藏状态。然后，我们采用称为*t-分布随机邻居嵌入*或*t-SNE*的算法，将每个图像的高维表示压缩到我们可以可视化的 2D 表示。^(14) 我们不在这里详细介绍 t-SNE 的细节，但有许多公开可用的软件工具可以为我们执行，包括[脚本](https://oreil.ly/7NA1K)。我们在图 7-20 中可视化嵌入，结果非常惊人。
+我们还可以尝试可视化网络如何学习以图像形式聚类各种图像。为了说明这一点，我们采用一个在 ImageNet 挑战赛上训练过的大型网络，然后获取在每个图像的 softmax 之前完全连接层的隐藏状态。然后，我们采用称为*t-分布随机邻居嵌入*或*t-SNE*的算法，将每个图像的高维表示压缩到我们可以可视化的 2D 表示。¹⁴ 我们不在这里详细介绍 t-SNE 的细节，但有许多公开可用的软件工具可以为我们执行，包括[脚本](https://oreil.ly/7NA1K)。我们在图 7-20 中可视化嵌入，结果非常惊人。
 
 ![](img/fdl2_0720.png)
 
-###### 图 7-20。t-SNE 嵌入（中心）周围是嵌入的放大子段（外围）^(15)
+###### 图 7-20。t-SNE 嵌入（中心）周围是嵌入的放大子段（外围）¹⁵
 
 乍一看，颜色相似的图像更接近。这很有趣，但更引人注目的是，当我们放大可视化的部分时，我们意识到这不仅仅是颜色。我们意识到所有船的图片都在一个地方，所有人类的图片在另一个地方，所有蝴蝶的图片在可视化中的另一个位置。很明显，卷积网络具有惊人的学习能力。
 
@@ -459,7 +459,7 @@ class Net(nn.Module):
 
 有趣的是，问题甚至不是过拟合（低训练准确率和高验证准确率所暗示的），对于具有如此多参数的网络来说，过拟合是可以理解的。此外，我们可以轻松地构建一个深度网络，其性能与其浅层对应物完全相同：只需取出训练好的浅层网络层，并简单地堆叠执行恒等操作的层。我们通过专门的优化算法表现更差，与我们的朴素构建相比，这是相当令人震惊的。问题在于由于某种无法解释的原因，训练停滞在一个我们无法摆脱的局部最小值。不幸的是，对于这一点的理论解释仍然有些模糊。
 
-2015 年，何等人^(16)引入了 ResNet34 架构，这是一个深度架构，在主要图像分类竞赛中超越了所有同行。何等人等人重新定义了我们如何训练深度计算机视觉架构，他们的贡献是引入了我们现在称之为*跳跃连接*的概念，即将从一层获得的特征向量添加到当前层之后的一层或两层获得的特征向量中。更确切地说，假设我们到目前为止已经通过网络的一半，我们的原始输入*x*已经转换为一些中间表示*x'*。跳跃连接将*x'*添加到下一层的结果*F(x')*中，然后将表示传递给下一层*G*。因此，G 看到的不是*F(x')*，而是*F(x') + x'*。请注意，跳跃连接不需要将当前表示添加到*F*的结果中。如图 7-21 所示，我们还可以将*x'*添加到*G*的结果中，因此下一层*H*看到的是*G(F(x')) + x'*，而不仅仅是*G(F(x'))*。
+2015 年，何等人¹⁶引入了 ResNet34 架构，这是一个深度架构，在主要图像分类竞赛中超越了所有同行。何等人等人重新定义了我们如何训练深度计算机视觉架构，他们的贡献是引入了我们现在称之为*跳跃连接*的概念，即将从一层获得的特征向量添加到当前层之后的一层或两层获得的特征向量中。更确切地说，假设我们到目前为止已经通过网络的一半，我们的原始输入*x*已经转换为一些中间表示*x'*。跳跃连接将*x'*添加到下一层的结果*F(x')*中，然后将表示传递给下一层*G*。因此，G 看到的不是*F(x')*，而是*F(x') + x'*。请注意，跳跃连接不需要将当前表示添加到*F*的结果中。如图 7-21 所示，我们还可以将*x'*添加到*G*的结果中，因此下一层*H*看到的是*G(F(x')) + x'*，而不仅仅是*G(F(x'))*。
 
 ![](img/fdl2_0721.png)
 
@@ -628,7 +628,7 @@ class ResNet34(nn.Module):
 
 # 利用卷积滤波器复制艺术风格
 
-在过去的几年里，我们还开发了利用卷积网络以更有创意方式的算法。其中一个算法被称为*神经风格*。^(17) 神经风格的目标是能够将任意照片呈现为以著名艺术家的风格绘制的样子。这似乎是一项艰巨的任务，如果没有卷积网络，我们不太清楚如何解决这个问题。然而，聪明地操作卷积滤波器可以在这个问题上产生惊人的结果。
+在过去的几年里，我们还开发了利用卷积网络以更有创意方式的算法。其中一个算法被称为*神经风格*。¹⁷ 神经风格的目标是能够将任意照片呈现为以著名艺术家的风格绘制的样子。这似乎是一项艰巨的任务，如果没有卷积网络，我们不太清楚如何解决这个问题。然而，聪明地操作卷积滤波器可以在这个问题上产生惊人的结果。
 
 让我们拿一个预训练的卷积网络。我们处理三幅图像。前两幅是内容源***p***和风格源***a***。第三幅图像是生成的图像***x***。我们的目标是推导一个错误函数，我们可以反向传播，当最小化时，将完美地结合所需照片的内容和所需艺术作品的风格。
 
@@ -648,11 +648,11 @@ class ResNet34(nn.Module):
 
 ![](img/fdl2_0722.png)
 
-###### 图 7-22。将雨公主与麻省理工学院圆顶的照片混合的结果^(18)
+###### 图 7-22。将雨公主与麻省理工学院圆顶的照片混合的结果¹⁸
 
 # 学习卷积滤波器用于其他问题领域
 
-尽管本章中的示例侧重于图像识别，但卷积网络在几个其他问题领域中也很有用。图像分析的自然延伸是视频分析。事实上，使用五维张量（包括时间作为一个维度）并应用三维卷积是将卷积范式扩展到视频的一种简单方法。^(19) 卷积滤波器还成功地用于分析听力图。^(20) 在这些应用中，卷积网络在听力图输入上滑动，以预测另一侧的音素。
+尽管本章中的示例侧重于图像识别，但卷积网络在几个其他问题领域中也很有用。图像分析的自然延伸是视频分析。事实上，使用五维张量（包括时间作为一个维度）并应用三维卷积是将卷积范式扩展到视频的一种简单方法。¹⁹ 卷积滤波器还成功地用于分析听力图。²⁰ 在这些应用中，卷积网络在听力图输入上滑动，以预测另一侧的音素。
 
 不太直观的是，卷积网络还在自然语言处理中找到了一些用途。我们将在后面的章节中看到一些例子。卷积网络的更奇特用途包括教授算法玩棋盘游戏，以及分析生物分子以进行药物发现。我们还将在本书的后面章节讨论这两个例子。
 
@@ -662,42 +662,42 @@ class ResNet34(nn.Module):
 
 由于我们能够想出有效的方法将图像表示为张量，因此图像分析变得容易。在其他情况下（例如自然语言），如何将输入数据表示为张量并不太清楚。为了作为新深度学习模型的一个基石来解决这个问题，我们将在下一章中开发一些关键概念，包括向量嵌入和表示学习。
 
-^(1) Hubel, David H., and Torsten N. Wiesel. “Receptive Fields and Functional Architecture of Monkey Striate Cortex.” *The Journal of Physiology* 195.1 (1968): 215-243.
+¹ Hubel, David H., and Torsten N. Wiesel. “Receptive Fields and Functional Architecture of Monkey Striate Cortex.” *The Journal of Physiology* 195.1 (1968): 215-243.
 
-^(2) Cohen, Adolph I. “Rods and Cones.” *Physiology of Photoreceptor Organs*. Springer Berlin Heidelberg, 1972\. 63-110.
+² Cohen, Adolph I. “Rods and Cones.” *Physiology of Photoreceptor Organs*. Springer Berlin Heidelberg, 1972\. 63-110.
 
-^(3) Viola, Paul, and Michael Jones. “Rapid Object Detection using a Boosted Cascade of Simple Features.” Computer Vision and Pattern Recognition, 2001\. CVPR 2001\. *Proceedings of the 2001 IEEE Computer Society Conference* on. Vol. 1\. IEEE, 2001.
+³ Viola, Paul, and Michael Jones. “Rapid Object Detection using a Boosted Cascade of Simple Features.” Computer Vision and Pattern Recognition, 2001\. CVPR 2001\. *Proceedings of the 2001 IEEE Computer Society Conference* on. Vol. 1\. IEEE, 2001.
 
-^(4) Deng, Jia, et al. “ImageNet: A Large-Scale Hierarchical Image Database.” *Computer Vision and Pattern Recognition*, 2009\. CVPR 2009\. IEEE Conference. IEEE, 2009.
+⁴ Deng, Jia, et al. “ImageNet: A Large-Scale Hierarchical Image Database.” *Computer Vision and Pattern Recognition*, 2009\. CVPR 2009\. IEEE Conference. IEEE, 2009.
 
-^(5) Perronnin, Florent, Jorge Sénchez, and Yan Liu Xerox. “Large-Scale Image Categorization with Explicit Data Embedding.” *Computer Vision and Pattern Recognition* (CVPR), 2010 IEEE Conference. IEEE, 2010.
+⁵ Perronnin, Florent, Jorge Sénchez, and Yan Liu Xerox. “Large-Scale Image Categorization with Explicit Data Embedding.” *Computer Vision and Pattern Recognition* (CVPR), 2010 IEEE Conference. IEEE, 2010.
 
-^(6) Krizhevsky, Alex, Ilya Sutskever, and Geoffrey E. Hinton. “ImageNet Classification with Deep Convolutional Neural Networks.” *Advances in Neural Information Processing Systems*. 2012.
+⁶ Krizhevsky, Alex, Ilya Sutskever, and Geoffrey E. Hinton. “ImageNet Classification with Deep Convolutional Neural Networks.” *Advances in Neural Information Processing Systems*. 2012.
 
-^(7) LeCun, Yann, et al. “Handwritten Digit Recognition with a Back-Propagation Network.” *Advances in Neural Information Processing Systems*. 1990.
+⁷ LeCun, Yann, et al. “Handwritten Digit Recognition with a Back-Propagation Network.” *Advances in Neural Information Processing Systems*. 1990.
 
-^(8) Hubel, David H., and Torsten N. Wiesel. “Receptive Fields of Single Neurones in the Cat’s Striate Cortex.” *The Journal of Physiology* 148.3 (1959): 574-591.
+⁸ Hubel, David H., and Torsten N. Wiesel. “Receptive Fields of Single Neurones in the Cat’s Striate Cortex.” *The Journal of Physiology* 148.3 (1959): 574-591.
 
-^(9) Graham, Benjamin. “Fractional Max-Pooling.” *arXiv Preprint arXiv*:1412.6071 (2014).
+⁹ Graham, Benjamin. “Fractional Max-Pooling.” *arXiv Preprint arXiv*:1412.6071 (2014).
 
-^(10) Simonyan, Karen, and Andrew Zisserman. “Very Deep Convolutional Networks for Large-Scale Image Recognition.” *arXiv Preprint arXiv*:1409.1556 (2014).
+¹⁰ Simonyan, Karen, and Andrew Zisserman. “Very Deep Convolutional Networks for Large-Scale Image Recognition.” *arXiv Preprint arXiv*:1409.1556 (2014).
 
-^(11) S. Ioffe, C. Szegedy. “Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift.” *arXiv Preprint arXiv*:1502.03167\. 2015.
+¹¹ S. Ioffe, C. Szegedy. “Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift.” *arXiv Preprint arXiv*:1502.03167\. 2015.
 
-^(12) Wu et. al. “Group Normalization.” 2018\. *https://arxiv.org/abs/1803.08494*.
+¹² Wu et. al. “Group Normalization.” 2018\. *https://arxiv.org/abs/1803.08494*.
 
-^(13) Krizhevsky, Alex, and Geoffrey Hinton. “Learning Multiple Layers of Features from Tiny Images.” University of Toronto (2009).
+¹³ Krizhevsky, Alex, and Geoffrey Hinton. “Learning Multiple Layers of Features from Tiny Images.” University of Toronto (2009).
 
-^(14) Maaten, Laurens van der, and Geoffrey Hinton. “Visualizing Data Using t-SNE.” *Journal of Machine Learning Research* 9\. Nov (2008): 2579-2605.
+¹⁴ Maaten, Laurens van der, and Geoffrey Hinton. “Visualizing Data Using t-SNE.” *Journal of Machine Learning Research* 9\. Nov (2008): 2579-2605.
 
-^(15) 图像来源：Andrej Karpathy。*http://cs.stanford.edu/people/karpathy/cnnembed*。
+¹⁵ 图像来源：Andrej Karpathy。*http://cs.stanford.edu/people/karpathy/cnnembed*。
 
-^(16) He et. al. “Deep Residual Learning for Image Recognition.” *arXiv Preprint arXiv*:1512.03385\. 2015.
+¹⁶ He et. al. “Deep Residual Learning for Image Recognition.” *arXiv Preprint arXiv*:1512.03385\. 2015.
 
-^(17) Gatys, Leon A., Alexander S. Ecker, and Matthias Bethge. “A Neural Algorithm of Artistic Style.” *arXiv Preprint arXiv*:1508.06576 (2015).
+¹⁷ Gatys, Leon A., Alexander S. Ecker, and Matthias Bethge. “A Neural Algorithm of Artistic Style.” *arXiv Preprint arXiv*:1508.06576 (2015).
 
-^(18) 图像来源：Anish Athalye。
+¹⁸ 图像来源：Anish Athalye。
 
-^(19) Karpathy, Andrej, et al. “Large-scale Video Classification with Convolutional Neural Networks.” *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*. 2014.
+¹⁹ Karpathy, Andrej, et al. “Large-scale Video Classification with Convolutional Neural Networks.” *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*. 2014.
 
-^(20) Abdel-Hamid, Ossama, et al. “Applying Convolutional Neural Networks Concepts to Hybrid NN-HMM Model for Speech Recognition.” IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP), Kyoto, 2012, pp. 4277-4280.
+²⁰ Abdel-Hamid, Ossama, et al. “Applying Convolutional Neural Networks Concepts to Hybrid NN-HMM Model for Speech Recognition.” IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP), Kyoto, 2012, pp. 4277-4280.

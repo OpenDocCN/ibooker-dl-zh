@@ -1,4 +1,4 @@
-# 第十三章。深度强化学习
+# 第十三章：深度强化学习
 
 [Nicholas Locascio](http://nicklocascio.com)
 
@@ -6,7 +6,7 @@
 
 # 深度强化学习掌握 Atari 游戏
 
-2014 年，伦敦初创公司 DeepMind 在强化学习中应用深度神经网络取得了重大突破，令机器学习社区大为震惊，他们揭示了一个可以学会以超人类技能玩 Atari 游戏的深度神经网络。这个网络被称为*深度 Q 网络*（DQN），是强化学习与深度神经网络的首次大规模成功应用。DQN 之所以如此引人注目，是因为相同的架构，没有任何改变，能够学会玩 49 种不同的 Atari 游戏，尽管每个游戏都有不同的规则、目标和游戏结构。为了实现这一壮举，DeepMind 汇集了许多传统的强化学习思想，同时也开发了一些关键的新技术，这些技术对 DQN 的成功至关重要。在本章的后面，我们将实现 DQN，如《自然》杂志上描述的那样，“通过深度强化学习实现人类水平控制”。^(1) 但首先，让我们深入了解强化学习（图 13-1）。
+2014 年，伦敦初创公司 DeepMind 在强化学习中应用深度神经网络取得了重大突破，令机器学习社区大为震惊，他们揭示了一个可以学会以超人类技能玩 Atari 游戏的深度神经网络。这个网络被称为*深度 Q 网络*（DQN），是强化学习与深度神经网络的首次大规模成功应用。DQN 之所以如此引人注目，是因为相同的架构，没有任何改变，能够学会玩 49 种不同的 Atari 游戏，尽管每个游戏都有不同的规则、目标和游戏结构。为了实现这一壮举，DeepMind 汇集了许多传统的强化学习思想，同时也开发了一些关键的新技术，这些技术对 DQN 的成功至关重要。在本章的后面，我们将实现 DQN，如《自然》杂志上描述的那样，“通过深度强化学习实现人类水平控制”。¹ 但首先，让我们深入了解强化学习（图 13-1）。
 
 ![](img/fdl2_1301.png)
 
@@ -30,7 +30,7 @@
 
 ![](img/fdl2_1303.png)
 
-###### 图 13-3。一个简单的强化学习代理：平衡杆^(3)
+###### 图 13-3。一个简单的强化学习代理：平衡杆³
 
 # 马尔可夫决策过程
 
@@ -1017,18 +1017,18 @@ UNREAL 提出了一个问题，我们可以从世界中学到什么，而不需�
 
 强化学习对于构建能够不仅感知和解释世界，还能够采取行动并与之互动的代理至关重要。深度强化学习在这方面取得了重大进展，成功地产生了能够掌握 Atari 游戏、安全驾驶汽车、盈利交易股票、控制机器人等的代理。
 
-^(1) Mnih, Volodymyr, et al. “Human-Level Control Through Deep Reinforcement Learning.” *Nature* 518.7540 (2015): 529-533.
+¹ Mnih, Volodymyr, et al. “Human-Level Control Through Deep Reinforcement Learning.” *Nature* 518.7540 (2015): 529-533.
 
-^(2) 这幅图片来自我们在本章中构建的 OpenAI Gym DQN 代理：Brockman, Greg, et al. “OpenAI Gym.” *arXiv preprint arXiv*:1606.01540 (2016). *https://gym.openai.com*
+² 这幅图片来自我们在本章中构建的 OpenAI Gym DQN 代理：Brockman, Greg, et al. “OpenAI Gym.” *arXiv preprint arXiv*:1606.01540 (2016). *https://gym.openai.com*
 
-^(3) 这幅图片来自我们在本章中构建的 OpenAI Gym 策略梯度代理。
+³ 这幅图片来自我们在本章中构建的 OpenAI Gym 策略梯度代理。
 
-^(4) Sutton, Richard S., et al. “Policy Gradient Methods for Reinforcement Learning with Function Approximation.” NIPS. Vol. 99\. 1999.
+⁴ Sutton, Richard S., et al. “Policy Gradient Methods for Reinforcement Learning with Function Approximation.” NIPS. Vol. 99\. 1999.
 
-^(5) Sorokin, Ivan, et al. “Deep Attention Recurrent Q-Network.” *arXiv preprint arXiv*:1512.01693 (2015).
+⁵ Sorokin, Ivan, et al. “Deep Attention Recurrent Q-Network.” *arXiv preprint arXiv*:1512.01693 (2015).
 
-^(6) Mnih, Volodymyr, et al. “Asynchronous Methods for Deep Reinforcement Learning.” *International Conference on Machine Learning*. 2016.
+⁶ Mnih, Volodymyr, et al. “Asynchronous Methods for Deep Reinforcement Learning.” *International Conference on Machine Learning*. 2016.
 
-^(7) Konda, Vijay R., and John N. Tsitsiklis. “Actor-Critic Algorithms.” *NIPS*. Vol. 13\. 1999.
+⁷ Konda, Vijay R., and John N. Tsitsiklis. “Actor-Critic Algorithms.” *NIPS*. Vol. 13\. 1999.
 
-^(8) Jaderberg, Max, et al. “Reinforcement Learning with Unsupervised Auxiliary Tasks.” *arXiv preprint arXiv*:1611.05397 (2016).
+⁸ Jaderberg, Max, et al. “Reinforcement Learning with Unsupervised Auxiliary Tasks.” *arXiv preprint arXiv*:1611.05397 (2016).

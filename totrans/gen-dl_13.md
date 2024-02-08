@@ -1,18 +1,18 @@
-# 第九章 变压器
+# 第九章：Transformer
 
 我们在第五章中看到，我们可以使用循环神经网络（RNNs）（如 LSTM 和 GRU）在文本数据上构建生成模型。这些自回归模型一次处理一个令牌的顺序数据，不断更新一个捕获输入当前潜在表示的隐藏向量。可以设计 RNN 以通过在隐藏向量上应用密集层和 softmax 激活来预测序列中的下一个单词。直到 2017 年，这被认为是生成文本的最复杂方式，当一篇论文永久改变了文本生成的格局。
 
 # 介绍
 
-谷歌 Brain 的论文，自信地命名为“注意力就是一切”^(1)，因推广*注意力*的概念而闻名，这个概念现在驱动着大多数最先进的文本生成模型。
+谷歌 Brain 的论文，自信地命名为“注意力就是一切”¹，因推广*注意力*的概念而闻名，这个概念现在驱动着大多数最先进的文本生成模型。
 
-作者展示了如何创建称为*变压器*的强大神经网络，用于顺序建模，而不需要复杂的循环或卷积架构，而只依赖于注意机制。这种方法克服了 RNN 方法的一个关键缺点，即难以并行化，因为它必须一次处理一个令牌的序列。变压器是高度可并行化的，使它们能够在大规模数据集上进行训练。
+作者展示了如何创建称为*Transformer*的强大神经网络，用于顺序建模，而不需要复杂的循环或卷积架构，而只依赖于注意机制。这种方法克服了 RNN 方法的一个关键缺点，即难以并行化，因为它必须一次处理一个令牌的序列。Transformer 是高度可并行化的，使它们能够在大规模数据集上进行训练。
 
-在本章中，我们将深入探讨现代文本生成模型如何利用 Transformer 架构在文本生成挑战中达到最先进的性能。特别是，我们将探索一种称为*生成式预训练变压器*（GPT）的自回归模型，它驱动着 OpenAI 的 GPT-4 模型，被广泛认为是当前文本生成领域的最先进技术。
+在本章中，我们将深入探讨现代文本生成模型如何利用 Transformer 架构在文本生成挑战中达到最先进的性能。特别是，我们将探索一种称为*生成式预训练 Transformer*（GPT）的自回归模型，它驱动着 OpenAI 的 GPT-4 模型，被广泛认为是当前文本生成领域的最先进技术。
 
 # GPT
 
-OpenAI 于 2018 年 6 月推出了 GPT，在论文“通过生成式预训练改进语言理解”中^(2)，几乎与原始 Transformer 论文出现一年后完全一致。
+OpenAI 于 2018 年 6 月推出了 GPT，在论文“通过生成式预训练改进语言理解”中²，几乎与原始 Transformer 论文出现一年后完全一致。
 
 在本文中，作者展示了如何训练 Transformer 架构以预测序列中的下一个单词，然后随后对特定下游任务进行微调。
 
@@ -182,7 +182,7 @@ np.transpose(causal_attention_mask(1, 10, 10, dtype = tf.int32)[0])
 
 因果掩码仅在*解码器 Transformer*（如 GPT）中需要，其中任务是根据先前的标记顺序生成标记。在训练期间屏蔽未来标记因此至关重要。
 
-其他类型的 Transformer（例如*编码器 Transformer*）不需要因果掩码，因为它们不是训练来预测下一个标记。例如，Google 的 BERT 预测给定句子中的掩码单词，因此它可以使用单词之前和之后的上下文。^(3)
+其他类型的 Transformer（例如*编码器 Transformer*）不需要因果掩码，因为它们不是训练来预测下一个标记。例如，Google 的 BERT 预测给定句子中的掩码单词，因此它可以使用单词之前和之后的上下文。³
 
 我们将在本章末尾更详细地探讨不同类型的 Transformer。
 
@@ -206,7 +206,7 @@ np.transpose(causal_attention_mask(1, 10, 10, dtype = tf.int32)[0])
 
 ![](img/gdl2_0907.png)
 
-###### 图 9-7。层归一化与批归一化——归一化统计量是跨蓝色单元计算的（来源：[Sheng 等人，2020](https://arxiv.org/pdf/2003.07845.pdf))^(4)
+###### 图 9-7。层归一化与批归一化——归一化统计量是跨蓝色单元计算的（来源：[Sheng 等人，2020](https://arxiv.org/pdf/2003.07845.pdf))⁴
 
 # 层归一化与批归一化
 
@@ -524,7 +524,7 @@ GPT-3 也可以[根据您自己的训练数据进行微调](https://oreil.ly/B-K
 
 ###### 图 9-16。ChatGPT 回答有关 Transformer 的问题的示例
 
-在撰写本文时，尚无描述 ChatGPT 工作详细信息的官方论文，但根据官方[博客文章](https://openai.com/blog/chatgpt)，我们知道它使用一种称为*reinforcement learning from human feedback*（RLHF）的技术来微调 GPT-3.5 模型。这种技术也在 ChatGPT 小组早期的论文^(6)中使用，该论文介绍了*InstructGPT*模型，这是一个经过微调的 GPT-3 模型，专门设计用于更准确地遵循书面说明。
+在撰写本文时，尚无描述 ChatGPT 工作详细信息的官方论文，但根据官方[博客文章](https://openai.com/blog/chatgpt)，我们知道它使用一种称为*reinforcement learning from human feedback*（RLHF）的技术来微调 GPT-3.5 模型。这种技术也在 ChatGPT 小组早期的论文⁶中使用，该论文介绍了*InstructGPT*模型，这是一个经过微调的 GPT-3 模型，专门设计用于更准确地遵循书面说明。
 
 ChatGPT 的训练过程如下：
 
@@ -546,7 +546,7 @@ RLHF 过程如图 9-17 所示。
 
 虽然 ChatGPT 仍然存在许多限制（例如有时“产生”事实不正确的信息），但它是一个强大的示例，展示了 Transformers 如何用于构建生成模型，可以产生复杂、长期和新颖的输出，往往难以区分是否为人类生成的文本。像 ChatGPT 这样的模型迄今取得的进展证明了人工智能的潜力及其对世界的变革性影响。
 
-此外，显而易见的是，基于人工智能的沟通和互动将继续在未来快速发展。像*Visual ChatGPT*^(7)这样的项目现在正在将 ChatGPT 的语言能力与 Stable Diffusion 等视觉基础模型相结合，使用户不仅可以通过文本与 ChatGPT 互动，还可以通过图像。在像 Visual ChatGPT 和 GPT-4 这样的项目中融合语言和视觉能力，有望开启人机交互的新时代。
+此外，显而易见的是，基于人工智能的沟通和互动将继续在未来快速发展。像*Visual ChatGPT*⁷这样的项目现在正在将 ChatGPT 的语言能力与 Stable Diffusion 等视觉基础模型相结合，使用户不仅可以通过文本与 ChatGPT 互动，还可以通过图像。在像 Visual ChatGPT 和 GPT-4 这样的项目中融合语言和视觉能力，有望开启人机交互的新时代。
 
 # 总结
 
@@ -562,16 +562,16 @@ GPT 利用一种称为注意力的机制，消除了循环层（例如 LSTM）�
 
 我们看到了 Transformer 有三个系列（编码器、解码器和编码器-解码器）以及每个系列可以完成的不同任务。最后，我们探讨了其他大型语言模型的结构和训练过程，如谷歌的 T5 和 OpenAI 的 ChatGPT。
 
-^(1) Ashish Vaswani 等人，“注意力就是一切”，2017 年 6 月 12 日，[*https://arxiv.org/abs/1706.03762*](https://arxiv.org/abs/1706.03762)。
+¹ Ashish Vaswani 等人，“注意力就是一切”，2017 年 6 月 12 日，[*https://arxiv.org/abs/1706.03762*](https://arxiv.org/abs/1706.03762)。
 
-^(2) Alec Radford 等人，“通过生成式预训练改进语言理解”，2018 年 6 月 11 日，[*https://openai.com/research/language-unsupervised*](https://openai.com/research/language-unsupervised)。
+² Alec Radford 等人，“通过生成式预训练改进语言理解”，2018 年 6 月 11 日，[*https://openai.com/research/language-unsupervised*](https://openai.com/research/language-unsupervised)。
 
-^(3) Jacob Devlin 等人，“BERT: 深度双向 Transformer 的语言理解预训练”，2018 年 10 月 11 日，[*https://arxiv.org/abs/1810.04805*](https://arxiv.org/abs/1810.04805)。
+³ Jacob Devlin 等人，“BERT: 深度双向 Transformer 的语言理解预训练”，2018 年 10 月 11 日，[*https://arxiv.org/abs/1810.04805*](https://arxiv.org/abs/1810.04805)。
 
-^(4) Sheng Shen 等人，“PowerNorm: 重新思考 Transformer 中的批归一化”，2020 年 6 月 28 日，[*https://arxiv.org/abs/2003.07845*](https://arxiv.org/abs/2003.07845)。
+⁴ Sheng Shen 等人，“PowerNorm: 重新思考 Transformer 中的批归一化”，2020 年 6 月 28 日，[*https://arxiv.org/abs/2003.07845*](https://arxiv.org/abs/2003.07845)。
 
-^(5) Colin Raffel 等人，“探索统一文本到文本 Transformer 的迁移学习极限”，2019 年 10 月 23 日，[*https://arxiv.org/abs/1910.10683*](https://arxiv.org/abs/1910.10683)。
+⁵ Colin Raffel 等人，“探索统一文本到文本 Transformer 的迁移学习极限”，2019 年 10 月 23 日，[*https://arxiv.org/abs/1910.10683*](https://arxiv.org/abs/1910.10683)。
 
-^(6) Long Ouyang 等人，“使用人类反馈训练语言模型遵循指令”，2022 年 3 月 4 日，[*https://arxiv.org/abs/2203.02155*](https://arxiv.org/abs/2203.02155)。
+⁶ Long Ouyang 等人，“使用人类反馈训练语言模型遵循指令”，2022 年 3 月 4 日，[*https://arxiv.org/abs/2203.02155*](https://arxiv.org/abs/2203.02155)。
 
-^(7) Chenfei Wu 等人，“Visual ChatGPT: 使用视觉基础模型进行对话、绘画和编辑”，2023 年 3 月 8 日，[*https://arxiv.org/abs/2303.04671*](https://arxiv.org/abs/2303.04671)。
+⁷ Chenfei Wu 等人，“Visual ChatGPT: 使用视觉基础模型进行对话、绘画和编辑”，2023 年 3 月 8 日，[*https://arxiv.org/abs/2303.04671*](https://arxiv.org/abs/2303.04671)。

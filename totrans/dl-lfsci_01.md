@@ -1,4 +1,4 @@
-# 第一章。为什么选择生命科学？
+# 第一章：为什么选择生命科学？
 
 虽然有许多技术倾向和对数据的热情可以追求的方向，但很少有领域能与生物医学研究的基本影响相匹配。现代医学的出现从根本上改变了人类存在的本质。在过去 20 年里，我们已经看到了许多创新，这些创新已经改变了无数个体的生活。当 HIV/AIDS 首次出现在 1981 年时，这是一种基本上致命的疾病。抗逆转录病毒疗法的持续发展已经显著延长了发达国家患者的预期寿命。其他疾病，如肝炎 C，在十年前被认为基本上无法治愈，现在可以治愈。遗传学的进步使得能够识别并希望很快治疗各种疾病。诊断和仪器的创新使得医生能够具体识别和针对人体内的疾病。许多这些突破受益于并将继续受到计算方法的推动。
 
@@ -56,4 +56,4 @@
 
 本书的最后一章探讨了深度学习在生命科学中的当前影响和未来潜力。讨论了当前努力面临的一些挑战，包括数据集的可用性和质量。我们还强调了在诊断、个性化医学、制药开发和生物学研究等许多其他领域中的机遇和潜在风险。
 
-^(1) Furbush, James. “Machine Learning: A Quick and Simple Definition.” [*https://www.oreilly.com/ideas/machine-learning-a-quick-and-simple-definition*](https://www.oreilly.com/ideas/machine-learning-a-quick-and-simple-definition). 2018.
+¹ Furbush, James. “Machine Learning: A Quick and Simple Definition.” [*https://www.oreilly.com/ideas/machine-learning-a-quick-and-simple-definition*](https://www.oreilly.com/ideas/machine-learning-a-quick-and-simple-definition). 2018.

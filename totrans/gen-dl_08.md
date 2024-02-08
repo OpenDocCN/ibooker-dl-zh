@@ -1,4 +1,4 @@
-# 第五章。自回归模型
+# 第五章：自回归模型
 
 到目前为止，我们已经探讨了两种涉及潜变量的生成模型家族——变分自动编码器（VAEs）和生成对抗网络（GANs）。在这两种情况下，引入了一个新变量，其分布易于抽样，模型学习如何将此变量*解码*回原始领域。
 
@@ -18,7 +18,7 @@ LSTM 是一种特殊类型的循环神经网络（RNN）。RNN 包含一个循�
 
 当 RNN 首次引入时，循环层非常简单，仅包含一个 tanh 运算符，确保在时间步之间传递的信息在-1 和 1 之间缩放。然而，这种方法被证明存在梯度消失问题，并且在处理长序列数据时不具备良好的可扩展性。
 
-LSTM 单元最初是在 1997 年由 Sepp Hochreiter 和 Jürgen Schmidhuber 的一篇论文中首次引入的。^(1)在这篇论文中，作者描述了 LSTM 不会像普通 RNN 那样遭受梯度消失问题，并且可以在数百个时间步长的序列上进行训练。自那时以来，LSTM 架构已经被改进和改良，变体如门控循环单元（本章后面讨论）现在被广泛应用并作为 Keras 中的层可用。
+LSTM 单元最初是在 1997 年由 Sepp Hochreiter 和 Jürgen Schmidhuber 的一篇论文中首次引入的。¹在这篇论文中，作者描述了 LSTM 不会像普通 RNN 那样遭受梯度消失问题，并且可以在数百个时间步长的序列上进行训练。自那时以来，LSTM 架构已经被改进和改良，变体如门控循环单元（本章后面讨论）现在被广泛应用并作为 Keras 中的层可用。
 
 LSTM 已经应用于涉及序列数据的各种问题，包括时间序列预测、情感分析和音频分类。在本章中，我们将使用 LSTM 来解决文本生成的挑战。
 
@@ -531,7 +531,7 @@ model = models.Model(text_in, probabilites)
 
 ## 门控循环单元
 
-另一种常用的 RNN 层是*门控循环单元*（GRU）。^(2) 与 LSTM 单元的主要区别如下：
+另一种常用的 RNN 层是*门控循环单元*（GRU）。² 与 LSTM 单元的主要区别如下：
 
 1.  *遗忘*和*输入*门被*重置*和*更新*门替换。
 
@@ -573,7 +573,7 @@ layer = layers.Bidirectional(layers.GRU(100))
 
 # PixelCNN
 
-2016 年，van den Oord 等人^(3)提出了一种通过预测下一个像素的可能性来逐像素生成图像的模型。该模型称为*PixelCNN*，可以训练以自回归方式生成图像。
+2016 年，van den Oord 等人³提出了一种通过预测下一个像素的可能性来逐像素生成图像的模型。该模型称为*PixelCNN*，可以训练以自回归方式生成图像。
 
 我们需要介绍两个新概念来理解 PixelCNN - *掩码卷积层*和*残差块*。
 
@@ -943,10 +943,10 @@ dist.sample(10).numpy()
 
 在下一章中，我们将探讨另一种生成建模家族，明确地对数据生成分布进行建模—正规化流模型。
 
-^(1) Sepp Hochreiter 和 Jürgen Schmidhuber, “长短期记忆,” *神经计算* 9 (1997): 1735–1780, [*https://www.bioinf.jku.at/publications/older/2604.pdf*](https://www.bioinf.jku.at/publications/older/2604.pdf).
+¹ Sepp Hochreiter 和 Jürgen Schmidhuber, “长短期记忆,” *神经计算* 9 (1997): 1735–1780, [*https://www.bioinf.jku.at/publications/older/2604.pdf*](https://www.bioinf.jku.at/publications/older/2604.pdf).
 
-^(2) Kyunghyun Cho 等人, “使用 RNN 编码器-解码器学习短语表示进行统计机器翻译,” 2014 年 6 月 3 日, [*https://arxiv.org/abs/1406.1078*](https://arxiv.org/abs/1406.1078).
+² Kyunghyun Cho 等人, “使用 RNN 编码器-解码器学习短语表示进行统计机器翻译,” 2014 年 6 月 3 日, [*https://arxiv.org/abs/1406.1078*](https://arxiv.org/abs/1406.1078).
 
-^(3) Aaron van den Oord 等人, “像素递归神经网络,” 2016 年 8 月 19 日, [*https://arxiv.org/abs/1601.06759*](https://arxiv.org/abs/1601.06759).
+³ Aaron van den Oord 等人, “像素递归神经网络,” 2016 年 8 月 19 日, [*https://arxiv.org/abs/1601.06759*](https://arxiv.org/abs/1601.06759).
 
-^(4) Tim Salimans 等人, “PixelCNN++: 使用离散化逻辑混合似然和其他修改改进 PixelCNN,” 2017 年 1 月 19 日, [*http://arxiv.org/abs/1701.05517*](http://arxiv.org/abs/1701.05517).
+⁴ Tim Salimans 等人, “PixelCNN++: 使用离散化逻辑混合似然和其他修改改进 PixelCNN,” 2017 年 1 月 19 日, [*http://arxiv.org/abs/1701.05517*](http://arxiv.org/abs/1701.05517).

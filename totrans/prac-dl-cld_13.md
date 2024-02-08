@@ -1,4 +1,4 @@
-# 第十三章。食物的 Shazam：使用 TensorFlow Lite 和 ML Kit 开发 Android 应用程序
+# 第十三章：食物的 Shazam：使用 TensorFlow Lite 和 ML Kit 开发 Android 应用程序
 
 在开发了病毒性的 Not Hotdog 应用程序（我们在第十二章中看到）之后，建阳最初应该构建一个能识别所有食物的分类器。事实上，该应用最初应该被称为 SeeFood——一款可以“看到”食物并立即识别的应用程序（图 13-1）。换句话说，这是“食物的 Shazam”。然而，该应用太成功了，以至于被 Periscope 收购。他的投资者 Erlich Bachman 的最初愿景仍未实现。在本章中，我们的任务是实现这个梦想。
 

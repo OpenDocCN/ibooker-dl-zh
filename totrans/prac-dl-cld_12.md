@@ -1,4 +1,4 @@
-# 第十二章。在 iOS 上使用 Core ML 和 Create ML 的 Not Hotdog
+# 第十二章：在 iOS 上使用 Core ML 和 Create ML 的 Not Hotdog
 
 “我是富人，”新晋百万富翁简阳在接受彭博社采访时说（[图 12-1]（part0014.html＃jian_yang_being_interviewed_by_bloomberg））。他做了什么？他创建了 Not Hotdog 应用程序（[图 12-2]（part0014.html＃the_not_hotdog_app_in_action_left_parent）），让世界“变得更美好”。
 

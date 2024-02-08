@@ -315,10 +315,10 @@ highlightAtomLists=match_list)
 
 ###### 图 4-14。与 SMARTS 表达式“C[C,N,O]C”匹配的分子。
 
-SMARTS 还有很多内容超出了这个简短介绍的范围。建议感兴趣的读者阅读“Daylight Theory Manual”以深入了解 SMILES 和 SMARTS。^(1) 正如我们将在第十一章中看到的，SMARTS 可以用于构建复杂的查询，以识别在生物测定中可能存在问题的分子。
+SMARTS 还有很多内容超出了这个简短介绍的范围。建议感兴趣的读者阅读“Daylight Theory Manual”以深入了解 SMILES 和 SMARTS。¹ 正如我们将在第十一章中看到的，SMARTS 可以用于构建复杂的查询，以识别在生物测定中可能存在问题的分子。
 
 # 结论
 
 在这一章中，您已经学习了分子机器学习的基础知识。在简要回顾基础化学知识之后，我们探讨了分子在计算系统中传统的表示方法。您还学习了图卷积，这是一种在深度学习中对分子建模的较新方法，并看到了如何使用机器学习来预测重要物理性质的完整工作示例。这些技术将成为后续章节构建的基础。
 
-^(1) Daylight Chemical Information Systems, Inc. “Daylight Theory Manual.” [*http://www.daylight.com/dayhtml/doc/theory/*](http://www.daylight.com/dayhtml/doc/theory/). 2011.
+¹ Daylight Chemical Information Systems, Inc. “Daylight Theory Manual.” [*http://www.daylight.com/dayhtml/doc/theory/*](http://www.daylight.com/dayhtml/doc/theory/). 2011.

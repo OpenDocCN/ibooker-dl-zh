@@ -1,4 +1,4 @@
-# 第六章。最大化 TensorFlow 的速度和性能：一个便捷清单
+# 第六章：最大化 TensorFlow 的速度和性能：一个便捷清单
 
 生活就是要用手头的资源做到最好，优化就是游戏的名字。
 
@@ -416,7 +416,7 @@ dataset = dataset.cache(filename='tmp.cache') *`# on-disk`*
 
 ###### 提示
 
-在[“减少输入数据的大小”中，我们提到预处理数据并将其保存为 TFRecord 文件作为未来数据流水线的输入。在流水线中的预处理步骤之后直接使用**`cache()`**函数，只需在代码中进行一个单词的更改，就可以获得类似的性能。
+在“减少输入数据的大小”中，我们提到预处理数据并将其保存为 TFRecord 文件作为未来数据流水线的输入。在流水线中的预处理步骤之后直接使用**`cache()`**函数，只需在代码中进行一个单词的更改，就可以获得类似的性能。
 
 ## 打开实验性优化
 
@@ -533,7 +533,7 @@ updated_image = tf.image.adjust_hue(image, delta = 0.2)
 
 ### NVIDIA DALI
 
-![NVIDIA DALI 流水线](img/00256.jpeg)
+![NVIDIA DALI 流水线
 
 ###### 图 6-4\. NVIDIA DALI 流水线
 

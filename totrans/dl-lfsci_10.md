@@ -1,4 +1,4 @@
-# 第十章。深度模型的解释
+# 第十章：深度模型的解释
 
 到目前为止，我们已经看到了许多训练深度模型解决问题的例子。在每种情况下，我们收集一些数据，构建一个模型，并训练它，直到它在我们的训练和测试数据上产生正确的输出。然后我们为自己鼓掌，宣布问题已经解决，然后继续下一个问题。毕竟，我们有一个为输入数据产生正确预测的模型。我们还能想要什么？
 
@@ -252,6 +252,6 @@ y_pred, y_std = model.predict_uncertainty(test_dataset)
 
 深度模型被认为很难解释，但已经开发出许多有用的技术可以帮助。通过使用这些技术，您可以开始理解模型的工作原理。这有助于您决定是否信任它，并让您识别可能失败的情况。它还可能为数据提供新的见解。例如，通过分析 TF 结合模型，我们发现了特定转录因子的结合基序。
 
-^(1) Simonyan, K., A. Vedaldi, and A. Zisserman. “Deep Inside Convolutional Networks: Visualising Image Classification Models and Saliency Maps.” [Arxiv.org](https://arxiv.org/abs/1312.6034). 2014.
+¹ Simonyan, K., A. Vedaldi, and A. Zisserman. “Deep Inside Convolutional Networks: Visualising Image Classification Models and Saliency Maps.” [Arxiv.org](https://arxiv.org/abs/1312.6034). 2014.
 
-^(2) Kendall, A., and Y. Gal, “What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?” [*https://arxiv.org/abs/1703.04977*](https://arxiv.org/abs/1703.04977). 2017.
+² Kendall, A., and Y. Gal, “What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?” [*https://arxiv.org/abs/1703.04977*](https://arxiv.org/abs/1703.04977). 2017.

@@ -1,4 +1,4 @@
-# 第十二章。世界模型
+# 第十二章：世界模型
 
 本章介绍了近年来生成模型最有趣的应用之一，即它们在所谓的世界模型中的使用。
 
@@ -412,7 +412,7 @@ CMA-ES 只是进化策略的一种形式。简而言之，它通过维护一个�
 
 ![CMA-ES 算法的一个代更新](img/gdl2_1213.png)
 
-###### 图 12-13\. CMA-ES 算法的一个更新步骤（来源：[Ha, 2017](http://bit.ly/2XufRwq))^(2)
+###### 图 12-13\. CMA-ES 算法的一个更新步骤（来源：[Ha, 2017](http://bit.ly/2XufRwq))²
 
 步骤如下：
 
@@ -518,6 +518,6 @@ VAE 被训练来学习环境的潜在表示，然后作为输入传递给一个�
 
 有关该模型的更多信息，请参阅原始论文作者编写的出色互动解释，可在[在线](https://worldmodels.github.io)获取。
 
-^(1) 大卫·哈和尤尔根·施密德胡伯，“世界模型”，2018 年 3 月 27 日，[*https://arxiv.org/abs/1803.10122*](https://arxiv.org/abs/1803.10122)。
+¹ 大卫·哈和尤尔根·施密德胡伯，“世界模型”，2018 年 3 月 27 日，[*https://arxiv.org/abs/1803.10122*](https://arxiv.org/abs/1803.10122)。
 
-^(2) 大卫·哈，“演化策略的视觉指南”，2017 年 10 月 29 日，[*https://blog.otoro.net/2017/10/29/visual-evolution-strategies*](https://blog.otoro.net/2017/10/29/visual-evolution-strategies)。
+² 大卫·哈，“演化策略的视觉指南”，2017 年 10 月 29 日，[*https://blog.otoro.net/2017/10/29/visual-evolution-strategies*](https://blog.otoro.net/2017/10/29/visual-evolution-strategies)。

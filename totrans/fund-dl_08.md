@@ -1,4 +1,4 @@
-# 第八章。嵌入和表示学习
+# 第八章：嵌入和表示学习
 
 # 学习低维表示
 
@@ -289,7 +289,7 @@ c_x = (corrupt_input(x) * corrupt) + (x * (1 - corrupt))
 
 <math alttext="upper E Subscript Sparse Baseline equals upper E plus beta dot SparsityPenalty"><mrow><msub><mi>E</mi> <mtext>Sparse</mtext></msub> <mo>=</mo> <mi>E</mi> <mo>+</mo> <mi>β</mi> <mo>·</mo> <mtext>SparsityPenalty</mtext></mrow></math>
 
-<math alttext="beta"><mi>β</mi></math>的值决定了我们在追求稀疏性的同时牺牲生成更好重建的程度。对于数学倾向的人来说，您可以将每个表示的每个组件的值视为具有未知均值的随机变量的结果。然后，我们将使用一个衡量观察这个随机变量（每个组件的值）的分布和已知均值为 0 的随机变量的分布之间差异的度量。用于此目的的常用度量是 Kullback-Leibler（通常称为 KL）散度。关于自动编码器中稀疏性的进一步讨论超出了本文的范围，但已被 Ranzato 等人（2007 年^(4)和 2008 年^(5)）涵盖。最近，Makhzani 和 Frey（2014 年）^(6)研究了在编码层之前引入一个中间函数的理论性质和经验有效性，该函数将表示中的最大激活值之外的所有值都归零。这些*k-稀疏自动编码器*被证明与其他稀疏机制一样有效，尽管实现和理解起来非常简单（以及在计算上更有效）。
+<math alttext="beta"><mi>β</mi></math>的值决定了我们在追求稀疏性的同时牺牲生成更好重建的程度。对于数学倾向的人来说，您可以将每个表示的每个组件的值视为具有未知均值的随机变量的结果。然后，我们将使用一个衡量观察这个随机变量（每个组件的值）的分布和已知均值为 0 的随机变量的分布之间差异的度量。用于此目的的常用度量是 Kullback-Leibler（通常称为 KL）散度。关于自动编码器中稀疏性的进一步讨论超出了本文的范围，但已被 Ranzato 等人（2007 年⁴和 2008 年⁵）涵盖。最近，Makhzani 和 Frey（2014 年）⁶研究了在编码层之前引入一个中间函数的理论性质和经验有效性，该函数将表示中的最大激活值之外的所有值都归零。这些*k-稀疏自动编码器*被证明与其他稀疏机制一样有效，尽管实现和理解起来非常简单（以及在计算上更有效）。
 
 这结束了我们对自动编码器的讨论。我们已经探讨了如何使用自动编码器通过总结其内容来找到数据点的强表示。当独立数据点丰富并包含有关其结构的所有相关信息时，这种降维的机制效果很好。在下一节中，我们将探讨当主要信息源是数据点的上下文而不是数据点本身时，我们可以使用的策略。
 
@@ -535,18 +535,18 @@ data.plot_with_labels(low_dim_embs, labels)
 
 在本章中，我们探讨了表示学习中的各种方法。我们了解了如何使用自动编码器进行有效的降维。我们还学习了去噪和稀疏性，这些增强了自动编码器的有用属性。在讨论完自动编码器后，我们将注意力转向当输入的上下文比输入本身更具信息性时的表示学习。我们学习了如何使用 Skip-Gram 模型为英语单词生成嵌入，这将在我们探索用于理解语言的深度学习模型时非常有用。在下一章中，我们将在此基础上分析语言和其他序列使用深度学习。
 
-^(1) Hinton, Geoffrey E., and Ruslan R. Salakhutdinov. “使用神经网络降低数据的维度。”*科学*313.5786（2006）：504-507。
+¹ Hinton, Geoffrey E., and Ruslan R. Salakhutdinov. “使用神经网络降低数据的维度。”*科学*313.5786（2006）：504-507。
 
-^(2) Vincent, Pascal, et al. “使用去噪自动编码器提取和组合稳健特征。”*第 25 届国际机器学习会议论文集*。ACM，2008 年。
+² Vincent, Pascal, et al. “使用去噪自动编码器提取和组合稳健特征。”*第 25 届国际机器学习会议论文集*。ACM，2008 年。
 
-^(3) Bengio, Yoshua, et al. “广义去噪自动编码器作为生成模型。”*神经信息处理系统进展*。2013 年。
+³ Bengio, Yoshua, et al. “广义去噪自动编码器作为生成模型。”*神经信息处理系统进展*。2013 年。
 
-^(4) Ranzato, Marc’Aurelio, et al. “使用基于能量的模型高效学习稀疏表示。”*第 19 届神经信息处理系统国际会议论文集*。MIT 出版社，2006 年。
+⁴ Ranzato, Marc’Aurelio, et al. “使用基于能量的模型高效学习稀疏表示。”*第 19 届神经信息处理系统国际会议论文集*。MIT 出版社，2006 年。
 
-^(5) Ranzato, Marc’Aurelio, and Martin Szummer. “半监督学习中的紧凑文档表示与深度网络。”*第 25 届国际机器学习会议论文集*。ACM，2008 年。
+⁵ Ranzato, Marc’Aurelio, and Martin Szummer. “半监督学习中的紧凑文档表示与深度网络。”*第 25 届国际机器学习会议论文集*。ACM，2008 年。
 
-^(6) Makhzani, Alireza, and Brendan Frey. “k-稀疏自动编码器。”*arXiv 预印本 arXiv*：1312.5663（2013）。
+⁶ Makhzani, Alireza, and Brendan Frey. “k-稀疏自动编码器。”*arXiv 预印本 arXiv*：1312.5663（2013）。
 
-^(7) Mikolov, Tomas, et al. “单词和短语的分布式表示及其组合性。”*神经信息处理系统进展*。2013 年。
+⁷ Mikolov, Tomas, et al. “单词和短语的分布式表示及其组合性。”*神经信息处理系统进展*。2013 年。
 
-^(8) Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. “在向量空间中高效估计单词表示。”*ICLR 研讨会*，2013 年。
+⁸ Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. “在向量空间中高效估计单词表示。”*ICLR 研讨会*，2013 年。

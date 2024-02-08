@@ -1,4 +1,4 @@
-# 第十六章。使用 Keras 进行端到端深度学习模拟自动驾驶汽车
+# 第十六章：使用 Keras 进行端到端深度学习模拟自动驾驶汽车
 
 由客座作者 Aditya Sharma 和 Mitchell Spryn 贡献
 

@@ -1,4 +1,4 @@
-# 第十章. 高级 GANs
+# 第十章：高级 GANs
 
 第四章介绍了生成对抗网络（GANs），这是一类生成模型，在各种图像生成任务中取得了最先进的结果。模型架构和训练过程的灵活性导致学术界和深度学习从业者找到了设计和训练 GAN 的新方法，从而产生了许多不同的高级架构，我们将在本章中探讨。
 
@@ -110,7 +110,7 @@ ProGAN 论文的作者发现，当与 Adam 或 RMSProp 等现代优化器结合�
 
 # StyleGAN
 
-StyleGAN^(3)是 2018 年的一个 GAN 架构，建立在 ProGAN 论文中的早期思想基础上。实际上，鉴别器是相同的；只有生成器被改变。
+StyleGAN³是 2018 年的一个 GAN 架构，建立在 ProGAN 论文中的早期思想基础上。实际上，鉴别器是相同的；只有生成器被改变。
 
 通常在训练 GAN 时，很难将潜在空间中对应于高级属性的向量分离出来——它们经常是*纠缠在一起*，这意味着调整潜在空间中的图像以使脸部更多雀斑，例如，可能也会无意中改变背景颜色。虽然 ProGAN 生成了极其逼真的图像，但它也不例外。我们理想情况下希望完全控制图像的风格，这需要在潜在空间中对特征进行分离。
 
@@ -324,21 +324,21 @@ VQ-GAN 论文详细介绍了 VQ-VAE 架构的几个关键变化，如图 10-20 �
 
 其次，GAN 鉴别器预测图像的小块是否真实或伪造，而不是一次性预测整个图像。这个想法（*PatchGAN*）被应用在 2016 年由 Isola 等人介绍的成功的*pix2pix*图像到图像模型中，并且也成功地作为*CycleGAN*的一部分应用，另一个图像到图像的风格转移模型。PatchGAN 鉴别器输出一个预测向量（每个块的预测），而不是整个图像的单个预测。使用 PatchGAN 鉴别器的好处在于，损失函数可以衡量鉴别器在基于*风格*而不是*内容*来区分图像方面的表现如何。由于鉴别器预测的每个单独元素基于图像的一个小方块，它必须使用块的风格而不是内容来做出决定。这是有用的，因为我们知道 VAE 生成的图像在风格上比真实图像更模糊，因此 PatchGAN 鉴别器可以鼓励 VAE 解码器生成比其自然产生的更清晰的图像。
 
-第三，与使用单个 MSE 重建损失不同，该损失将输入图像像素与 VAE 解码器输出像素进行比较，VQ-GAN 使用*感知损失*项，计算编码器中间层的特征图与解码器相应层之间的差异。这个想法来自于侯等人 2016 年的论文，^(14)作者在其中展示了这种对损失函数的改变导致更逼真的图像生成。
+第三，与使用单个 MSE 重建损失不同，该损失将输入图像像素与 VAE 解码器输出像素进行比较，VQ-GAN 使用*感知损失*项，计算编码器中间层的特征图与解码器相应层之间的差异。这个想法来自于侯等人 2016 年的论文，¹⁴作者在其中展示了这种对损失函数的改变导致更逼真的图像生成。
 
 最后，模型的自回归部分使用 Transformer 而不是 PixelCNN，训练以生成代码序列。Transformer 在 VQ-GAN 完全训练后的一个单独阶段中进行训练。作者选择仅使用在要预测的令牌周围的滑动窗口内的令牌，而不是完全自回归地使用所有先前的令牌。这确保了模型可以扩展到需要更大潜在网格大小和因此需要 Transformer 生成更多令牌的更大图像。
 
 ## ViT VQ-GAN
 
-Yu 等人在 2021 年的论文“Vector-Quantized Image Modeling with Improved VQGAN”中对 VQ-GAN 进行了最后一个扩展。^(15) 在这里，作者展示了如何将 VQ-GAN 的卷积编码器和解码器替换为 Transformer，如图 10-21 所示。
+Yu 等人在 2021 年的论文“Vector-Quantized Image Modeling with Improved VQGAN”中对 VQ-GAN 进行了最后一个扩展。¹⁵ 在这里，作者展示了如何将 VQ-GAN 的卷积编码器和解码器替换为 Transformer，如图 10-21 所示。
 
-对于编码器，作者使用*Vision Transformer*（ViT）。^(16) ViT 是一种神经网络架构，将最初设计用于自然语言处理的 Transformer 模型应用于图像数据。ViT 不使用卷积层从图像中提取特征，而是将图像分成一系列补丁，对其进行标记化，然后将其作为输入馈送到编码器 Transformer 中。
+对于编码器，作者使用*Vision Transformer*（ViT）。¹⁶ ViT 是一种神经网络架构，将最初设计用于自然语言处理的 Transformer 模型应用于图像数据。ViT 不使用卷积层从图像中提取特征，而是将图像分成一系列补丁，对其进行标记化，然后将其作为输入馈送到编码器 Transformer 中。
 
 具体来说，在 ViT VQ-GAN 中，非重叠的输入补丁（每个大小为 8×8）首先被展平，然后投影到低维嵌入空间中，位置嵌入被添加。然后，这个序列被馈送到标准编码器 Transformer 中，生成的嵌入根据学习的码书进行量化。这些整数代码然后由解码器 Transformer 模型处理，最终输出是一系列补丁，可以被拼接在一起形成原始图像。整体的编码器-解码器模型被作为自动编码器端到端训练。
 
 ![](img/gdl2_1021.png)
 
-###### 图 10-21。ViT VQ-GAN 的图表：GAN 鉴别器通过额外的对抗损失项帮助 VAE 生成更清晰的图像（来源：[Yu and Koh, 2022](https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html)）^(17)
+###### 图 10-21。ViT VQ-GAN 的图表：GAN 鉴别器通过额外的对抗损失项帮助 VAE 生成更清晰的图像（来源：[Yu and Koh, 2022](https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html)）¹⁷
 
 与原始 VQ-GAN 模型一样，训练的第二阶段涉及使用自回归解码器 Transformer 生成代码序列。因此，在 ViT VQ-GAN 中总共有三个 Transformer，另外还有 GAN 鉴别器和学习的码书。论文中 ViT VQ-GAN 生成的图像示例显示在图 10-22 中。
 
@@ -354,38 +354,38 @@ Yu 等人在 2021 年的论文“Vector-Quantized Image Modeling with Improved V
 
 我们还看到了如何将注意力的概念构建到 GAN 中，2018 年引入了 SAGAN。这使网络能够捕捉长距离依赖关系，例如图像相对两侧的相似背景颜色，而无需依赖深度卷积映射将信息传播到图像的空间维度。BigGAN 是这个想法的延伸，进行了几个关键改变，并训练了一个更大的网络以进一步提高图像质量。
 
-在 VQ-GAN 论文中，作者展示了如何将几种不同类型的生成模型结合起来产生很好的效果。在最初引入具有离散潜在空间的 VAE 概念的 VQ-VAE 论文的基础上，VQ-GAN 还包括一个鼓励 VAE 通过额外的对抗损失项生成更清晰图像的鉴别器。自回归变压器用于构建一个新颖的代码令牌序列，可以由 VAE 解码器解码以生成新颖图像。ViT VQ-GAN 论文进一步扩展了这个想法，通过用变压器替换 VQ-GAN 的卷积编码器和解码器。
+在 VQ-GAN 论文中，作者展示了如何将几种不同类型的生成模型结合起来产生很好的效果。在最初引入具有离散潜在空间的 VAE 概念的 VQ-VAE 论文的基础上，VQ-GAN 还包括一个鼓励 VAE 通过额外的对抗损失项生成更清晰图像的鉴别器。自回归 Transformer 用于构建一个新颖的代码令牌序列，可以由 VAE 解码器解码以生成新颖图像。ViT VQ-GAN 论文进一步扩展了这个想法，通过用 Transformer 替换 VQ-GAN 的卷积编码器和解码器。
 
-^(1) Huiwen Chang 等人，“Muse: 通过遮罩生成变压器进行文本到图像生成”，2023 年 1 月 2 日，[*https://arxiv.org/abs/2301.00704*](https://arxiv.org/abs/2301.00704)。
+¹ Huiwen Chang 等人，“Muse: 通过遮罩生成 Transformer 进行文本到图像生成”，2023 年 1 月 2 日，[*https://arxiv.org/abs/2301.00704*](https://arxiv.org/abs/2301.00704)。
 
-^(2) Tero Karras 等人，“用于改善质量、稳定性和变化的 GAN 的渐进增长”，2017 年 10 月 27 日，[*https://arxiv.org/abs/1710.10196*](https://arxiv.org/abs/1710.10196)。
+² Tero Karras 等人，“用于改善质量、稳定性和变化的 GAN 的渐进增长”，2017 年 10 月 27 日，[*https://arxiv.org/abs/1710.10196*](https://arxiv.org/abs/1710.10196)。
 
-^(3) Tero Karras 等人，“用于生成对抗网络的基于样式的生成器架构”，2018 年 12 月 12 日，[*https://arxiv.org/abs/1812.04948*](https://arxiv.org/abs/1812.04948)。
+³ Tero Karras 等人，“用于生成对抗网络的基于样式的生成器架构”，2018 年 12 月 12 日，[*https://arxiv.org/abs/1812.04948*](https://arxiv.org/abs/1812.04948)。
 
-^(4) Xun Huang 和 Serge Belongie，“使用自适应实例归一化实时进行任意风格转移”，2017 年 3 月 20 日，[*https://arxiv.org/abs/1703.06868*](https://arxiv.org/abs/1703.06868)。
+⁴ Xun Huang 和 Serge Belongie，“使用自适应实例归一化实时进行任意风格转移”，2017 年 3 月 20 日，[*https://arxiv.org/abs/1703.06868*](https://arxiv.org/abs/1703.06868)。
 
-^(5) Tero Karras 等人，“分析和改进 StyleGAN 的图像质量”，2019 年 12 月 3 日，[*https://arxiv.org/abs/1912.04958*](https://arxiv.org/abs/1912.04958)。
+⁵ Tero Karras 等人，“分析和改进 StyleGAN 的图像质量”，2019 年 12 月 3 日，[*https://arxiv.org/abs/1912.04958*](https://arxiv.org/abs/1912.04958)。
 
-^(6) Axel Sauer 等人，“StyleGAN-XL: 将 StyleGAN 扩展到大型多样数据集”，2022 年 2 月 1 日，[*https://arxiv.org/abs/2202.00273v2*](https://arxiv.org/abs/2202.00273v2)。
+⁶ Axel Sauer 等人，“StyleGAN-XL: 将 StyleGAN 扩展到大型多样数据集”，2022 年 2 月 1 日，[*https://arxiv.org/abs/2202.00273v2*](https://arxiv.org/abs/2202.00273v2)。
 
-^(7) Han Zhang 等人，“自注意力生成对抗网络”，2018 年 5 月 21 日，[*https://arxiv.org/abs/1805.08318*](https://arxiv.org/abs/1805.08318)。
+⁷ Han Zhang 等人，“自注意力生成对抗网络”，2018 年 5 月 21 日，[*https://arxiv.org/abs/1805.08318*](https://arxiv.org/abs/1805.08318)。
 
-^(8) Andrew Brock 等人，“用于高保真自然图像合成的大规模 GAN 训练”，2018 年 9 月 28 日，[*https://arxiv.org/abs/1809.11096*](https://arxiv.org/abs/1809.11096)。
+⁸ Andrew Brock 等人，“用于高保真自然图像合成的大规模 GAN 训练”，2018 年 9 月 28 日，[*https://arxiv.org/abs/1809.11096*](https://arxiv.org/abs/1809.11096)。
 
-^(9) Patrick Esser 等人，“驯服变压器以进行高分辨率图像合成”，2020 年 12 月 17 日，[*https://arxiv.org/abs/2012.09841*](https://arxiv.org/abs/2012.09841)。
+⁹ Patrick Esser 等人，“驯服 Transformer 以进行高分辨率图像合成”，2020 年 12 月 17 日，[*https://arxiv.org/abs/2012.09841*](https://arxiv.org/abs/2012.09841)。
 
-^(10) Aaron van den Oord 等人，“神经离散表示学习”，2017 年 11 月 2 日，[*https://arxiv.org/abs/1711.00937v2*](https://arxiv.org/abs/1711.00937v2)。
+¹⁰ Aaron van den Oord 等人，“神经离散表示学习”，2017 年 11 月 2 日，[*https://arxiv.org/abs/1711.00937v2*](https://arxiv.org/abs/1711.00937v2)。
 
-^(11) Anders Boesen Lindbo Larsen 等人，“超越像素的自动编码：使用学习的相似度度量”，2015 年 12 月 31 日，[*https://arxiv.org/abs/1512.09300*](https://arxiv.org/abs/1512.09300)。
+¹¹ Anders Boesen Lindbo Larsen 等人，“超越像素的自动编码：使用学习的相似度度量”，2015 年 12 月 31 日，[*https://arxiv.org/abs/1512.09300*](https://arxiv.org/abs/1512.09300)。
 
-^(12) Phillip Isola 等人，“带条件对抗网络的图像到图像翻译”，2016 年 11 月 21 日，[*https://arxiv.org/abs/1611.07004v3*](https://arxiv.org/abs/1611.07004v3)。
+¹² Phillip Isola 等人，“带条件对抗网络的图像到图像翻译”，2016 年 11 月 21 日，[*https://arxiv.org/abs/1611.07004v3*](https://arxiv.org/abs/1611.07004v3)。
 
-^(13) Jun-Yan Zhu 等人，“使用循环一致性对抗网络进行无配对图像到图像翻译”，2017 年 3 月 30 日，[*https://arxiv.org/abs/1703.10593*](https://arxiv.org/abs/1703.10593)。
+¹³ Jun-Yan Zhu 等人，“使用循环一致性对抗网络进行无配对图像到图像翻译”，2017 年 3 月 30 日，[*https://arxiv.org/abs/1703.10593*](https://arxiv.org/abs/1703.10593)。
 
-^(14) Xianxu Hou 等人，“深度特征一致变分自动编码器”，2016 年 10 月 2 日，[*https://arxiv.org/abs/1610.00291*](https://arxiv.org/abs/1610.00291)。
+¹⁴ Xianxu Hou 等人，“深度特征一致变分自动编码器”，2016 年 10 月 2 日，[*https://arxiv.org/abs/1610.00291*](https://arxiv.org/abs/1610.00291)。
 
-^(15) Jiahui Yu 等人，“改进的 VQGAN 进行矢量量化图像建模”，2021 年 10 月 9 日，[*https://arxiv.org/abs/2110.04627*](https://arxiv.org/abs/2110.04627)。
+¹⁵ Jiahui Yu 等人，“改进的 VQGAN 进行矢量量化图像建模”，2021 年 10 月 9 日，[*https://arxiv.org/abs/2110.04627*](https://arxiv.org/abs/2110.04627)。
 
-^(16) Alexey Dosovitskiy 等人，“一幅图像价值 16x16 个词：规模化图像识别的变压器”，2020 年 10 月 22 日，[*https://arxiv.org/abs/2010.11929v2*](https://arxiv.org/abs/2010.11929v2)。
+¹⁶ Alexey Dosovitskiy 等人，“一幅图像价值 16x16 个词：规模化图像识别的 Transformer”，2020 年 10 月 22 日，[*https://arxiv.org/abs/2010.11929v2*](https://arxiv.org/abs/2010.11929v2)。
 
-^(17) Jiahui Yu 和 Jing Yu Koh，“改进的 VQGAN 进行矢量量化图像建模”，2022 年 5 月 18 日，[*https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html*](https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html)。
+¹⁷ Jiahui Yu 和 Jing Yu Koh，“改进的 VQGAN 进行矢量量化图像建模”，2022 年 5 月 18 日，[*https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html*](https://ai.googleblog.com/2022/05/vector-quantized-image-modeling-with.html)。

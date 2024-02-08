@@ -1,4 +1,4 @@
-# 第二章。深度学习
+# 第二章：深度学习
 
 让我们从深度学习的基本定义开始：
 
@@ -94,7 +94,7 @@ MLP 是一种判别模型（而不是生成模型），但在本书后面的章�
 
 ![](img/gdl2_0204.png)
 
-###### 图 2-4\. CIFAR-10 数据集中的示例图像（来源：[Krizhevsky, 2009](https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf))^(2)
+###### 图 2-4\. CIFAR-10 数据集中的示例图像（来源：[Krizhevsky, 2009](https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf))²
 
 默认情况下，图像数据由每个像素通道的 0 到 255 之间的整数组成。我们首先需要通过将这些值缩放到 0 到 1 之间来预处理图像，因为当每个输入的绝对值小于 1 时，神经网络的效果最好。
 
@@ -296,7 +296,7 @@ Keras 提供了许多内置的损失函数可供选择，或者你可以创建�
 
 ### 优化器
 
-*优化器* 是基于损失函数的梯度更新神经网络权重的算法。最常用和稳定的优化器之一是 *Adam*（自适应矩估计）。^(3) 在大多数情况下，您不需要调整 Adam 优化器的默认参数，除了 *学习率*。学习率越大，每个训练步骤中权重的变化就越大。虽然初始时使用较大的学习率训练速度更快，但缺点是可能导致训练不稳定，无法找到损失函数的全局最小值。这是您可能需要在训练过程中调整的参数。
+*优化器* 是基于损失函数的梯度更新神经网络权重的算法。最常用和稳定的优化器之一是 *Adam*（自适应矩估计）。³ 在大多数情况下，您不需要调整 Adam 优化器的默认参数，除了 *学习率*。学习率越大，每个训练步骤中权重的变化就越大。虽然初始时使用较大的学习率训练速度更快，但缺点是可能导致训练不稳定，无法找到损失函数的全局最小值。这是您可能需要在训练过程中调整的参数。
 
 另一个您可能遇到的常见优化器是 *RMSProp*（均方根传播）。同样，您不需要太多调整这个优化器的参数，但值得阅读[Keras 文档](https://keras.io/optimizers)以了解每个参数的作用。
 
@@ -345,7 +345,7 @@ model.fit(x_train ![1](img/1.png)
 
 ###### 提示
 
-使用整个数据集在每个训练步骤中计算梯度将耗费太多时间和计算资源，因此通常使用 32 到 256 之间的批量大小。现在推荐的做法是随着训练的进行增加批量大小。^(4)
+使用整个数据集在每个训练步骤中计算梯度将耗费太多时间和计算资源，因此通常使用 32 到 256 之间的批量大小。现在推荐的做法是随着训练的进行增加批量大小。⁴
 
 这将持续到数据集中的所有观察值都被看到一次。这完成了第一个 *epoch*。然后数据再次以批次的形式通过网络，作为第二个 epoch 的一部分。这个过程重复，直到指定的 epoch 数已经过去。
 
@@ -592,7 +592,7 @@ model = models.Model(input_layer, output_layer)
 
 ![](img/gdl2_0214.png)
 
-###### 图 2-14。批量归一化过程（来源：[Ioffe and Szegedy, 2015](https://arxiv.org/abs/1502.03167)）^(6)
+###### 图 2-14。批量归一化过程（来源：[Ioffe and Szegedy, 2015](https://arxiv.org/abs/1502.03167)）⁶
 
 我们可以在密集层或卷积层之后放置批量归一化层来归一化输出。
 
@@ -623,7 +623,7 @@ layers.BatchNormalization(momentum = 0.9)
 
 相同的原则适用于机器学习。任何成功的机器学习算法必须确保它能泛化到未见过的数据，而不仅仅是*记住*训练数据集。如果一个算法在训练数据集上表现良好，但在测试数据集上表现不佳，我们称其为*过拟合*。为了解决这个问题，我们使用*正则化*技术，确保模型在开始过拟合时受到惩罚。
 
-有许多方法可以对机器学习算法进行正则化，但对于深度学习来说，最常见的一种方法是使用*dropout*层。这个想法是由 Hinton 等人在 2012 年提出的^(7)，并在 2014 年由 Srivastava 等人在一篇论文中提出^(8)
+有许多方法可以对机器学习算法进行正则化，但对于深度学习来说，最常见的一种方法是使用*dropout*层。这个想法是由 Hinton 等人在 2012 年提出的⁷，并在 2014 年由 Srivastava 等人在一篇论文中提出⁸
 
 Dropout 层非常简单。在训练期间，每个 dropout 层从前一层中选择一组随机单元，并将它们的输出设置为 0，如图 2-15 所示。
 
@@ -763,18 +763,18 @@ model = models.Model(input_layer, output_layer)
 
 在下一章中，我们将看到如何使用这些积木来设计一个可以生成图像的网络。
 
-^(1) Kaiming He 等人，“用于图像识别的深度残差学习”，2015 年 12 月 10 日，[*https://arxiv.org/abs/1512.03385*](https://arxiv.org/abs/1512.03385)。
+¹ Kaiming He 等人，“用于图像识别的深度残差学习”，2015 年 12 月 10 日，[*https://arxiv.org/abs/1512.03385*](https://arxiv.org/abs/1512.03385)。
 
-^(2) Alex Krizhevsky，“从微小图像中学习多层特征”，2009 年 4 月 8 日，[*https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf*](https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf)。
+² Alex Krizhevsky，“从微小图像中学习多层特征”，2009 年 4 月 8 日，[*https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf*](https://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf)。
 
-^(3) Diederik Kingma 和 Jimmy Ba，“Adam：一种随机优化方法”，2014 年 12 月 22 日，[*https://arxiv.org/abs/1412.6980v8*](https://arxiv.org/abs/1412.6980v8)。
+³ Diederik Kingma 和 Jimmy Ba，“Adam：一种随机优化方法”，2014 年 12 月 22 日，[*https://arxiv.org/abs/1412.6980v8*](https://arxiv.org/abs/1412.6980v8)。
 
-^(4) Samuel L. Smith 等人，“不要降低学习率，增加批量大小”，2017 年 11 月 1 日，[*https://arxiv.org/abs/1711.00489*](https://arxiv.org/abs/1711.00489)。
+⁴ Samuel L. Smith 等人，“不要降低学习率，增加批量大小”，2017 年 11 月 1 日，[*https://arxiv.org/abs/1711.00489*](https://arxiv.org/abs/1711.00489)。
 
-^(5) Vincent Dumoulin 和 Francesco Visin，“深度学习卷积算术指南”，2018 年 1 月 12 日，[*https://arxiv.org/abs/1603.07285*](https://arxiv.org/abs/1603.07285)。
+⁵ Vincent Dumoulin 和 Francesco Visin，“深度学习卷积算术指南”，2018 年 1 月 12 日，[*https://arxiv.org/abs/1603.07285*](https://arxiv.org/abs/1603.07285)。
 
-^(6) Sergey Ioffe 和 Christian Szegedy，“批量归一化：通过减少内部协变量转移加速深度网络训练”，2015 年 2 月 11 日，[*https://arxiv.org/abs/1502.03167*](https://arxiv.org/abs/1502.03167)。
+⁶ Sergey Ioffe 和 Christian Szegedy，“批量归一化：通过减少内部协变量转移加速深度网络训练”，2015 年 2 月 11 日，[*https://arxiv.org/abs/1502.03167*](https://arxiv.org/abs/1502.03167)。
 
-^(7) Hinton 等人，“通过防止特征探测器的共适应来构建网络”，2012 年 7 月 3 日，[*https://arxiv.org/abs/1207.0580*](https://arxiv.org/abs/1207.0580)。
+⁷ Hinton 等人，“通过防止特征探测器的共适应来构建网络”，2012 年 7 月 3 日，[*https://arxiv.org/abs/1207.0580*](https://arxiv.org/abs/1207.0580)。
 
-^(8) Nitish Srivastava 等人，“Dropout：防止神经网络过拟合的简单方法”，*机器学习研究杂志* 15 (2014): 1929–1958，[*http://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf*](http://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf)。
+⁸ Nitish Srivastava 等人，“Dropout：防止神经网络过拟合的简单方法”，*机器学习研究杂志* 15 (2014): 1929–1958，[*http://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf*](http://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf)。

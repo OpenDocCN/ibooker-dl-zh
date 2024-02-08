@@ -1,4 +1,4 @@
-# 第四章。训练前馈神经网络
+# 第四章：训练前馈神经网络
 
 # 快餐问题
 
@@ -32,7 +32,7 @@
 
 我们还可以方便地将这个表面可视化为一组椭圆形轮廓，其中最小误差位于椭圆的中心。在这个设置中，我们在一个二维平面上工作，其中维度对应于两个权重。轮廓对应于评估为相同值 *E* 的 <math alttext="w 1"><msub><mi>w</mi> <mn>1</mn></msub></math> 和 <math alttext="w 2"><msub><mi>w</mi> <mn>2</mn></msub></math> 的设置。轮廓越接近，斜率越陡。事实上，最陡下降的方向总是垂直于轮廓。这个方向被表示为一个称为*梯度*的向量。
 
-现在我们可以制定一个高层策略，来找到最小化误差函数的权重值。假设我们随机初始化网络的权重，这样我们就会发现自己在水平平面上的某个位置。通过评估当前位置的梯度，我们可以找到最陡下降的方向，并朝这个方向迈出一步。然后我们会发现自己在一个比之前更接近最小值的新位置。我们可以通过在这个新位置上取梯度并朝这个新方向迈出一步来重新评估最陡下降的方向。很容易看出，如图 4-3 所示，遵循这个策略最终会将我们带到最小误差点。这个算法被称为*梯度下降*，我们将用它来解决训练单个神经元和更一般的训练整个网络的问题。^(1)
+现在我们可以制定一个高层策略，来找到最小化误差函数的权重值。假设我们随机初始化网络的权重，这样我们就会发现自己在水平平面上的某个位置。通过评估当前位置的梯度，我们可以找到最陡下降的方向，并朝这个方向迈出一步。然后我们会发现自己在一个比之前更接近最小值的新位置。我们可以通过在这个新位置上取梯度并朝这个新方向迈出一步来重新评估最陡下降的方向。很容易看出，如图 4-3 所示，遵循这个策略最终会将我们带到最小误差点。这个算法被称为*梯度下降*，我们将用它来解决训练单个神经元和更一般的训练整个网络的问题。¹
 
 ![ ](img/fdl2_0403.png)
 
@@ -198,7 +198,7 @@ y = 1 / (1 + e^(-z))
 
 在一个 epoch 结束时，验证集将告诉我们模型在尚未见过的数据上的表现。如果训练集上的准确性继续增加，而验证集上的准确性保持不变（或下降），这表明是时候停止训练了，因为我们正在过拟合。
 
-验证集还有助于作为*超参数优化*过程中准确性的代理度量。到目前为止，我们已经涵盖了几个超参数（学习率、小批量大小等），但我们尚未开发出如何找到这些超参数的最佳值的框架。找到超参数的最佳设置的一个潜在方法是应用*网格搜索*，在网格搜索中，我们从有限的选项集中为每个超参数选择一个值（例如，<math alttext="epsilon element-of StartSet 0.001 comma 0.01 comma 0.1 EndSet comma batch size element-of StartSet 16 comma 64 comma 128 EndSet comma ellipsis"><mrow><mi>ϵ</mi> <mo>∈</mo> <mo>{</mo> <mn>0</mn> <mo>.</mo> <mn>001</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>01</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>1</mn> <mo>}</mo> <mo>,</mo> <mtext>batch</mtext> <mtext>size</mtext> <mo>∈</mo> <mo>{</mo> <mn>16</mn> <mo>,</mo> <mn>64</mn> <mo>,</mo> <mn>128</mn> <mo>}</mo> <mo>,</mo> <mo>...</mo></mrow></math>），并使用每种超参数选择的所有可能排列来训练模型。我们选择在验证集上性能最佳的超参数组合，并报告使用最佳组合训练的模型在测试集上的准确性。^(3)
+验证集还有助于作为*超参数优化*过程中准确性的代理度量。到目前为止，我们已经涵盖了几个超参数（学习率、小批量大小等），但我们尚未开发出如何找到这些超参数的最佳值的框架。找到超参数的最佳设置的一个潜在方法是应用*网格搜索*，在网格搜索中，我们从有限的选项集中为每个超参数选择一个值（例如，<math alttext="epsilon element-of StartSet 0.001 comma 0.01 comma 0.1 EndSet comma batch size element-of StartSet 16 comma 64 comma 128 EndSet comma ellipsis"><mrow><mi>ϵ</mi> <mo>∈</mo> <mo>{</mo> <mn>0</mn> <mo>.</mo> <mn>001</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>01</mn> <mo>,</mo> <mn>0</mn> <mo>.</mo> <mn>1</mn> <mo>}</mo> <mo>,</mo> <mtext>batch</mtext> <mtext>size</mtext> <mo>∈</mo> <mo>{</mo> <mn>16</mn> <mo>,</mo> <mn>64</mn> <mo>,</mo> <mn>128</mn> <mo>}</mo> <mo>,</mo> <mo>...</mo></mrow></math>），并使用每种超参数选择的所有可能排列来训练模型。我们选择在验证集上性能最佳的超参数组合，并报告使用最佳组合训练的模型在测试集上的准确性。³
 
 考虑到这一点，在我们开始描述直接对抗过拟合的各种方法之前，让我们先概述构建和训练深度学习模型时使用的工作流程。工作流程在图 4-14 中有详细描述。这有点复杂，但了解流程对确保我们正确训练神经网络至关重要。
 
@@ -220,7 +220,7 @@ y = 1 / (1 + e^(-z))
 
 一种对抗过拟合的方法称为*正则化*。正则化通过添加额外的惩罚大权重的项来修改我们最小化的目标函数。我们改变目标函数，使其变为<math alttext="upper E r r o r plus lamda f left-parenthesis theta right-parenthesis"><mrow><mi>E</mi> <mi>r</mi> <mi>r</mi> <mi>o</mi> <mi>r</mi> <mo>+</mo> <mi>λ</mi> <mi>f</mi> <mo>(</mo> <mi>θ</mi> <mo>)</mo></mrow></math>，其中<math alttext="f left-parenthesis theta right-parenthesis"><mrow><mi>f</mi> <mo>(</mo> <mi>θ</mi> <mo>)</mo></mrow></math>随着<math alttext="theta"><mi>θ</mi></math>的分量增大而增大，<math alttext="lamda"><mi>λ</mi></math>是正则化强度（另一个超参数）。我们选择的<math alttext="lamda"><mi>λ</mi></math>的值决定了我们想要保护免受过拟合的程度。<math alttext="lamda equals 0"><mrow><mi>λ</mi> <mo>=</mo> <mn>0</mn></mrow></math>意味着我们不采取任何措施来防止过拟合。如果<math alttext="lamda"><mi>λ</mi></math>太大，那么我们的模型将优先保持<math alttext="theta"><mi>θ</mi></math>尽可能小，而不是试图找到在训练集上表现良好的参数值。因此，选择<math alttext="lamda"><mi>λ</mi></math>是一项非常重要的任务，可能需要一些试错。
 
-机器学习中最常见的正则化类型是*L2*正则化。^(4) 它可以通过将神经网络中所有权重的平方幅度添加到误差函数中来实现。换句话说，对于神经网络中的每个权重<math alttext="w"><mi>w</mi></math>，我们将<math alttext="one-half lamda w squared"><mrow><mfrac><mn>1</mn> <mn>2</mn></mfrac> <mi>λ</mi> <msup><mi>w</mi> <mn>2</mn></msup></mrow></math>添加到误差函数中。L2 正则化具有对尖峰权重向量进行严厉惩罚并更喜欢扩散权重向量的直观解释。这具有鼓励网络稍微使用其所有输入而不是仅大量使用部分输入的吸引性属性。特别值得注意的是，在梯度下降更新期间，使用 L2 正则化最终意味着每个权重都会线性衰减至零。由于这种现象，L2 正则化通常也被称为*权重衰减*。
+机器学习中最常见的正则化类型是*L2*正则化。⁴ 它可以通过将神经网络中所有权重的平方幅度添加到误差函数中来实现。换句话说，对于神经网络中的每个权重<math alttext="w"><mi>w</mi></math>，我们将<math alttext="one-half lamda w squared"><mrow><mfrac><mn>1</mn> <mn>2</mn></mfrac> <mi>λ</mi> <msup><mi>w</mi> <mn>2</mn></msup></mrow></math>添加到误差函数中。L2 正则化具有对尖峰权重向量进行严厉惩罚并更喜欢扩散权重向量的直观解释。这具有鼓励网络稍微使用其所有输入而不是仅大量使用部分输入的吸引性属性。特别值得注意的是，在梯度下降更新期间，使用 L2 正则化最终意味着每个权重都会线性衰减至零。由于这种现象，L2 正则化通常也被称为*权重衰减*。
 
 我们可以使用 ConvNetJS 来可视化 L2 正则化的效果。与图 2-10 和 2-11 类似，我们使用一个具有 2 个输入、大小为 2 的 softmax 输出和一个包含 20 个神经元的隐藏层的神经网络。我们使用小批量梯度下降（批量大小为 10）和正则化强度为 0.01、0.1 和 1 来训练网络。结果可以在图 4-15 中看到。
 
@@ -244,14 +244,14 @@ y = 1 / (1 + e^(-z))
 
 在本章中，我们学习了训练前馈神经网络所涉及的所有基础知识。我们讨论了梯度下降，反向传播算法，以及我们可以使用的各种方法来防止过拟合。在下一章中，当我们使用 PyTorch 库高效实现我们的第一个神经网络时，我们将把这些教训付诸实践。然后在第六章中，我们将回到优化目标函数以训练神经网络的问题，并设计算法来显著提高性能。这些改进将使我们能够处理更多的数据，这意味着我们将能够构建更全面的模型。
 
-^(1) Rosenbloom, P. “The Method of Steepest Descent.” *Proceedings of Symposia in Applied Mathematics*. Vol. 6\. 1956.
+¹ Rosenbloom, P. “The Method of Steepest Descent.” *Proceedings of Symposia in Applied Mathematics*. Vol. 6\. 1956.
 
-^(2) Rumelhart, David E., Geoffrey E. Hinton, and Ronald J. Williams. “Learning Representations by Back-Propagating Errors.” *Cognitive Modeling* 5.3 (1988): 1.
+² Rumelhart, David E., Geoffrey E. Hinton, and Ronald J. Williams. “Learning Representations by Back-Propagating Errors.” *Cognitive Modeling* 5.3 (1988): 1.
 
-^(3) Nelder, John A., and Roger Mead. “A Simplex Method for Function Minimization.” *The Computer Journal* 7.4 (1965): 308-313.
+³ Nelder, John A., and Roger Mead. “A Simplex Method for Function Minimization.” *The Computer Journal* 7.4 (1965): 308-313.
 
-^(4) Tikhonov, Andrei Nikolaevich, and Vladlen Borisovich Glasko. “Use of the Regularization Method in Non-Linear Problems.” *USSR Computational Mathematics and Mathematical Physics* 5.3 (1965): 93-107.
+⁴ Tikhonov, Andrei Nikolaevich, and Vladlen Borisovich Glasko. “Use of the Regularization Method in Non-Linear Problems.” *USSR Computational Mathematics and Mathematical Physics* 5.3 (1965): 93-107.
 
-^(5) Srebro, Nathan, Jason DM Rennie, and Tommi S. Jaakkola. “Maximum-Margin Matrix Factorization.” *NIPS*, Vol. 17, 2004.
+⁵ Srebro, Nathan, Jason DM Rennie, and Tommi S. Jaakkola. “Maximum-Margin Matrix Factorization.” *NIPS*, Vol. 17, 2004.
 
-^(6) Srivastava, Nitish 等人。“Dropout: 一种简单的方法防止神经网络过拟合。” *机器学习研究杂志* 15.1 (2014): 1929-1958.
+⁶ Srivastava, Nitish 等人。“Dropout: 一种简单的方法防止神经网络过拟合。” *机器学习研究杂志* 15.1 (2014): 1929-1958.

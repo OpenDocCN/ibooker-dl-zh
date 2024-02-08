@@ -1,6 +1,6 @@
-# 第四章。生成对抗网络
+# 第四章：生成对抗网络
 
-2014 年，Ian Goodfellow 等人在蒙特利尔的神经信息处理系统会议（NeurIPS）上发表了一篇名为“生成对抗网络”的论文^(1)。生成对抗网络（或者更常见的称为 GAN）的引入现在被认为是生成建模历史上的一个关键转折点，因为这篇论文中提出的核心思想衍生出了一些最成功和令人印象深刻的生成模型。
+2014 年，Ian Goodfellow 等人在蒙特利尔的神经信息处理系统会议（NeurIPS）上发表了一篇名为“生成对抗网络”的论文¹。生成对抗网络（或者更常见的称为 GAN）的引入现在被认为是生成建模历史上的一个关键转折点，因为这篇论文中提出的核心思想衍生出了一些最成功和令人印象深刻的生成模型。
 
 本章将首先阐述 GAN 的理论基础，然后我们将看到如何使用 Keras 构建我们自己的 GAN。
 
@@ -22,7 +22,7 @@ GAN 是生成器和鉴别器之间的一场战斗。生成器试图将随机噪�
 
 为了看到这个过程，让我们开始在 Keras 中构建我们的第一个 GAN，以生成砖块的图片。
 
-我们将密切关注 GAN 的第一篇重要论文之一，“使用深度卷积生成对抗网络进行无监督表示学习”^(2)。在这篇 2015 年的论文中，作者展示了如何构建一个深度卷积 GAN 来从各种数据集中生成逼真的图像。他们还引入了一些显著改进生成图像质量的变化。
+我们将密切关注 GAN 的第一篇重要论文之一，“使用深度卷积生成对抗网络进行无监督表示学习”²。在这篇 2015 年的论文中，作者展示了如何构建一个深度卷积 GAN 来从各种数据集中生成逼真的图像。他们还引入了一些显著改进生成图像质量的变化。
 
 # 运行此示例的代码
 
@@ -941,14 +941,14 @@ def train_step(self, data):
 
 在下一章中，我们将探讨一种适合建模序列数据的不同生成模型家族——自回归模型。
 
-^(1) Ian J. Goodfellow 等人，“生成对抗网络”，2014 年 6 月 10 日，[*https://arxiv.org/abs/1406.2661*](https://arxiv.org/abs/1406.2661)
+¹ Ian J. Goodfellow 等人，“生成对抗网络”，2014 年 6 月 10 日，[*https://arxiv.org/abs/1406.2661*](https://arxiv.org/abs/1406.2661)
 
-^(2) Alec Radford 等人，“使用深度卷积生成对抗网络进行无监督表示学习”，2016 年 1 月 7 日，[*https://arxiv.org/abs/1511.06434*](https://arxiv.org/abs/1511.06434)。
+² Alec Radford 等人，“使用深度卷积生成对抗网络进行无监督表示学习”，2016 年 1 月 7 日，[*https://arxiv.org/abs/1511.06434*](https://arxiv.org/abs/1511.06434)。
 
-^(3) Augustus Odena 等人，“反卷积和棋盘伪影”，2016 年 10 月 17 日，[*https://distill.pub/2016/deconv-checkerboard*](https://distill.pub/2016/deconv-checkerboard)。
+³ Augustus Odena 等人，“反卷积和棋盘伪影”，2016 年 10 月 17 日，[*https://distill.pub/2016/deconv-checkerboard*](https://distill.pub/2016/deconv-checkerboard)。
 
-^(4) Martin Arjovsky 等人，“Wasserstein GAN”，2017 年 1 月 26 日，[*https://arxiv.org/abs/1701.07875*](https://arxiv.org/abs/1701.07875)。
+⁴ Martin Arjovsky 等人，“Wasserstein GAN”，2017 年 1 月 26 日，[*https://arxiv.org/abs/1701.07875*](https://arxiv.org/abs/1701.07875)。
 
-^(5) Ishaan Gulrajani 等人，“改进的 Wasserstein GANs 训练”，2017 年 3 月 31 日，[*https://arxiv.org/abs/1704.00028*](https://arxiv.org/abs/1704.00028)。
+⁵ Ishaan Gulrajani 等人，“改进的 Wasserstein GANs 训练”，2017 年 3 月 31 日，[*https://arxiv.org/abs/1704.00028*](https://arxiv.org/abs/1704.00028)。
 
-^(6) Mehdi Mirza 和 Simon Osindero，“条件生成对抗网络”，2014 年 11 月 6 日，[*https://arxiv.org/abs/1411.1784*](https://arxiv.org/abs/1411.1784)。
+⁶ Mehdi Mirza 和 Simon Osindero，“条件生成对抗网络”，2014 年 11 月 6 日，[*https://arxiv.org/abs/1411.1784*](https://arxiv.org/abs/1411.1784)。

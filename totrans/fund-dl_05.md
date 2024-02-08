@@ -1,4 +1,4 @@
-# 第五章。在 PyTorch 中实现神经网络
+# 第五章：在 PyTorch 中实现神经网络
 
 # PyTorch 简介
 
