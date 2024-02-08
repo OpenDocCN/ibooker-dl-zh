@@ -170,8 +170,37 @@ _________________________________________________________________
 现在您已经熟悉了高级概念，您可能迫不及待地想用代码解决这个问题。以下是用数据训练模型的代码，然后立即要求模型为值`10`提供答案，如前所述。
 
 ```py
-// Inputs constxs=tf.tensor([-1,0,1,2,3,4]);①// Answers we want from inputs constys=tf.tensor([-4,-2,0,2,4,6]);// Create a model constmodel=tf.sequential();②model.add(③tf.layers.dense({inputShape: 1,units: 1}));model.compile({④optimizer:"sgd",loss:"meanSquaredError"});// Print out the model structure model.summary();// Train model.fit(xs,ys,{epochs: 300}).then(history=>{⑤constinputTensor=tf.tensor([10]);constanswer=model.predict(inputTensor);⑥console.log(`10 results in ${Math.round(answer.dataSync())}`);// cleanup
-tf.dispose([xs,ys,model,answer,inputTensor]);⑦});
+// Inputs
+const xs = tf.tensor([-1, 0, 1, 2, 3, 4]); 1
+// Answers we want from inputs
+const ys = tf.tensor([-4, -2, 0, 2, 4, 6]);
+
+// Create a model
+const model = tf.sequential(); 2
+
+model.add( 3
+  tf.layers.dense({
+    inputShape: 1,
+    units: 1
+  })
+);
+
+model.compile({ 4
+  optimizer: "sgd",
+  loss: "meanSquaredError"
+});
+
+// Print out the model structure
+model.summary();
+
+// Train
+model.fit(xs, ys, { epochs: 300 }).then(history => { 5
+  const inputTensor = tf.tensor([10]);
+  const answer = model.predict(inputTensor); 6
+  console.log(`10 results in ${Math.round(answer.dataSync())}`);
+  // cleanup
+  tf.dispose([xs, ys, model, answer, inputTensor]); 7
+});
 ```
 
 ①

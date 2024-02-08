@@ -97,8 +97,25 @@ MobileNet 是一种用于低延迟、低功耗模型的特定架构。这使得�
 你可以通过几行代码查看图像的结果。以下代码就是这样做的，也可以在[本章的源代码](https://oreil.ly/JLo5C)中找到：
 
 ```py
-tf.ready().then(()=>{constmodelPath="https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1";①tf.tidy(()=>{tf.loadGraphModel(modelPath,{fromTFHub: true}).then((model)=>{constmysteryImage=document.getElementById("mystery");constmyTensor=tf.browser.fromPixels(mysteryImage);// SSD Mobilenet batch of 1
-constsingleBatch=tf.expandDims(myTensor,0);②model.executeAsync(singleBatch).then((result)=>{console.log("First",result[0].shape);③result[0].print();console.log("Second",result[1].shape);④result[1].print();});});});});
+tf.ready().then(() => {
+  const modelPath =
+    "https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1"; // '①
+  tf.tidy(() => {
+    tf.loadGraphModel(modelPath, { fromTFHub: true }).then((model) => {
+      const mysteryImage = document.getElementById("mystery");
+      const myTensor = tf.browser.fromPixels(mysteryImage);
+      // SSD Mobilenet batch of 1
+      const singleBatch = tf.expandDims(myTensor, 0); // ②
+
+      model.executeAsync(singleBatch).then((result) => {
+        console.log("First", result[0].shape); // ③
+        result[0].print();
+        console.log("Second", result[1].shape); // ④
+        result[1].print();
+      });
+    });
+  });
+});
 ```
 
 ①
@@ -245,8 +262,23 @@ const nmsDetections = await tf.image.nonMaxSuppressionWithScoreAsync(
 结果将是一个具有两个属性的对象。`selectedIndices`属性将是一个张量，其中包含通过筛选的框的索引，`selectedScores`将是它们对应的分数。您可以循环遍历所选结果并绘制边界框。
 
 ```py
-constchosen=awaitnmsDetections.selectedIndices.data();①chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;constdetectedIndex=maxIndices[detection];②constdetectedClass=CLASSES[detectedIndex];③constdetectedScore=scores[detection];constdBox=boxes[detection];console.log(detectedClass,detectedScore);④// No negative values for start positions
-conststartY=dBox[0]>0?dBox[0]*imgHeight : 0;⑤conststartX=dBox[1]>0?dBox[1]*imgWidth : 0;constheight=(dBox[2]-dBox[0])*imgHeight;constwidth=(dBox[3]-dBox[1])*imgWidth;ctx.strokeRect(startX,startY,width,height);});
+const chosen = await nmsDetections.selectedIndices.data(); // ①
+chosen.forEach((detection) => {
+  ctx.strokeStyle = "#0F0";
+  ctx.lineWidth = 4;
+  const detectedIndex = maxIndices[detection]; // ②
+  const detectedClass = CLASSES[detectedIndex]; // ③
+  const detectedScore = scores[detection];
+  const dBox = boxes[detection];
+  console.log(detectedClass, detectedScore); // ④
+
+  // No negative values for start positions
+  const startY = dBox[0] > 0 ? dBox[0] * imgHeight : 0; // ⑤
+  const startX = dBox[1] > 0 ? dBox[1] * imgWidth : 0;
+  const height = (dBox[2] - dBox[0]) * imgHeight;
+  const width = (dBox[3] - dBox[1]) * imgWidth;
+  ctx.strokeRect(startX, startY, width, height);
+});
 ```
 
 ①
@@ -318,7 +350,23 @@ UI 已经取得了很大进展。覆盖层应该能够识别检测和它们的�
 重要的是文本在背景框之后绘制，否则框将覆盖文本。对于我们的目的，标签将使用略有不同颜色的绿色绘制，而不是边界框。
 
 ```py
-// Draw the label background. ctx.fillStyle="#0B0";ctx.font="16px sans-serif";①ctx.textBaseline="top";②consttextHeight=16;consttextPad=4;③constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(④startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top. ctx.fillStyle="#000000";⑤ctx.fillText(label,startX,startY);⑥
+// Draw the label background.
+ctx.fillStyle = "#0B0";
+ctx.font = "16px sans-serif"; // ①
+ctx.textBaseline = "top"; // ②
+const textHeight = 16;
+const textPad = 4; // ③
+const label = `${detectedClass} ${Math.round(detectedScore * 100)}%`;
+const textWidth = ctx.measureText(label).width;
+ctx.fillRect(  // ④
+  startX,
+  startY,
+  textWidth + textPad,
+  textHeight + textPad
+);
+// Draw the text last to ensure it's on top.
+ctx.fillStyle = "#000000";  // ⑤
+ctx.fillText(label, startX, startY); // ⑥
 ```
 
 ①
@@ -366,10 +414,38 @@ UI 已经取得了很大进展。覆盖层应该能够识别检测和它们的�
 总的来说，绘制边界框、标签框和标签的单个循环如下所示：
 
 ```py
-chosen.forEach((detection)=>{ctx.strokeStyle="#0F0";ctx.lineWidth=4;ctx.globalCompositeOperation='destination-over';①constdetectedIndex=maxIndices[detection];constdetectedClass=CLASSES[detectedIndex];constdetectedScore=scores[detection];constdBox=boxes[detection];// No negative values for start positions
-conststartY=dBox[0]>0?dBox[0]*imgHeight : 0;conststartX=dBox[1]>0?dBox[1]*imgWidth : 0;constheight=(dBox[2]-dBox[0])*imgHeight;constwidth=(dBox[3]-dBox[1])*imgWidth;ctx.strokeRect(startX,startY,width,height);// Draw the label background.
-ctx.globalCompositeOperation='source-over';②ctx.fillStyle="#0B0";consttextHeight=16;consttextPad=4;constlabel=`${detectedClass}${Math.round(detectedScore*100)}%`;consttextWidth=ctx.measureText(label).width;ctx.fillRect(startX,startY,textWidth+textPad,textHeight+textPad);// Draw the text last to ensure it's on top.
-ctx.fillStyle="#000000";ctx.fillText(label,startX,startY);});
+chosen.forEach((detection) => {
+  ctx.strokeStyle = "#0F0";
+  ctx.lineWidth = 4;
+  ctx.globalCompositeOperation='destination-over'; // ①
+  const detectedIndex = maxIndices[detection];
+  const detectedClass = CLASSES[detectedIndex];
+  const detectedScore = scores[detection];
+  const dBox = boxes[detection];
+
+  // No negative values for start positions
+  const startY = dBox[0] > 0 ? dBox[0] * imgHeight : 0;
+  const startX = dBox[1] > 0 ? dBox[1] * imgWidth : 0;
+  const height = (dBox[2] - dBox[0]) * imgHeight;
+  const width = (dBox[3] - dBox[1]) * imgWidth;
+  ctx.strokeRect(startX, startY, width, height);
+  // Draw the label background.
+  ctx.globalCompositeOperation='source-over'; // ②
+  ctx.fillStyle = "#0B0";
+  const textHeight = 16;
+  const textPad = 4;
+  const label = `${detectedClass} ${Math.round(detectedScore * 100)}%`;
+  const textWidth = ctx.measureText(label).width;
+  ctx.fillRect(
+    startX,
+    startY,
+    textWidth + textPad,
+    textHeight + textPad
+  );
+  // Draw the text last to ensure it's on top.
+  ctx.fillStyle = "#000000";
+  ctx.fillText(label, startX, startY);
+});
 ```
 
 ①
@@ -397,7 +473,16 @@ ctx.fillStyle="#000000";ctx.fillText(label,startX,startY);});
 ##### 示例 6-1。分解代码库
 
 ```py
-asyncfunctiondoStuff() {try{constmodel=awaitloadModel()①constmysteryVideo=document.getElementById('mystery')②constcamDetails=awaitsetupWebcam(mysteryVideo)③performDetections(model,mysteryVideo,camDetails)④}catch(e){console.error(e)⑤}}
+async function doStuff() {
+  try {
+    const model = await loadModel()  // ①
+    const mysteryVideo = document.getElementById('mystery') // ②
+    const camDetails = await setupWebcam(mysteryVideo) // ③
+    performDetections(model, mysteryVideo, camDetails) // ④
+  } catch (e) {
+    console.error(e) // ⑤
+  }
+}
 ```
 
 ①
@@ -443,8 +528,39 @@ asyncfunctiondoStuff() {try{constmodel=awaitloadModel()①constmysteryVideo=docu
 为了我们的目的，我们只会设置默认的网络摄像头。这对应于示例 6-1 中的第四点。如果你对`getUserMedia`不熟悉，请花点时间分析视频元素如何连接到网络摄像头。这也是你可以将画布上下文设置移动到适应视频元素的时间。
 
 ```py
-asyncfunctionsetupWebcam(videoRef){if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){constwebcamStream=awaitnavigator.mediaDevices.getUserMedia({①audio: false,video:{facingMode:'user',},})if('srcObject'invideoRef){②videoRef.srcObject=webcamStream}else{videoRef.src=window.URL.createObjectURL(webcamStream)}returnnewPromise((resolve,_)=>{③videoRef.onloadedmetadata=()=>{④// Prep Canvas
-constdetection=document.getElementById('detection')constctx=detection.getContext('2d')constimgWidth=videoRef.clientWidth⑤constimgHeight=videoRef.clientHeightdetection.width=imgWidthdetection.height=imgHeightctx.font='16px sans-serif'ctx.textBaseline='top'resolve([ctx,imgHeight,imgWidth])⑥}})}else{alert('No webcam - sorry!')}}
+async function setupWebcam(videoRef) {
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    const webcamStream = await navigator.mediaDevices.getUserMedia({ // ①
+      audio: false,
+      video: {
+        facingMode: 'user',
+      },
+    })
+
+    if ('srcObject' in videoRef) { // ②
+      videoRef.srcObject = webcamStream
+    } else {
+      videoRef.src = window.URL.createObjectURL(webcamStream)
+    }
+
+    return new Promise((resolve, _) => {  // ③
+      videoRef.onloadedmetadata = () => { // ④
+        // Prep Canvas
+        const detection = document.getElementById('detection')
+        const ctx = detection.getContext('2d')
+        const imgWidth = videoRef.clientWidth // ⑤
+        const imgHeight = videoRef.clientHeight
+        detection.width = imgWidth
+        detection.height = imgHeight
+        ctx.font = '16px sans-serif'
+        ctx.textBaseline = 'top'
+        resolve([ctx, imgHeight, imgWidth]) // ⑥
+      }
+    })
+  } else {
+    alert('No webcam - sorry!')
+  }
+}
 ```
 
 ①
