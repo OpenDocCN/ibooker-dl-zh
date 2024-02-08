@@ -138,13 +138,34 @@ torchscript_model.save("scripted_vgg16_model.pt")
 现在我们可以在 C++应用程序中使用我们的模型，如下所示的 C++代码：
 
 ```py
+include <torch/script.h>
 
-include<torch/script.h>#include <iostream>#include <memory>intmain(intargc,constchar*argv[]){if(argc!=2){std::cerr<<"usage: example-app">>\
-"*`<path-to-exported-script-module>`*\n";return-1;}torch::jit::script::Modulemodel;model=torch::jit::load(argv[1]);std::vector<torch::jit::IValue>inputs;inputs.push_back(\
-torch::ones({1,3,224,224}));at::Tensoroutput=model.forward(inputs).toTensor();std::cout\
-<<output.slice(/*dim=*/1,\
-/*start=*/0,/*end=*/5)\
-<<'\n';}}
+#include <iostream>
+#include <memory>
+
+int main(int argc, const char* argv[]) {
+  if (argc != 2) {
+    std::cerr << "usage: example-app" >> \
+      "*`<path-to-exported-script-module>`*\n";
+    return -1;
+  }
+
+  torch::jit::script::Module model;
+  model = torch::jit::load(argv[1]);
+
+  std::vector<torch::jit::IValue> inputs;
+  inputs.push_back( \
+      torch::ones({1, 3, 224, 224}));
+
+  at::Tensor output = model.forward(inputs).toTensor();
+  std::cout \
+    << output.slice(/*dim=*/1, \
+        /*start=*/0, /*end=*/5) \
+    << '\n';
+  }
+
+}
+
 ```
 
 我们将 TorchScript 模块的文件名传递给程序，并使用`torch::jit::load()`加载模型。然后我们创建一个示例输入向量，将其通过我们的 TorchScript 模型运行，并将输出转换为张量，打印到`stdout`。
@@ -197,8 +218,10 @@ AWS 在 Amazon SageMaker 或 Amazon EC2 实例中提供了预安装的 TorchServ
 尝试的一个简单方法是使用 `conda` 或 `pip` 进行安装，如下所示：
 
 ```py
+$ `conda` `install` `torchserve` `torch-model-archiver` `-c` `pytorch`
 
-$ `conda``install``torchserve``torch-model-archiver``-c``pytorch`$ `pip``install``torchserve``torch-model-archiver`
+$ `pip` `install` `torchserve` `torch-model-archiver`
+
 ```
 
 如果遇到问题，请参考上述链接中的 TorchServe 安装说明。
@@ -212,8 +235,10 @@ TorchServe 有能力将所有模型工件打包到单个模型存档文件中。
 对于 TorchScript 模型，命令行如下：
 
 ```py
+$ `torch``-``model``-``archiver` `-``-``model``-``name` `vgg16`
+  `-``-``version` `1.0` `-``-``serialized``-``file` `model``.``pt` `-``-``handler`
+  `image_classifier`
 
-$`torch``-``model``-``archiver``-``-``model``-``name``vgg16``-``-``version``1.0``-``-``serialized``-``file``model``.``pt``-``-``handler``image_classifier`
 ```
 
 我们将模型设置为我们的示例 VGG16 模型，并使用保存的序列化文件 *model.pt*。在这种情况下，我们也可以使用默认的 `image_classifier` 处理程序。
@@ -221,8 +246,10 @@ $`torch``-``model``-``archiver``-``-``model``-``name``vgg16``-``-``version``1.0`
 对于标准的 eager 模式模型，我们将使用以下命令：
 
 ```py
+$ `torch``-``model``-``archiver` `-``-``model``-``name` `vgg16`
+  `-``-``version` `1.0` `-``-``model``-``file` `model``.``py` `-``-``serialized``-``file` `model``.``pt`
+  `-``-``handler` `image_classifier`
 
-$`torch``-``model``-``archiver``-``-``model``-``name``vgg16``-``-``version``1.0``-``-``model``-``file``model``.``py``-``-``serialized``-``file``model``.``pt``-``-``handler``image_classifier`
 ```
 
 这与之前的命令类似，但我们还需要指定模型文件 *model.py*。
@@ -230,8 +257,17 @@ $`torch``-``model``-``archiver``-``-``model``-``name``vgg16``-``-``version``1.0`
 `torch-model-archiver` 工具的完整选项集如下所示：
 
 ```py
+$ `torch-model-archiver` `-h`
+usage: torch-model-archiver [-h]
+        --model-name MODEL_NAME
+        --version MODEL_VERSION_NUMBER
+        --model-file MODEL_FILE_PATH
+        --serialized-file MODEL_SERIALIZED_PATH
+        --handler HANDLER
+        [--runtime {python,python2,python3}]
+        [--export-path EXPORT_PATH] [-f]
+        [--requirements-file]
 
-$ `torch-model-archiver``-h`usage:torch-model-archiver[-h]--model-nameMODEL_NAME--versionMODEL_VERSION_NUMBER--model-fileMODEL_FILE_PATH--serialized-fileMODEL_SERIALIZED_PATH--handlerHANDLER[--runtime{python,python2,python3}][--export-pathEXPORT_PATH][-f][--requirements-file]
 ```
 
 表 7-3\. 模型存档工具选项
@@ -258,8 +294,9 @@ $ `torch-model-archiver``-h`usage:torch-model-archiver[-h]--model-nameMODEL_NAME
 TorchServe 包括一个从命令行运行的内置 Web 服务器。它将一个或多个 PyTorch 模型包装在一组 REST API 中，并提供控件以配置端口、主机和日志记录。以下命令启动 Web 服务器，其中所有模型都位于*/models*文件夹中的模型存储中：
 
 ```py
+$ `torchserve` `--model-store` `/models` `--start`
+  `--models` `all`
 
-$ `torchserve``--model-store``/models``--start``--models``all`
 ```
 
 完整的选项集显示在表 7-4 中。
@@ -285,8 +322,9 @@ $ `torchserve``--model-store``/models``--start``--models``all`
 您可以使用推理 API 传递数据并请求预测。推理 API 在端口 8080 上侦听，默认情况下仅从本地主机访问。要更改默认设置，请参阅[TorchServe 文档](https://pytorch.org/serve/configuration.html)。要从服务器获取预测，我们使用推理 API 的`Service.Predictions` gRPC API，并通过 REST 调用到*/predictions/<model_name>*，如下面的命令行中使用`curl`所示： 
 
 ```py
+$c`url` `http://localhost:8080/predictions/vgg16`
+  `-T` `hot_dog.jpg`
 
-$c`url``http://localhost:8080/predictions/vgg16``-T``hot_dog.jpg`
 ```
 
 代码假设我们有一个图像文件*hot_dog.jpg.* JSON 格式的响应看起来像这样：
@@ -301,8 +339,8 @@ $c`url``http://localhost:8080/predictions/vgg16``-T``hot_dog.jpg`
 您还可以使用推理 API 进行健康检查，使用以下请求：
 
 ```py
+$ `curl` `http://localhost:8080/ping`
 
-$ `curl``http://localhost:8080/ping`
 ```
 
 如果服务器正在运行，响应将如下所示：
@@ -316,8 +354,8 @@ $ `curl``http://localhost:8080/ping`
 要查看推理 API 的完整列表，请使用以下命令：
 
 ```py
+$ `curl` `-X` `OPTIONS` `http://localhost:8080`
 
-$ `curl``-X``OPTIONS``http://localhost:8080`
 ```
 
 ### 日志记录和监控
@@ -325,8 +363,26 @@ $ `curl``-X``OPTIONS``http://localhost:8080`
 您可以使用 Metrics API 配置指标，并在部署时监视和记录模型的性能。Metrics API 监听端口 8082，默认情况下仅从本地主机访问，但在配置 TorchServe 服务器时可以更改默认设置。以下命令说明如何访问指标：
 
 ```py
+$ `curl` `http://127.0.0.1:8082/metrics`
 
-$ `curl``http://127.0.0.1:8082/metrics`# HELP ts_inference_latency_microseconds #    Cumulative inference # TYPE ts_inference_latency_microseconds counter ts_inference_latency_microseconds{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...ts_inference_latency_microseconds{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...# HELP ts_inference_requests_total Total number of inference ... # TYPE ts_inference_requests_total counter ts_inference_requests_total{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...ts_inference_requests_total{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...# HELP ts_queue_latency_microseconds Cumulative queue duration ... # TYPE ts_queue_latency_microseconds counter ts_queue_latency_microseconds{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...ts_queue_latency_microseconds{uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...
+# HELP ts_inference_latency_microseconds #    Cumulative inference 
+# TYPE ts_inference_latency_microseconds counter ts_inference_latency_microseconds{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...
+ts_inference_latency_microseconds{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...
+
+# HELP ts_inference_requests_total Total number of inference ... 
+# TYPE ts_inference_requests_total counter ts_inference_requests_total{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...
+ts_inference_requests_total{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...
+
+# HELP ts_queue_latency_microseconds Cumulative queue duration ... 
+# TYPE ts_queue_latency_microseconds counter ts_queue_latency_microseconds{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",...
+ts_queue_latency_microseconds{
+  uuid="d5f84dfb-fae8-4f92-b217-2f385ca7470b",model_name="noop"...
+
 ```
 
 默认的指标端点返回 Prometheus 格式的指标。Prometheus 是一个免费软件应用程序，用于事件监控和警报，它使用 HTTP 拉模型记录实时指标到时间序列数据库中。您可以使用`curl`请求查询指标，或者将 Prometheus 服务器指向端点并使用 Grafana 进行仪表板。有关更多详细信息，请参阅[Metrics API 文档](https://pytorch.tips/serve-metrics)。
@@ -519,8 +575,27 @@ print(resp.json())
 要使用`ngrok`运行我们的 Flask 应用程序，我们只需要添加两行代码，如下注释所示：
 
 ```py
-fromflask_ngrokimportrun_with_ngrok①@app.route("/")defhome():return"<h1>Running Flask on Google Colab!</h1>"app.run()app=Flask(__name__)run_with_ngrok(app)②@app.route('/predict',methods=['POST'])defpredict():ifrequest.method=='POST':file=request.files['file']img_bytes=file.read()class_id,class_name=\
-get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_name':class_name})app.run()// ③
+from flask_ngrok import run_with_ngrok ![1](Images/1.png)
+
+@app.route("/")
+def home():
+  return "<h1>Running Flask on Google Colab!</h1>"
+
+app.run()
+app = Flask(__name__)
+run_with_ngrok(app) ![2](Images/2.png)
+
+@app.route('/predict', methods=['POST'])
+def predict():
+  if request.method == 'POST':
+    file = request.files['file']
+  img_bytes = file.read()
+  class_id, class_name = \
+    get_prediction(image_bytes=img_bytes)
+  return jsonify({'class_id': class_id,
+                  'class_name': class_name})
+
+app.run() ![3](Images/3.png)
 ```
 
 ①
@@ -538,7 +613,6 @@ get_prediction(image_bytes=img_bytes)returnjsonify({'class_id':class_id,'class_n
 我已经省略了其他导入和`get_prediction()`函数，因为它们没有改变。现在您可以在 Colab 中运行开发 Web 服务器，以便更快地进行原型设计。`ngrok`库为在 Colab 中运行的服务器提供了安全的 URL；当运行 Flask 应用程序时，您将在 Colab 笔记本输出中找到 URL。例如，以下输出显示 URL 为[*http://c0c97117ba27.ngrok.io*](http://c0c97117ba27.ngrok.io)：
 
 ```py
-
  * Serving Flask app "__main__" (lazy loading)
  * Environment: production
    WARNING: This is a development server.
@@ -586,7 +660,6 @@ TorchServe 提供了脚本，可以基于各种平台和选项创建 Docker 镜�
 第一步是克隆 TorchServe 存储库并导航到*Docker*文件夹，使用以下命令：
 
 ```py
-
 $ git clone https://github.com/pytorch/serve.git
 cd serve/docker
 
@@ -595,7 +668,6 @@ cd serve/docker
 接下来，我们需要将 VGG16 模型归档添加到 Docker 镜像中。我们通过向下载存档模型文件并将其保存在*/home/model-server/*目录中的 Dockerfile 添加以下行来实现这一点：
 
 ```py
-
 $ curl -o /home/model-server/vgg16.pth \
     https://download.pytorch.org/models/vgg16.pth
 
@@ -604,7 +676,6 @@ $ curl -o /home/model-server/vgg16.pth \
 现在我们可以运行*build_image.sh*脚本，创建一个安装了公共二进制文件的 Docker 镜像。由于我们在带有 GPU 的 EC2 实例上运行，我们将使用`-g`标志，如下所示：
 
 ```py
-
 $ ./build_image.sh -g
 
 ```
@@ -614,7 +685,6 @@ $ ./build_image.sh -g
 一旦我们创建了 Docker 镜像，我们可以使用以下命令运行容器：
 
 ```py
-
 $ docker run --rm -it --gpus '"device=1"' \
     -p 8080:8080 -p 8081:8081 -p 8082:8082 \
     -p 7070:7070 -p 7071:7071 \
@@ -647,9 +717,19 @@ $ docker run --rm -it --gpus '"device=1"' \
 首先我们将使用追踪将我们的 VGG16 模型转换为 TorchScript 并保存为*model.pt*，如下面的代码所示：
 
 ```py
-importtorchimporttorchvisionfromtorch.utils.mobile_optimizer \ importoptimize_for_mobilemodel=torchvision.models.vgg16(pretrained=True)model.eval()example=torch.rand(1,3,224,224)①traced_script_module=\
-torch.jit.trace(model,example)②torchscript_model_optimized=\
-optimize_for_mobile(traced_script_module)③torchscript_model_optimized.save("model.pt")// ④
+import torch
+import torchvision
+from torch.utils.mobile_optimizer \ import optimize_for_mobile
+
+model = torchvision.models.vgg16(pretrained=True)
+model.eval()
+example = torch.rand(1, 3, 224, 224) ![1](Images/1.png)
+
+traced_script_module = \
+  torch.jit.trace(model, example) ![2](Images/2.png)
+torchscript_model_optimized = \
+  optimize_for_mobile(traced_script_module) ![3](Images/3.png)
+torchscript_model_optimized.save("model.pt") ![4](Images/4.png)
 ```
 
 ①
@@ -673,7 +753,6 @@ optimize_for_mobile(traced_script_module)③torchscript_model_optimized.save("mo
 现在我们需要编写我们的 Swift iOS 应用程序。我们的 iOS 应用程序将使用 PyTorch C++库，我们可以通过 CocoaPods 安装如下：
 
 ```py
-
 $ pod install
 
 ```

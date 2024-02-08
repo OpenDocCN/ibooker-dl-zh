@@ -39,8 +39,40 @@ def linear(input, weight, bias=None):
 然而，我们通常会使用`nn.Module`类来对我们的神经网络进行子类化。当我们创建一个`nn.Module`子类时，我们获得了`nn.Module`对象的所有内置优势。在这种情况下，我们从`nn.Module`派生`nn.Linear`类，如下面的代码所示：
 
 ```py
-importtorch.nnasnnfromtorchimportTensorclassLinear(nn.Module):def__init__(self,in_features,out_features,bias):①super(Linear,self).__init__()self.in_features=in_featuresself.out_features=out_featuresself.weight=Parameter(torch.Tensor(out_features,in_features))ifbias:self.bias=Parameter(torch.Tensor(out_features))else:self.register_parameter('bias',None)self.reset_parameters()defreset_parameters(self):init.kaiming_uniform_(self.weight,a=math.sqrt(5))ifself.biasisnotNone:fan_in,_=\
-init._calculate_fan_in_and_fan_out(self.weight)bound=1/math.sqrt(fan_in)init.uniform_(self.bias,-bound,bound)defforward(self,input:Tensor)->Tensor:②returnF.linear(input,self.weight,self.bias)// ③
+import torch.nn as nn
+from torch import Tensor
+
+class Linear(nn.Module):
+
+    def __init__(self, in_features,
+                 out_features, bias): ![1](Images/1.png)
+        super(Linear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = Parameter(
+            torch.Tensor(out_features,
+                         in_features))
+        if bias:
+            self.bias = Parameter(
+                torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        init.kaiming_uniform_(self.weight,
+                              a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = \
+              init._calculate_fan_in_and_fan_out(
+                  self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, input: Tensor) -> Tensor: ![2](Images/2.png)
+        return F.linear(input,
+                        self.weight,
+                        self.bias) ![3](Images/3.png)
 ```
 
 ①
@@ -159,7 +191,17 @@ class MyReLU(nn.Module):
 这是函数版本：
 
 ```py
-importtorch.nn.functionalasF①classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.fc1=nn.Linear(D_in,H)self.fc2=nn.Linear(H,D_out)defforward(self,x):x=F.relu(self.fc1(x))②returnself.fc2(x)
+import torch.nn.functional as F ![1](Images/1.png)
+
+class SimpleNet(nn.Module):
+  def __init__(self, D_in, H, D_out):
+    super(SimpleNet, self).__init__()
+    self.fc1 = nn.Linear(D_in, H)
+    self.fc2 = nn.Linear(H, D_out)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x)) ![2](Images/2.png)
+    return self.fc2(x)
 ```
 
 ①
@@ -173,7 +215,17 @@ importtorch.nn.functionalasF①classSimpleNet(nn.Module):def__init__(self,D_in,H
 这是类版本：
 
 ```py
-classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self).__init__()self.net=nn.Sequential(①nn.Linear(D_in,H),nn.ReLU(),②nn.Linear(H,D_out))defforward(self,x):returnself.net(x)
+class SimpleNet(nn.Module):
+  def __init__(self, D_in, H, D_out):
+    super(SimpleNet, self).__init__()
+    self.net = nn.Sequential( ![1](Images/1.png)
+        nn.Linear(D_in, H),
+        nn.ReLU(), ![2](Images/2.png)
+        nn.Linear(H, D_out)
+    )
+
+  def forward(self, x):
+    return self.net(x)
 ```
 
 ①
@@ -189,7 +241,15 @@ classSimpleNet(nn.Module):def__init__(self,D_in,H,D_out):super(SimpleNet,self)._
 我们可以创建自己的自定义 ComplexReLU 激活函数来处理我们之前创建的`ComplexLinear`层中的复数值。以下代码展示了函数版本和类版本：
 
 ```py
-defcomplex_relu(in_r,in_i):①return(F.relu(in_r),F.relu(in_i))classComplexReLU(nn.Module):②def__init__(self):super(ComplexReLU,self).__init__()defforward(self,in_r,in_i):returncomplex_relu(in_r,in_i)
+def complex_relu(in_r, in_i): ![1](Images/1.png)
+    return (F.relu(in_r), F.relu(in_i))
+
+class ComplexReLU(nn.Module): ![2](Images/2.png)
+  def __init__(self):
+      super(ComplexReLU, self).__init__()
+
+  def forward(self, in_r, in_i):
+      return complex_relu(in_r, in_i)
 ```
 
 ①
@@ -293,7 +353,9 @@ def alexnet(pretrained=False,
 这使我们能够直接调用该类来计算给定 NN 输出和真实值的损失。然后我们可以一次计算所有 NN 参数的梯度，即进行反向传播。以下代码展示了如何在代码中实现这一点：
 
 ```py
-loss_fcn=nn.MSELoss()①loss=loss_fcn(outputs,targets)loss.backward()
+loss_fcn = nn.MSELoss() ![1](Images/1.png)
+loss = loss_fcn(outputs, targets)
+loss.backward()
 ```
 
 ①
@@ -375,8 +437,46 @@ optim.SGD([
 PyTorch 提供了一个`torch.optim.Optimizer`基类，以便轻松创建自定义优化器。以下是`Optimizer`基类的简化版本：
 
 ```py
-fromcollectionsimportdefaultdictclassOptimizer(object):def__init__(self,params,defaults):self.defaults=defaultsself.state=defaultdict(dict)①self.param_groups=[]②param_groups=list(params)iflen(param_groups)==0:raiseValueError("""optimizer got an
-                empty parameter list""")ifnotisinstance(param_groups[0],dict):param_groups=[{'params':param_groups}]forparam_groupinparam_groups:self.add_param_group(param_group)def__getstate__(self):return{'defaults':self.defaults,'state':self.state,'param_groups':self.param_groups,}def__setstate__(self,state):self.__dict__.update(state)defzero_grad(self):③forgroupinself.param_groups:forpingroup['params']:ifp.gradisnotNone:p.grad.detach_()p.grad.zero_()defstep(self,closure):④raiseNotImplementedError
+from collections import defaultdict
+
+class Optimizer(object):
+
+    def __init__(self, params, defaults):
+        self.defaults = defaults
+        self.state = defaultdict(dict) ![1](Images/1.png)
+        self.param_groups = [] ![2](Images/2.png)
+
+        param_groups = list(params)
+        if len(param_groups) == 0:
+            raise ValueError(
+                """optimizer got an
+                empty parameter list""")
+        if not isinstance(param_groups[0], dict):
+            param_groups = [{'params': param_groups}]
+
+        for param_group in param_groups:
+            self.add_param_group(param_group)
+
+    def __getstate__(self):
+        return {
+            'defaults': self.defaults,
+            'state': self.state,
+            'param_groups': self.param_groups,
+        }
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    def zero_grad(self): ![3](Images/3.png)
+
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    p.grad.detach_()
+                    p.grad.zero_()
+
+    def step(self, closure): ![4](Images/4.png)
+        raise NotImplementedError
 ```
 
 ①
@@ -491,7 +591,44 @@ with torch.no_grad():
 让我们为我们的循环添加一些额外的功能。可能性是无限的，但这个示例将演示一些简单的任务，比如打印信息、重新配置模型以及在训练过程中调整超参数。让我们走一遍以下代码，看看如何实现这一点：
 
 ```py
-forepochinrange(n_epochs):total_train_loss=0.0①total_val_loss=0.0①if(epoch==epoch//2):optimizer=optim.SGD(model.parameters(),lr=0.001)②# Trainingmodel.train()③fordataintrain_dataloader:input,targets=dataoptimizer.zero_grad()output=model(input)train_loss=criterion(output,targets)train_loss.backward()optimizer.step()total_train_loss+=train_loss①# Validationmodel.eval()③withtorch.no_grad():forinput,targetsinval_dataloader:output=model(input)val_loss=criterion(output,targets)total_val_loss+=val_loss①print("""Epoch: {} Train Loss: {} Val Loss {}""".format(epoch,total_train_loss,total_val_loss))①# Testingmodel.eval()withtorch.no_grad():forinput,targetsintest_dataloader:output=model(input)test_loss=criterion(output,targets)
+for epoch in range(n_epochs):
+    total_train_loss = 0.0 ![1](Images/1.png)
+    total_val_loss = 0.0  ![1](Images/1.png)
+
+    if (epoch == epoch//2):
+      optimizer = optim.SGD(model.parameters(),
+                            lr=0.001) ![2](Images/2.png)
+    # Training
+    model.train() ![3](Images/3.png)
+    for data in train_dataloader:
+        input, targets = data
+        optimizer.zero_grad()
+        output = model(input)
+        train_loss = criterion(output, targets)
+        train_loss.backward()
+        optimizer.step()
+        total_train_loss += train_loss ![1](Images/1.png)
+
+    # Validation
+    model.eval() ![3](Images/3.png)
+    with torch.no_grad():
+      for input, targets in val_dataloader:
+          output = model(input)
+          val_loss = criterion(output, targets)
+          total_val_loss += val_loss ![1](Images/1.png)
+
+    print("""Epoch: {}
+ Train Loss: {}
+ Val Loss {}""".format(
+         epoch, total_train_loss,
+         total_val_loss)) ![1](Images/1.png)
+
+# Testing
+model.eval()
+with torch.no_grad():
+  for input, targets in test_dataloader:
+      output = model(input)
+      test_loss = criterion(output, targets)
 ```
 
 ①

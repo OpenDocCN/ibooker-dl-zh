@@ -164,7 +164,19 @@ Torchvision 为计算机视觉和图像处理提供了许多著名的预训练�
 在微调我们的模型之前，让我们用以下代码配置我们的训练：
 
 ```py
-fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda.is_available()else"cpu")①model=model.to(device)criterion=nn.CrossEntropyLoss()②optimizer=optim.SGD(model.parameters(),lr=0.001,momentum=0.9)③exp_lr_scheduler=StepLR(optimizer,step_size=7,gamma=0.1)// ④
+from torch.optim.lr_scheduler import StepLR
+
+device = torch.device("cuda:0" if
+  torch.cuda.is_available() else "cpu") ![1](Images/1.png)
+
+model = model.to(device)
+criterion = nn.CrossEntropyLoss() ![2](Images/2.png)
+optimizer = optim.SGD(model.parameters(),
+                      lr=0.001,
+                      momentum=0.9) ![3](Images/3.png)
+exp_lr_scheduler = StepLR(optimizer,
+                          step_size=7,
+                          gamma=0.1) ![4](Images/4.png)
 ```
 
 ①
@@ -188,14 +200,62 @@ fromtorch.optim.lr_schedulerimportStepLRdevice=torch.device("cuda:0"iftorch.cuda
 以下代码展示了整个训练循环，包括验证：
 
 ```py
-num_epochs=25forepochinrange(num_epochs):model.train()①running_loss=0.0running_corrects=0forinputs,labelsintrain_loader:inputs=inputs.to(device)labels=labels.to(device)optimizer.zero_grad()outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)loss.backward()optimizer.step()running_loss+=loss.item()/inputs.size(0)running_corrects+=\
-torch.sum(preds==labels.data)\
-/inputs.size(0)exp_lr_scheduler.step()②train_epoch_loss=\
-running_loss/len(train_loader)train_epoch_acc=\
-running_corrects/len(train_loader)model.eval()③running_loss=0.0running_corrects=0forinputs,labelsinval_loader:inputs=inputs.to(device)labels=labels.to(device)outputs=model(inputs)_,preds=torch.max(outputs,1)loss=criterion(outputs,labels)running_loss+=loss.item()/inputs.size(0)running_corrects+=\
-torch.sum(preds==labels.data)\
-/inputs.size(0)epoch_loss=running_loss/len(val_loader)epoch_acc=\
-running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"" Val: Loss: {:.4f}"" Acc: {:.4f}".format(train_epoch_loss,train_epoch_acc,epoch_loss,epoch_acc))
+num_epochs=25
+
+for epoch in range(num_epochs):
+
+  model.train() ![1](Images/1.png)
+  running_loss = 0.0
+  running_corrects = 0
+
+  for inputs, labels in train_loader:
+    inputs = inputs.to(device)
+    labels = labels.to(device)
+
+    optimizer.zero_grad()
+    outputs = model(inputs)
+    _, preds = torch.max(outputs,1)
+    loss = criterion(outputs, labels)
+
+    loss.backward()
+    optimizer.step()
+
+    running_loss += loss.item()/inputs.size(0)
+    running_corrects += \
+      torch.sum(preds == labels.data) \
+        /inputs.size(0)
+
+  exp_lr_scheduler.step() ![2](Images/2.png)
+  train_epoch_loss = \
+    running_loss / len(train_loader)
+  train_epoch_acc = \
+    running_corrects / len(train_loader)
+
+  model.eval() ![3](Images/3.png)
+  running_loss = 0.0
+  running_corrects = 0
+
+  for inputs, labels in val_loader:
+      inputs = inputs.to(device)
+      labels = labels.to(device)
+      outputs = model(inputs)
+      _, preds = torch.max(outputs,1)
+      loss = criterion(outputs, labels)
+
+      running_loss += loss.item()/inputs.size(0)
+      running_corrects += \
+        torch.sum(preds == labels.data) \
+            /inputs.size(0)
+
+  epoch_loss = running_loss / len(val_loader)
+  epoch_acc = \
+    running_corrects.double() / len(val_loader)
+  print("Train: Loss: {:.4f} Acc: {:.4f}"
+    " Val: Loss: {:.4f}"
+    " Acc: {:.4f}".format(train_epoch_loss,
+                          train_epoch_acc,
+                          epoch_loss,
+                          epoch_acc))
 ```
 
 ①
@@ -217,7 +277,26 @@ running_corrects.double()/len(val_loader)print("Train: Loss: {:.4f} Acc: {:.4f}"
 让我们通过将模型保存到文件来测试我们的模型并部署它。为了测试我们的模型，我们将显示一批图像，并展示我们的模型如何对它们进行分类，如下面的代码所示：
 
 ```py
-importmatplotlib.pyplotaspltdefimshow(inp,title=None):①inp=inp.numpy().transpose((1,2,0))②mean=np.array([0.485,0.456,0.406])std=np.array([0.229,0.224,0.225])inp=std*inp+mean③inp=np.clip(inp,0,1)plt.imshow(inp)iftitleisnotNone:plt.title(title)inputs,classes=next(iter(val_loader))④out=torchvision.utils.make_grid(inputs)class_names=val_dataset.classesoutputs=model(inputs.to(device))⑤_,preds=torch.max(outputs,1)⑥imshow(out,title=[class_names[x]forxinpreds])// ⑦
+import matplotlib.pyplot as plt
+
+def imshow(inp, title=None): ![1](Images/1.png)
+    inp = inp.numpy().transpose((1, 2, 0)) ![2](Images/2.png)
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    inp = std * inp + mean ![3](Images/3.png)
+    inp = np.clip(inp, 0, 1)
+    plt.imshow(inp)
+    if title is not None:
+        plt.title(title)
+
+inputs, classes = next(iter(val_loader)) ![4](Images/4.png)
+out = torchvision.utils.make_grid(inputs)
+class_names = val_dataset.classes
+
+outputs = model(inputs.to(device)) ![5](Images/5.png)
+_, preds = torch.max(outputs,1) ![6](Images/6.png)
+
+imshow(out, title=[class_names[x] for x in preds]) ![7](Images/7.png)
 ```
 
 ①
@@ -295,8 +374,20 @@ generate_bigrams([
 现在我们已经定义了我们的预处理函数，我们可以构建我们的 IMDb 数据集，如下所示的代码：
 
 ```py
-fromtorchtext.datasetsimportIMDBfromtorch.utils.data.datasetimportrandom_splittrain_iter,test_iter=IMDB(split=('train','test'))①train_dataset=list(train_iter)②test_data=list(test_iter)num_train=int(len(train_dataset)*0.70)train_data,valid_data=\
-random_split(train_dataset,[num_train,len(train_dataset)-num_train])// ③
+from torchtext.datasets import IMDB
+from torch.utils.data.dataset import random_split
+
+train_iter, test_iter = IMDB(
+    split=('train', 'test')) ![1](Images/1.png)
+
+train_dataset = list(train_iter) ![2](Images/2.png)
+test_data = list(test_iter)
+
+num_train = int(len(train_dataset) * 0.70)
+train_data, valid_data = \
+    random_split(train_dataset,
+        [num_train,
+         len(train_dataset) - num_train]) ![3](Images/3.png)
 ```
 
 ①
@@ -331,7 +422,7 @@ print(train_data[data_index][0])
 
 print(train_data[data_index][1])
 # out: (your results may vary)
-# 'This', 'film', 'moved', 'me', 'beyond', ...
+# ['This', 'film', 'moved', 'me', 'beyond', ...
 ```
 
 如您所见，我们的数据集包括 17,500 条评论用于训练，7,500 条用于验证，25,000 条用于测试。我们还打印了第 21 条评论及其情感，如输出所示。拆分是随机抽样的，因此您的结果可能会有所不同。
@@ -339,7 +430,19 @@ print(train_data[data_index][1])
 接下来，我们需要将文本数据转换为数字数据，以便 NN 可以处理它。我们通过创建预处理函数和数据管道来实现这一点。数据管道将使用我们的`generate_bigrams()`函数、一个标记器和一个词汇表，如下所示的代码：
 
 ```py
-fromtorchtext.data.utilsimportget_tokenizerfromcollectionsimportCounterfromtorchtext.vocabimportVocabtokenizer=get_tokenizer('spacy')![1counter=Counter()for(label,line)intrain_data:counter.update(generate_bigrams(tokenizer(line)))②vocab=Vocab(counter,max_size=25000,vectors="glove.6B.100d",unk_init=torch.Tensor.normal_,)// ③
+from torchtext.data.utils import get_tokenizer
+from collections import Counter
+from torchtext.vocab import Vocab
+
+tokenizer = get_tokenizer('spacy') ![1](Images/1.png)
+counter = Counter()
+for (label, line) in train_data:
+    counter.update(generate_bigrams(
+        tokenizer(line))) ![2](Images/2.png)
+vocab = Vocab(counter,
+              max_size = 25000,
+              vectors = "glove.6B.100d",
+              unk_init = torch.Tensor.normal_,) ![3](Images/3.png)
 ```
 
 ①
@@ -382,7 +485,6 @@ print(label_pipeline('neg'))
 现在我们已经定义了我们的数据集和预处理，我们可以创建我们的数据加载器。我们的数据加载器从数据集的采样中加载数据批次，并预处理数据，如以下代码所示：
 
 ```py
-
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
@@ -490,9 +592,17 @@ model = FastText(
 我们不会从头开始训练我们的嵌入层，而是使用预训练的嵌入来初始化层的权重。这个过程类似于我们在“使用迁移学习进行图像分类”示例中使用预训练权重的方式：
 
 ```py
-pretrained_embeddings=vocab.vectors①model.embedding.weight.data.copy_(pretrained_embeddings)②EMBEDDING_DIM=100unk_idx=vocab['<UNK>']③pad_idx=vocab['<PAD>']model.embedding.weight.data[unk_idx]=\
-torch.zeros(EMBEDDING_DIM)④model.embedding.weight.data[pad_idx]=\
-torch.zeros(EMBEDDING_DIM)
+pretrained_embeddings = vocab.vectors ![1](Images/1.png)
+model.embedding.weight.data.copy_(
+                    pretrained_embeddings) ![2](Images/2.png)
+
+EMBEDDING_DIM = 100
+unk_idx = vocab['<UNK>'] ![3](Images/3.png)
+pad_idx = vocab['<PAD>']
+model.embedding.weight.data[unk_idx] = \
+      torch.zeros(EMBEDDING_DIM)          ![4](Images/4.png)
+model.embedding.weight.data[pad_idx] = \
+      torch.zeros(EMBEDDING_DIM)
 ```
 
 ①
@@ -602,8 +712,28 @@ for epoch in range(5):
 我们的测试循环如下所示：
 
 ```py
-test_loss=0test_acc=0model.eval()①withtorch.no_grad():①forlabel,text,_intest_dataloader:predictions=model(text).squeeze(1)loss=criterion(predictions,label)rounded_preds=torch.round(torch.sigmoid(predictions))correct=\
-(rounded_preds==label).float()acc=correct.sum()/len(correct)test_loss+=loss.item()test_acc+=acc.item()print("Test: Loss: %.4f Acc: %.4f"%(test_loss/len(test_dataloader),test_acc/len(test_dataloader)))# out: (your results will vary)#   Test: Loss: 0.3821 Acc: 0.8599
+test_loss = 0
+test_acc = 0
+model.eval() ![1](Images/1.png)
+with torch.no_grad(): ![1](Images/1.png)
+  for label, text, _ in test_dataloader:
+    predictions = model(text).squeeze(1)
+    loss = criterion(predictions, label)
+
+    rounded_preds = torch.round(
+        torch.sigmoid(predictions))
+    correct = \
+      (rounded_preds == label).float()
+    acc = correct.sum() / len(correct)
+
+    test_loss += loss.item()
+    test_acc += acc.item()
+
+print("Test: Loss: %.4f Acc: %.4f" %
+        (test_loss / len(test_dataloader),
+        test_acc / len(test_dataloader)))
+# out: (your results will vary)
+#   Test: Loss: 0.3821 Acc: 0.8599
 ```
 
 ①
@@ -872,7 +1002,50 @@ test_out_images = []
 现在我们可以执行训练循环。如果 GAN 是稳定的，随着更多时代的训练，它应该会改进。以下是训练循环的代码：
 
 ```py
-N_EPOCHS=5forepochinrange(N_EPOCHS):print(f'Epoch: {epoch}')fori,batchinenumerate(dataloader):if(i%200==0):print(f'batch: {i} of {len(dataloader)}')# Train Discriminator with an all-real batch.netD.zero_grad()real_images=batch[0].to(device)*2.-1.output=netD(real_images).view(-1)①errD_real=criterion(output,real_labels)D_x=output.mean().item()# Train Discriminator with an all-fake batch.noise=torch.randn((BATCH_SIZE,CODING_SIZE))noise=noise.view(-1,100,1,1).to(device)fake_images=netG(noise)output=netD(fake_images).view(-1)②errD_fake=criterion(output,fake_labels)D_G_z1=output.mean().item()errD=errD_real+errD_fakeerrD.backward(retain_graph=True)③optimizerD.step()# Train Generator to generate better fakes.netG.zero_grad()output=netD(fake_images).view(-1)④errG=criterion(output,real_labels)⑤errG.backward()⑥D_G_z2=output.mean().item()optimizerG.step()# Save losses for plotting later.G_losses.append(errG.item())D_losses.append(errD.item())D_real.append(D_x)D_fake.append(D_G_z2)test_images=netG(z).to('cpu').detach()⑦test_out_images.append(test_images)
+N_EPOCHS = 5
+
+for epoch in range(N_EPOCHS):
+  print(f'Epoch: {epoch}')
+  for i, batch in enumerate(dataloader):
+    if (i%200==0):
+      print(f'batch: {i} of {len(dataloader)}')
+
+    # Train Discriminator with an all-real batch.
+    netD.zero_grad()
+    real_images = batch[0].to(device) *2. - 1.
+    output = netD(real_images).view(-1) ![1](Images/1.png)
+    errD_real = criterion(output, real_labels)
+    D_x = output.mean().item()
+
+    # Train Discriminator with an all-fake batch.
+    noise = torch.randn((BATCH_SIZE,
+                         CODING_SIZE))
+    noise = noise.view(-1,100,1,1).to(device)
+    fake_images = netG(noise)
+    output = netD(fake_images).view(-1) ![2](Images/2.png)
+    errD_fake = criterion(output, fake_labels)
+    D_G_z1 = output.mean().item()
+    errD = errD_real + errD_fake
+    errD.backward(retain_graph=True) ![3](Images/3.png)
+    optimizerD.step()
+
+    # Train Generator to generate better fakes.
+    netG.zero_grad()
+    output = netD(fake_images).view(-1) ![4](Images/4.png)
+    errG = criterion(output, real_labels) ![5](Images/5.png)
+    errG.backward() ![6](Images/6.png)
+    D_G_z2 = output.mean().item()
+    optimizerG.step()
+
+    # Save losses for plotting later.
+    G_losses.append(errG.item())
+    D_losses.append(errD.item())
+
+    D_real.append(D_x)
+    D_fake.append(D_G_z2)
+
+  test_images = netG(z).to('cpu').detach() ![7](Images/7.png)
+  test_out_images.append(test_images)
 ```
 
 ①
