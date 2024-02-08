@@ -1,0 +1,1447 @@
+- en: 'Chapter 4\. Building a Reverse Image Search Engine: Understanding Embeddings'
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Bob just bought a new home and is looking to fill it up with some fancy modern
+    furniture. He’s flipping endlessly through furniture catalogs and visiting furniture
+    showrooms, but hasn’t yet landed on something he likes. Then one day, he spots
+    the sofa of his dreams—a unique L-shaped white contemporary sofa in an office
+    reception. The good news is that he knows what he wants. The bad news is that
+    he doesn’t know where to buy it from. The brand and model number is not written
+    on the sofa. Asking the office manager doesn’t help either. So, he takes a few
+    photos from different angles to ask around in local furniture shops, but tough
+    luck: no one knows this particular brand. And searching on the internet with keywords
+    like “white L-shaped,” “modern sofa” gives him thousands of results, but not the
+    one he’s looking for.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Alice hears Bob’s frustration and asks, “Why don’t you try reverse image search?”
+    Bob uploads his images on Google and Bing’s Reverse Image Search and quickly spots
+    a similar-looking image on an online shopping website. Taking this more perfect
+    image from the website, he does a few more reverse image searches and finds other
+    websites offering the same sofa at cheaper prices. After a few minutes of being
+    online, Bob has officially ordered his dream sofa!
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Reverse image search* (or as it is more technically known, *instance retrieval*)
+    enables developers and researchers to build scenarios beyond simple keyword search.
+    From discovering visually similar objects on Pinterest to recommending similar
+    songs on Spotify to camera-based product search on Amazon, a similar class of
+    technology under the hood is used. Sites like TinEye alert photographers on copyright
+    infringement when their photographs are posted without consent on the internet.
+    Even face recognition in several security systems uses a similar concept to ascertain
+    the identity of the person.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The best part is, with the right knowledge, you can build a working replica
+    of many of these products in a few hours. So let’s dig right in!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s what we’re doing in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Performing feature extraction and similarity search on Caltech101 and Caltech256
+    datasets
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Learning how to scale to large datasets (up to billions of images)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Making the system more accurate and optimized
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Analyzing case studies to see how these concepts are used in mainstream products
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Image Similarity
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The first and foremost question is: given two images, are they similar or not?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are several approaches to this problem. One approach is to compare patches
+    of areas between two images. Although this can help find exact or near-exact images
+    (that might have been cropped), even a slight rotation would result in dissimilarity.
+    By storing the hashes of the patches, duplicates of an image can be found. One
+    use case for this approach would be the identification of plagiarism in photographs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another naive approach is to calculate the histogram of RGB values and compare
+    their similarities. This might help find near-similar images captured in the same
+    environment without much change in the contents. For example, in [Figure 4-1](part0006.html#rgb_histogram-based_quotation_marksimila),
+    this technique is used in image deduplication software aimed at finding bursts
+    of photographs on your hard disk, so you can select the best one and delete the
+    rest. Of course, there is an increasing possibility of false positives as your
+    dataset grows. Another downside to this approach is that small changes to the
+    color, hue, or white balance would make recognition more difficult.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![RGB histogram-based “Similar Image Detector” program](../images/00280.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-1\. RGB histogram-based “Similar Image Detector” program
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A more robust traditional computer vision-based approach is to find visual features
+    near edges using algorithms like Scale-Invariant Feature Transform (SIFT), Speeded
+    Up Robust Features (SURF), and Oriented FAST and Rotated BRIEF (ORB) and then
+    compare the number of similar features that are common between the two photos.
+    This helps you go from a generic image-level understanding to a relatively robust
+    object-level understanding. Although this is great for images with rigid objects
+    that have less variation like the printed sides of a box of cereal, which almost
+    always look the same, it’s less helpful for comparing deformable objects like
+    humans and animals, which can exhibit different poses. As an example, you can
+    see the features being displayed on the camera-based product search experience
+    on the Amazon app. The app displays these features in the form of blue dots ([Figure 4-2](part0006.html#product_scanner_in_amazon_app_with_visua)).
+    When it sees a sufficient number of features, it sends them to the Amazon servers
+    to retrieve product information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Product scanner in Amazon app with visual features highlighted](../images/00045.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-2\. Product scanner in Amazon app with visual features highlighted
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Going deeper, another approach is to find the category (e.g., sofa) of an image
+    using deep learning and then find other images within the same category. This
+    is equivalent to extracting metadata from an image so that it can then be indexed
+    and used in a typical text query-based search. This can be easily scaled by using
+    the metadata in open source search engines like ElasticSearch. Many ecommerce
+    sites show recommendations based on tags extracted from an image while performing
+    a query-based search internally. As you would expect, by extracting the tags,
+    we lose certain information like color, pose, relationships between objects in
+    the scene, and so on. Additionally, a major disadvantage of this approach is that
+    it requires enormous volumes of labeled data to train the classifier for extracting
+    these labels on new images. And every time a new category needs to be added, the
+    model needs to be retrained.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because our aim is to search among millions of images, what we ideally need
+    is a way to summarize the information contained in the millions of pixels in an
+    image into a smaller representation (of say a few thousand dimensions), and have
+    this summarized representation be close together for similar objects and further
+    away for dissimilar items.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Luckily, deep neural networks come to the rescue. As we saw in [Chapter 2](part0004.html#3Q283-13fa565533764549a6f0ab7f11eed62b)
+    and [Chapter 3](part0005.html#4OIQ3-13fa565533764549a6f0ab7f11eed62b), the CNNs
+    take an image input and convert it into feature vectors of a thousand dimensions,
+    which then act as input to a classifier that outputs the top identities to which
+    the image might belong (say dog or cat). The *feature vectors* (also called *embeddings*
+    or *bottleneck features*) are essentially a collection of a few thousand floating-point
+    values. Going through the convolution and pooling layers in a CNN is basically
+    an act of reduction, to filter the information contained in the image to its most
+    important and salient constituents, which in turn form the bottleneck features.
+    Training the CNN molds these values in such a way that items belonging to the
+    same class have small Euclidean distance between them (or simply the square root
+    of the sum of squares of the difference between corresponding values) and items
+    from different classes are separated by larger distances. This is an important
+    property that helps solve so many problems where a classifier can’t be used, especially
+    in unsupervised problems because of a lack of adequate labeled data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: An ideal way to find similar images would be to use *transfer learning*. For
+    example, pass the images through a pretrained convolutional neural network like
+    ResNet-50, extract the features, and then use a metric to calculate the error
+    rate like the Euclidean distance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enough talk, let’s code!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Feature Extraction
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: An image is worth a thousand ~~words~~ features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we play with and understand the concepts of feature extraction,
+    primarily with the Caltech 101 dataset (131 MB, approximately 9,000 images), and
+    then eventually with Caltech 256 (1.2 GB, approximately 30,000 images). Caltech
+    101, as the name suggests, consists of roughly 9,000 images in 101 categories,
+    with about 40 to 800 images per category. It’s important to note that there is
+    a 102nd category called “BACKGROUND_Google” consisting of random images not contained
+    in the first 101 categories, which needs to be deleted before we begin experimenting.
+    Remember that all of the code we are writing is also available in the [GitHub
+    repository](http://PracticalDeepLearning.ai).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s download the dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now, import all of the necessary modules:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Load the ResNet-50 model without the top classification layers, so we get only
+    the *bottleneck features.* Then define a function that takes an image path, loads
+    the image, resizes it to proper dimensions supported by ResNet-50, extracts the
+    features, and then normalizes them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The function defined in the previous example is the `key` function that we use
+    for almost every feature extraction need in Keras.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'That’s it! Let’s see the feature-length that the model generates:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: annoy
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: The ResNet-50 model generated 2,048 features from the provided image. Each feature
+    is a floating-point value between 0 and 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If your model is trained or fine tuned on a dataset that is not similar to ImageNet,
+    redefine the “preprocess_input(img)” step accordingly. The mean values used in
+    the function are particular to the ImageNet dataset. Each model in Keras has its
+    own preprocessing function so make sure you are using the right one.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now it’s time to extract features for the entire dataset. First, we get all
+    the filenames with this handy function, which recursively looks for all the image
+    files (defined by their extensions) under a directory:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then, we provide the path to our dataset and call the function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We now define a variable that will store all of the features, go through all
+    filenames in the dataset, extract their features, and append them to the previously
+    defined variable:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: On a CPU, this should take under an hour. On a GPU, only a few minutes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To get a better sense of time, use the super handy tool `tqdm`, which shows
+    a progress meter ([Figure 4-3](part0006.html#progress_bar_shown_with_tqdm_notebook))
+    along with the speed per iteration as well as the time that has passed and expected
+    finishing time. In Python, wrap an iterable with `tqdm;` for example, `tqdm(range(10))`.
+    Its Jupyter Notebook variant is `tqdm_notebook`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Progress bar shown with tqdm_notebook](../images/00322.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-3\. Progress bar shown with `tqdm_notebook`
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Finally, write these features to a pickle file so that we can use them in the
+    future without having to recalculate them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: That’s all folks! We’re done with the feature extraction part.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarity Search
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Given a photograph, our aim is to find another photo in our dataset similar
+    to the current one. We begin by loading the precomputed features:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We’ll use Python’s machine learning library `scikit-learn` for finding *nearest
+    neighbors* of the query features; that is, features that represent a query image.
+    We train a nearest-neighbor model using the brute-force algorithm to find the
+    nearest five neighbors based on Euclidean distance (to install `scikit-learn`
+    on your system, use `pip3 install sklearn)`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now you have both the indices and distances of the nearest five neighbors of
+    the very first query feature (which represents the first image). Notice the quick
+    execution of the first step—the training step. Unlike training most machine learning
+    models, which can take from several minutes to hours on large datasets, instantiating
+    the nearest-neighbor model is instantaneous because at training time there isn’t
+    much processing. This is also called *lazy learning* because all the processing
+    is deferred to classification or inference time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that we know the indices, let’s see the actual image behind that feature.
+    First, we pick an image to query, located at say, index = 0:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 4-4](part0006.html#the_query_image_from_caltech-101_dataset) shows
+    the result.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The query image from Caltech-101 dataset](../images/00294.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-4\. The query image from the Caltech-101 dataset
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now, let’s examine the nearest neighbors by plotting the first result.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 4-5](part0006.html#the_nearest_neighbor_to_our_query_image) shows that
+    result.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The nearest neighbor to our query image](../images/00034.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-5\. The nearest neighbor to our query image
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Wait, isn’t that a duplicate? Actually, the nearest index will be the image
+    itself because that is what is being queried:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This is also confirmed by the fact that the distance of the first result is
+    zero. Now let’s plot the real first nearest neighbor:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: Take a look at the result this time in [Figure 4-6](part0006.html#the_second_nearest_neighbor_of_the_queri).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The second nearest neighbor of the queried image](../images/00213.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-6\. The second nearest neighbor of the queried image
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This definitely looks like a similar image. It captured a similar concept, has
+    the same image category (faces), same gender, and similar background with pillars
+    and vegetation. In fact, it’s the same person!
+  prefs: []
+  type: TYPE_NORMAL
+- en: We would probably use this functionality regularly, so we have already built
+    a helper function `plot_images()` that visualizes several query images with their
+    nearest neighbors. Now let’s call this function to visualize the nearest neighbors
+    of six random images. Also, note that every time you run the following piece of
+    code, the displayed images will be different ([Figure 4-7](part0006.html#nearest_neighbors_for_different_images_r))
+    because the displayed images are indexed by a random integer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Nearest neighbors for different images returns similar-looking images](../images/00179.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-7\. Nearest neighbor for different images returns similar-looking images
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Visualizing Image Clusters with t-SNE
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s step up the game by visualizing the entire dataset!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To do this, we need to reduce the dimensions of the feature vectors because
+    it’s not possible to plot a 2,048-dimension vector (the feature-length) in two
+    dimensions (the paper). The t-distributed stochastic neighbor embedding (t-SNE)
+    algorithm reduces the high-dimensional feature vector to 2D, providing a bird’s-eye
+    view of the dataset, which is helpful in recognizing clusters and nearby images.
+    t-SNE is difficult to scale to large datasets, so it is a good idea to reduce
+    the dimensionality using Principal Component Analysis (PCA) and then call t-SNE:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: We discuss PCA in more detail in later sections. In order to scale to larger
+    dimensions, use Uniform Manifold Approximation and Projection (UMAP).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 4-8](part0006.html#t-sne_visualizing_clusters_of_image_feat) shows
+    clusters of similar classes, and how they are spread close to one another.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![t-SNE visualizing clusters of image features, each cluster represented one
+    object class in the same color](../images/00136.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-8\. t-SNE visualizing clusters of image features, where each cluster
+    represents one object class in the same color
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Each color in [Figure 4-8](part0006.html#t-sne_visualizing_clusters_of_image_feat)
+    indicates a different class. To make it even more clear, we can use another helper
+    function, `plot_images_in_2d()`, to plot the images in these clusters, as demonstrated
+    in [Figure 4-9](part0006.html#t-sne_visualizations_showing_image_clust).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![t-SNE visualizations showing image clusters; similar images are in the same
+    cluster](../images/00036.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-9\. t-SNE visualization showing image clusters; similar images are
+    in the same cluster
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Neat! There is a clearly demarcated cluster of human faces, flowers, vintage
+    cars, ships, bikes, and a somewhat spread-out cluster of land and marine animals.
+    There are lots of images on top of one another, which makes [Figure 4-9](part0006.html#t-sne_visualizations_showing_image_clust)
+    a tad bit confusing, so let’s try to plot the t-SNE as clear tiles with the helper
+    function `tsne_to_grid_plotter_manual()`, the results of which you can see in
+    [Figure 4-10](part0006.html#t-sne_visualization_with_tiled_imagessem).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![t-SNE visualization with tiled images; similar images are close together](../images/00011.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-10\. t-SNE visualization with tiled images; similar images are close
+    together
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This is definitely much clearer. We can see similar images are colocated within
+    the clusters of human faces, chairs, bikes, airplanes, ships, laptops, animals,
+    watches, flowers, tilted minarets, vintage cars, anchor signs, and cameras, all
+    close to their own kind. Birds of a feather indeed do flock together!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 2D clusters are great, but visualizing them in 3D would look stellar. It would
+    be even better if they could be rotated, zoomed in and out, and manipulated using
+    the mouse without any coding. And bonus points if the data could be searched interactively,
+    revealing its neighbors. The [TensorFlow Embedding projector](https://projector.tensorflow.org)
+    does all this and more in a browser-based GUI tool. The preloaded embeddings from
+    image and text datasets are helpful in getting a better intuition of the power
+    of embeddings. And, as [Figure 4-11](part0006.html#tensorflow_embedding_projector_showing_a)
+    shows, it’s reassuring to see deep learning figure out that John Lennon, Led Zeppelin,
+    and Eric Clapton happen to be used in a similar context to the Beatles in the
+    English language.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![TensorFlow Embedding projector showing a 3D representation of common 10,000
+    English words and highlighting related words to “Beatles”](../images/00320.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-11\. TensorFlow Embedding projector showing a 3D representation of
+    10,000 common English words and highlighting words related to “Beatles”
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Improving the Speed of Similarity Search
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are several opportunities to improve the speed of the similarity search
+    step. For similarity search, we can make use of two strategies: either reduce
+    the feature-length, or use a better algorithm to search among the features. Let’s
+    examine each of these strategies individually.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Length of Feature Vectors
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Ideally, we would expect that the smaller the amount of data in which to search,
+    the faster the search should be. Recall that the ResNet-50 model gives 2,048 features.
+    With each feature being a 32-bit floating-point, each image is represented by
+    an 8 KB feature vector. For a million images, that equates to nearly 8 GB. Imagine
+    how slow it would be to search among 8 GB worth of features. To give us a better
+    picture of our scenario, [Table 4-1](part0006.html#top_1percent_accuracy_and_feature_length)
+    gives the feature-lengths that we get from different models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4-1\. Top 1% accuracy and feature-lengths for different CNN models
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Model** | **Bottleneck feature-length** | **Top-1% accuracy on ImageNet**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| VGG16 | 512 | 71.5% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| VGG19 | 512 | 72.7% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MobileNet | 1024 | 66.5% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| InceptionV3 | 2048 | 78.8% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ResNet-50 | 2048 | 75.9% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Xception | 2048 | 79.0% |'
+  prefs: []
+  type: TYPE_TB
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Under the hood, many models available in `tf.keras.applications` yield several
+    thousand features. For example, InceptionV3 yields features in the shape of 1
+    x 5 x 5 x 2048, which translates to 2,048 feature maps of 5 x 5 convolutions,
+    resulting in a total of 51,200 features. Hence, it becomes essential to reduce
+    this large vector by using an average or max-pooling layer. The pooling layer
+    will condense each convolution (e.g., 5 x 5 layer) into a single value. This can
+    be defined during model instantiation as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: For models that yield a large number of features, you will usually find that
+    all code examples make use of this pooling option. [Table 4-2](part0006.html#number_of_features_before_and_after_pool)
+    shows the before and after effect of max pooling on the number of features in
+    different models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4-2\. Number of features before and after pooling for different models
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Model** | **# features before pooling** | **# features after pooling**
+    |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ResNet-50 | [1,1,1,2048] = 2048 | 2048 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| InceptionV3 | [1,5,5,2048] = 51200 | 2048 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| MobileNet | [1,7,7,1024] = 50176 | 1024 |'
+  prefs: []
+  type: TYPE_TB
+- en: As we can see, almost all the models generate a large number of features. Imagine
+    how much faster the search would be if we could reduce to a mere 100 features
+    (a whopping reduction of 10 to 20 times!) without compromising the quality of
+    the results. Apart from just the size, this is an even bigger improvement for
+    big data scenarios, for which the data can be loaded into RAM all at once instead
+    of periodically loading parts of it, thus giving an even bigger speedup. PCA will
+    help us make this happen.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reducing Feature-Length with PCA
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: PCA is a statistical procedure that questions whether features representing
+    the data are equally important. Are some of the features redundant enough that
+    we can get similar classification results even after removing those features?
+    PCA is considered one of the go-to techniques for dimensionality reduction. Note
+    that it does not eliminate redundant features; rather, it generates a new set
+    of features that are a linear combination of the input features. These linear
+    features are orthogonal to one another, which is why all the redundant features
+    are absent. These features are known as *principal components.*
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Performing PCA is pretty simple. Using the `scikit-learn` library, execute
+    the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'PCA can also tell us the relative importance of each feature. The very first
+    dimension has the most variance and the variance keeps on decreasing as we go
+    on:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: Hmm, why did we pick 100 dimensions from the original 2,048? Why not 200? PCA
+    is representing our original feature vector but in reduced dimensions. Each new
+    dimension has diminishing returns in representing the original vector (i.e., the
+    new dimension might not explain the data much) and takes up valuable space. We
+    can balance between how well the original data is explained versus how much we
+    want to reduce it. Let’s visualize the importance of say the first 200 dimensions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[Figure 4-12](part0006.html#variance_for_each_pca_dimension) presents the results.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Variance for each PCA dimension](../images/00262.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-12\. Variance for each PCA dimension
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The individual variance will tell us how important the newly added features
+    are. For example, after the first 100 dimensions, the additional dimensions don’t
+    add much variance (almost equal to 0) and can be neglected. Without even checking
+    the accuracy it is safe to assume that the PCA with 100 dimensions will be a robust
+    model. Another way to look at this is to visualize how much of the original data
+    is explained by the limited number of features by finding the cumulative variance
+    (see [Figure 4-13](part0006.html#cumulative_variance_with_each_pca_dimens)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Cumulative variance with each PCA dimension](../images/00237.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-13\. Cumulative variance with each PCA dimension
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As expected, adding 100 dimensions (from 100 to 200) adds only 0.1 variance
+    and begins to gradually plateau. For reference, using the full 2,048 features
+    would result in a cumulative variance of 1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The number of dimensions in PCA is an important parameter that we can tune
+    to the problem at hand. One way to directly justify a good threshold is to find
+    a good balance between the number of features and its effect on accuracy versus
+    speed:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We visualize these results using the graph in [Figure 4-14](part0006.html#test_time_versus_accuracy_for_each_pca_d)
+    and see that after a certain number of dimensions an increase in dimensions does
+    not lead to higher accuracy:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Test time versus accuracy for each PCA dimension](../images/00191.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-14\. Test time versus accuracy for each PCA dimension
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As is visible in the graph, there is little improvement in accuracy after increasing
+    beyond a feature-length of 100 dimensions. With almost 20 times fewer dimensions
+    (100) than the original (2,048), this offers drastically higher speed and less
+    time on almost any search algorithm, while achieving similar (and sometimes slightly
+    better) accuracy. Hence, 100 would be an ideal feature-length for this dataset.
+    This also means that the first 100 dimensions contain the most information about
+    the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a number of benefits to using this reduced representation, like efficient
+    use of computational resources, noise removal, better generalization due to fewer
+    dimensions, and improved performance for machine learning algorithms learning
+    on this data. By reducing the distance calculation to the most important features,
+    we can also improve the result accuracy slightly. This is because previously all
+    the 2,048 features were contributing equally in the distance calculation, whereas
+    now, only the most important 100 features get their say. But, more importantly,
+    it saves us from the *curse of dimensionality*. It’s observed that as the number
+    of dimensions increases, the ratio of the Euclidean distance between the two closest
+    points and the two furthest points tends to become 1\. In very high-dimensional
+    space, the majority of points from a real-world dataset seem to be a similar distance
+    away from one another, and the Euclidean distance metric begins to fail in discerning
+    similar versus dissimilar items. PCA helps bring sanity back.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also experiment with different distances like Minkowski distance, Manhattan
+    distance, Jaccardian distance, and weighted Euclidean distance (where the weight
+    is the contribution of each feature as explained in `pca.explained_variance_ratio_`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, let’s turn our minds toward using this reduced set of features to make
+    our search even faster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scaling Similarity Search with Approximate Nearest Neighbors
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: What do we want? Nearest neighbors. What is our baseline? Brute-force search.
+    Although convenient to implement in two lines, it goes over each element and hence
+    scales linearly with data size (number of items as well as the number of dimensions).
+    Having PCA take our feature vector from a length of 2,048 to 100 will not only
+    yield a 20-times reduction in data size, but also result in an increase in speed
+    of 20 times when using brute force. PCA does pay off!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s assume similarity searching a small collection of 10,000 images, now represented
+    with 100 feature-length vectors, takes approximately 1 ms. Even though this looks
+    fast for 10,000 items, in a real production system with larger data, perhaps 10
+    million items, this will take more than a second to search. Our system might not
+    be able to fulfill more than one query per second per CPU core. If you receive
+    100 requests per second from users, even running on multiple CPU cores of the
+    machine (and loading the search index per thread), you would need multiple machines
+    to be able to serve the traffic. In other words, an inefficient algorithm means
+    money, lots of money, spent on hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Brute force is our baseline for every comparison. As in most algorithmic approaches,
+    brute force is the slowest approach. Now that we have our baseline set, we will
+    explore approximate nearest-neighbor algorithms. Instead of guaranteeing the correct
+    result as with the brute-force approach, approximation algorithms *generally*
+    get the correct result because they are...well, approximations. Most of the algorithms
+    offer some form of tuning to balance between correctness and speed. It is possible
+    to evaluate the quality of the results by comparing against the results of the
+    brute-force baseline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Approximate Nearest-Neighbor Benchmark
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: There are several approximate nearest-neighbor (ANN) libraries out there, including
+    well-known ones like Spotify’s Annoy, FLANN, Facebook’s Faiss, Yahoo’s NGT, and
+    NMSLIB. Benchmarking each of them would be a tedious task (assuming you get past
+    installing some of them). Luckily, the good folks at *[ann-benchmarks.com](http://ann-benchmarks.com)*
+    (Martin Aumueller, Erik Bernhardsson, and Alec Faitfull) have done the legwork
+    for us in the form of reproducible benchmarks on 19 libraries on large public
+    datasets. We’ll pick the comparisons on a dataset of feature embeddings representing
+    words (instead of images) called GloVe. This 350 MB dataset consists of 400,000
+    feature vectors representing words in 100 dimensions. [Figure 4-15](part0006.html#comparison_of_ann_libraries_left_parenth)
+    showcases their raw performance when tuned for correctness. Performance is measured
+    in the library’s ability to respond to queries each second. Recall that a measure
+    of correctness is the fraction of top-*n* closest items returned with respect
+    to the real top-*n* closest items. This ground truth is measured by brute-force
+    search.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Comparison of ANN libraries (data from ann-benchmarks.com)](../images/00185.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-15\. Comparison of ANN libraries (data from [ann-benchmarks.com](http://ann-benchmarks.com))
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The strongest performers on this dataset return close to several thousand queries
+    per second at the acceptable 0.8 recall. To put this in perspective, our brute-force
+    search performs under 1 query per second. At the fastest, some of these libraries
+    (like NGT) can return north of 15,000 results per second (albeit at a low recall,
+    making it impractical for usage).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Which Library Should I Use?
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It goes without saying that the library you use will end up depending heavily
+    on your scenario. Each library presents a trade-off between search speed, accuracy,
+    size of index, memory consumption, hardware use (CPU/GPU), and ease of setup.
+    [Table 4-3](part0006.html#ann_library_recommendations) presents a synopsis of
+    different scenarios and recommendations as to which library might be work best
+    for each scenario.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4-3\. ANN library recommendations
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| **Scenario** | **Recommendation** |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| I want to experiment quickly in Python without too much setup but I also
+    care about fast speed. | Use Annoy or NMSLIB |'
+  prefs: []
+  type: TYPE_TB
+- en: '| I have a large dataset (up to 10 million entries or several thousand dimensions)
+    and care utmost about speed. | Use NGT |'
+  prefs: []
+  type: TYPE_TB
+- en: '| I have a ridiculously large dataset (100 million-plus entries) and have a
+    cluster of GPUs, too. | Use Faiss |'
+  prefs: []
+  type: TYPE_TB
+- en: '| I want to set a ground-truth baseline with 100% correctness. Then immediately
+    move to a faster library, impress my boss with the orders of magnitude speedup,
+    and get a bonus. | Use brute-force approach |'
+  prefs: []
+  type: TYPE_TB
+- en: We offer much more detailed examples in code of several libraries on the book’s
+    GitHub website (see [*http://PracticalDeepLearning.ai*](http://PracticalDeepLearning.ai)),
+    but for our purposes here, we’ll showcase our go-to library, Annoy, in detail
+    and compare it with brute-force search on a synthetic dataset. Additionally, we
+    briefly touch on Faiss and NGT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Creating a Synthetic Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'To make an apples-to-apples comparison between different libraries, we first
+    create a million-item dataset composed of random floating-point values with mean
+    0 and variance 1\. Additionally, we pick a random feature vector as our query
+    to find the nearest neighbors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: Brute Force
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'First, we calculate the time for searching with the brute-force algorithm.
+    It goes through the entire data serially, calculating the distance between the
+    query and current item one at a time. We use the `timeit` command for calculating
+    the time. First, we create the search index to retrieve the five nearest neighbors
+    and then search with a query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The `timeit` command is a handy tool. To benchmark the time of a single operation,
+    prefix it with this command. Compared to the time command, which runs a statement
+    for one time, `timeit` runs the subsequent line multiple times to give more precise
+    aggregated statistics along with the standard deviation. By default, it turns
+    off garbage collection, making independent timings more comparable. That said,
+    this might not reflect timings in real production loads where garbage collection
+    is turned on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Annoy
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '[Annoy](https://oreil.ly/1qqfv) (Approximate Nearest Neighbors Oh Yeah) is
+    a C++ library with Python bindings for searching nearest neighbors. Synonymous
+    with speed, it was released by Spotify and is used in production to serve its
+    music recommendations. In contrast to its name, it’s actually fun and easy to
+    use.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To use Annoy, we install it using `pip`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'It’s fairly straightforward to use. First, we build a search index with two
+    hyperparameters: the number of dimensions of the dataset and the number of trees:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now let’s find out the time it takes to search the five nearest neighbors of
+    one image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now that is blazing fast! To put this in perspective, even for our million-item
+    dataset, this can serve almost 28,000 requests on a single CPU core. Considering
+    most CPUs have multiple cores, it should be able to handle more than 100,000 requests
+    on a single system. The best part is that it lets you share the same index in
+    memory between multiple processes. Thus, the biggest index can be equivalent to
+    the size of your overall RAM, making it possible to serve multiple requests on
+    a single system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other benefits include that it generates a modestly sized index. Moreover, it
+    decouples creating indexes from loading them, so you can create an index on one
+    machine, pass it around, and then on your serving machine load it in memory and
+    serve it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Wondering about how many trees to use? More trees give higher precision, but
+    larger indexes. Usually, no more than 50 trees are required to attain the highest
+    precision.
+  prefs: []
+  type: TYPE_NORMAL
+- en: NGT
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Yahoo Japan’s Neighborhood Graph and Tree (NGT) library currently leads most
+    benchmarks and is best suited for large datasets (in millions of items) with large
+    dimensions (in several thousands). Although the library has existed since 2016,
+    its real entry into the industry benchmark scene happened in 2018 with the implementation
+    of the ONNG algorithm (short for Optimization of indexing based on *k*-Nearest
+    Neighbor Graph for proximity). Considering multiple threads might be running NGT
+    on a server, it can place the index in shared memory with the help of memory mapped
+    files, helping to reduce memory usage as well as increase load time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Faiss
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Faiss is Facebook’s efficient similarity search library. It can scale to billions
+    of vectors in RAM on a single server by storing a compressed representation of
+    the vectors (compact quantization codes) instead of the original values. It’s
+    especially suited for dense vectors. It shines particularly on machines with GPUs
+    by storing the index on GPU memory (VRAM). This works on both single-GPU and multi-GPU
+    setups. It provides the ability to configure performance based on search time,
+    accuracy, memory usage, and indexing time. It’s one of the fastest known implementations
+    of ANN search on GPU. Hey, if it’s good enough for Facebook, it’s good enough
+    for most of us (as long as we have enough data).
+  prefs: []
+  type: TYPE_NORMAL
+- en: While showing the entire process is beyond the scope of this book, we recommend
+    installing Faiss using Anaconda or using its Docker containers to quickly get
+    started.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Improving Accuracy with Fine Tuning
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Many of the pretrained models were trained on the ImageNet dataset. Therefore,
+    they provide an incredible starting point for similarity computations in most
+    situations. That said, if you tuned these models to adapt to your specific problem,
+    they would perform even more accurately at finding similar images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this portion of the chapter, we identify the worst-performing categories,
+    visualize them with t-SNE, fine tune, and then see how their t-SNE graph changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What is a good metric to check whether you are indeed getting similar images?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Painful option 1
+  prefs: []
+  type: TYPE_NORMAL
+- en: Go through the entire dataset one image at a time, and manually score whether
+    the returned images indeed look similar.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Happier option 2
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simply calculate accuracy. That is, for an image belonging to category *X*,
+    are the similar images belonging to the same category? We will refer to this similarity
+    accuracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, what are our worst-performing categories? And why are they the worst? To
+    answer this, we have predefined a helper function `worst_classes`. For every image
+    in the dataset, it finds the nearest neighbors using the brute-force algorithm
+    and then returns six classes with the least accuracy. To see the effects of fine
+    tuning, we run our analysis on a more difficult dataset: Caltech-256\. Calling
+    this function unveils the least-accurate classes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: To see why they are performing so poorly on certain classes, we’ve plotted a
+    t-SNE graph to visualize the embeddings in 2D space, which you can see in [Figure 4-16](part0006.html#t-sne_visualization_of_feature_vectors_o).
+    To prevent overcrowding on our plot, we use only 50 items from each of the 6 classes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To enhance the visibility of the graph we can define different markers and different
+    colors for each class. Matplotlib provides a wide variety of [markers](https://oreil.ly/cnoiE)
+    and [colors](https://oreil.ly/Jox4B).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![t-SNE visualization of feature vectors of least accurate classes before fine-tuning](../images/00117.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-16\. t-SNE visualization of feature vectors of least-accurate classes
+    before fine tuning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Aah, these feature vectors are all over the place and on top of one another.
+    Using these feature vectors in other applications such as classification might
+    not be a good idea because it would be difficult to find a clean plane of separation
+    between them. No wonder they performed so poorly in this nearest neighbor–based
+    classification test.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What do you think will be the result if we repeat these steps with the fine-tuned
+    model? We reckon something interesting; let’s take a look at [Figure 4-17](part0006.html#t-sne_visualization_of_feature_v-id00001)
+    to see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![t-SNE visualization of feature vectors of least accurate classes after fine
+    tuning](../images/00078.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-17\. t-SNE visualization of feature vectors of least-accurate classes
+    after fine tuning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This is so much cleaner. With just a little bit of fine tuning as shown in [Chapter 3](part0005.html#4OIQ3-13fa565533764549a6f0ab7f11eed62b),
+    the embeddings begin to group together. Compare the noisy/scattered embeddings
+    of the pretrained models against those of the fine-tuned model. A machine learning
+    classifier would be able to find a plane of separation between these classes with
+    much more ease, hence yielding better classification accuracy as well as more
+    similar images when not using a classifier. And, remember, these were the classes
+    with the highest misclassifications; imagine how nicely the classes with originally
+    higher accuracy would be after fine tuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Previously, the pretrained embeddings achieved 56% accuracy. The new embeddings
+    after fine tuning deliver a whopping 87% accuracy! A little magic goes a long
+    way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The one limitation for fine tuning is the requirement of labeled data, which
+    is not always present. So depending on your use case, you might need to label
+    some amount of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There’s a small unconventional training trick involved, though, which we discuss
+    in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fine Tuning Without Fully Connected Layers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'As we already know, a neural network comprises three parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Convolutional layers, which end up generating the feature vectors
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fully connected layers
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The final classifier layer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Fine tuning, as the name suggests, involves tweaking a neural network lightly
+    to adapt to a new dataset. It usually involves stripping off the fully connected
+    layers (top layers), substituting them with new ones, and then training this newly
+    composed neural network using this dataset. Training in this manner will cause
+    two things:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The weights in all the newly added fully connected layers will be significantly
+    affected.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The weights in the convolutional layers will be only slightly changed.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The fully connected layers do a lot of the heavy lifting to get maximum classification
+    accuracy. As a result, the majority of the network that generates the feature
+    vectors will change insignificantly. Thus, the feature vectors, despite fine tuning,
+    will show little change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our aim is for similar-looking objects to have closer feature vectors, which
+    fine tuning as described earlier fails to accomplish. By forcing all of the task-specific
+    learning to happen in the convolutional layers, we can see much better results.
+    How do we achieve that? *By removing all of the fully connected layers and placing
+    a classifier layer directly after the convolutional layers (which generate the
+    feature vectors).* This model is optimized for similarity search rather than classification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To compare the process of fine tuning a model optimized for classification
+    tasks as opposed to similarity search, let’s recall how we fine tuned our model
+    in [Chapter 3](part0005.html#4OIQ3-13fa565533764549a6f0ab7f11eed62b) for classification:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And here’s how we fine tune our model for similarity search. Note the missing
+    hidden dense layer in the middle:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After fine tuning, to use the `model_similarity_optimized` for extracting features
+    instead of giving probabilities for classes, simply `pop` (i.e., remove) the last
+    layer:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: The key thing to appreciate here is if you used the regular fine-tuning process,
+    we would get lower similarity accuracy than `model_similarity_optimized`. Obviously,
+    we would want to use `model_classification_optimized` for classification scenarios
+    and `model_similarity_optimized` for extracting embeddings for similarity search.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With all this knowledge, you can now make both a fast and accurate similarity
+    system for any scenario you are working on. It’s time to see how the giants in
+    the AI industry build their products.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Siamese Networks for One-Shot Face Verification
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A face verification system is usually trying to ascertain—given two images of
+    faces—whether the two images are of the same person. This is a high-precision
+    binary classifier that needs to robustly work with different lighting, clothing,
+    hairstyles, backgrounds, and facial expressions. To make things more challenging,
+    although there might be images of many people in, for instance an employee database,
+    there might be only a handful of images of the same person available. Similarly,
+    signature identification in banks and product identification on Amazon suffer
+    the same challenge of limited images per item.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'How would you go about training such a classifier? Picking embeddings from
+    a model like ResNet pretrained on ImageNet might not discern these fine facial
+    attributes. One approach is to put each person as a separate class and then train
+    like we usually train a regular network. Two key issues arise:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If we had a million individuals, training for a million categories is not feasible.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Training with a few images per class will lead to overtraining.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Another thought: instead of teaching different categories, we could teach a
+    network to directly compare and decide whether a pair of images are similar or
+    dissimilar by giving guidance on their similarity during training. And this is
+    the key idea behind Siamese networks. Take a model, feed in two images, extract
+    two embeddings, and then calculate the distance between the two embeddings. If
+    the distance is under a threshold, consider them similar, else not. By feeding
+    a pair of images with the associated label, similar or dissimilar, and training
+    the network end to end, the embeddings begin to capture the fine-grained representation
+    of the inputs. This approach, shown in [Figure 4-18](part0006.html#a_siamese_network_for_signature_verifica),
+    of directly optimizing for the distance metric is called *metric learning*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A Siamese network for signature verification; note the same CNN was used
+    for both input images](../images/00058.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-18\. A Siamese network for signature verification; note that the same
+    CNN was used for both input images
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We could extend this idea and even feed three images. Pick one anchor image,
+    pick another positive sample (of the same category), and another negative sample
+    (of a different category). Let’s now train this network to directly optimize for
+    the distance between similar items to be minimized and the distance between dissimilar
+    items to be maximized. This loss function that helps us achieve this is called
+    a *triplet loss* function. In the previous case with a pair of images, the loss
+    function is called a *contrastive loss* function. The triplet loss function tends
+    to give better results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After the network is trained, we need only one reference image of a face for
+    deciding at test time whether the person is the same. This methodology opens the
+    doors for *one-shot learning*. Other common uses include signature and logo recognition.
+    One remarkably creative application by Saket Maheshwary and Hemant Misra is to
+    use a Siamese network for matching résumés with job applicants by calculating
+    the semantic similarity between the two.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Case Studies
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Let’s look at a few interesting examples that show how what we have learned
+    so far is applied in the industry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flickr
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Flickr is one of the largest photo-sharing websites, especially popular among
+    professional photographers. To help photographers find inspiration as well as
+    showcase content the users might find interesting, Flickr produced a similarity
+    search feature based on the same semantic meaning. As demonstrated in [Figure 4-19](part0006.html#similar_patterns_of_a_desert_photo_left),
+    exploring a desert pattern leads to several similarly patterned results. Under
+    the hood, Flickr adopted an ANN algorithm called Locally Optimized Product Quantization
+    (LOPQ), which has been open sourced in Python as well as Spark implementations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Similar patterns of a desert photo (image source: code.flickr.com]](../images/00184.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-19\. Similar patterns of a desert photo ([image source](https://code.flickr.com))
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Pinterest
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Pinterest is an application used widely for its visual search capabilities,
+    more specifically in its features called Similar Pins and Related Pins. Other
+    companies like Baidu and Alibaba have launched similar visual search systems.
+    Also, Zappos, Google Shopping, and [like.com](http://like.com) are using computer
+    vision for recommendation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Within Pinterest “women’s fashion” is one of the most popular themes of pins
+    and the Similar Looks feature ([Figure 4-20](part0006.html#the_similar_looks_feature_of_the_pintere))
+    helps people discover similar products. Additionally, Pinterest also reports that
+    its Related Pins feature increased its repin rate. Not every pin on Pinterest
+    has associated metadata, which makes recommendation a difficult cold-start problem
+    due to lack of context. Pinterest developers solved this cold-start problem by
+    using the visual features for generating the related pins. Additionally, Pinterest
+    implements an incremental fingerprinting service that generates new digital signatures
+    if either a new image is uploaded or if there is feature evolution (due to improvements
+    or modifications in the underlying models by the engineers).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Similar Looks feature of the Pinterest application (image source: Pinterest
+    blog)](../images/00080.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4-20\. The Similar Looks feature of the Pinterest application (image
+    source: Pinterest blog)'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Celebrity Doppelgangers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Website applications like *Celebslike.me*, which went viral in 2015, look for
+    the nearest neighbor among celebrities, as shown in [Figure 4-21](part0006.html#testing_our_friend_pete_warden).
+    A similar viral approach was taken by the Google Arts & Culture app in 2018, which
+    shows the nearest existing portrait to your face. Twins or not is another application
+    with a similar aim.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Testing our friend Pete Warden’s photo (technical lead for mobile and embedded
+    TensorFlow at Google) on the celebslike.me website](../images/00062.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4-21\. Testing our friend Pete Warden’s photo (technical lead for mobile
+    and embedded TensorFlow at Google) on the celebslike.me website
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Spotify
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Spotify uses nearest neighbors for recommending music and creating automatic
+    playlists and radio stations based on the current set of songs being played. Usually,
+    collaborative filtering techniques, which are employed for recommending content
+    like movies on Netflix, are content agnostic; that is, the recommendation happens
+    because large groups of users with similar tastes are watching similar movies
+    or listening to similar songs. This presents a problem for new and not yet popular
+    content because users will keep getting recommendations for existing popular content.
+    This is also referred to as the aforementioned cold-start problem. The solution
+    is to use the latent understanding of the content. Similar to images, we can create
+    feature vectors out of music using MFCC features (Mel Frequency Cepstral Coefficients),
+    which in turn generates a 2D spectrogram that can be thought of as an image and
+    can be used to generate features. Songs are divided into three-second fragments,
+    and their spectrograms are used to generate features. These features are then
+    averaged together to represent the complete song. [Figure 4-22](part0006.html#t-sne_visualization_of_the_distribution)
+    shows artists whose songs are projected in specific areas. We can discern hip-hop
+    (upper left), rock (upper right), pop (lower left), and electronic music (lower
+    right). As already discussed, Spotify uses Annoy in the background.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![t-SNE visualization of the distribution of predicted usage patterns, using
+    latent factors predicted from audio (image source: Deep content-based music recommendation
+    by Aaron van den Oord, Sander Dieleman, Benjamin Schrauwen)](../images/00021.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4-22\. t-SNE visualization of the distribution of predicted usage patterns,
+    using latent factors predicted from audio (image source: “Deep content-based music
+    recommendation” by Aaron van den Oord, Sander Dieleman, Benjamin Schrauwen, NIPS
+    2013)'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Image Captioning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Image captioning is the science of translating an image into a sentence (as
+    illustrated in [Figure 4-23](part0006.html#image_captioning_feature_in_seeing_aicol)).
+    Going beyond just object tagging, this requires a deeper visual understanding
+    of the entire image and relationships between objects. To train these models,
+    an open source dataset called MS COCO was released in 2014, which consists of
+    more than 300,000 images along with object categories, sentence descriptions,
+    visual question-answer pairs, and object segmentations. It serves as a benchmark
+    for a yearly competition to see progress in image captioning, object detection,
+    and segmentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Image captioning feature in Seeing AI: the Talking Camera App for the blind
+    community](../images/00309.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4-23\. Image captioning feature in Seeing AI: the Talking Camera App
+    for the blind community'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A common strategy applied in the first year of the challenge (2015) was to append
+    a language model (LSTM/RNN) with a CNN in such a way that the output of a CNN
+    feature vector is taken as the input to the language model (LSTM/RNN). This combined
+    model was trained jointly in an end-to-end manner, leading to very impressive
+    results that stunned the world. Although every research lab was trying to beat
+    one another, it was later found that doing a simple nearest-neighbor search could
+    yield state-of-the-art results. For a given image, find similar images based on
+    similarity of the embeddings. Then, note the common words in the captions of the
+    similar images, and print the caption containing the most common words. In short,
+    a lazy approach would still beat the state-of-the-art one, and this exposed a
+    critical bias in the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This bias has been coined the *Giraffe-Tree* problem by Larry Zitnick. Do an
+    image search for “giraffe” on a search engine. Look closely: in addition to giraffe,
+    is there grass in almost every image? Chances are you can describe the majority
+    of these images as “A giraffe standing in a grass field.” Similarly, if a query
+    image like the photo on the far left in [Figure 4-24](part0006.html#the_giraffe-tree_problem_left_parenthesi)
+    contains a giraffe and a tree, almost all similar images (right) can be described
+    as “a giraffe standing in the grass, next to a tree.” Even without a deeper understanding
+    of the image, one would arrive at the correct caption using a simple nearest-neighbor
+    search. This shows that to measure the real intelligence of a system, we need
+    more semantically novel/original images in the test set.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![The Giraffe-Tree problem (image source: Measuring Machine Intelligence Through
+    Visual Question Answering, C. Lawrence Zitnick, Aishwarya Agrawal, Stanislaw Antol,
+    Margaret Mitchell, Dhruv Batra, Devi Parikh)](../images/00268.jpeg)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 4-24\. The Giraffe-Tree problem (image source: Measuring Machine Intelligence
+    Through Visual Question Answering, C. Lawrence Zitnick, Aishwarya Agrawal, Stanislaw
+    Antol, Margaret Mitchell, Dhruv Batra, Devi Parikh)'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In short, don’t underestimate a simple nearest-neighbor approach!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Now we are at the end of a successful expedition where we explored locating
+    similar images with the help of embeddings. We took this one level further by
+    exploring how to scale searches from a few thousand to a few billion documents
+    with the help of ANN algorithms and libraries including Annoy, NGT, and Faiss.
+    We also learned that fine tuning the model to your dataset can improve the accuracy
+    and representative power of embeddings in a supervised setting. To top it all
+    off, we looked at how to use Siamese networks, which use the power of embeddings
+    to do one-shot learning, such as for face verification systems. We finally examined
+    how nearest-neighbor approaches are used in various use cases across the industry.
+    Nearest neighbors are a simple yet powerful tool to have in your toolkit.
+  prefs: []
+  type: TYPE_NORMAL
