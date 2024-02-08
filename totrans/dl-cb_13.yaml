@@ -1,0 +1,613 @@
+- en: Chapter 13\. Generating Images with Autoencoders
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In [Chapter 5](ch05.html#text_generation) we explored how we can generate text
+    in the style of an existing corpus, whether the works of Shakespeare or code from
+    the Python standard library, while in [Chapter 12](ch12.html#image_style) we looked
+    at generating images by optimizing the activation of channels in a pretrained
+    network. In this chapter we combine those techniques and build on them to generate
+    images based on examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Generating images based on examples is an area of active research where new
+    ideas and breakthroughs are reported on a monthly basis. The state-of-the-art
+    algorithms, however, are beyond the scope of this book in terms of model complexity,
+    training time, and data needed. Instead, we’ll be working in a somewhat restricted
+    domain: hand-drawn sketches.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll start with looking at Google’s Quick Draw data set. This is the result
+    of an online drawing game and contains many hand-drawn pictures. The drawings
+    are stored in a vector format, so we’ll convert them to bitmaps. We’ll pick sketches
+    with one label: cats.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Based on these cat sketches, we’ll build an autoencoder model that is capable
+    of learning *catness*—it can convert a cat drawing into an internal representation
+    and then generate something similar-looking from that internal representation.
+    We’ll look at visualizing the performance of this network on our cats first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll then switch to a dataset of hand-drawn digits and then move on to *variational
+    autoencoders*. These networks produce dense spaces that are an abstract representation
+    of their inputs from which we can sample. Each sample will result in a realistic
+    looking image. We can even interpolate between points and see how the images gradually
+    change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, we’ll look at *conditional variational autoencoders*, which take into
+    account a label when training and therefore can reproduce images of a certain
+    class in a random fashion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Code related to this chapter can be found in the following notebooks:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 13.1 Importing Drawings from Google Quick Draw
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Where can you get a set of everyday hand drawn images?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use Google Quick Draw’s dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Google Quick Draw](https://quickdraw.withgoogle.com/) is an online game where
+    a user is challenged to draw something and see if an AI can guess what they were
+    trying to create. The game is entertaining, and as a side effect a large database
+    of labeled drawings is produced. Google has made this dataset accessible for anybody
+    wanting to play with machine learning.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The data is available in [a number of formats](https://github.com/googlecreativelab/quickdraw-dataset).
+    We’ll work with a binary-encoded version of the simplified vector drawings. Let’s
+    start by getting all the cats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We’ll collect the images by unpacking them one by one. They are stored in a
+    binary vector format that we’ll draw on an empty bitmap. The drawings start with
+    a 15-byte header, so we just keep processing until our file no longer has at least
+    15 bytes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'A drawing is a list of strokes, each made up of a series of *x* and *y* coordinates.
+    The *x* and *y* coordinates are stored separately, so we need to zip them into
+    a list to feed into the `ImageDraw` object we just created:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Over a hundred thousand drawings of cats are yours.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Harvesting user-generated data using a game is an interesting way to build up
+    a dataset for machine learning. It’s not the first time Google has used this technique—a
+    few years ago it ran the [Google Image Labeler game](http://bit.ly/wiki-gil),
+    where two players that didn’t know each other would label images and get points
+    for matching labels. The results of that game were never made available to the
+    public, though.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are 345 categories in the dataset. In this chapter we’re only using cats,
+    but you could take the rest for a spin to build an image classifier. The dataset
+    has drawbacks, chief among them the fact that not all drawings are finished; the
+    game ends when the AI recognizes the drawing, and for a camel drawing two humps
+    might be enough.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this recipe we rasterized the images ourselves. Google does make a `numpy`
+    array version of the data available where the images have been pre-rasterized
+    to 28×28 pixels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 13.2 Creating an Autoencoder for Images
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Is it possible to automatically represent an image as a fixed-sized vector even
+    if it isn’t labeled?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use an autoencoder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 9](ch09.html#transfer_learning) we saw that we can use a convolutional
+    network to classify an image by having consecutive layers go from pixels to local
+    features to more structural features and finally to an abstract representation
+    of the image that we then can use to predict what the image is about. In [Chapter 10](ch10.html#image_search)
+    we interpreted that abstract representation of the image as a vector in a high-dimensional,
+    semantic space and used the fact that vectors that are close to each other represent
+    similar images as a way to build a reverse image search engine. Finally, in [Chapter 12](ch12.html#image_style)
+    we saw that we can visualize what the activations of the various neurons on different
+    levels in a convolutional network mean.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To do all this we needed the images to be labeled. Only because the network
+    got to see a large number of dogs, cats, and many other things was it able to
+    learn an abstract representation of these in this high-dimensional space. What
+    if we don’t have labels for our images? Or not enough labels to let the network
+    develop an intuition of what is what? In these situations autoencoders can be
+    helpful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The idea behind an autoencoder is to force the network to represent an image
+    as a vector with a certain size and have a loss function based on how accurately
+    the network is able to reproduce the input image from that representation. The
+    input and the expected output are the same, which means we don’t need labeled
+    images. Any set of images will do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The structure of the network is very similar to what we’ve seen before; we
+    take the original image and use a series of convolutional layers and pooling layers
+    to reduce the size and increase the depth until we have a one-dimensional vector
+    that is an abstract representation of that image. But instead of calling it a
+    day and using that vector to predict what the image is, we follow this up with
+    the inverse and go from this abstract representation of the image through a set
+    of *upsampling* layers that do the reverse until we are back with an image again.
+    As our loss function we then take the difference between the input and the output
+    image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can imagine the network architecture as an hourglass. The top and bottom
+    layers represent images. The smallest point in the network is in the middle, and
+    is often referred to as the *latent representation*. We have a latent space with
+    128 entries here, which means that we force the network to represent each 32×32-pixel
+    image using 128 floats. The only way the network can minimize the difference between
+    the input and the output image is by compressing as much information into the
+    latent representation as possible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can train the network as before with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: This should converge fairly rapidly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Autoencoders are an interesting type of neural network since they are capable
+    of learning a compact, lossy representation of their inputs without any supervision.
+    In this recipe we’ve used them on images, but they’ve also successfully been deployed
+    to process text or other data in the form of time series.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are a number of interesting extensions to the autoencoder idea. One of
+    them is the *denoising* autoencoder. The idea here is to ask the network to predict
+    the target image not from itself, but from a damaged version of itself. For example,
+    we could add some random noise to the input images. The loss function would still
+    compare the output of the network with the original (non-noised) input, so the
+    network would effectively learn how to remove noise from the pictures. In other
+    experiments this technique has proven to be useful when it comes to restoring
+    colors to black and white pictures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We used the abstract representation of an image in [Chapter 10](ch10.html#image_search)
+    to create a reverse image search engine, but we needed labels for that. With an
+    autoencoder we don’t need those labels; we can measure the distance between images
+    after the model has trained on nothing but a set of images. It turns out that
+    if we use a denoising autoencoder the performance of our image similarity algorithm
+    increases. The intuition here is that the noise tells the network what not to
+    pay attention to, similarly to how data augmentation works (see [“Preprocessing
+    of Images”](ch01.html#preprocessing-of-images)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 13.3 Visualizing Autoencoder Results
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’d like to get an idea of how well your autoencoder worked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Sample a few random cat pictures from the input and have the model predict those;
+    then render input and output as two rows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s predict some cats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And show them in our notebook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Cats in a row](assets/dlcb_13in01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, the network did pick up on the basic shapes, but doesn’t seem
+    to be very sure about itself, which results in vague icon drawings, almost like
+    shadows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next recipe we’ll see if we can do better.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Since the input and the output of the autoencoder *should* be similar, the best
+    way to check the performance of our network is to just pick some random icons
+    from our validation set and ask the network to reconstruct them. Using PIL to
+    create an image that shows two rows and display it inside of the Jupyter notebook
+    is something we’ve seen before.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the issues with the approach here is that the loss function we are using
+    causes the network to smudge its output. The input drawings contain thin lines,
+    but the output of our model doesn’t. Our model has no incentive to predict sharp
+    lines, because it is uncertain of the exact position of the lines, so it would
+    rather spread its bets and draw vague lines. This way there is a high chance that
+    at least some pixels will be a hit. To improve this, we could try to design a
+    loss function that forces the network to limit the number of pixels it draws,
+    or puts a premium on sharp lines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 13.4 Sampling Images from a Correct Distribution
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How do you make sure that every point in the vector represents a reasonable
+    image?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use a *variational* autoencoder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autoencoders are quite interesting as a way to represent an image as a vector
+    that is much smaller than the image itself. But the space of these vectors is
+    not *dense*; that is, every image has a vector in that space, but not every vector
+    in that space represents a reasonable image. The decoder part of the autoencoder
+    will of course create an image out of any vector, but most of them are just not
+    going to be recognizable. Variational autoencoders do have this property.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this and the following recipes in the chapter we’ll work with the MNIST
+    dataset of handwritten digits, comprised of 60,000 training samples and 10,000
+    test samples. The approach described here does work on icons, but it complicates
+    the model and for decent performance we’d need more icons than we have. If you
+    are interested, there is a working model in the notebook directory. Let’s start
+    by loading the data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: The key idea behind a variational autoencoder is to add a term to the loss function
+    that represents the difference in statistical distribution between the images
+    and the abstract representations. For this we’ll use the Kullback–Leibler divergence.
+    We can think of this as a distance metric for the space of probability distributions,
+    even though it is technically not a distance metric. The [Wikipedia article](http://bit.ly/k-l-d)
+    has the details for those who want to read up on the math.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The basic outline of our model is similar to that of the previous recipe. We
+    start out with an input representing our pixels, force this through some hidden
+    layers, and sample it down to a very small representation. We then work our way
+    up again until we have our pixels back:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The interesting part here is the `z` tensor and the `Lambda` it gets assigned
+    to. This tensor will hold the latent representation of our image, and the `Lambda`
+    uses the `sample_z` method to do the sampling:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is where we randomly sample points with a normal distribution using the
+    two variables `z_mean` and `z_log_var`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now on to our loss function. The first component is the reconstruction loss,
+    which measures the difference between the input pixels and the output pixels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The second thing we need is a component in our loss function that uses the
+    Kullback–Leibler divergence to steer the distribution in the right direction:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We then simply add this up:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And we can compile our model with:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: This will handily also keep track of the individual components of the loss during
+    training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This model is slightly complicated due to the extra loss function and the out-of-band
+    call to `sample_z`; to get a look at the details, it is best viewed in the corresponding
+    notebook. We can now train the model as before:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Once the training is finished, we want to use the results by feeding a random
+    point in the latent space and seeing what image rolls out. We can do this by creating
+    a second model that has as an input the middle layer of our `auto_encoder` model
+    and as output our target image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can now generate a random input and then convert it to a picture:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Randomly generated digit](assets/dlcb_13in02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Variational autoencoders add an important component to autoencoders when it
+    comes to generating images rather than just reproducing images; by making sure
+    that the abstract representations of the images come from a *dense* space where
+    points close to the origin map to likely images, we can now generate images that
+    have the same likelihood distribution as our inputs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The underlying mathematics are a bit beyond the scope of this book. The intuition
+    here is that some images are more “normal” and some are more unexpected. The latent
+    space has the same characteristics, so points that are drawn from close to the
+    origin correspond to images that are “normal,” while more extreme points map to
+    more unlikely images. Sampling from a normal distribution will result in images
+    that have the same mixture of expected and unexpected images as the model saw
+    during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Having dense spaces is nice. It allows us to interpolate between points and
+    still get valid outcomes. For example, if we know that one point in the latent
+    space maps to a 6 and another to an 8, we would expect that the points in between
+    would result in images that morph from 6 to 8\. If we find the same images but
+    in a different style, we can look for images in between with a mixed style. Or
+    we could even go in the other direction and expect to find a more extreme style.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Chapter 3](ch03.html#word_embeddings) we looked at word embeddings, where
+    each word has a vector that projects it into a semantic space, and the sorts of
+    calculations we can do with those. As interesting as that is, since the space
+    is not dense we typically don’t expect to find something between two words that
+    somehow is a compromise between the two—no *mule* between *donkey* and *horse*.
+    Similarly, we can use a pretrained image recognition network to find a vector
+    for a picture of a cat, but the vectors around it don’t all represent variations
+    of cats.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 13.5 Visualizing a Variational Autoencoder Space
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How can you visualize the diversity of images that you can generate from your
+    latent space?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use the two dimensions from the latent space to create a grid of generated images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Visualizing two dimensions from our latent space is straightforward. For higher
+    dimensions we could first try t-SNE to get back to two dimensions. As luck would
+    have it, we were only using two dimensions in the previous recipe, so we can just
+    go through a plane and map each (*x*, *y*) position to a point in the latent space.
+    Since we are using a normal distribution, we’d expect reasonable images to appear
+    in the [–1.5, 1.5] range:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This should get us a nice image of the different digits the network learned:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Randomly generated grid](assets/dlcb_13in03.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: By mapping (*x*, *y*) to our latent space and decoding the results to images
+    we get a nice overview of what our space contains. As we can see, the space is
+    indeed quite dense. Not all points result in digits per se; some, as expected,
+    represent in-between forms. But the model does find a way to distribute the digits
+    in a natural way on the grid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The other thing to note here is that our variational autoencoder does a great
+    job of compressing images. Every input image is represented in the latent space
+    by just 2 floats, while their pixel representations use 28 × 28 = 784 floats.
+    That’s a compression ratio of almost 400, outperforming JPEG by quite a margin.
+    Of course, the compression is rather lossy—a handwritten 5 will after encoding
+    and decoding still look like a handwritten 5 and still be in the same style, but
+    at a pixel level there is no real correspondence. Also, this form of compression
+    is extremely domain-specific. It only works for handwritten digits, while JPEG
+    can be used to compress all sorts of images and photos.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 13.6 Conditional Variational Autoencoders
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How do we generate images of a certain type rather than completely random ones?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use a conditional variational autoencoder.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The autoencoder from the previous two recipes does a great job generating random
+    digits and is also capable of taking in a digit and encoding it in a nice, dense,
+    latent space. But it doesn’t know a 5 from a 3, and so the only way we can get
+    it to generate a random 3 is to first find all the 3s in the latent space and
+    then sample from that subspace. Conditional variational autoencoders help here
+    by taking in the label as an input and then concatenating the label to the latent
+    space vector `z` in the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This does two things. First, it lets the model take the actual label into account
+    when learning the encoding. Second, since it adds the label to the latent space,
+    our decoder will now take both a point in the latent space and a label, which
+    allows us to explicitly ask for a specific digit to be generated. The model now
+    looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We train the model by providing it with both the images and the labels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can now generate an explicit number 4:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Digit four](assets/dlcb_13in04.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Since we specify which digit to generate in a one-hot encoding, we can also
+    ask for something in between two numbers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Which produces indeed something in between:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Digit eight or three](assets/dlcb_13in05.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Another interesting thing to try is to put the digits on the *y*-axis and use
+    the *x*-axis to pick values for one of our latent dimensions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Style and digits](assets/dlcb_13in06.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: As you can see, the latent space expresses the style of the digit and the style
+    is consistent across digits. In this case it seems that it controls how much the
+    digit is slanted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The conditional variational autoencoder marks the final stop on our journey
+    through the various autoencoders. This type of network enables us to map our digits
+    to a dense latent space that is also labeled, allowing us to sample random images
+    while specifying what type they should be.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A side effect of providing the labels to the network is that it now no longer
+    has to learn the numbers, but can focus on the style of the numbers.
+  prefs: []
+  type: TYPE_NORMAL

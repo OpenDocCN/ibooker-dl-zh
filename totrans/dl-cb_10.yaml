@@ -1,0 +1,336 @@
+- en: Chapter 10\. Building an Inverse Image Search Service
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In the previous chapter we saw how to use a pretrained network on our own images,
+    first by running a classifier on top of the network and then in a more complex
+    example in which we trained only part of a network to recognize new classes of
+    images. In this chapter we will use a similar approach to build a reverse image
+    search engine, or a search by example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll start by looking at how we can acquire a good base set of images from
+    Wikipedia by querying Wikidata. We’ll then use a pretrained network to extract
+    values for each of those images to get embeddings. Once we have those embeddings,
+    finding similar images is a mere matter of nearest neighbor search. Finally, we’ll
+    look at principal components analysis (PCA) as a way to visualize relationships
+    between images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The code for this chapter can be found in the following notebook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 10.1 Acquiring Images from Wikipedia
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How do you get a clean set of images from Wikipedia covering the major categories
+    of things?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use Wikidata’s metainformation to find Wikipedia pages that represent a class
+    of things.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Wikipedia contains a great number of pictures that can be used for most purposes.
+    The vast majority of those pictures, though, represent concrete instances, which
+    is not really what we need for a reverse search engine. We want to return a picture
+    representative of a cat as a species, not a specific cat like Garfield.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Wikidata, the structured cousin of Wikipedia, is based around triplets of the
+    form (subject, relation, object) and has a great number of predicates encoded,
+    partly on top of Wikipedia. One of those “instance of” is represented by `P31`.
+    What we are after is a list of images of the objects in the instance-of relationships.
+    We can use the Wikidata query language to ask for this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can call the query backend of Wikidata using requests and unroll the resulting
+    JSON into a list of image references:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The references returned are URLs to the image pages, not the images themselves.
+    Images in the various wiki projects are supposed to be stored in *http://upload.wikimedia.org/wikipedia/commons/*,
+    but unfortunately this isn’t always the case yet—some are still stored in the
+    folder for a specific language. So, we’ll also have to check at least the English
+    folder (*en*). The actual URL for the image is determined by the filename and
+    the first two characters of the `hexdigest` of the MD5 hash of the file name.
+    Caching the image locally helps if we have to do this multiple times:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Even this doesn’t always seem to work. The notebook for this chapter contains
+    some more corner case–handling code to increase the yield of images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now all we need to do is fetch the images. This can take a long time, so we
+    use `tqdm` to show our progress:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Wikidata’s query language is not widely known, but it’s an effective way to
+    access structured data. The example here is quite straightforward, but online
+    you can find more complex queries, for example, to return the largest cities in
+    the world with a female mayor or the most popular surnames for fictional characters.
+    A lot of this data can also be extracted from Wikipedia, but running a Wikidata
+    query is usually faster, more precise, and more fun.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The Wikimedia universe is also a good source for images. There are tens of millions
+    of images available, all with a friendly reuse license. Moreover, using Wikidata
+    we can get access to all kinds of properties for these images. It would be easy
+    to expand this recipe to return not just the image URLs, but also the names of
+    the objects in the images in a language of our choice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The `fetch_image` function described here works most of the time, but not always.
+    We can improve upon this by fetching the contents of the URL returned from the
+    Wikidata query and extracting the `<img>` tag from the HTML code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 10.2 Projecting Images into an N-Dimensional Space
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Given a set of images, how do you organize them such that images that look similar
+    are near each other?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Treat the weights of the last-but-one layer of an image recognition net as image
+    embeddings. This layer is connected directly to the `softmax` layer that draws
+    the conclusions. Anything that the network thinks is a cat should therefore have
+    similar values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s load and instantiate the pretrained network. We’ll use Inception again—let’s
+    peek at its structure using `.summary()`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As you can see, we need the `avg_pool` layer, which has a size of 2,048:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we can run the model on an image or a set of images:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'and index the images we acquired in the previous recipe in chunks (of course,
+    if you have enough memory, you can try to do the entire shot in one go):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this recipe we used the last-but-one layer of the network to extract the
+    embeddings. Since this layer is directly connected to the `softmax` layer that
+    determines the actual output layers, we expect the weights to form a semantic
+    space that puts all the cat images in roughly the same space. But what happens
+    if we pick a different layer?
+  prefs: []
+  type: TYPE_NORMAL
+- en: One way to think about convolutional networks that do image recognition is to
+    treat the successive layers as feature detectors of increasing levels of abstraction.
+    The lowest level works directly on the pixel values and will detect very local
+    patterns. The last layer detects concepts like “catness.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: Picking a lower layer should result in similarity on a lower level of abstractness,
+    so instead of returning things that are cat-like, we would expect to see images
+    that have similar textures.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 10.3 Finding Nearest Neighbors in High-Dimensional Spaces
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How do you find the points that are closest to each other in a high-dimensional
+    space?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use scikit-learn’s *k*-nearest neighbors implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The *k*-nearest neighbors algorithm builds a model that can quickly return
+    nearest neighbors. It does so with some loss of accuracy, but is much faster than
+    doing the precise calculations. Effectively, it builds a distance index on our
+    vectors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'With this distance index we can now quickly return near matches from our set
+    of images given an input image. We have arrived at our reverse image search implementation!
+    Let’s put it all together to find more cats:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And display the top results using inline HTML images:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: You should see a nice list of images dominated by cats!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Fast computation of nearest neighbors is an active area of research in machine
+    learning. The most naive neighbor search implementation involves the brute-force
+    computation of distances between all pairs of points in the dataset, which quickly
+    gets out of hand if we have a large number of points in a high-dimensional space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scikit-learn provides us with a number of algorithms that precalculate a tree
+    that can help us find nearest neighbors fast, at the cost of some memory. The
+    different approaches are discussed in [the documentation](http://scikit-learn.org/stable/modules/neighbors.html),
+    but the general approach is to use an algorithm to recursively split the space
+    into subspaces, this way building a tree. This allows us to quickly identify which
+    subspaces to check when looking for neighbors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 10.4 Exploring Local Neighborhoods in Embeddings
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Problem
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’d like to explore what local clusters of images look like.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Solution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Use principal component analysis to find the dimensions among a local set of
+    images that discriminate the most between images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example, let’s say we have the 64 images that are the closest match to
+    our cat image:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'PCA allows us to reduce the dimensionality of a space in such a way that the
+    original space can be constructed with as little loss as possible. If we reduce
+    the dimensionality to two, PCA will find the plane that the examples provided
+    can be projected upon with as little loss as possible. If we then look at where
+    the examples landed on that plane, we get a good idea of the structure of the
+    local neighborhood. `TruncatedSVD` is the implementation we’ll use in this case:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`vectors64_transformed` now has a shape of 64×2\. We are going to draw the
+    64 images on an 8×8 grid with a cell size of 75×75\. Let’s start by normalizing
+    the coordinates onto a 0 to 1 scale:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we can draw and display the local area:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![Tile images of a local cluster](assets/dlcb_10in01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: We see a cat image roughly in the middle, with one corner dominated by animals
+    and the rest of the images matched because of other reasons. Note that we plot
+    over existing images, so the grid won’t actually be filled completely.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discussion
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In [Recipe 3.3](ch03.html#visualizing-word-embeddings) we used t-SNE to fold
+    a higher-dimensional space into a two-dimensional plane. In this recipe we used
+    principal component analysis instead. The two algorithms accomplish the same thing,
+    reducing the dimensions of a space, but do so in different ways.
+  prefs: []
+  type: TYPE_NORMAL
+- en: t-SNE tries to keep the distances between points in the space the same, despite
+    the reduction of dimensionality. Some information is of course lost in this transformation,
+    so we can make a choice as to whether we want to try to keep clusters locally
+    intact (distances between points that were close to each other in the higher dimensions
+    are kept similar) or keep distances between clusters intact (distances between
+    points that were far from each other in the higher dimensions are kept similar).
+  prefs: []
+  type: TYPE_NORMAL
+- en: PCA tries to find an *N*-dimensional hyperplane that is the closest possible
+    to all the items in the space. If *N* is 2, we’re talking about a normal plane,
+    and so it tries to find the plane in our high-dimensional space that is closest
+    to all images. In other words, it captures the two most important dimensions (the
+    principal components), which we then use to visualize the cat space.
+  prefs: []
+  type: TYPE_NORMAL
