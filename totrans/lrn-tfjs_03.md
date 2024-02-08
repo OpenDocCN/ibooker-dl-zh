@@ -1,4 +1,4 @@
-# 第二章。介绍 TensorFlow.js
+# 第二章：介绍 TensorFlow.js
 
 > “如果你的行动激励他人梦想更多，学习更多，
 > 

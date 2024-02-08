@@ -1,4 +1,4 @@
-# 第八章\. PyTorch 在生产中
+# 第八章：PyTorch 在生产中
 
 现在您已经学会了如何使用 PyTorch 对图像、文本和声音进行分类，下一步是看看如何将 PyTorch 应用程序部署到生产环境中。在本章中，我们创建应用程序，通过 HTTP 和 gRPC 在 PyTorch 模型上运行推断。然后，我们将这些应用程序打包到 Docker 容器中，并将它们部署到在 Google Cloud 上运行的 Kubernetes 集群中。
 

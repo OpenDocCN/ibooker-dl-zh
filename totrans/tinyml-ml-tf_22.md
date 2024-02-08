@@ -1,4 +1,4 @@
-# 附录 A. 使用和生成 Arduino 库 Zip
+# 附录 A：使用和生成 Arduino 库 Zip
 
 Arduino IDE 要求源文件以一定的方式打包。TensorFlow Lite for Microcontrollers Makefile 知道如何为您做这件事，并且可以生成一个包含所有源文件的*.zip*文件，您可以将其导入到 Arduino IDE 作为库。这将允许您构建和部署您的应用程序。
 
