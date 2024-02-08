@@ -171,21 +171,21 @@ _________________________________________________________________
 
 ```py
 // Inputs
-const xs = tf.tensor([-1, 0, 1, 2, 3, 4]); 1
+const xs = tf.tensor([-1, 0, 1, 2, 3, 4]); // ①
 // Answers we want from inputs
 const ys = tf.tensor([-4, -2, 0, 2, 4, 6]);
 
 // Create a model
-const model = tf.sequential(); 2
+const model = tf.sequential(); // ②
 
-model.add( 3
+model.add( // ③
   tf.layers.dense({
     inputShape: 1,
     units: 1
   })
 );
 
-model.compile({ 4
+model.compile({ // ④
   optimizer: "sgd",
   loss: "meanSquaredError"
 });
@@ -194,12 +194,12 @@ model.compile({ 4
 model.summary();
 
 // Train
-model.fit(xs, ys, { epochs: 300 }).then(history => { 5
+model.fit(xs, ys, { epochs: 300 }).then(history => { // ⑤
   const inputTensor = tf.tensor([10]);
-  const answer = model.predict(inputTensor); 6
+  const answer = model.predict(inputTensor); // ⑥
   console.log(`10 results in ${Math.round(answer.dataSync())}`);
   // cleanup
-  tf.dispose([xs, ys, model, answer, inputTensor]); 7
+  tf.dispose([xs, ys, model, answer, inputTensor]); // ⑦
 });
 ```
 
@@ -302,7 +302,19 @@ const ys = tf.tensor(jsys);
 要添加这一层并为其提供激活函数，您将在序列中指定一个新的密集层：
 
 ```py
-model.add(tf.layers.dense({inputShape: 1,①units: 20,②activation:"relu"③}));model.add(tf.layers.dense({units: 1④}));
+model.add(
+  tf.layers.dense({
+    inputShape: 1, // ①
+    units: 20, // ②
+    activation: "relu" // ③
+  })
+);
+
+model.add(
+  tf.layers.dense({
+    units: 1 // ④
+  })
+);
 ```
 
 ①
@@ -352,7 +364,11 @@ TensorFlow.js 拥有各种令人惊奇的工具，可帮助您识别训练进度
 由于您已经熟悉一个 epoch（对训练数据的完整运行），这是您在本例中将使用的时刻。这是一个简洁但有效的获取某种控制台消息的方法。
 
 ```py
-constprintCallback={①onEpochEnd:(epoch,log)=>{②console.log(epoch,log);③}};
+const printCallback = { // ①
+  onEpochEnd: (epoch, log) => { // ②
+    console.log(epoch, log); // ③
+  }
+};
 ```
 
 ①
@@ -426,7 +442,11 @@ model.compile({
 情况看起来不错，但还有一个功能我们应该添加，有时可以显著缩短训练时间。在一台相当不错的机器上，这 100 个时期大约需要 100 秒才能运行。您可以通过一行批处理数据来加快训练速度。当您将`batchSize`属性分配给`fit`配置时，训练速度会大大加快。尝试在 fit 调用中添加批处理大小：
 
 ```py
-awaitmodel.fit(xs,ys,{epochs: 100,callbacks: printCallback,batchSize: 64①});
+await model.fit(xs, ys, {
+  epochs: 100,
+  callbacks: printCallback,
+  batchSize: 64  // ①
+});
 ```
 
 ①
