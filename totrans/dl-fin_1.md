@@ -1,4 +1,4 @@
-# 第2章。深度学习的基本概率方法
+# 第二章。深度学习的基本概率方法
 
 技术的兴起和可访问性使每个人都能够部署机器学习和深度学习算法进行数据分析和优化。但不幸的是，这意味着许多用户不了解不同学习模型的基础和基础知识。这使得机器学习对他们来说简直就是一个黑匣子，这是一场灾难的前兆。
 
@@ -30,7 +30,7 @@
 
 决策树
 
-*决策树*是一种借鉴了条件概率等概率概念的机器学习算法，本章涵盖了这个概念。更详细的内容，决策树在第7章中有详细介绍。
+*决策树*是一种借鉴了条件概率等概率概念的机器学习算法，本章涵盖了这个概念。更详细的内容，决策树在第七章中有详细介绍。
 
 信息论
 
@@ -44,13 +44,13 @@
 
 +   离散随机变量的一个例子是掷骰子的结果。它们受以下集合的限制{1, 2, 3, 4, 5, 6}。
 
-+   连续随机变量的一个例子是EURUSD的每日价格回报（1欧元兑换美元的汇率）。
++   连续随机变量的一个例子是 EURUSD 的每日价格回报（1 欧元兑换美元的汇率）。
 
 随机变量由*概率分布*描述，这是给出这些随机变量的每个可能值的概率的函数。通常，直方图用于显示概率。直方图绘制将在本章后面讨论。
 
-在任何时刻，某个事件发生的概率在0和1之间。这意味着概率被分配给随机变量，范围在0到1之间，其中概率为0表示发生的机会为零，概率为1表示发生的确定性。
+在任何时刻，某个事件发生的概率在 0 和 1 之间。这意味着概率被分配给随机变量，范围在 0 到 1 之间，其中概率为 0 表示发生的机会为零，概率为 1 表示发生的确定性。
 
-您也可以将其以百分比表示，范围从0%到100%。这两个数字之间的值是有效的，这意味着某个事件发生的概率可以是0.5133（51.33%）。考虑掷一个有六个面的骰子。在不以任何方式操纵骰子的情况下，得到3的概率是多少？
+您也可以将其以百分比表示，范围从 0%到 100%。这两个数字之间的值是有效的，这意味着某个事件发生的概率可以是 0.5133（51.33%）。考虑掷一个有六个面的骰子。在不以任何方式操纵骰子的情况下，得到 3 的概率是多少？
 
 由于骰子有六个面，每个结果有六个相等的概率，这意味着对于任何结果，概率如下找到：
 
@@ -60,7 +60,7 @@
 
 <math alttext="upper P left-parenthesis 3 right-parenthesis equals one-sixth equals 0.167"><mrow><mi>P</mi> <mrow><mo>(</mo> <mn>3</mn> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>1</mn> <mn>6</mn></mfrac></mstyle> <mo>=</mo> <mn>0</mn> <mo>.</mo> <mn>167</mn></mrow></math>
 
-掷骰子时，只能有一个结果。它不能同时给出3和4，因为一面必须占优势。这就是*互斥性*的概念。互斥事件（例如在掷骰子时得到3或得到4）最终总和为1。看看以下例子：
+掷骰子时，只能有一个结果。它不能同时给出 3 和 4，因为一面必须占优势。这就是*互斥性*的概念。互斥事件（例如在掷骰子时得到 3 或得到 4）最终总和为 1。看看以下例子：
 
 <math alttext="upper P left-parenthesis 1 right-parenthesis equals one-sixth equals 0.167"><mrow><mi>P</mi> <mrow><mo>(</mo> <mn>1</mn> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>1</mn> <mn>6</mn></mfrac></mstyle> <mo>=</mo> <mn>0</mn> <mo>.</mo> <mn>167</mn></mrow></math>
 
@@ -74,15 +74,15 @@
 
 <math alttext="upper P left-parenthesis 6 right-parenthesis equals one-sixth equals 0.167"><mrow><mi>P</mi> <mrow><mo>(</mo> <mn>6</mn> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>1</mn> <mn>6</mn></mfrac></mstyle> <mo>=</mo> <mn>0</mn> <mo>.</mo> <mn>167</mn></mrow></math>
 
-将所有这些互斥事件相加得到1，这意味着六面骰子中可能概率的总和如下：
+将所有这些互斥事件相加得到 1，这意味着六面骰子中可能概率的总和如下：
 
 <math alttext="upper P left-parenthesis 1 right-parenthesis plus upper P left-parenthesis 2 right-parenthesis plus upper P left-parenthesis 3 right-parenthesis plus upper P left-parenthesis 4 right-parenthesis plus upper P left-parenthesis 5 right-parenthesis plus upper P left-parenthesis 6 right-parenthesis equals 1"><mrow><mi>P</mi> <mo>(</mo> <mn>1</mn> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mn>2</mn> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mn>3</mn> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mn>4</mn> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mn>5</mn> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mn>6</mn> <mo>)</mo> <mo>=</mo> <mn>1</mn></mrow></math>
 
 ###### 注
 
-声明随机变量有0.8的发生概率等同于声明相同变量有0.2的不发生概率。
+声明随机变量有 0.8 的发生概率等同于声明相同变量有 0.2 的不发生概率。
 
-概率测量可以是条件的或无条件的。*条件概率*是指事件发生影响另一个事件发生的概率。例如，鉴于积极的就业数据，主权利率上涨的概率是条件概率的一个例子。给定事件B发生的情况下事件A发生的概率由以下数学符号表示：*P(A|B)*
+概率测量可以是条件的或无条件的。*条件概率*是指事件发生影响另一个事件发生的概率。例如，鉴于积极的就业数据，主权利率上涨的概率是条件概率的一个例子。给定事件 B 发生的情况下事件 A 发生的概率由以下数学符号表示：*P(A|B)*
 
 相比之下，*无条件概率*不依赖于其他事件。以条件概率为例，您可以制定一个无条件概率计算，该计算测量利率上涨的概率，而不考虑其他经济事件。
 
@@ -90,7 +90,7 @@
 
 <math alttext="upper P left-parenthesis upper A upper B right-parenthesis equals upper P left-parenthesis upper A vertical-bar upper B right-parenthesis times upper P left-parenthesis upper B right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <mi>A</mi> <mi>B</mi> <mo>)</mo> <mo>=</mo> <mi>P</mi> <mo>(</mo> <mi>A</mi> <mo>|</mo> <mi>B</mi> <mo>)</mo> <mo>×</mo> <mi>P</mi> <mo>(</mo> <mi>B</mi> <mo>)</mo></mrow></math>
 
-该公式表示的是A和B同时发生的概率是A在B发生的情况下发生的概率乘以B发生的概率。因此，等式的右侧将一个条件概率乘以一个无条件概率。
+该公式表示的是 A 和 B 同时发生的概率是 A 在 B 发生的情况下发生的概率乘以 B 发生的概率。因此，等式的右侧将一个条件概率乘以一个无条件概率。
 
 *加法规则*用于确定至少发生两个结果中的一个的概率。这有两种方式：第一种处理互斥事件，第二种处理非互斥事件：
 
@@ -106,19 +106,19 @@
 
 <math alttext="upper P left-parenthesis upper A o r upper B right-parenthesis equals upper P left-parenthesis upper A right-parenthesis plus upper P left-parenthesis upper B right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <mi>A</mi> <mi>o</mi> <mi>r</mi> <mi>B</mi> <mo>)</mo> <mo>=</mo> <mi>P</mi> <mo>(</mo> <mi>A</mi> <mo>)</mo> <mo>+</mo> <mi>P</mi> <mo>(</mo> <mi>B</mi> <mo>)</mo></mrow></math>
 
-注意，在互斥事件中，只能实现A或B，因此两者都发生的概率为零。要理解为什么需要减去A和B的联合概率，请看图2-1。
+注意，在互斥事件中，只能实现 A 或 B，因此两者都发生的概率为零。要理解为什么需要减去 A 和 B 的联合概率，请看图 2-1。
 
-![](Images/dlf_0333.png)
+![](img/dlf_0333.png)
 
-###### 图2-1。概率的加法规则
+###### 图 2-1。概率的加法规则
 
-注意，当A或B发生的概率互斥时，必须不包括它们的联合概率。现在让我们来看看独立事件的概念。
+注意，当 A 或 B 发生的概率互斥时，必须不包括它们的联合概率。现在让我们来看看独立事件的概念。
 
 *独立事件*不相互关联（例如，掷骰子两次）。联合概率计算如下：
 
 <math alttext="upper P left-parenthesis upper A upper B right-parenthesis equals upper P left-parenthesis upper A right-parenthesis times upper P left-parenthesis upper B right-parenthesis"><mrow><mi>P</mi> <mo>(</mo> <mi>A</mi> <mi>B</mi> <mo>)</mo> <mo>=</mo> <mi>P</mi> <mo>(</mo> <mi>A</mi> <mo>)</mo> <mo>×</mo> <mi>P</mi> <mo>(</mo> <mi>B</mi> <mo>)</mo></mrow></math>
 
-因此，独立事件指的是一个事件的发生对其他事件的发生绝对没有影响。现在，让我们看一个例子来验证这些概念。考虑一个简单的抛硬币。得到正面的概率不取决于您在上一个抛硬币中得到的结果。因此，得到正面的概率始终为0.50（50%）。更进一步，连续五次抛硬币后只得到正面的概率是多少？
+因此，独立事件指的是一个事件的发生对其他事件的发生绝对没有影响。现在，让我们看一个例子来验证这些概念。考虑一个简单的抛硬币。得到正面的概率不取决于您在上一个抛硬币中得到的结果。因此，得到正面的概率始终为 0.50（50%）。更进一步，连续五次抛硬币后只得到正面的概率是多少？
 
 由于每个事件的概率与前一个或下一个事件是独立的，因此公式如下：
 
@@ -128,9 +128,9 @@
 
 <math alttext="upper E left-parenthesis upper X right-parenthesis equals sigma-summation Underscript i equals 1 Overscript n Endscripts left-parenthesis upper P left-parenthesis x Subscript i Baseline right-parenthesis x Subscript i Baseline right-parenthesis"><mrow><mi>E</mi> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <msubsup><mo>∑</mo> <mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow> <mi>n</mi></msubsup> <mrow><mo>(</mo> <mi>P</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <msub><mi>x</mi> <mi>i</mi></msub> <mo>)</mo></mrow></mrow></math>
 
-看一下表2-1，尝试计算一年中某个月的下一个就业人数的期望值。
+看一下表 2-1，尝试计算一年中某个月的下一个就业人数的期望值。
 
-表2-1。就业表
+表 2-1。就业表
 
 | 非农就业人数 | 概率 |
 | --- | --- |
@@ -141,11 +141,11 @@
 
 *非农就业人数*是指美国劳工部发布的每月报告，提供有关全国有薪雇员总数的信息，不包括农业部门的从业人员以及政府和非营利组织的从业人员。
 
-从表2-1中，经济学家假设有50%的概率总有薪员工人数增加50万，有30%的概率总有薪员工人数增加40万。因此期望值为：
+从表 2-1 中，经济学家假设有 50%的概率总有薪员工人数增加 50 万，有 30%的概率总有薪员工人数增加 40 万。因此期望值为：
 
 <math alttext="upper E left-parenthesis upper X right-parenthesis equals left-parenthesis 300 comma 000 times 0.1 right-parenthesis plus left-parenthesis 400 comma 000 times 0.3 right-parenthesis plus left-parenthesis 500 comma 000 times 0.5 right-parenthesis plus left-parenthesis 600 comma 000 times 0.1 right-parenthesis equals 460 comma 000"><mrow><mi>E</mi> <mo>(</mo> <mi>X</mi> <mo>)</mo> <mo>=</mo> <mo>(</mo> <mn>300</mn> <mo>,</mo> <mn>000</mn> <mo>×</mo> <mn>0</mn> <mo>.</mo> <mn>1</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>400</mn> <mo>,</mo> <mn>000</mn> <mo>×</mo> <mn>0</mn> <mo>.</mo> <mn>3</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>500</mn> <mo>,</mo> <mn>000</mn> <mo>×</mo> <mn>0</mn> <mo>.</mo> <mn>5</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>600</mn> <mo>,</mo> <mn>000</mn> <mo>×</mo> <mn>0</mn> <mo>.</mo> <mn>1</mn> <mo>)</mo> <mo>=</mo> <mn>460</mn> <mo>,</mo> <mn>000</mn></mrow></math>
 
-因此，代表经济学家共识的数字是460,000，因为它是大多数预测的最接近加权值。它是代表数据集的值。
+因此，代表经济学家共识的数字是 460,000，因为它是大多数预测的最接近加权值。它是代表数据集的值。
 
 在介绍概率的部分结束之前，存在一个称为*贝叶斯定理*的数学公式，根据先前相关事件的知识估计事件的可能性。贝叶斯定理的公式如下：
 
@@ -153,13 +153,13 @@
 
 其中：
 
-+   *P(A|B)*是在事件B发生的情况下事件A发生的概率。
++   *P(A|B)*是在事件 B 发生的情况下事件 A 发生的概率。
 
-+   *P(B|A)*是在事件A发生的情况下事件B发生的概率。
++   *P(B|A)*是在事件 A 发生的情况下事件 B 发生的概率。
 
-+   *P(A)*是事件A发生的概率。
++   *P(A)*是事件 A 发生的概率。
 
-+   *P(B)*是事件B发生的概率。
++   *P(B)*是事件 B 发生的概率。
 
 换句话说，贝叶斯定理允许您根据新信息更新对事件概率的信念。
 
@@ -167,7 +167,7 @@
 
 本节的主要要点如下：
 
-+   概率描述随机变量和随机事件。它是介于0和1之间的值。
++   概率描述随机变量和随机事件。它是介于 0 和 1 之间的值。
 
 +   事件的概率可以组合在一起形成更复杂的情景。
 
@@ -201,7 +201,7 @@
 
 这些术语将在接下来的章节中更深入地讨论。现在你应该明白，在机器学习中（甚至在使用优化技术的深度学习中），抽样的概念非常重要。
 
-抽样并不完美，可能会出现错误，就像任何其他估计方法一样。*抽样误差*指的是样本的统计量与人口的统计量之间的差异（如果已知）。*统计量*是描述分析数据集的度量（一个例子是均值，在第三章中关于统计学的更详细内容中会看到）。那么，你应该有多少最小样本量才能对人口进行推断呢？经验法则是至少有30个观察值，越多越好。这将引出*中心极限定理*，该定理指出从人口中抽取的随机样本将在样本变大时逼近正态分布（一种对称的钟形概率分布）。
+抽样并不完美，可能会出现错误，就像任何其他估计方法一样。*抽样误差*指的是样本的统计量与人口的统计量之间的差异（如果已知）。*统计量*是描述分析数据集的度量（一个例子是均值，在第三章中关于统计学的更详细内容中会看到）。那么，你应该有多少最小样本量才能对人口进行推断呢？经验法则是至少有 30 个观察值，越多越好。这将引出*中心极限定理*，该定理指出从人口中抽取的随机样本将在样本变大时逼近正态分布（一种对称的钟形概率分布）。
 
 中心极限定理使得推断和结论的应用变得简单，因为假设检验与正态分布相配。在进行假设检验之前，让我们看看置信区间，即预期总体参数的值范围。置信区间通常通过从点估计值中加减一个因子来构建。例如，给定一个样本均值 x̄，可以构建一个置信区间如下：
 
@@ -211,11 +211,11 @@
 
 ###### 注意
 
-显著性水平是置信区间的阈值。例如，95%的置信区间意味着有95%的置信度，估计值应该落在某个范围内。剩下的5%概率不在这个范围内，称为显著性水平（通常用α符号表示）。
+显著性水平是置信区间的阈值。例如，95%的置信区间意味着有 95%的置信度，估计值应该落在某个范围内。剩下的 5%概率不在这个范围内，称为显著性水平（通常用α符号表示）。
 
-可靠性因子是一个统计量，取决于估计值的分布以及它落入置信区间的概率。为了简单起见，让我们假设总体的方差是正态的，总体是正态分布的。对于5%的显著性水平（因此，置信区间为95%），在这种情况下可靠性因子为1.96（获得这个数字的方式与讨论的内容不太相关）。
+可靠性因子是一个统计量，取决于估计值的分布以及它落入置信区间的概率。为了简单起见，让我们假设总体的方差是正态的，总体是正态分布的。对于 5%的显著性水平（因此，置信区间为 95%），在这种情况下可靠性因子为 1.96（获得这个数字的方式与讨论的内容不太相关）。
 
-标准误差是样本的标准差。标准差在第3章中有更深入的讨论；现在只需知道它代表了围绕均值的不同值的波动。标准误差使用以下公式计算：
+标准误差是样本的标准差。标准差在第三章中有更深入的讨论；现在只需知道它代表了围绕均值的不同值的波动。标准误差使用以下公式计算：
 
 <math alttext="s equals StartFraction sigma Over StartRoot n EndRoot EndFraction"><mrow><mi>s</mi> <mo>=</mo> <mfrac><mi>σ</mi> <msqrt><mi>n</mi></msqrt></mfrac></mrow></math>
 
@@ -223,9 +223,9 @@
 
 <math alttext="StartRoot n EndRoot i s t h e s q u a r e r o o t o f t h e p o p u l a t i o n n u m b e r"><mrow><msqrt><mi>n</mi></msqrt> <mi>i</mi> <mi>s</mi> <mi>t</mi> <mi>h</mi> <mi>e</mi> <mi>s</mi> <mi>q</mi> <mi>u</mi> <mi>a</mi> <mi>r</mi> <mi>e</mi> <mi>r</mi> <mi>o</mi> <mi>o</mi> <mi>t</mi> <mi>o</mi> <mi>f</mi> <mi>t</mi> <mi>h</mi> <mi>e</mi> <mi>p</mi> <mi>o</mi> <mi>p</mi> <mi>u</mi> <mi>l</mi> <mi>a</mi> <mi>t</mi> <mi>i</mi> <mi>o</mi> <mi>n</mi> <mi>n</mi> <mi>u</mi> <mi>m</mi> <mi>b</mi> <mi>e</mi> <mi>r</mi></mrow></math>
 
-值得知道的是，对于1%的显著性水平，可靠性因子为2.575，对于10%的显著性水平，可靠性因子为1.645。让我们通过一个实际例子来理解所有这些数学。
+值得知道的是，对于 1%的显著性水平，可靠性因子为 2.575，对于 10%的显著性水平，可靠性因子为 1.645。让我们通过一个实际例子来理解所有这些数学。
 
-考虑一个包含100种金融工具（债券、货币对、股票、结构化产品等）的总体。这些工具的年平均回报率为1.4%。假设总体标准差为4.34%，在1%显著性水平（99%置信区间）下，均值的置信区间是多少？
+考虑一个包含 100 种金融工具（债券、货币对、股票、结构化产品等）的总体。这些工具的年平均回报率为 1.4%。假设总体标准差为 4.34%，在 1%显著性水平（99%置信区间）下，均值的置信区间是多少？
 
 答案就是将数值代入以下公式：
 
@@ -233,7 +233,7 @@
 
 这意味着置信区间在（0.29%，2.51%）之间。
 
-让我们看另一个例子。假设贵金属和工业金属（如黄金和铜）的年回报率是正态分布的，均值为3.5%，已知总体标准差为5.1%。在10%显著性水平下，5种不同商品的年回报率的置信区间是多少？答案如下：
+让我们看另一个例子。假设贵金属和工业金属（如黄金和铜）的年回报率是正态分布的，均值为 3.5%，已知总体标准差为 5.1%。在 10%显著性水平下，5 种不同商品的年回报率的置信区间是多少？答案如下：
 
 <math alttext="3.5 percent-sign plus-or-minus 1.645 times StartFraction 3.5 percent-sign Over StartRoot 5 EndRoot EndFraction equals 3.5 percent-sign plus-or-minus 2.23 percent-sign"><mrow><mn>3</mn> <mo>.</mo> <mn>5</mn> <mo>%</mo> <mo>±</mo> <mn>1</mn> <mo>.</mo> <mn>645</mn> <mo>×</mo> <mfrac><mrow><mn>3</mn><mo>.</mo><mn>5</mn><mo>%</mo></mrow> <msqrt><mn>5</mn></msqrt></mfrac> <mo>=</mo> <mn>3</mn> <mo>.</mo> <mn>5</mn> <mo>%</mo> <mo>±</mo> <mn>2</mn> <mo>.</mo> <mn>23</mn> <mo>%</mo></mrow></math>
 
@@ -251,15 +251,15 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 +   具有已知方差的大型正态分布应使用正态分布的可靠性因子。
 
-+   具有未知方差的小正态分布应使用t分布的可靠性因子。
++   具有未知方差的小正态分布应使用 t 分布的可靠性因子。
 
-+   具有未知方差的大正态分布应使用t分布的可靠性因子。
++   具有未知方差的大正态分布应使用 t 分布的可靠性因子。
 
 +   具有已知方差的大非正态分布应使用正态分布的可靠性因子。
 
-+   具有已知方差的大非正态分布应使用t分布的可靠性因子。
++   具有已知方差的大非正态分布应使用 t 分布的可靠性因子。
 
-请记住，*大*意味着观察数量大于30。前一个列表中未涵盖的组合是复杂的，超出了本讨论的范围。
+请记住，*大*意味着观察数量大于 30。前一个列表中未涵盖的组合是复杂的，超出了本讨论的范围。
 
 下一步是假设检验，这是一种从数据样本中得出结论的关键概率技术。这部分非常重要，因为它几乎用于所有类型的统计分析和模型中。
 
@@ -291,7 +291,7 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 <math alttext="upper H Subscript a Baseline colon x not-equals x 0"><mrow><msub><mi>H</mi> <mi>a</mi></msub> <mo>:</mo> <mi>x</mi> <mo>≠</mo> <msub><mi>x</mi> <mn>0</mn></msub></mrow></math>
 
-由于备择方案允许数值在零上下两侧（这是零假设中规定的水平），应该有两个临界值。因此，双侧检验的规则是，如果检验统计量大于上临界值或小于下临界值，则拒绝零假设。例如，对于正态分布的数据，检验统计量与临界值（在5%显著性水平下）进行比较，分别为+1.96和-1.96。如果检验统计量落在+1.96和-1.96之间的范围之外，则拒绝零假设。
+由于备择方案允许数值在零上下两侧（这是零假设中规定的水平），应该有两个临界值。因此，双侧检验的规则是，如果检验统计量大于上临界值或小于下临界值，则拒绝零假设。例如，对于正态分布的数据，检验统计量与临界值（在 5%显著性水平下）进行比较，分别为+1.96 和-1.96。如果检验统计量落在+1.96 和-1.96 之间的范围之外，则拒绝零假设。
 
 假设检验的过程包括计算检验统计量。通过将总体参数的点估计与零假设的假设值进行比较来计算它。然后，两者都通过样本的标准误差进行缩放。数学表示如下：
 
@@ -299,29 +299,29 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 假设检验中的一个重要考虑因素是样本可能不具代表性，这导致对总体的描述出现错误。这导致了两种类型的错误：
 
-+   *I型错误*：当拒绝虚无假设，即使它是真的时发生。
++   *I 型错误*：当拒绝虚无假设，即使它是真的时发生。
 
-+   *II型错误*：当未能拒绝虚无假设，即使它是错误的时发生。
++   *II 型错误*：当未能拒绝虚无假设，即使它是错误的时发生。
 
-直观地说，显著性水平是发生I型错误的概率。请记住，如果α = 5%，那么错误地拒绝真实的虚无假设的概率为5%。举个例子会更清楚。
+直观地说，显著性水平是发生 I 型错误的概率。请记住，如果α = 5%，那么错误地拒绝真实的虚无假设的概率为 5%。举个例子会更清楚。
 
-考虑一位分析师对一个长短投资组合20年期间的年度回报进行研究。平均年回报率为1%，标准偏差为2%。分析师认为年均回报率不等于零，并希望为此构建一个95%的置信区间，然后进行假设检验：
+考虑一位分析师对一个长短投资组合 20 年期间的年度回报进行研究。平均年回报率为 1%，标准偏差为 2%。分析师认为年均回报率不等于零，并希望为此构建一个 95%的置信区间，然后进行假设检验：
 
-1.  列出变量。样本大小为20，标准偏差为2%，平均值为1%。
+1.  列出变量。样本大小为 20，标准偏差为 2%，平均值为 1%。
 
-1.  根据公式计算标准误差，在这种情况下为0.44%。
+1.  根据公式计算标准误差，在这种情况下为 0.44%。
 
-1.  定义95%置信区间的临界值，即+1.96和-1.96。
+1.  定义 95%置信区间的临界值，即+1.96 和-1.96。
 
 1.  因此置信区间为（0.13%，1.86%）。
 
-1.  指定虚无假设，根据分析师的意见，这是一个双尾检验。虚无假设是年回报等于零。如果测试统计量小于-1.96或大于+1.96，则应拒绝它。
+1.  指定虚无假设，根据分析师的意见，这是一个双尾检验。虚无假设是年回报等于零。如果测试统计量小于-1.96 或大于+1.96，则应拒绝它。
 
-1.  使用公式找到测试统计量为2.27。因此，虚无假设被拒绝。
+1.  使用公式找到测试统计量为 2.27。因此，虚无假设被拒绝。
 
-还有一个重要的指标要讨论：p值。*p值*是在零假设成立的情况下，看到一个比统计测试中看到的更极端的测试统计量的概率。将p值与显著性水平（通常为0.05）进行比较，可以帮助您理解它。如果p值小于或等于显著性水平，则结果被认为具有统计学意义，零假设被拒绝，支持备择假设。
+还有一个重要的指标要讨论：p 值。*p 值*是在零假设成立的情况下，看到一个比统计测试中看到的更极端的测试统计量的概率。将 p 值与显著性水平（通常为 0.05）进行比较，可以帮助您理解它。如果 p 值小于或等于显著性水平，则结果被认为具有统计学意义，零假设被拒绝，支持备择假设。
 
-如果p值小于5%的显著性水平，这意味着如果零假设成立，看到一个与当前测试统计量一样极端的测试统计量的概率为5%。另一种定义p值的方式是将其视为可以拒绝零假设的最小显著性水平。
+如果 p 值小于 5%的显著性水平，这意味着如果零假设成立，看到一个与当前测试统计量一样极端的测试统计量的概率为 5%。另一种定义 p 值的方式是将其视为可以拒绝零假设的最小显著性水平。
 
 ###### 注意
 
@@ -355,15 +355,15 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 <math alttext="4 cubed equals 4 times 4 times 4 equals 64"><mrow><msup><mn>4</mn> <mn>3</mn></msup> <mo>=</mo> <mn>4</mn> <mo>×</mo> <mn>4</mn> <mo>×</mo> <mn>4</mn> <mo>=</mo> <mn>64</mn></mrow></math>
 
-相比之下，对数是指数的相反，其目的是找到指数（从前面的例子中知道4和64，找到3）：
+相比之下，对数是指数的相反，其目的是找到指数（从前面的例子中知道 4 和 64，找到 3）：
 
 <math alttext="log Subscript 4 Baseline left-parenthesis 64 right-parenthesis equals 3"><mrow><msub><mo form="prefix">log</mo> <mn>4</mn></msub> <mrow><mo>(</mo> <mn>64</mn> <mo>)</mo></mrow> <mo>=</mo> <mn>3</mn></mrow></math>
 
-因此，对数是一个数字乘以另一个数字得到另一个数字的次数的答案。由于它们是互为反函数，您可以将它们一起使用来简化甚至解决x。看下面的例子：
+因此，对数是一个数字乘以另一个数字得到另一个数字的次数的答案。由于它们是互为反函数，您可以将它们一起使用来简化甚至解决 x。看下面的例子：
 
 <math alttext="log Subscript 4 Baseline left-parenthesis x right-parenthesis equals 3"><mrow><msub><mo form="prefix">log</mo> <mn>4</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>3</mn></mrow></math>
 
-这里的目标是在给定对数函数的情况下找到x。第一步只是在一侧使用指数函数，因为希望它取消右侧的对数（记住，反函数互相抵消）。这给我们带来了以下结果：
+这里的目标是在给定对数函数的情况下找到 x。第一步只是在一侧使用指数函数，因为希望它取消右侧的对数（记住，反函数互相抵消）。这给我们带来了以下结果：
 
 <math alttext="4 Superscript l o g 4 left-parenthesis x right-parenthesis Baseline equals 4 cubed"><mrow><msup><mn>4</mn> <mrow><mi>l</mi><mi>o</mi><msub><mi>g</mi> <mn>4</mn></msub> <mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow></mrow></msup> <mo>=</mo> <msup><mn>4</mn> <mn>3</mn></msup></mrow></math>
 
@@ -371,17 +371,17 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 <math alttext="x equals 64"><mrow><mi>x</mi> <mo>=</mo> <mn>64</mn></mrow></math>
 
-对数可以有不同的底数。然而，最常用的对数的底数是10。在计算机科学中，基数为2的对数表示比特（二进制位）。因此，信息被表示为比特。信息增益的公式如下：
+对数可以有不同的底数。然而，最常用的对数的底数是 10。在计算机科学中，基数为 2 的对数表示比特（二进制位）。因此，信息被表示为比特。信息增益的公式如下：
 
 <math alttext="upper H left-parenthesis x Subscript i Baseline right-parenthesis equals minus l o g 2 left-parenthesis upper P left-parenthesis x Subscript i Baseline right-parenthesis right-parenthesis"><mrow><mi>H</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <mo>=</mo> <mo>-</mo> <mi>l</mi> <mi>o</mi> <msub><mi>g</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <mi>P</mi> <mrow><mo>(</mo> <msub><mi>x</mi> <mi>i</mi></msub> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>
 
-假设有两个变量*x*和*y*，其中*x*的概率为1（100%，因此确定），而*y*的概率为0.5（50%，因此大部分是随机的），在这两种情况下信息是多少？答案如下：
+假设有两个变量*x*和*y*，其中*x*的概率为 1（100%，因此确定），而*y*的概率为 0.5（50%，因此大部分是随机的），在这两种情况下信息是多少？答案如下：
 
 <math alttext="upper H left-parenthesis x right-parenthesis equals minus l o g 2 left-parenthesis upper P left-parenthesis 1 right-parenthesis right-parenthesis equals 0"><mrow><mi>H</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mo>-</mo> <mi>l</mi> <mi>o</mi> <msub><mi>g</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <mi>P</mi> <mrow><mo>(</mo> <mn>1</mn> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>=</mo> <mn>0</mn></mrow></math>
 
 <math alttext="upper H left-parenthesis y right-parenthesis equals minus l o g 2 left-parenthesis upper P left-parenthesis 0.5 right-parenthesis right-parenthesis equals 1"><mrow><mi>H</mi> <mrow><mo>(</mo> <mi>y</mi> <mo>)</mo></mrow> <mo>=</mo> <mo>-</mo> <mi>l</mi> <mi>o</mi> <msub><mi>g</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <mi>P</mi> <mrow><mo>(</mo> <mn>0</mn> <mo>.</mo> <mn>5</mn> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>=</mo> <mn>1</mn></mrow></math>
 
-因此，确定事件提供零信息，而有一半机会实现的事件具有信息1。那么概率为0.05（5%）的非常不可能事件*z*的信息是多少？
+因此，确定事件提供零信息，而有一半机会实现的事件具有信息 1。那么概率为 0.05（5%）的非常不可能事件*z*的信息是多少？
 
 <math alttext="upper H left-parenthesis z right-parenthesis equals minus l o g 2 left-parenthesis upper P left-parenthesis 0.05 right-parenthesis right-parenthesis equals 4.32"><mrow><mi>H</mi> <mrow><mo>(</mo> <mi>z</mi> <mo>)</mo></mrow> <mo>=</mo> <mo>-</mo> <mi>l</mi> <mi>o</mi> <msub><mi>g</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <mi>P</mi> <mrow><mo>(</mo> <mn>0</mn> <mo>.</mo> <mn>05</mn> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>=</mo> <mn>4</mn> <mo>.</mo> <mn>32</mn></mrow></math>
 
@@ -403,7 +403,7 @@ t-分布是一种概率分布，用于模拟样本均值的分布，当样本量
 
 现在，让我们讨论本节的最后一个概念，*信息增益*。通过改变数据集引起的熵的减少是通过信息增益来计算的。
 
-信息增益是第7章决策树中的关键概念之一，因此在了解决策树是什么之后，您可能希望参考本节。
+信息增益是第七章决策树中的关键概念之一，因此在了解决策树是什么之后，您可能希望参考本节。
 
 主要通过比较数据集在转换前后的熵来计算信息增益。请记住，当随机事件的所有结果具有相同的概率时，熵达到最大值。这也可以表示为一个分布，其中对称分布（如正态分布）具有高熵，而偏斜分布具有低熵。
 

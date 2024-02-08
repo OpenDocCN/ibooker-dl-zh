@@ -1,10 +1,10 @@
-# 附录A. 深入探讨
+# 附录 A. 深入探讨
 
 在这一部分，我们深入探讨了一些重要但不是必要理解的技术领域。
 
 # 矩阵链式法则
 
-首先解释一下为什么我们可以在[第1章](ch01.html#foundations)的链式法则表达式中用 *W*^T 替换 <math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow></mrow></math>。
+首先解释一下为什么我们可以在第一章的链式法则表达式中用 *W*^T 替换 <math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow></mrow></math>。
 
 记住 *L* 实际上是：
 
@@ -24,7 +24,7 @@
 
 <math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow> <mo>×</mo> <msub><mi>w</mi> <mn>11</mn></msub></mrow></math>
 
-由于 *XW*[11] 表达式中 *x*[11] 乘以的唯一因素是 *w*[11]，因此对其他所有元素的偏导数为0。
+由于 *XW*[11] 表达式中 *x*[11] 乘以的唯一因素是 *w*[11]，因此对其他所有元素的偏导数为 0。
 
 因此，计算 *σ*(*XW*[11]) 对于 *X* 的所有元素的偏导数给出了以下关于 <math><mfrac><mrow><mi>∂</mi><mi>σ</mi><mo>(</mo><mi>X</mi><msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow> <mrow><mi>∂</mi><mi>X</mi></mrow></mfrac></math> 的整体表达式：
 
@@ -56,7 +56,7 @@
 
 结果表明，前述矩阵等同于：
 
-<math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>X</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced> <mo>×</mo> <mfenced close="]" open="["><mtable><mtr><mtd><msub><mi>w</mi> <mn>11</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>21</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>31</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mn>12</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>22</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>32</mn></msub></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>S</mi> <mo>)</mo></mrow> <mo>×</mo> <msup><mi>W</mi> <mi>T</mi></msup></mrow></math>
+<math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>X</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced> <mo>×</mo> <mfenced close="]" open=""><mtable><mtr><mtd><msub><mi>w</mi> <mn>11</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>21</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>31</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mn>12</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>22</mn></msub></mtd> <mtd><msub><mi>w</mi> <mn>32</mn></msub></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>S</mi> <mo>)</mo></mrow> <mo>×</mo> <msup><mi>W</mi> <mi>T</mi></msup></mrow></math>
 
 此外，请记住，我们正在寻找填写以下方程中问号的内容：
 
@@ -76,15 +76,15 @@
 
 接下来，我们将详细介绍在完全连接的神经网络中计算损失相对于偏差项的导数时，为什么要沿着`axis=0`求和。
 
-在神经网络中添加偏差项发生在以下情境中：我们有一个由*n*行（批量大小）乘以*f*列（特征数量）的矩阵表示的数据批次，并且我们向每个*f*特征中添加一个单个数字。例如，在[第2章](ch02.html#fundamentals)中的神经网络示例中，我们有13个特征，偏差项*B*有13个数字；第一个数字将添加到`M1 = np.dot(X, weights[*W1*])`的第一列中的每一行，第二个数字将添加到第二列中的每一行，依此类推。在网络的后续部分，<math><mrow><mi>B</mi> <mn>2</mn></mrow></math>将包含一个数字，它将简单地添加到`M2`的单列中的每一行。因此，由于相同的数字将被添加到矩阵的每一行，所以在反向传播时，我们需要沿着表示每个偏差元素添加到的行的维度对梯度求和。这就是为什么我们沿着`axis=0`对`dLdB1`和`dLdB2`的表达式求和；例如，`dLdB1 = (dLdN1 × dN1dB1).sum(axis=0)`。[图A-1](#fig_08_01)提供了所有这些的视觉解释，并附有一些评论。
+在神经网络中添加偏差项发生在以下情境中：我们有一个由*n*行（批量大小）乘以*f*列（特征数量）的矩阵表示的数据批次，并且我们向每个*f*特征中添加一个单个数字。例如，在[第二章中的神经网络示例中，我们有 13 个特征，偏差项*B*有 13 个数字；第一个数字将添加到`M1 = np.dot(X, weights[*W1*])`的第一列中的每一行，第二个数字将添加到第二列中的每一行，依此类推。在网络的后续部分，<math><mrow><mi>B</mi> <mn>2</mn></mrow></math>将包含一个数字，它将简单地添加到`M2`的单列中的每一行。因此，由于相同的数字将被添加到矩阵的每一行，所以在反向传播时，我们需要沿着表示每个偏差元素添加到的行的维度对梯度求和。这就是为什么我们沿着`axis=0`对`dLdB1`和`dLdB2`的表达式求和；例如，`dLdB1 = (dLdN1 × dN1dB1).sum(axis=0)`。图 A-1 提供了所有这些的视觉解释，并附有一些评论。
 
-![神经网络图](assets/dlfs_aa01.png)
+![神经网络图](img/dlfs_aa01.png)
 
-###### 图A-1。总结了为什么计算完全连接层的输出相对于偏差的导数涉及沿着轴=0求和
+###### 图 A-1。总结了为什么计算完全连接层的输出相对于偏差的导数涉及沿着轴=0 求和
 
 # 通过矩阵乘法进行卷积
 
-最后，我们将展示如何通过批量矩阵乘法来表达批量、多通道卷积操作，以便在NumPy中高效实现它。
+最后，我们将展示如何通过批量矩阵乘法来表达批量、多通道卷积操作，以便在 NumPy 中高效实现它。
 
 要理解卷积是如何工作的，请考虑在完全连接神经网络的前向传播中发生的情况：
 
@@ -102,7 +102,7 @@
 
 +   我们得到一个大小为`[batch_size, in_channels, img_height, img_width]`的结果输出。
 
-使卷积操作看起来更像常规前馈操作的关键是*首先从输入图像的每个通道中提取`img_height × img_width`“图像补丁”*。一旦提取了这些补丁，输入就可以被重新整形，以便卷积操作可以通过NumPy的`np.matmul`函数表达为批量矩阵乘法。首先：
+使卷积操作看起来更像常规前馈操作的关键是*首先从输入图像的每个通道中提取`img_height × img_width`“图像补丁”*。一旦提取了这些补丁，输入就可以被重新整形，以便卷积操作可以通过 NumPy 的`np.matmul`函数表达为批量矩阵乘法。首先：
 
 ```py
 def _get_image_patches(imgs_batch: ndarray,
@@ -283,4 +283,4 @@ def _input_grad_matmul(input_: ndarray,
     return input_grad_reshaped
 ```
 
-这三个函数构成了`Conv2DOperation`的核心，具体是它的`_output`、`_param_grad`和`_input_grad`方法，你可以在书的GitHub仓库中的[`lincoln`库](https://oreil.ly/2KPdFay)中看到。
+这三个函数构成了`Conv2DOperation`的核心，具体是它的`_output`、`_param_grad`和`_input_grad`方法，你可以在书的 GitHub 仓库中的[`lincoln`库](https://oreil.ly/2KPdFay)中看到。

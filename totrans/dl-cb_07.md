@@ -1,8 +1,8 @@
-# 第7章。建议表情符号
+# 第七章。建议表情符号
 
 在本章中，我们将构建一个模型，根据一小段文本建议表情符号。我们将首先基于一组带有各种情感标签的推文开发一个简单的情感分类器，如快乐、爱、惊讶等。我们首先尝试一个贝叶斯分类器，以了解基线性能，并查看这个分类器可以学到什么。然后我们将切换到卷积网络，并查看各种调整这个分类器的方法。
 
-接下来我们将看看如何使用Twitter API收集推文，然后我们将应用[配方7.3](#using-a-convolutional-network-for-sentiment-analysis)中的卷积模型，然后转向一个单词级模型。然后我们将构建并应用一个递归单词级网络，并比较这三种不同的模型。
+接下来我们将看看如何使用 Twitter API 收集推文，然后我们将应用配方 7.3 中的卷积模型，然后转向一个单词级模型。然后我们将构建并应用一个递归单词级网络，并比较这三种不同的模型。
 
 最后，我们将把这三个模型组合成一个胜过任何一个的集成模型。
 
@@ -26,9 +26,9 @@
 
 找到一个由标记了情感的句子组成的数据集，并对其运行一个简单的分类器。
 
-在尝试复杂的东西之前，首先尝试在一个readily可用的数据集上尝试我们能想到的最简单的事情是一个好主意。在这种情况下，我们将尝试基于一个已发布数据集构建一个简单的情感分类器。在接下来的配方中，我们将尝试做一些更复杂的事情。
+在尝试复杂的东西之前，首先尝试在一个 readily 可用的数据集上尝试我们能想到的最简单的事情是一个好主意。在这种情况下，我们将尝试基于一个已发布数据集构建一个简单的情感分类器。在接下来的配方中，我们将尝试做一些更复杂的事情。
 
-快速的谷歌搜索让我们找到了一个来自CrowdFlower的不错的数据集，其中包含推文和情感标签。由于情感标签在某种程度上类似于表情符号，这是一个很好的开始。让我们下载文件并看一眼：
+快速的谷歌搜索让我们找到了一个来自 CrowdFlower 的不错的数据集，其中包含推文和情感标签。由于情感标签在某种程度上类似于表情符号，这是一个很好的开始。让我们下载文件并看一眼：
 
 ```py
 import pandas as pd
@@ -45,7 +45,7 @@ emotion_df.head()
 
 这导致：
 
-| 推文ID | 情感 | 作者 | 内容 |
+| 推文 ID | 情感 | 作者 | 内容 |
 | --- | --- | --- | --- |
 | 0 | 1956967341 | 空 | xoshayzers @tiffanylue 我知道我在听坏习惯... |
 | 1 | 1956967666 | 伤心 | wannamama 躺在床上头疼，等待... |
@@ -90,7 +90,7 @@ precision_score(pred, linear_y, average='micro')
 0.28022727272727271
 ```
 
-我们有28%的正确率。如果我们总是预测最可能的类别，我们会得到略高于20%，所以我们有了一个良好的开端。还有一些其他简单的分类器可以尝试，可能会做得更好，但速度较慢：
+我们有 28%的正确率。如果我们总是预测最可能的类别，我们会得到略高于 20%，所以我们有了一个良好的开端。还有一些其他简单的分类器可以尝试，可能会做得更好，但速度较慢：
 
 ```py
 classifiers = {'sgd': SGDClassifier(loss='hinge'),
@@ -131,7 +131,7 @@ sgd 0.325454545455
 
 使用贝叶斯方法的一个优点是我们可以理解模型。正如我们在前面的配方中讨论的那样，贝叶斯模型假设每个单词的贡献与其他单词无关，因此为了了解我们的模型学到了什么，我们可以询问模型对个别单词的看法。
 
-现在记住，模型期望一系列文档，每个文档都编码为一个向量，其长度等于词汇表的大小，每个元素编码为该文档中对应单词相对频率与所有文档的比率。因此，每个只包含一个单词的文档集合将是一个对角线上有1的方阵；第n个文档将对词汇表中的所有单词都有零，除了单词n。现在我们可以为每个单词预测标签的可能性：
+现在记住，模型期望一系列文档，每个文档都编码为一个向量，其长度等于词汇表的大小，每个元素编码为该文档中对应单词相对频率与所有文档的比率。因此，每个只包含一个单词的文档集合将是一个对角线上有 1 的方阵；第 n 个文档将对词汇表中的所有单词都有零，除了单词 n。现在我们可以为每个单词预测标签的可能性：
 
 ```py
 d = eye(len(tfidf_vec.vocabulary_))
@@ -178,7 +178,7 @@ neutral : www painting souljaboytellem link frenchieb
 
 我们的贝叶斯模型的结果符合我们的预期。单词“sad”是“sadness”类的指示，“wow”是惊讶的指示。令人感动的是，单词“mothers”是爱的强烈指示。
 
-我们看到了一堆奇怪的单词，比如“kimbermuffin”和“makinitrite”。检查后发现这些是Twitter用户名。 “foolproofdiva”只是一个非常热情的人。根据目标，我们可能会考虑将这些过滤掉。
+我们看到了一堆奇怪的单词，比如“kimbermuffin”和“makinitrite”。检查后发现这些是 Twitter 用户名。 “foolproofdiva”只是一个非常热情的人。根据目标，我们可能会考虑将这些过滤掉。
 
 # 7.3 使用卷积网络进行情感分析
 
@@ -190,7 +190,7 @@ neutral : www painting souljaboytellem link frenchieb
 
 使用卷积网络。
 
-CNNs更常用于图像识别（参见[第9章](ch09.html#transfer_learning)），但它们在某些文本分类任务中也表现良好。其思想是在文本上滑动一个窗口，从而将一系列项目转换为（更短的）特征序列。在这种情况下，项目将是字符。每一步都使用相同的权重，因此我们不必多次学习相同的内容——单词“cat”在推文中的任何位置都表示“cat”：
+CNNs 更常用于图像识别（参见第九章），但它们在某些文本分类任务中也表现良好。其思想是在文本上滑动一个窗口，从而将一系列项目转换为（更短的）特征序列。在这种情况下，项目将是字符。每一步都使用相同的权重，因此我们不必多次学习相同的内容——单词“cat”在推文中的任何位置都表示“cat”：
 
 ```py
 char_input = Input(shape=(max_sequence_len, num_chars), name='input')
@@ -210,7 +210,7 @@ model.compile(loss='sparse_categorical_crossentropy',
               metrics=['acc'])
 ```
 
-为了使模型运行，我们首先必须对数据进行向量化。我们将使用在前面的配方中看到的相同的一热编码，将每个字符编码为一个填满所有零的向量，除了第n个条目，其中n对应于我们要编码的字符：
+为了使模型运行，我们首先必须对数据进行向量化。我们将使用在前面的配方中看到的相同的一热编码，将每个字符编码为一个填满所有零的向量，除了第 n 个条目，其中 n 对应于我们要编码的字符：
 
 ```py
 chars = list(sorted(set(chain(*emotion_df['content']))))
@@ -246,31 +246,31 @@ char_cnn_model.fit(training_char_vectors, training_labels,
 char_cnn_model.evaluate(test_char_vectors, test_labels)
 ```
 
-经过20个时代，训练准确率达到0.39，但测试准确率只有0.31。这种差异可以通过过拟合来解释；模型不仅学习了数据的一般方面，这些方面也适用于测试集，而且开始记忆部分训练数据。这类似于学生学习哪些答案与哪些问题匹配，而不理解为什么。
+经过 20 个时代，训练准确率达到 0.39，但测试准确率只有 0.31。这种差异可以通过过拟合来解释；模型不仅学习了数据的一般方面，这些方面也适用于测试集，而且开始记忆部分训练数据。这类似于学生学习哪些答案与哪些问题匹配，而不理解为什么。
 
 ## 讨论
 
 卷积网络在我们希望网络学习独立于发生位置的情况下效果很好。对于图像识别，我们不希望网络为每个像素单独学习；我们希望它学会独立于图像中发生位置的特征。
 
-同样，对于文本，我们希望模型学会，如果推文中出现“爱”这个词，那么“爱”将是一个好的标签。我们不希望模型为每个位置单独学习这一点。CNN通过在文本上运行一个滑动窗口来实现这一点。在这种情况下，我们使用大小为6的窗口，因此我们每次取6个字符；对于包含125个字符的推文，我们会应用这个过程120次。
+同样，对于文本，我们希望模型学会，如果推文中出现“爱”这个词，那么“爱”将是一个好的标签。我们不希望模型为每个位置单独学习这一点。CNN 通过在文本上运行一个滑动窗口来实现这一点。在这种情况下，我们使用大小为 6 的窗口，因此我们每次取 6 个字符；对于包含 125 个字符的推文，我们会应用这个过程 120 次。
 
-关键的是，这120个神经元中的每一个都使用相同的权重，因此它们都学习相同的东西。在卷积之后，我们应用一个`max_pooling`层。这一层将取六个神经元的组并输出它们激活的最大值。我们可以将其视为将任何神经元中最强的理论传递给下一层。它还将大小减小了六分之一。
+关键的是，这 120 个神经元中的每一个都使用相同的权重，因此它们都学习相同的东西。在卷积之后，我们应用一个`max_pooling`层。这一层将取六个神经元的组并输出它们激活的最大值。我们可以将其视为将任何神经元中最强的理论传递给下一层。它还将大小减小了六分之一。
 
-在我们的模型中，我们有两个卷积/最大池化层，它将输入从167×100的大小更改为3×256。我们可以将这些看作是增加抽象级别的步骤。在输入级别，我们只知道在167个位置中的每一个位置上出现了100个不同字符中的哪一个。在最后一个卷积之后，我们有3个256个向量，它们分别编码了推文开头、中间和结尾发生的情况。
+在我们的模型中，我们有两个卷积/最大池化层，它将输入从 167×100 的大小更改为 3×256。我们可以将这些看作是增加抽象级别的步骤。在输入级别，我们只知道在 167 个位置中的每一个位置上出现了 100 个不同字符中的哪一个。在最后一个卷积之后，我们有 3 个 256 个向量，它们分别编码了推文开头、中间和结尾发生的情况。
 
-# 7.4收集Twitter数据
+# 7.4 收集 Twitter 数据
 
 ## 问题
 
-如何自动收集大量用于训练目的的Twitter数据？
+如何自动收集大量用于训练目的的 Twitter 数据？
 
 ## 解决方案
 
-使用Twitter API。
+使用 Twitter API。
 
-首先要做的是前往[*https://apps.twitter.com*](https://apps.twitter.com)注册一个新应用。点击“创建新应用”按钮并填写表格。我们不会代表用户做任何事情，所以可以将回调URL字段留空。
+首先要做的是前往[*https://apps.twitter.com*](https://apps.twitter.com)注册一个新应用。点击“创建新应用”按钮并填写表格。我们不会代表用户做任何事情，所以可以将回调 URL 字段留空。
 
-完成后，您应该有两个密钥和两个允许访问API的密钥。让我们将它们存储在相应的变量中：
+完成后，您应该有两个密钥和两个允许访问 API 的密钥。让我们将它们存储在相应的变量中：
 
 ```py
 CONSUMER_KEY = '<*`your value`*>'
@@ -290,9 +290,9 @@ auth=twitter.OAuth(
 )
 ```
 
-Twitter API有两部分。REST API使得可以调用各种函数来搜索推文、获取用户的状态，甚至发布到Twitter。在这个示例中，我们将使用流API。
+Twitter API 有两部分。REST API 使得可以调用各种函数来搜索推文、获取用户的状态，甚至发布到 Twitter。在这个示例中，我们将使用流 API。
 
-如果你付费给Twitter，你将获得一个包含所有推文的流。如果你不付费，你会得到所有推文的一个样本。这对我们的目的已经足够了：
+如果你付费给 Twitter，你将获得一个包含所有推文的流。如果你不付费，你会得到所有推文的一个样本。这对我们的目的已经足够了：
 
 ```py
 status_stream = twitter.TwitterStream(auth=auth).statuses
@@ -335,9 +335,9 @@ for tweet in tweets:
 
 ## 讨论
 
-Twitter可以是一个非常有用的训练数据来源。每条推文都有大量与之相关的元数据，从发布推文的账户到图片和哈希标签。在本章中，我们只使用语言元信息，但这是一个值得探索的丰富领域。
+Twitter 可以是一个非常有用的训练数据来源。每条推文都有大量与之相关的元数据，从发布推文的账户到图片和哈希标签。在本章中，我们只使用语言元信息，但这是一个值得探索的丰富领域。
 
-# 7.5一个简单的表情符号预测器
+# 7.5 一个简单的表情符号预测器
 
 ## 问题
 
@@ -345,9 +345,9 @@ Twitter可以是一个非常有用的训练数据来源。每条推文都有大�
 
 ## 解决方案
 
-重新利用来自[Recipe 7.3](#using-a-convolutional-network-for-sentiment-analysis)的情感分类器。
+重新利用来自 Recipe 7.3 的情感分类器。
 
-如果在上一步中收集了大量推文，可以使用这些。如果没有，可以在*data/emojis.txt*中找到一个好的样本。让我们将这些读入Pandas的`DataFrame`。我们将过滤掉出现次数少于1000次的任何表情符号：
+如果在上一步中收集了大量推文，可以使用这些。如果没有，可以在*data/emojis.txt*中找到一个好的样本。让我们将这些读入 Pandas 的`DataFrame`。我们将过滤掉出现次数少于 1000 次的任何表情符号：
 
 ```py
 all_tweets = pd.read_csv('data/emojis.txt',
@@ -356,7 +356,7 @@ tweets = all_tweets.groupby('emoji').filter(lambda c:len(c) > 1000)
 tweets['emoji'].value_counts()
 ```
 
-这个数据集太大了，无法以向量化形式保存在内存中，所以我们将使用生成器进行训练。Pandas方便地提供了一个`sample`方法，允许我们使用以下`data_generator`：
+这个数据集太大了，无法以向量化形式保存在内存中，所以我们将使用生成器进行训练。Pandas 方便地提供了一个`sample`方法，允许我们使用以下`data_generator`：
 
 ```py
 def data_generator(tweets, batch_size):
@@ -371,7 +371,7 @@ def data_generator(tweets, batch_size):
         yield X, y
 ```
 
-我们现在可以在不进行修改的情况下从[Recipe 7.3](#using-a-convolutional-network-for-sentiment-analysis)训练模型：
+我们现在可以在不进行修改的情况下从 Recipe 7.3 训练模型：
 
 ```py
 train_tweets, test_tweets = train_test_split(tweets, test_size=0.1)
@@ -384,7 +384,7 @@ char_cnn_model.fit_generator(
 )
 ```
 
-模型训练到大约40%的精度。即使考虑到顶部表情符号比底部表情符号更频繁出现，这听起来还是相当不错的。如果我们在评估集上运行模型，精度得分会从40%下降到略高于35%：
+模型训练到大约 40%的精度。即使考虑到顶部表情符号比底部表情符号更频繁出现，这听起来还是相当不错的。如果我们在评估集上运行模型，精度得分会从 40%下降到略高于 35%：
 
 ```py
 char_cnn_model.evaluate_generator(
@@ -401,7 +401,7 @@ char_cnn_model.evaluate_generator(
 
 在不对模型本身进行任何更改的情况下，我们能够为推文建议表情符号，而不是运行情感分类。这并不太令人惊讶；在某种程度上，表情符号是作者应用的情感标签。对于这两个任务性能大致相同可能不太出乎意料，因为我们有更多的标签，而且我们预计标签会更加嘈杂。
 
-# 7.6 Dropout和多窗口
+# 7.6 Dropout 和多窗口
 
 ## 问题
 
@@ -411,9 +411,9 @@ char_cnn_model.evaluate_generator(
 
 增加可训练变量的数量，同时引入了一种使更大的网络难以过拟合的技术——dropout。
 
-增加神经网络的表达能力的简单方法是使其更大，可以通过使单个层更大或向网络添加更多层来实现。具有更多变量的网络具有更高的学习能力，并且可以更好地泛化。然而，这并非是免费的；在某个时候，网络开始*过拟合*。([Recipe 1.3](ch01.html#preprocessing_data)更详细地描述了这个问题。)
+增加神经网络的表达能力的简单方法是使其更大，可以通过使单个层更大或向网络添加更多层来实现。具有更多变量的网络具有更高的学习能力，并且可以更好地泛化。然而，这并非是免费的；在某个时候，网络开始*过拟合*。(Recipe 1.3 更详细地描述了这个问题。)
 
-让我们从扩展当前网络开始。在上一个配方中，我们为卷积使用了步长6。六个字符似乎是一个合理的数量来捕捉局部信息，但也稍微随意。为什么不是四或五呢？实际上我们可以做这三种然后将结果合并：
+让我们从扩展当前网络开始。在上一个配方中，我们为卷积使用了步长 6。六个字符似乎是一个合理的数量来捕捉局部信息，但也稍微随意。为什么不是四或五呢？实际上我们可以做这三种然后将结果合并：
 
 ```py
 layers = []
@@ -429,11 +429,11 @@ for window in (4, 5, 6):
 merged = Concatenate(axis=1)(layers)
 ```
 
-使用这个网络的额外层，训练过程中精度提高到47%。但不幸的是，测试集上的精度仅达到37%。这仍然比之前稍微好一点，但过拟合差距已经增加了很多。
+使用这个网络的额外层，训练过程中精度提高到 47%。但不幸的是，测试集上的精度仅达到 37%。这仍然比之前稍微好一点，但过拟合差距已经增加了很多。
 
 有许多防止过拟合的技术，它们的共同点是限制模型可以学习的内容。其中最流行的之一是添加`Dropout`层。在训练期间，`Dropout`会随机将所有神经元的权重设置为零的一部分。这迫使网络更加稳健地学习，因为它不能依赖于特定的神经元存在。在预测期间，所有神经元都在工作，这会平均结果并减少异常值。这减缓了过拟合的速度。
 
-在Keras中，我们像添加任何其他层一样添加`Dropout`。我们的模型随后变为：
+在 Keras 中，我们像添加任何其他层一样添加`Dropout`。我们的模型随后变为：
 
 ```py
     for window in (4, 5, 6):
@@ -452,7 +452,7 @@ merged = Concatenate(axis=1)(layers)
     dropout = Dropout(drop_out)(merged)
 ```
 
-选择dropout值有点艺术性。较高的值意味着更稳健的模型，但训练速度也更慢。使用0.2进行训练将训练精度提高到0.43，测试精度提高到0.39，这表明我们仍然可以更高。 
+选择 dropout 值有点艺术性。较高的值意味着更稳健的模型，但训练速度也更慢。使用 0.2 进行训练将训练精度提高到 0.43，测试精度提高到 0.39，这表明我们仍然可以更高。 
 
 ## 讨论
 
@@ -470,7 +470,7 @@ merged = Concatenate(axis=1)(layers)
 
 训练一个以单词嵌入序列作为输入而不是字符序列的模型。
 
-首先要做的是对我们的推文进行标记化。我们将构建一个保留前50000个单词的标记器，将其应用于我们的训练和测试集，然后填充两者，使它们具有统一的长度：
+首先要做的是对我们的推文进行标记化。我们将构建一个保留前 50000 个单词的标记器，将其应用于我们的训练和测试集，然后填充两者，使它们具有统一的长度：
 
 ```py
 VOCAB_SIZE = 50000
@@ -483,7 +483,7 @@ training_tokens = pad_sequences(training_tokens, maxlen=max_num_tokens)
 test_tokens = pad_sequences(test_tokens, maxlen=max_num_tokens)
 ```
 
-我们可以通过使用预训练的嵌入来快速启动我们的模型（请参见[第3章](ch03.html#word_embeddings)）。我们将使用一个实用函数`load_wv2`加载权重，它将加载Word2vec嵌入并将其与我们语料库中的单词匹配。这将构建一个矩阵，每个令牌包含来自Word2vec模型的权重的一行：
+我们可以通过使用预训练的嵌入来快速启动我们的模型（请参见第三章）。我们将使用一个实用函数`load_wv2`加载权重，它将加载 Word2vec 嵌入并将其与我们语料库中的单词匹配。这将构建一个矩阵，每个令牌包含来自 Word2vec 模型的权重的一行：
 
 ```py
 def load_w2v(tokenizer=None):
@@ -516,15 +516,15 @@ def load_w2v(tokenizer=None):
                           name='cnn_embedding')(message)
 ```
 
-这个模型可以工作，但效果不如字符模型好。我们可以调整各种超参数，但差距相当大（字符级模型的精度为38%，而单词级模型的精度为30%）。有一件事可以改变这种情况——将嵌入层的`trainable`属性设置为`True`。这有助于将单词级模型的精度提高到36%，但这也意味着我们使用了错误的嵌入。我们将在下一个配方中看看如何解决这个问题。
+这个模型可以工作，但效果不如字符模型好。我们可以调整各种超参数，但差距相当大（字符级模型的精度为 38%，而单词级模型的精度为 30%）。有一件事可以改变这种情况——将嵌入层的`trainable`属性设置为`True`。这有助于将单词级模型的精度提高到 36%，但这也意味着我们使用了错误的嵌入。我们将在下一个配方中看看如何解决这个问题。
 
 ## 讨论
 
-一个单词级模型比一个字符级模型对输入数据有更广泛的视角，因为它查看的是单词的簇，而不是字符的簇。我们使用单词嵌入来快速开始，而不是使用字符的独热编码。在这里，我们通过表示每个单词的向量来表示该单词的语义值作为模型的输入。（有关单词嵌入的更多信息，请参见[第3章](ch03.html#word_embeddings)。）
+一个单词级模型比一个字符级模型对输入数据有更广泛的视角，因为它查看的是单词的簇，而不是字符的簇。我们使用单词嵌入来快速开始，而不是使用字符的独热编码。在这里，我们通过表示每个单词的向量来表示该单词的语义值作为模型的输入。（有关单词嵌入的更多信息，请参见第三章。）
 
-这个配方中介绍的模型并没有超越我们的字符级模型，也没有比我们在[配方7.1](#building-a-simple-sentiment-classifier)中看到的贝叶斯模型做得更好。这表明我们预训练的单词嵌入的权重与我们的问题不匹配。如果我们将嵌入层设置为可训练，事情会好得多；如果允许它更改这些嵌入，模型会有所改进。我们将在下一个配方中更详细地讨论这个问题。
+这个配方中介绍的模型并没有超越我们的字符级模型，也没有比我们在配方 7.1 中看到的贝叶斯模型做得更好。这表明我们预训练的单词嵌入的权重与我们的问题不匹配。如果我们将嵌入层设置为可训练，事情会好得多；如果允许它更改这些嵌入，模型会有所改进。我们将在下一个配方中更详细地讨论这个问题。
 
-权重不匹配并不令人惊讶。Word2vec模型是在Google新闻上训练的，它的语言使用方式与社交媒体上的平均使用方式有很大不同。例如，流行的标签在Google新闻语料库中不会出现，而它们似乎对于分类推文非常重要。
+权重不匹配并不令人惊讶。Word2vec 模型是在 Google 新闻上训练的，它的语言使用方式与社交媒体上的平均使用方式有很大不同。例如，流行的标签在 Google 新闻语料库中不会出现，而它们似乎对于分类推文非常重要。
 
 # 7.8 构建您自己的嵌入
 
@@ -566,9 +566,9 @@ class TokensYielder(object):
                     break
 ```
 
-现在我们可以训练模型了。明智的做法是收集一周左右的推文，将它们保存在一组文件中（每行一个JSON文档是一种流行的格式），然后将一个遍历文件的生成器传递到`TokensYielder`中。
+现在我们可以训练模型了。明智的做法是收集一周左右的推文，将它们保存在一组文件中（每行一个 JSON 文档是一种流行的格式），然后将一个遍历文件的生成器传递到`TokensYielder`中。
 
-在我们开始这项工作并等待一周让我们的推文涓涓细流进来之前，我们可以通过获取100,000条经过筛选的推文来测试这是否有效：
+在我们开始这项工作并等待一周让我们的推文涓涓细流进来之前，我们可以通过获取 100,000 条经过筛选的推文来测试这是否有效：
 
 ```py
 tweets = list(TokensYielder(100000,
@@ -581,7 +581,7 @@ tweets = list(TokensYielder(100000,
 model = gensim.models.Word2Vec(tweets, min_count=2)
 ```
 
-查看单词“爱”的最近邻居，我们发现我们确实有自己的领域特定的嵌入——只有在Twitter上，“453”与“爱”相关，因为在线上它是“酷故事，兄弟”的缩写：
+查看单词“爱”的最近邻居，我们发现我们确实有自己的领域特定的嵌入——只有在 Twitter 上，“453”与“爱”相关，因为在线上它是“酷故事，兄弟”的缩写：
 
 ```py
 model.wv.most_similar(positive=['love'], topn=5)
@@ -613,9 +613,9 @@ model.wv.most_similar(positive=['love'], topn=5)
 
 使用单词级递归网络进行分类。
 
-卷积网络适用于在输入流中发现局部模式。对于情感分析，这通常效果很好；某些短语会独立于它们出现的位置影响句子的情感。然而，建议表情符号的任务中有一个时间元素，我们没有利用CNN。与推文相关联的表情符号通常是推文的结论。在这种情况下，RNN可能更合适。
+卷积网络适用于在输入流中发现局部模式。对于情感分析，这通常效果很好；某些短语会独立于它们出现的位置影响句子的情感。然而，建议表情符号的任务中有一个时间元素，我们没有利用 CNN。与推文相关联的表情符号通常是推文的结论。在这种情况下，RNN 可能更合适。
 
-我们看到了如何教RNN生成文本在[第5章](ch05.html#text_generation)。我们可以使用类似的方法来建议表情符号。就像单词级CNN一样，我们将输入转换为它们的嵌入的单词。一个单层LSTM表现得相当不错：
+我们看到了如何教 RNN 生成文本在第五章。我们可以使用类似的方法来建议表情符号。就像单词级 CNN 一样，我们将输入转换为它们的嵌入的单词。一个单层 LSTM 表现得相当不错：
 
 ```py
 def create_lstm_model(vocab_size, embedding_size=None, embedding_weights=None):
@@ -638,17 +638,17 @@ def create_lstm_model(vocab_size, embedding_size=None, embedding_weights=None):
     return model
 ```
 
-经过10个时期，我们在训练集上达到了50%的精度，在测试集上达到了40%，远远超过了CNN模型。
+经过 10 个时期，我们在训练集上达到了 50%的精度，在测试集上达到了 40%，远远超过了 CNN 模型。
 
 ## 讨论
 
-我们在这里使用的LSTM模型明显优于我们的单词级CNN。我们可以将这种卓越的性能归因于推文是序列，推文末尾发生的事情与开头发生的事情有不同的影响。
+我们在这里使用的 LSTM 模型明显优于我们的单词级 CNN。我们可以将这种卓越的性能归因于推文是序列，推文末尾发生的事情与开头发生的事情有不同的影响。
 
-由于我们的字符级CNN往往比我们的单词级CNN做得更好，而我们的单词级LSTM比字符级CNN做得更好，我们可能会想知道字符级LSTM是否会更好。结果表明并不是。
+由于我们的字符级 CNN 往往比我们的单词级 CNN 做得更好，而我们的单词级 LSTM 比字符级 CNN 做得更好，我们可能会想知道字符级 LSTM 是否会更好。结果表明并不是。
 
-原因是，如果我们一次向LSTM输入一个字符，到达末尾时，它大部分时间都会忘记推文开头发生的事情。如果我们一次向LSTM输入一个单词，它就能克服这个问题。还要注意，我们的字符级CNN实际上并不是一次处理一个字符。我们一次使用四、五或六个字符的序列，并且将多个卷积层堆叠在一起，这样平均推文在最高级别只剩下三个特征向量。
+原因是，如果我们一次向 LSTM 输入一个字符，到达末尾时，它大部分时间都会忘记推文开头发生的事情。如果我们一次向 LSTM 输入一个单词，它就能克服这个问题。还要注意，我们的字符级 CNN 实际上并不是一次处理一个字符。我们一次使用四、五或六个字符的序列，并且将多个卷积层堆叠在一起，这样平均推文在最高级别只剩下三个特征向量。
 
-我们可以尝试将两者结合起来，通过创建一个CNN将推文压缩成更高抽象级别的片段，然后将这些向量输入到LSTM中得出最终结论。当然，这与我们的单词级LSTM的工作方式非常接近。我们不是使用CNN对文本片段进行分类，而是使用预训练的词嵌入在每个单词级别上执行相同的操作。
+我们可以尝试将两者结合起来，通过创建一个 CNN 将推文压缩成更高抽象级别的片段，然后将这些向量输入到 LSTM 中得出最终结论。当然，这与我们的单词级 LSTM 的工作方式非常接近。我们不是使用 CNN 对文本片段进行分类，而是使用预训练的词嵌入在每个单词级别上执行相同的操作。
 
 # 7.10 可视化（不）一致性
 
@@ -658,9 +658,9 @@ def create_lstm_model(vocab_size, embedding_size=None, embedding_weights=None):
 
 ## 解决方案
 
-使用Pandas显示它们的一致性和不一致性。
+使用 Pandas 显示它们的一致性和不一致性。
 
-精度给我们一个关于我们的模型表现如何的概念。虽然建议表情符号是一个相当嘈杂的任务，但是将我们的各种模型的表现并排进行比较是非常有用的。Pandas是一个很好的工具。
+精度给我们一个关于我们的模型表现如何的概念。虽然建议表情符号是一个相当嘈杂的任务，但是将我们的各种模型的表现并排进行比较是非常有用的。Pandas 是一个很好的工具。
 
 让我们首先将字符模型的测试数据作为向量而不是生成器导入：
 
@@ -668,7 +668,7 @@ def create_lstm_model(vocab_size, embedding_size=None, embedding_weights=None):
 test_char_vectors, _ = next(data_generator(test_tweets, None))
 ```
 
-现在让我们对前100个项目进行预测：
+现在让我们对前 100 个项目进行预测：
 
 ```py
 predictions = {
@@ -681,7 +681,7 @@ predictions = {
 }
 ```
 
-现在我们可以构建并显示一个Pandas `DataFrame`，其中包含每个模型的前25个预测，以及推文文本和原始表情符号：
+现在我们可以构建并显示一个 Pandas `DataFrame`，其中包含每个模型的前 25 个预测，以及推文文本和原始表情符号：
 
 ```py
 pd.options.display.max_colwidth = 128
@@ -698,31 +698,31 @@ eval_df[['content', 'true', 'char_cnn', 'cnn', 'lstm']].head(25)
 
 | # | 内容 | 真实 | char_cnn | cnn | lstm |
 | --- | --- | --- | --- | --- | --- |
-| 0 | @Gurmeetramrahim @RedFMIndia @rjraunac #8DaysToLionHeart 太棒了 | ![](assets/clapping-hands.png) | ![](assets/thumbs-up.png) | ![](assets/clapping-hands.png) | ![](assets/face-throwing-a-kiss.png) |
-| 1 | @suchsmallgods 我迫不及待想向他展示这些推文 | ![](assets/smiling-face-with-horns.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/red-heart.png) | ![](assets/loudly-crying-face.png) |
-| 2 | @Captain_RedWolf 我有大约20套lol 比你领先太多了 | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) |
-| 3 | @OtherkinOK 刚刚在@EPfestival，太棒了！下一站是@whelanslive，2016年11月11日星期五。 | ![](assets/ok-hand-sign.png) | ![](assets/flexed-biceps.png) | ![](assets/red-heart.png) | ![](assets/smiling-face-with-smiling-eyes.png) |
-| 4 | @jochendria: KathNiel与GForce Jorge。#PushAwardsKathNiels | ![](assets/blue-heart.png) | ![](assets/blue-heart.png) | ![](assets/blue-heart.png) | ![](assets/blue-heart.png) |
-| 5 | 好的 | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/red-heart.png) | ![](assets/face-with-tears-of-joy.png) |
-| 6 | “Distraught意味着心烦意乱” “那意味着困惑对吧？” -@ReevesDakota | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/red-heart.png) | ![](assets/loudly-crying-face.png) |
-| 7 | @JennLiri 宝贝，怎么了，打电话回来，我想听这首铃声 | ![](assets/face-with-rolling-eyes.png) | ![](assets/face-with-rolling-eyes.png) | ![](assets/copyright-symbol.png) | ![](assets/weary-face.png) |
-| 8 | 珍想要做朋友吗？我们可以成为朋友。爱你，女孩。#BachelorInParadise | ![](assets/red-heart.png) | ![](assets/crying-face.png) | ![](assets/red-heart.png) | ![](assets/red-heart.png) |
-| 9 | @amwalker38: 去关注这些热门账号 @the1stMe420 @DanaDeelish @So_deelish @aka_teemoney38 @CamPromoXXX @SexyLThings @l... | ![](assets/downpointing-backhand.png) | ![](assets/crown.png) | ![](assets/fire.png) | ![](assets/sparkles.png) |
-| 10 | @gspisak: 我总是取笑那些提前30分钟以上来接孩子的父母，今天轮到我了，至少我得到了... | ![](assets/see-no-evil-monkey.png) | ![](assets/upside-down-face.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) |
-| 11 | @ShawnMendes: 多伦多广告牌。太酷了！@spotify #ShawnXSpotify 去找到你所在城市的广告牌 | ![](assets/smiling-face-with-smiling-eyes.png) | ![](assets/smiling-face-with-smiling-eyes.png) | ![](assets/smiling-face-with-smiling-eyes.png) | ![](assets/smiling-face-with-smiling-eyes.png) |
-| 12 | @kayleeburt77 我可以要你的号码吗？我好像把我的弄丢了。 | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/thinking-face.png) |
-| 13 | @KentMurphy: 蒂姆·提博在职业棒球比赛中第一球就击出了一支全垒打 | ![](assets/flushed-face.png) | ![](assets/flushed-face.png) | ![](assets/flushed-face.png) | ![](assets/flushed-face.png) |
-| 14 | @HailKingSoup... | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/loudly-crying-face.png) | ![](assets/face-with-tears-of-joy.png) |
-| 15 | @RoxeteraRibbons 同样，我必须找出证明 | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/smiling-face-with-smiling-eyes.png) |
-| 16 | @theseoulstory: 九月回归：2PM，SHINee，INFINITE，BTS，Red Velvet，Gain，Song Jieun，Kanto... | ![](assets/fire.png) | ![](assets/fire.png) | ![](assets/fire.png) | ![](assets/fire.png) |
-| 17 | @VixenMusicLabel - 和平与爱 | ![](assets/victory-hand.png) | ![](assets/red-heart.png) | ![](assets/face-throwing-a-kiss.png) | ![](assets/red-heart.png) |
-| 18 | @iDrinkGallons 抱歉 | ![](assets/slightly-frowning-face.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) |
-| 19 | @StarYouFollow: 19- Frisson | ![](assets/face-with-rolling-eyes.png) | ![](assets/ok-hand-sign.png) | ![](assets/smiling-face-with-heart-shaped-eyes.png) | ![](assets/sparkles.png) |
-| 20 | @RapsDaiIy: 别错过Ugly God | ![](assets/fire.png) | ![](assets/fire.png) | ![](assets/fire.png) | ![](assets/fire.png) |
-| 21 | 怎么我的所有班次都这么快被接走了？！什么鬼 | ![](assets/loudly-crying-face.png) | ![](assets/weary-face.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/weary-face.png) |
-| 22 | @ShadowhuntersTV: #Shadowhunters 粉丝，你们会给这个父女#FlashbackFriday亲密时刻打几分？ | ![](assets/red-heart.png) | ![](assets/red-heart.png) | ![](assets/red-heart.png) | ![](assets/red-heart.png) |
-| 23 | @mbaylisxo: 感谢上帝，我有一套制服，不用每天担心穿什么 | ![](assets/smiling-face-with-open-mouth-and-cold-sweat.png) | ![](assets/face-with-rolling-eyes.png) | ![](assets/red-heart.png) | ![](assets/smiling-face-with-smiling-eyes.png) |
-| 24 | 心情波动如... | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-tears-of-joy.png) | ![](assets/face-with-rolling-eyes.png) |
+| 0 | @Gurmeetramrahim @RedFMIndia @rjraunac #8DaysToLionHeart 太棒了 | ![](img/clapping-hands.png) | ![](img/thumbs-up.png) | ![](img/clapping-hands.png) | ![](img/face-throwing-a-kiss.png) |
+| 1 | @suchsmallgods 我迫不及待想向他展示这些推文 | ![](img/smiling-face-with-horns.png) | ![](img/face-with-tears-of-joy.png) | ![](img/red-heart.png) | ![](img/loudly-crying-face.png) |
+| 2 | @Captain_RedWolf 我有大约 20 套 lol 比你领先太多了 | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) |
+| 3 | @OtherkinOK 刚刚在@EPfestival，太棒了！下一站是@whelanslive，2016 年 11 月 11 日星期五。 | ![](img/ok-hand-sign.png) | ![](img/flexed-biceps.png) | ![](img/red-heart.png) | ![](img/smiling-face-with-smiling-eyes.png) |
+| 4 | @jochendria: KathNiel 与 GForce Jorge。#PushAwardsKathNiels | ![](img/blue-heart.png) | ![](img/blue-heart.png) | ![](img/blue-heart.png) | ![](img/blue-heart.png) |
+| 5 | 好的 | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/red-heart.png) | ![](img/face-with-tears-of-joy.png) |
+| 6 | “Distraught 意味着心烦意乱” “那意味着困惑对吧？” -@ReevesDakota | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/red-heart.png) | ![](img/loudly-crying-face.png) |
+| 7 | @JennLiri 宝贝，怎么了，打电话回来，我想听这首铃声 | ![](img/face-with-rolling-eyes.png) | ![](img/face-with-rolling-eyes.png) | ![](img/copyright-symbol.png) | ![](img/weary-face.png) |
+| 8 | 珍想要做朋友吗？我们可以成为朋友。爱你，女孩。#BachelorInParadise | ![](img/red-heart.png) | ![](img/crying-face.png) | ![](img/red-heart.png) | ![](img/red-heart.png) |
+| 9 | @amwalker38: 去关注这些热门账号 @the1stMe420 @DanaDeelish @So_deelish @aka_teemoney38 @CamPromoXXX @SexyLThings @l... | ![](img/downpointing-backhand.png) | ![](img/crown.png) | ![](img/fire.png) | ![](img/sparkles.png) |
+| 10 | @gspisak: 我总是取笑那些提前 30 分钟以上来接孩子的父母，今天轮到我了，至少我得到了... | ![](img/see-no-evil-monkey.png) | ![](img/upside-down-face.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) |
+| 11 | @ShawnMendes: 多伦多广告牌。太酷了！@spotify #ShawnXSpotify 去找到你所在城市的广告牌 | ![](img/smiling-face-with-smiling-eyes.png) | ![](img/smiling-face-with-smiling-eyes.png) | ![](img/smiling-face-with-smiling-eyes.png) | ![](img/smiling-face-with-smiling-eyes.png) |
+| 12 | @kayleeburt77 我可以要你的号码吗？我好像把我的弄丢了。 | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/thinking-face.png) |
+| 13 | @KentMurphy: 蒂姆·提博在职业棒球比赛中第一球就击出了一支全垒打 | ![](img/flushed-face.png) | ![](img/flushed-face.png) | ![](img/flushed-face.png) | ![](img/flushed-face.png) |
+| 14 | @HailKingSoup... | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/loudly-crying-face.png) | ![](img/face-with-tears-of-joy.png) |
+| 15 | @RoxeteraRibbons 同样，我必须找出证明 | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/smiling-face-with-smiling-eyes.png) |
+| 16 | @theseoulstory: 九月回归：2PM，SHINee，INFINITE，BTS，Red Velvet，Gain，Song Jieun，Kanto... | ![](img/fire.png) | ![](img/fire.png) | ![](img/fire.png) | ![](img/fire.png) |
+| 17 | @VixenMusicLabel - 和平与爱 | ![](img/victory-hand.png) | ![](img/red-heart.png) | ![](img/face-throwing-a-kiss.png) | ![](img/red-heart.png) |
+| 18 | @iDrinkGallons 抱歉 | ![](img/slightly-frowning-face.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) |
+| 19 | @StarYouFollow: 19- Frisson | ![](img/face-with-rolling-eyes.png) | ![](img/ok-hand-sign.png) | ![](img/smiling-face-with-heart-shaped-eyes.png) | ![](img/sparkles.png) |
+| 20 | @RapsDaiIy: 别错过 Ugly God | ![](img/fire.png) | ![](img/fire.png) | ![](img/fire.png) | ![](img/fire.png) |
+| 21 | 怎么我的所有班次都这么快被接走了？！什么鬼 | ![](img/loudly-crying-face.png) | ![](img/weary-face.png) | ![](img/face-with-tears-of-joy.png) | ![](img/weary-face.png) |
+| 22 | @ShadowhuntersTV: #Shadowhunters 粉丝，你们会给这个父女#FlashbackFriday 亲密时刻打几分？ | ![](img/red-heart.png) | ![](img/red-heart.png) | ![](img/red-heart.png) | ![](img/red-heart.png) |
+| 23 | @mbaylisxo: 感谢上帝，我有一套制服，不用每天担心穿什么 | ![](img/smiling-face-with-open-mouth-and-cold-sweat.png) | ![](img/face-with-rolling-eyes.png) | ![](img/red-heart.png) | ![](img/smiling-face-with-smiling-eyes.png) |
+| 24 | 心情波动如... | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-tears-of-joy.png) | ![](img/face-with-rolling-eyes.png) |
 
 浏览这些结果，我们可以看到通常当模型出错时，它们会落在与原始推文中非常相似的表情符号上。有时，预测似乎比实际使用的更有意义，有时候没有一个模型表现得很好。
 
@@ -742,7 +742,7 @@ eval_df[['content', 'true', 'char_cnn', 'cnn', 'lstm']].head(25)
 
 将模型组合成一个集成模型。
 
-群体智慧的概念——即群体意见的平均值通常比任何具体意见更准确——也适用于机器学习模型。我们可以通过使用三个输入将所有三个模型合并为一个模型，并使用Keras的`Average`层来组合我们模型的输出：
+群体智慧的概念——即群体意见的平均值通常比任何具体意见更准确——也适用于机器学习模型。我们可以通过使用三个输入将所有三个模型合并为一个模型，并使用 Keras 的`Average`层来组合我们模型的输出：
 
 ```py
 def prediction_layer(model):
@@ -802,6 +802,6 @@ ensemble.fit_generator(
 
 ## 讨论
 
-组合模型或集成模型是将各种方法结合到一个模型中解决问题的好方法。在像Kaggle这样的流行机器学习竞赛中，获胜者几乎总是基于这种技术，这并非巧合。
+组合模型或集成模型是将各种方法结合到一个模型中解决问题的好方法。在像 Kaggle 这样的流行机器学习竞赛中，获胜者几乎总是基于这种技术，这并非巧合。
 
-而不是将模型几乎完全分开，然后在最后使用`Average`层将它们连接起来，我们也可以在更早的阶段将它们连接起来，例如通过连接每个模型的第一个密集层。实际上，这在更复杂的CNN中是我们所做的一部分，我们使用了各种窗口大小的小子网，然后将它们连接起来得出最终结论。
+而不是将模型几乎完全分开，然后在最后使用`Average`层将它们连接起来，我们也可以在更早的阶段将它们连接起来，例如通过连接每个模型的第一个密集层。实际上，这在更复杂的 CNN 中是我们所做的一部分，我们使用了各种窗口大小的小子网，然后将它们连接起来得出最终结论。

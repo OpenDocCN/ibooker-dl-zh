@@ -1,16 +1,16 @@
-# 第1章。基础
+# 第一章。基础
 
 > 不要死记这些公式。如果你理解了概念，你可以发明自己的符号。
 > 
 > 约翰·科克兰，《投资笔记》2006
 
-本章的目的是解释一些对理解神经网络工作至关重要的基础心智模型。具体来说，我们将涵盖*嵌套数学函数及其导数*。我们将从最简单的基本构建块开始，逐步展示我们可以构建由“链”组成的复杂函数，即使其中一个函数是接受多个输入的矩阵乘法，也可以计算函数输出相对于输入的导数。理解这个过程如何运作将是理解神经网络的关键，而我们实际上直到[第2章](ch02.html#fundamentals)才会开始涵盖神经网络。
+本章的目的是解释一些对理解神经网络工作至关重要的基础心智模型。具体来说，我们将涵盖*嵌套数学函数及其导数*。我们将从最简单的基本构建块开始，逐步展示我们可以构建由“链”组成的复杂函数，即使其中一个函数是接受多个输入的矩阵乘法，也可以计算函数输出相对于输入的导数。理解这个过程如何运作将是理解神经网络的关键，而我们实际上直到第二章才会开始涵盖神经网络。
 
 当我们围绕神经网络的这些基础构建块来找到方向时，我们将系统地从三个视角描述我们引入的每个概念：
 
 +   数学，以方程或方程组的形式
 
-+   代码，尽可能少的额外语法（使Python成为理想选择）
++   代码，尽可能少的额外语法（使 Python 成为理想选择）
 
 +   一个解释正在发生的事情的图表，就像你在编程面试中在白板上画的那种
 
@@ -26,9 +26,9 @@
 
 这里有两个函数的例子，用数学符号描述：
 
-+   *f*[1](*x*) = *x*²
++   *f*1 = *x*²
 
-+   *f*[2](*x*) = *max*(*x*, 0)
++   *f*2 = *max*(*x*, 0)
 
 这个符号表示函数，我们任意地称为*f*[1]和*f*[2]，将一个数字*x*作为输入，并将其转换为*x*²（在第一种情况下）或*max*(*x*, 0)（在第二种情况下）。
 
@@ -38,29 +38,29 @@
 
 1.  画一个*x-y*平面（其中*x*指水平轴，*y*指垂直轴）。
 
-1.  绘制一堆点，其中点的x坐标是函数在某个范围内的（通常是均匀间隔的）输入，y坐标是该范围内函数的输出。
+1.  绘制一堆点，其中点的 x 坐标是函数在某个范围内的（通常是均匀间隔的）输入，y 坐标是该范围内函数的输出。
 
 1.  连接这些绘制的点。
 
-这最初是由法国哲学家勒内·笛卡尔完成的，它在许多数学领域中非常有用，特别是微积分。[图1-1](#fig_01-01)显示了这两个函数的图表。
+这最初是由法国哲学家勒内·笛卡尔完成的，它在许多数学领域中非常有用，特别是微积分。图 1-1 显示了这两个函数的图表。
 
-![两个连续的、大部分可微的函数](assets/dlfs_0101.png)
+![两个连续的、大部分可微的函数](img/dlfs_0101.png)
 
-###### 图1-1。两个连续的、大部分可微的函数
+###### 图 1-1。两个连续的、大部分可微的函数
 
-然而，还有另一种描述函数的方式，在学习微积分时并不那么有用，但在思考深度学习模型时将非常有用。我们可以将函数看作是接受数字输入并产生数字输出的盒子，就像具有其自身内部规则的小工厂，用于处理输入。[图1-2](#fig_01-02)展示了这两个函数被描述为通用规则以及它们如何在特定输入上运行。
+然而，还有另一种描述函数的方式，在学习微积分时并不那么有用，但在思考深度学习模型时将非常有用。我们可以将函数看作是接受数字输入并产生数字输出的盒子，就像具有其自身内部规则的小工厂，用于处理输入。图 1-2 展示了这两个函数被描述为通用规则以及它们如何在特定输入上运行。
 
-![另一种看待函数的方式](assets/dlfs_0102.png)
+![另一种看待函数的方式](img/dlfs_0102.png)
 
-###### 图1-2. 另一种看待这些函数的方式
+###### 图 1-2. 另一种看待这些函数的方式
 
 ## 代码
 
-最后，我们可以使用代码描述这些函数。在此之前，我们应该简要介绍一下我们将在其上编写函数的Python库：NumPy。
+最后，我们可以使用代码描述这些函数。在此之前，我们应该简要介绍一下我们将在其上编写函数的 Python 库：NumPy。
 
 ### 代码注意事项＃1：NumPy
 
-NumPy是一个广泛使用的Python库，用于快速数值计算，其内部大部分是用C编写的。简而言之：我们在神经网络中处理的数据将始终保存在一个几乎总是一维、二维、三维或四维的*多维数组*中，尤其是二维或三维。来自NumPy库的`ndarray`类允许我们以既直观又快速的方式操作这些数组。举个最简单的例子：如果我们将数据存储在Python列表（或列表的列表）中，使用正常语法逐元素添加或乘以列表是行不通的，而对于`ndarray`却是行得通的：
+NumPy 是一个广泛使用的 Python 库，用于快速数值计算，其内部大部分是用 C 编写的。简而言之：我们在神经网络中处理的数据将始终保存在一个几乎总是一维、二维、三维或四维的*多维数组*中，尤其是二维或三维。来自 NumPy 库的`ndarray`类允许我们以既直观又快速的方式操作这些数组。举个最简单的例子：如果我们将数据存储在 Python 列表（或列表的列表）中，使用正常语法逐元素添加或乘以列表是行不通的，而对于`ndarray`却是行得通的：
 
 ```py
 print("Python list operations:")
@@ -89,13 +89,13 @@ a+b: [5 7 9]
 a*b: [ 4 10 18]
 ```
 
-`ndarray`还具有您从`n`维数组中期望的几个特性；每个`ndarray`都有`n`个轴，从0开始索引，因此第一个轴是`0`，第二个是`1`，依此类推。特别是，由于我们经常处理2D `ndarray`，我们可以将`axis = 0`看作行，`axis = 1`看作列——参见[图1-3](#fig_01-03)。
+`ndarray`还具有您从`n`维数组中期望的几个特性；每个`ndarray`都有`n`个轴，从 0 开始索引，因此第一个轴是`0`，第二个是`1`，依此类推。特别是，由于我们经常处理 2D `ndarray`，我们可以将`axis = 0`看作行，`axis = 1`看作列——参见图 1-3。
 
-![简单的NumPy数组示例](assets/dlfs_0103.png)
+![简单的 NumPy 数组示例](img/dlfs_0103.png)
 
-###### 图1-3. 一个2D NumPy数组，其中axis = 0表示行，axis = 1表示列
+###### 图 1-3. 一个 2D NumPy 数组，其中 axis = 0 表示行，axis = 1 表示列
 
-NumPy的`ndarray`还支持沿着这些轴以直观方式应用函数。例如，沿着轴0（2D数组的*行*）求和基本上会沿着该轴“折叠数组”，返回一个比原始数组少一个维度的数组；对于2D数组，这相当于对每列求和：
+NumPy 的`ndarray`还支持沿着这些轴以直观方式应用函数。例如，沿着轴 0（2D 数组的*行*）求和基本上会沿着该轴“折叠数组”，返回一个比原始数组少一个维度的数组；对于 2D 数组，这相当于对每列求和：
 
 ```py
 print('a:')
@@ -112,7 +112,7 @@ a.sum(axis=0): [4 6]
 a.sum(axis=1): [3 7]
 ```
 
-最后，NumPy的`ndarray`支持将1D数组添加到最后一个轴；对于具有`R`行和`C`列的2D数组`a`，这意味着我们可以添加长度为`C`的1D数组`b`，NumPy将以直观的方式进行加法运算，将元素添加到`a`的每一行：^([1](ch01.html#idm45732632700344))
+最后，NumPy 的`ndarray`支持将 1D 数组添加到最后一个轴；对于具有`R`行和`C`列的 2D 数组`a`，这意味着我们可以添加长度为`C`的 1D 数组`b`，NumPy 将以直观的方式进行加法运算，将元素添加到`a`的每一行：^(1)
 
 ```py
 a = np.array([[1,2,3],
@@ -131,7 +131,7 @@ a+b:
 
 ### 代码注意事项＃2：类型检查的函数
 
-正如我提到的，我们在本书中编写的代码的主要目标是使我解释的概念变得精确和清晰。随着书的进行，这将变得更具挑战性，因为我们将编写具有许多参数的函数作为复杂类的一部分。为了应对这一挑战，我们将在整个过程中使用带有类型签名的函数；例如，在[第3章](ch03.html#deep_learning_from_scratch)中，我们将初始化我们的神经网络如下：
+正如我提到的，我们在本书中编写的代码的主要目标是使我解释的概念变得精确和清晰。随着书的进行，这将变得更具挑战性，因为我们将编写具有许多参数的函数作为复杂类的一部分。为了应对这一挑战，我们将在整个过程中使用带有类型签名的函数；例如，在第三章中，我们将初始化我们的神经网络如下：
 
 ```py
 def __init__(self,
@@ -154,9 +154,9 @@ def operation(x1: ndarray, x2: ndarray) -> ndarray:
 
 您立即知道这是一个接受两个`ndarray`的函数，可能以某种方式将它们组合在一起，并输出该组合的结果。由于它们提供的更清晰性，我们将在本书中始终使用带有类型检查的函数。
 
-### NumPy中的基本函数
+### NumPy 中的基本函数
 
-在了解了这些基础知识之后，让我们在NumPy中编写我们之前定义的函数：
+在了解了这些基础知识之后，让我们在 NumPy 中编写我们之前定义的函数：
 
 ```py
 def square(x: ndarray) -> ndarray:
@@ -174,7 +174,7 @@ def leaky_relu(x: ndarray) -> ndarray:
 
 ###### 注意
 
-NumPy的一个特点是许多函数可以通过写`np.*function_name*(ndarray)`或写`ndarray.*function_name*`来应用于`ndarray`。例如，前面的`relu`函数可以写成：`x.clip(min=0)`。我们将尽量保持一致，使用`np.*function_name*(ndarray)`的约定——特别是，我们将避免诸如`*ndarray*.T`用于转置二维`ndarray`的技巧，而是写成`np.transpose(*ndarray*, (1, 0))`。
+NumPy 的一个特点是许多函数可以通过写`np.*function_name*(ndarray)`或写`ndarray.*function_name*`来应用于`ndarray`。例如，前面的`relu`函数可以写成：`x.clip(min=0)`。我们将尽量保持一致，使用`np.*function_name*(ndarray)`的约定——特别是，我们将避免诸如`*ndarray*.T`用于转置二维`ndarray`的技巧，而是写成`np.transpose(*ndarray*, (1, 0))`。
 
 如果你能理解数学、图表和代码是表示同一基本概念的三种不同方式，那么你就已经在正确理解深度学习所需的灵活思维方面迈出了重要一步。
 
@@ -188,7 +188,7 @@ NumPy的一个特点是许多函数可以通过写`np.*function_name*(ndarray)`�
 
 <math display="block"><mrow><mfrac><mrow><mi>d</mi><mi>f</mi></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>a</mi> <mo>)</mo></mrow> <mo>=</mo> <munder><mo form="prefix" movablelimits="true">lim</mo> <mrow><mi>Δ</mi><mo>→</mo><mn>0</mn></mrow></munder> <mfrac><mrow><mi>f</mi><mfenced close=")" open="(" separators=""><mrow><mi>a</mi><mo>+</mo><mi>Δ</mi></mrow></mfenced><mo>-</mo><mi>f</mi><mfenced close=")" open="(" separators=""><mi>a</mi><mo>-</mo><mi>Δ</mi></mfenced></mrow> <mrow><mn>2</mn><mo>×</mo><mi>Δ</mi></mrow></mfrac></mrow></math>
 
-这个极限可以通过设置一个非常小的*Δ*值（例如0.001）来进行数值近似，因此我们可以计算导数为：
+这个极限可以通过设置一个非常小的*Δ*值（例如 0.001）来进行数值近似，因此我们可以计算导数为：
 
 <math display="block"><mrow><mfrac><mrow><mi>d</mi><mi>f</mi></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>a</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>f</mi><mo>(</mo><mi>a</mi><mo>+</mo><mn>0.001</mn><mo>)</mo><mo>-</mo><mi>f</mi><mo>(</mo><mi>a</mi><mo>-</mo><mn>0.001</mn><mo>)</mo></mrow> <mrow><mn>0.002</mn></mrow></mfrac></mrow></math>
 
@@ -196,17 +196,17 @@ NumPy的一个特点是许多函数可以通过写`np.*function_name*(ndarray)`�
 
 ## 图表
 
-首先，熟悉的方式：如果我们简单地在函数*f*的笛卡尔表示上画一条切线，*f*在点*a*的导数就是这条线在*a*点的斜率。与前一小节中的数学描述一样，我们实际上可以计算这条线的斜率的两种方法。第一种是使用微积分来计算极限。第二种是只需取连接*f*在*a* - 0.001和*a* + 0.001的线的斜率。后一种方法在[图1-4](#fig_01-04)中有所描述，对于学过微积分的人应该很熟悉。
+首先，熟悉的方式：如果我们简单地在函数*f*的笛卡尔表示上画一条切线，*f*在点*a*的导数就是这条线在*a*点的斜率。与前一小节中的数学描述一样，我们实际上可以计算这条线的斜率的两种方法。第一种是使用微积分来计算极限。第二种是只需取连接*f*在*a* - 0.001 和*a* + 0.001 的线的斜率。后一种方法在图 1-4 中有所描述，对于学过微积分的人应该很熟悉。
 
-![dlfs 0104](assets/dlfs_0104.png)
+![dlfs 0104](img/dlfs_0104.png)
 
-###### 图1-4\. 导数作为斜率
+###### 图 1-4\. 导数作为斜率
 
-正如我们在前一节中看到的，另一种思考函数的方式是将其视为小工厂。现在想象一下，这些工厂的输入通过一根绳子连接到输出。导数等于这个问题的答案：如果我们向上拉动函数的输入*a*一点点，或者为了考虑到函数在*a*可能是不对称的情况，向下拉动*a*一点点，根据工厂的内部运作，输出将以这个小量的多少倍改变？这在[图1-5](#fig_01-05)中有所描述。
+正如我们在前一节中看到的，另一种思考函数的方式是将其视为小工厂。现在想象一下，这些工厂的输入通过一根绳子连接到输出。导数等于这个问题的答案：如果我们向上拉动函数的输入*a*一点点，或者为了考虑到函数在*a*可能是不对称的情况，向下拉动*a*一点点，根据工厂的内部运作，输出将以这个小量的多少倍改变？这在图 1-5 中有所描述。
 
-![dlfs 0105](assets/dlfs_0105.png)
+![dlfs 0105](img/dlfs_0105.png)
 
-###### 图1-5\. 另一种可视化导数的方式
+###### 图 1-5\. 另一种可视化导数的方式
 
 这第二种表示将比第一种更重要，以理解深度学习。
 
@@ -231,7 +231,7 @@ def deriv(func: Callable[[ndarray], ndarray],
 
 当我们说“某物是另一物的函数”时——例如，*P*是*E*的函数（故意随机选择的字母），我们的意思是存在某个函数*f*，使得*f*(*E*) = *P*——或者等价地，存在一个函数*f*，接受*E*对象并产生*P*对象。我们也可以将其理解为*P*“被定义为”将函数*f*应用于*E*时产生的结果：
 
-![另一种可视化函数的方式](assets/dlfs_01in01.png)
+![另一种可视化函数的方式](img/dlfs_01in01.png)
 
 我们可以将其编码为：
 
@@ -249,13 +249,13 @@ P = f(E)
 
 ## 图表
 
-表示嵌套函数最自然的方式是使用“迷你工厂”或“盒子”表示法（来自 [“函数”](#functions-section-01) 的第二种表示法）。
+表示嵌套函数最自然的方式是使用“迷你工厂”或“盒子”表示法（来自 “函数” 的第二种表示法）。
 
-如 [图1-6](#fig_01-07) 所示，一个输入进入第一个函数，被转换，然后出来；然后它进入第二个函数，再次被转换，我们得到最终输出。
+如 图 1-6 所示，一个输入进入第一个函数，被转换，然后出来；然后它进入第二个函数，再次被转换，我们得到最终输出。
 
-![f1 and f2 as a chain](assets/dlfs_0106.png)
+![f1 and f2 as a chain](img/dlfs_0106.png)
 
-###### 图1-6\. 嵌套函数，自然地
+###### 图 1-6\. 嵌套函数，自然地
 
 ## 数学
 
@@ -279,7 +279,7 @@ Array_Function = Callable[[ndarray], ndarray]
 Chain = List[Array_Function]
 ```
 
-然后我们将定义数据如何通过长度为2的链传递：
+然后我们将定义数据如何通过长度为 2 的链传递：
 
 ```py
 def chain_length_2(chain: Chain,
@@ -298,11 +298,11 @@ def chain_length_2(chain: Chain,
 
 ## 另一个图表
 
-使用盒子表示法描绘嵌套函数，我们可以看到这个复合函数实际上只是一个单一函数。因此，我们可以简单地表示这个函数为 *f*[1] *f*[2]，如 [图1-7](#fig_01-08) 所示。
+使用盒子表示法描绘嵌套函数，我们可以看到这个复合函数实际上只是一个单一函数。因此，我们可以简单地表示这个函数为 *f*[1] *f*[2]，如 图 1-7 所示。
 
-![f1f2 nested](assets/dlfs_0107.png)
+![f1f2 nested](img/dlfs_0107.png)
 
-###### 图1-7\. 另一种思考嵌套函数的方式
+###### 图 1-7\. 另一种思考嵌套函数的方式
 
 此外，微积分中的一个定理告诉我们，由“大部分可微”的函数组成的复合函数本身也是大部分可微的！因此，我们可以将 *f*[1]*f*[2] 视为另一个我们可以计算导数的函数，计算复合函数的导数将对训练深度学习模型至关重要。
 
@@ -332,21 +332,21 @@ def chain_length_2(chain: Chain,
 
 前面的公式并没有给出链式法则的太多直觉。对于这一点，框表示法更有帮助。让我们推理一下在简单情况下*f*[1] *f*[2]的导数“应该”是什么。
 
-![f1f2 nested](assets/dlfs_0108.png)
+![f1f2 nested](img/dlfs_0108.png)
 
-###### 图1-8。链式法则的示例
+###### 图 1-8。链式法则的示例
 
-直觉上，使用[图1-8](#fig_01-09)中的图表，复合函数的导数*应该*是其组成函数的导数的一种乘积。假设我们将值5输入到第一个函数中，再假设在*u*=5处计算第一个函数的*导数*得到一个值为3，即，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mn>5</mn> <mo>)</mo></mrow> <mo>=</mo> <mn>3</mn></mrow></math>。
+直觉上，使用图 1-8 中的图表，复合函数的导数*应该*是其组成函数的导数的一种乘积。假设我们将值 5 输入到第一个函数中，再假设在*u*=5 处计算第一个函数的*导数*得到一个值为 3，即，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mn>5</mn> <mo>)</mo></mrow> <mo>=</mo> <mn>3</mn></mrow></math>。
 
-假设我们然后取出第一个框中的函数的*值*，假设它是1，所以*f*[1](5) = 1，并计算在这个值处第二个函数*f*[2]的导数：即，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mn>1</mn> <mo>)</mo></mrow></mrow></math>。我们发现这个值是-2。
+假设我们然后取出第一个框中的函数的*值*，假设它是 1，所以*f*1 = 1，并计算在这个值处第二个函数*f*[2]的导数：即，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mn>1</mn> <mo>)</mo></mrow></mrow></math>。我们发现这个值是-2。
 
-如果我们将这些函数想象成字面上串在一起，那么如果将第二个框的输入改变1个单位会导致第二个框的输出变化-2个单位，那么将第二个框的输入改变3个单位应该会导致第二个框的输出变化-2×3 = -6个单位。这就是为什么在链式法则的公式中，最终结果最终是一个乘积：<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math> *乘以* <math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>。
+如果我们将这些函数想象成字面上串在一起，那么如果将第二个框的输入改变 1 个单位会导致第二个框的输出变化-2 个单位，那么将第二个框的输入改变 3 个单位应该会导致第二个框的输出变化-2×3 = -6 个单位。这就是为什么在链式法则的公式中，最终结果最终是一个乘积：<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math> *乘以* <math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>。
 
 因此，通过考虑图表和数学，我们可以通过链式法则推理出嵌套函数输出的导数与其输入应该是什么，代码指令可能是什么样的？
 
 ## 代码
 
-让我们编写代码并展示以这种方式计算导数实际上会产生“看起来正确”的结果。我们将使用来自[“NumPy中的基本函数”](#basic-NumPy)的`square`函数，以及`sigmoid`，另一个在深度学习中变得重要的函数：
+让我们编写代码并展示以这种方式计算导数实际上会产生“看起来正确”的结果。我们将使用来自“NumPy 中的基本函数”的`square`函数，以及`sigmoid`，另一个在深度学习中变得重要的函数：
 
 ```py
 def sigmoid(x: ndarray) -> ndarray:
@@ -388,7 +388,7 @@ def chain_deriv_2(chain: Chain,
     return df1dx * df2du
 ```
 
-[图1-9](#fig_01-10)绘制了结果，并显示链式法则有效：
+图 1-9 绘制了结果，并显示链式法则有效：
 
 ```py
 PLOT_RANGE = np.arange(-3, 3, 0.01)
@@ -403,9 +403,9 @@ plot_chain(chain_2, PLOT_RANGE)
 plot_chain_deriv(chain_2, PLOT_RANGE)
 ```
 
-![链式法则示例](assets/dlfs_0109.png)
+![链式法则示例](img/dlfs_0109.png)
 
-###### 图1-9。链式法则有效，第1部分
+###### 图 1-9。链式法则有效，第 1 部分
 
 链式法则似乎有效。当函数是向上倾斜时，导数是正的；当函数是平的时，导数是零；当函数是向下倾斜时，导数是负的。
 
@@ -423,17 +423,17 @@ plot_chain_deriv(chain_2, PLOT_RANGE)
 
 <math display="block"><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>3</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>3</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>
 
-为什么这个公式适用于长度为2的链条的基本逻辑，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>，在这里也适用——看公式本身缺乏直觉！
+为什么这个公式适用于长度为 2 的链条的基本逻辑，<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow></mrow></math>，在这里也适用——看公式本身缺乏直觉！
 
 ## 图表
 
-要（字面上）看到这个公式为什么是有意义的，最好的方法是通过另一个盒子图表，如[图1-10](#fig_01-11)所示。
+要（字面上）看到这个公式为什么是有意义的，最好的方法是通过另一个盒子图表，如图 1-10 所示。
 
-![dlfs 0110](assets/dlfs_0110.png)
+![dlfs 0110](img/dlfs_0110.png)
 
-###### 图1-10。计算三个嵌套函数导数的“盒子模型”
+###### 图 1-10。计算三个嵌套函数导数的“盒子模型”
 
-使用类似的推理来自前一节：如果我们想象*f*[1] *f*[2] *f*[3]的输入（称为*a*）通过一根绳子连接到输出（称为*b*），那么将*a*改变一个小量*Δ*将导致*f*[1](*a*)的变化为<math><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mrow></math>乘以*Δ*，这将导致<math><mrow><msub><mi>f</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>（链中的下一步）的变化为<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>乘以*Δ*，以此类推到第三步，当我们到达最终变化时，等于前述链式法则的完整公式乘以*Δ*。花一点时间阅读这个解释和之前的图表，但不要花太多时间，因为当我们编写代码时，我们将对此有更多的直觉。
+使用类似的推理来自前一节：如果我们想象*f*[1] *f*[2] *f*[3]的输入（称为*a*）通过一根绳子连接到输出（称为*b*），那么将*a*改变一个小量*Δ*将导致*f*1 的变化为<math><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mrow></math>乘以*Δ*，这将导致<math><mrow><msub><mi>f</mi> <mn>2</mn></msub> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>（链中的下一步）的变化为<math><mrow><mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>2</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>f</mi> <mn>1</mn></msub> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>d</mi><msub><mi>f</mi> <mn>1</mn></msub></mrow> <mrow><mi>d</mi><mi>u</mi></mrow></mfrac> <mrow><mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>)</mo></mrow></mrow></math>乘以*Δ*，以此类推到第三步，当我们到达最终变化时，等于前述链式法则的完整公式乘以*Δ*。花一点时间阅读这个解释和之前的图表，但不要花太多时间，因为当我们编写代码时，我们将对此有更多的直觉。
 
 ## 代码
 
@@ -489,9 +489,9 @@ plot_chain([leaky_relu, sigmoid, square], PLOT_RANGE)
 plot_chain_deriv([leaky_relu, sigmoid, square], PLOT_RANGE)
 ```
 
-[图 1-11](#fig_01-12) 显示了结果。
+图 1-11 显示了结果。
 
-![dlfs 0111](assets/dlfs_0111.png)
+![dlfs 0111](img/dlfs_0111.png)
 
 ###### 图 1-11\. 链式法则有效，即使是三重嵌套函数
 
@@ -523,9 +523,9 @@ plot_chain_deriv([leaky_relu, sigmoid, square], PLOT_RANGE)
 
 ## 图表
 
-现在我们正在检查具有多个输入的函数，让我们暂停一下来定义一个我们一直在围绕的概念：用圆圈和连接它们的箭头表示数学“运算顺序”的图表可以被视为 *计算图*。例如，[图 1-12](#fig_01-13) 显示了我们刚刚描述的函数 *f* 的计算图。
+现在我们正在检查具有多个输入的函数，让我们暂停一下来定义一个我们一直在围绕的概念：用圆圈和连接它们的箭头表示数学“运算顺序”的图表可以被视为 *计算图*。例如，图 1-12 显示了我们刚刚描述的函数 *f* 的计算图。
 
-![dlfs 0112](assets/dlfs_0112.png)
+![dlfs 0112](img/dlfs_0112.png)
 
 ###### 图 1-12\. 具有多个输入的函数
 
@@ -556,11 +556,11 @@ def multiple_inputs_add(x: ndarray,
 
 ## 图表
 
-从概念上讲，我们只需做与具有一个输入的函数相同的事情：通过计算图“向后”计算每个组成函数的导数，然后将结果相乘以获得总导数。如[图1-13](#fig_01-14)所示。
+从概念上讲，我们只需做与具有一个输入的函数相同的事情：通过计算图“向后”计算每个组成函数的导数，然后将结果相乘以获得总导数。如图 1-13 所示。
 
-![dlfs 0113](assets/dlfs_0113.png)
+![dlfs 0113](img/dlfs_0113.png)
 
-###### 图1-13。通过具有多个输入的函数的计算图向后传递
+###### 图 1-13。通过具有多个输入的函数的计算图向后传递
 
 ## 数学
 
@@ -627,7 +627,7 @@ def multiple_inputs_add_backward(x: ndarray,
 
 要在数学上准确，如果：
 
-<math display="block"><mrow><mi>W</mi> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><msub><mi>w</mi> <mn>1</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mi>n</mi></msub></mtd></mtr></mtable></mfenced></mrow></math>
+<math display="block"><mrow><mi>W</mi> <mo>=</mo> <mfenced close="]" open=""><mtable><mtr><mtd><msub><mi>w</mi> <mn>1</mn></msub></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mn>2</mn></msub></mtd></mtr> <mtr><mtd><mo>⋮</mo></mtd></mtr> <mtr><mtd><msub><mi>w</mi> <mi>n</mi></msub></mtd></mtr></mtable></mfenced></mrow></math>
 
 然后我们可以定义这个操作的输出为：
 
@@ -639,23 +639,23 @@ def multiple_inputs_add_backward(x: ndarray,
 
 ## 图
 
-一种简单的描述这个操作的方式如[图1-14](#fig_01-15)所示。
+一种简单的描述这个操作的方式如[图 1-14 所示。
 
-![dlfs 0114](assets/dlfs_0114.png)
+![dlfs 0114](img/dlfs_0114.png)
 
-###### 图1-14。矢量点积的图示
+###### 图 1-14。矢量点积的图示
 
 这个图示描述了一个接受两个输入的操作，这两个输入都可以是`ndarray`，并产生一个输出`ndarray`。
 
-但这实际上是对许多操作进行了大量简写，这些操作发生在许多输入上。我们可以选择突出显示各个操作和输入，如图[1-15](#fig_01-16)和[1-16](#fig_01-17)所示。
+但这实际上是对许多操作进行了大量简写，这些操作发生在许多输入上。我们可以选择突出显示各个操作和输入，如图 1-15 和 1-16 所示。
 
-![dlfs 0115](assets/dlfs_0115.png)
+![dlfs 0115](img/dlfs_0115.png)
 
-###### 图1-15。矩阵乘法的另一个图示
+###### 图 1-15。矩阵乘法的另一个图示
 
-![dlfs 0116](assets/dlfs_0116.png)
+![dlfs 0116](img/dlfs_0116.png)
 
-###### 图1-16。矩阵乘法的第三个图示
+###### 图 1-16。矩阵乘法的第三个图示
 
 关键点是点积（或矩阵乘法）是表示许多个体操作的简洁方式；此外，正如我们将在下一节中开始看到的，使用这个操作也使我们在反向传播中的导数计算变得极其简洁。
 
@@ -691,11 +691,11 @@ def matmul_forward(X: ndarray,
 
 ## 图
 
-从概念上讲，我们只是想做类似于[图1-17](#fig_01-18)的事情。
+从概念上讲，我们只是想做类似于图 1-17 的事情。
 
-![dlfs 0117](assets/dlfs_0117.png)
+![dlfs 0117](img/dlfs_0117.png)
 
-###### 图1-17。矩阵乘法的反向传播，概念上
+###### 图 1-17。矩阵乘法的反向传播，概念上
 
 当我们只处理加法和乘法时，计算这些导数是很容易的，就像前面的例子一样。但是如何用矩阵乘法做类似的事情呢？要准确定义这一点，我们将不得不求助于数学。
 
@@ -745,11 +745,11 @@ def matmul_backward_first(X: ndarray,
 
 ## 图表
 
-这个函数的图表，显示在[图1-18](#fig_01-19)中，与[图1-17](#fig_01-18)中的相同，只是在末尾简单地添加了*σ*函数。
+这个函数的图表，显示在图 1-18 中，与图 1-17 中的相同，只是在末尾简单地添加了*σ*函数。
 
-![dlfs 0118](assets/dlfs_0118.png)
+![dlfs 0118](img/dlfs_0118.png)
 
-###### 图1-18\. 与之前相同的图表，但在末尾添加了另一个函数
+###### 图 1-18\. 与之前相同的图表，但在末尾添加了另一个函数
 
 ## 数学
 
@@ -804,11 +804,11 @@ def matrix_forward_extra(X: ndarray,
 
 ### 图表
 
-这个函数的反向传播图，如[图1-19](#fig_01-20)所示，与先前示例的类似，甚至比数学更高级；我们只需要根据在矩阵乘法结果处评估的*σ*函数的导数再添加一个乘法。
+这个函数的反向传播图，如图 1-19 所示，与先前示例的类似，甚至比数学更高级；我们只需要根据在矩阵乘法结果处评估的*σ*函数的导数再添加一个乘法。
 
-![dlfs 0119](assets/dlfs_0119.png)
+![dlfs 0119](img/dlfs_0119.png)
 
-###### 图1-19\. 具有矩阵乘法的图：反向传播
+###### 图 1-19\. 具有矩阵乘法的图：反向传播
 
 ### 代码
 
@@ -854,11 +854,11 @@ print(X)
 [[ 0.4723  0.6151 -1.7262]]
 ```
 
-如果我们将*x*[3]从*-1.726*增加到*-1.716*，我们应该看到正向函数产生的值增加了*关于x[3]的梯度 × 0.01*。[图1-20](#fig_01-21)展示了这一点。
+如果我们将*x*[3]从*-1.726*增加到*-1.716*，我们应该看到正向函数产生的值增加了*关于 x[3]的梯度 × 0.01*。图 1-20 展示了这一点。
 
-![dlfs 0120](assets/dlfs_0120.png)
+![dlfs 0120](img/dlfs_0120.png)
 
-###### 图1-20\. 梯度检查：一个示例
+###### 图 1-20\. 梯度检查：一个示例
 
 使用`matrix_function_backward_1`函数，我们可以看到梯度是`-0.1121`：
 
@@ -870,13 +870,13 @@ print(matrix_function_backward_1(X, W, sigmoid))
 [[ 0.0852 -0.0557 -0.1121]]
 ```
 
-为了测试这个梯度是否正确，我们应该看到，在将*x*[3]增加0.01后，函数的*output*大约减少`0.01 × -0.1121 = -0.001121`；如果我们看到减少的数量多或少于这个量，或者出现增加，那么我们就知道我们对链式法则的推理是错误的。然而，当我们进行这个计算时，^([2](ch01.html#idm45732630322664))，我们看到增加*x*[3]一点点确实会减少函数输出的值`0.01 × -0.1121`——这意味着我们计算的导数是正确的！
+为了测试这个梯度是否正确，我们应该看到，在将*x*[3]增加 0.01 后，函数的*output*大约减少`0.01 × -0.1121 = -0.001121`；如果我们看到减少的数量多或少于这个量，或者出现增加，那么我们就知道我们对链式法则的推理是错误的。然而，当我们进行这个计算时，^(2)，我们看到增加*x*[3]一点点确实会减少函数输出的值`0.01 × -0.1121`——这意味着我们计算的导数是正确的！
 
 在本章结束时，我们将介绍一个建立在我们迄今为止所做的一切基础上，并直接应用于我们将在下一章中构建的模型的示例：一个计算图，从将一对二维矩阵相乘开始。
 
-# 带有两个2D矩阵输入的计算图
+# 带有两个 2D 矩阵输入的计算图
 
-在深度学习中，以及更普遍地在机器学习中，我们处理的操作以两个二维数组作为输入，其中一个代表数据批次*X*，另一个代表权重*W*。在下一章中，我们将深入探讨为什么在建模上这是有意义的，但在本章中我们将专注于这个操作背后的机制和数学。具体来说，我们将详细介绍一个简单的例子，并展示即使涉及2D矩阵的乘法，而不仅仅是1D向量的点积，我们在本章中一直使用的推理仍然在数学上是有意义的，并且实际上非常容易编码。
+在深度学习中，以及更普遍地在机器学习中，我们处理的操作以两个二维数组作为输入，其中一个代表数据批次*X*，另一个代表权重*W*。在下一章中，我们将深入探讨为什么在建模上这是有意义的，但在本章中我们将专注于这个操作背后的机制和数学。具体来说，我们将详细介绍一个简单的例子，并展示即使涉及 2D 矩阵的乘法，而不仅仅是 1D 向量的点积，我们在本章中一直使用的推理仍然在数学上是有意义的，并且实际上非常容易编码。
 
 和以前一样，推导这些结果所需的数学并不困难，但有些混乱。尽管如此，结果是相当干净的。当然，我们将一步一步地分解它，并始终将其与代码和图表联系起来。
 
@@ -900,7 +900,7 @@ print(matrix_function_backward_1(X, W, sigmoid))
 
 和以前一样，现在的问题是：输出*S*对*X*和*W*的梯度是多少？我们能否再次简单地使用链式法则？为什么或为什么不？
 
-如果你稍微思考一下，你可能会意识到与我们之前看过的例子有所不同：*S现在是一个矩阵*，不再是一个简单的数字。毕竟，一个矩阵对另一个矩阵的梯度意味着什么呢？
+如果你稍微思考一下，你可能会意识到与我们之前看过的例子有所不同：*S 现在是一个矩阵*，不再是一个简单的数字。毕竟，一个矩阵对另一个矩阵的梯度意味着什么呢？
 
 这引出了一个微妙但重要的想法：我们可以对多维数组执行任何系列的操作，但为了定义对某个输出的“梯度”是有意义的，我们需要*求和*（或以其他方式聚合成一个数字）序列中的最终数组，以便“改变*X*的每个元素将如何影响输出”的概念甚至有意义。
 
@@ -922,17 +922,17 @@ print(matrix_function_backward_1(X, W, sigmoid))
 
 现在我们回到了一个纯粹的微积分环境：我们有一个数字*L*，我们想要计算*L*对*X*和*W*的梯度；也就是说，我们想知道改变这些输入矩阵的*每个元素*（*x*[11]，*w*[21]等）会如何改变*L*。我们可以写成：
 
-<math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>13</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>23</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>33</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced></mrow></math>
+<math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open=""><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>13</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>23</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>33</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced></mrow></math>
 
 现在我们从数学上理解了我们面临的问题。让我们暂停一下数学，跟上我们的图表和代码。
 
 ## 图表
 
-从概念上讲，我们在这里所做的与我们在以前的例子中使用多个输入的计算图所做的类似；因此，[图1-21](#fig_01-22)应该看起来很熟悉。
+从概念上讲，我们在这里所做的与我们在以前的例子中使用多个输入的计算图所做的类似；因此，[图 1-21 应该看起来很熟悉。
 
-![dlfs 0121](assets/dlfs_0121.png)
+![dlfs 0121](img/dlfs_0121.png)
 
-###### 图1-21\. 具有复杂前向传递的函数的图表
+###### 图 1-21\. 具有复杂前向传递的函数的图表
 
 我们只是像以前一样将输入向前发送。我们声称即使在这种更复杂的情况下，我们也应该能够使用链式法则计算我们需要的梯度。
 
@@ -964,15 +964,15 @@ def matrix_function_forward_sum(X: ndarray,
 
 # 有趣的部分：反向传播
 
-现在我们想要为这个函数“执行反向传播”，展示即使涉及矩阵乘法，我们也可以计算出对输入`ndarray`的每个元素的`N`梯度。有了这一最后一步，开始在[第2章](ch02.html#fundamentals)中训练真实的机器学习模型将变得简单。首先，让我们在概念上提醒自己我们正在做什么。
+现在我们想要为这个函数“执行反向传播”，展示即使涉及矩阵乘法，我们也可以计算出对输入`ndarray`的每个元素的`N`梯度。有了这一最后一步，开始在第二章中训练真实的机器学习模型将变得简单。首先，让我们在概念上提醒自己我们正在做什么。
 
 ## 图表
 
-再次，我们所做的与本章中之前的例子类似；[图1-22](#fig_01-23)应该和[图1-21](#fig_01-22)一样熟悉。
+再次，我们所做的与本章中之前的例子类似；图 1-22 应该和图 1-21 一样熟悉。
 
-![dlfs 0122](assets/dlfs_0122.png)
+![dlfs 0122](img/dlfs_0122.png)
 
-###### 图1-22\. 通过我们复杂的函数的反向传播
+###### 图 1-22\. 通过我们复杂的函数的反向传播
 
 我们只需要计算每个组成函数的偏导数，并在其输入处评估它，将结果相乘以得到最终的导数。让我们依次考虑这些偏导数；唯一的方法就是通过数学。
 
@@ -988,13 +988,13 @@ def matrix_function_forward_sum(X: ndarray,
 
 <math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>X</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>X</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>,</mo> <mi>W</mi> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>N</mi> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>S</mi> <mo>)</mo></mrow></mrow></math>
 
-然后我们依次计算这三个偏导数。这正是我们之前在三个嵌套函数的函数中所做的，我们使用链式法则计算导数，[图1-22](#fig_01-23)表明这种方法对这个函数也应该适用。
+然后我们依次计算这三个偏导数。这正是我们之前在三个嵌套函数的函数中所做的，我们使用链式法则计算导数，图 1-22 表明这种方法对这个函数也应该适用。
 
 第一个导数是最直接的，因此是最好的热身。我们想知道*L*（*Λ*的输出）每个元素增加时*L*会增加多少。由于*L*是*S*的所有元素的和，这个导数就是：
 
 <math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>S</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced></mrow></math>
 
-因为增加*S*的任何元素，比如说，0.46个单位，会使*Λ*增加0.46个单位。
+因为增加*S*的任何元素，比如说，0.46 个单位，会使*Λ*增加 0.46 个单位。
 
 接下来，我们有<math><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>N</mi> <mo>)</mo></mrow></mrow></math>。这只是*σ*是什么函数的导数，在*N*中的元素处进行评估。在我们之前使用的“*XW*”语法中，这也很容易计算：
 
@@ -1004,7 +1004,7 @@ def matrix_function_forward_sum(X: ndarray,
 
 <math display="block"><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>N</mi> <mo>)</mo></mrow> <mo>=</mo> <mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>S</mi> <mo>)</mo></mrow> <mo>×</mo> <mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>N</mi> <mo>)</mo></mrow> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced> <mo>×</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfenced close="]" open="["><mtable><mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>11</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>12</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>21</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>22</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr> <mtr><mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>31</mn></msub> <mo>)</mo></mrow></mrow></mtd> <mtd><mrow><mfrac><mrow><mi>∂</mi><mi>σ</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <msub><mi>W</mi> <mn>32</mn></msub> <mo>)</mo></mrow></mrow></mtd></mtr></mtable></mfenced></mrow></math>
 
-然而，现在我们卡住了。根据图表和应用链式法则，我们想要的下一步是<math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow></mrow></math>。然而，请记住，*N*，*ν*的输出，只是*X*与*W*的矩阵乘法的结果。因此，我们想知道增加*X*的每个元素（一个3×3矩阵）将如何增加*N*的每个元素（一个3×2矩阵）。如果你对这种概念感到困惑，那就是关键所在——我们并不清楚如何定义这个概念，或者如果我们这样做是否有用。
+然而，现在我们卡住了。根据图表和应用链式法则，我们想要的下一步是<math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow></mrow></math>。然而，请记住，*N*，*ν*的输出，只是*X*与*W*的矩阵乘法的结果。因此，我们想知道增加*X*的每个元素（一个 3×3 矩阵）将如何增加*N*的每个元素（一个 3×2 矩阵）。如果你对这种概念感到困惑，那就是关键所在——我们并不清楚如何定义这个概念，或者如果我们这样做是否有用。
 
 为什么现在成为问题了？之前，我们很幸运地*X*和*W*在形状上是彼此的转置。在这种情况下，我们可以证明<math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>W</mi> <mi>T</mi></msup></mrow></math>和<math><mrow><mfrac><mrow><mi>∂</mi><mi>ν</mi></mrow> <mrow><mi>∂</mi><mi>u</mi></mrow></mfrac> <mrow><mo>(</mo> <mi>W</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>X</mi> <mi>T</mi></msup></mrow></math>。这里是否有类似的说法？
 
@@ -1099,7 +1099,7 @@ dLdX:
  [ 0.2299 -0.3662 -0.0225]]
 ```
 
-与前面的例子一样，由于`dLdX`表示*X*相对于*L*的梯度，这意味着，例如，左上角的元素表示<math><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mn>11</mn></msub></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>,</mo> <mi>W</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>0.2489</mn></mrow></math>。因此，如果这个例子的矩阵运算是正确的，那么将*x*[11]增加0.001应该使*L*增加`0.01 × 0.2489`。实际上，我们看到这就是发生的：
+与前面的例子一样，由于`dLdX`表示*X*相对于*L*的梯度，这意味着，例如，左上角的元素表示<math><mrow><mfrac><mrow><mi>∂</mi><mi>Λ</mi></mrow> <mrow><mi>∂</mi><msub><mi>x</mi> <mn>11</mn></msub></mrow></mfrac> <mrow><mo>(</mo> <mi>X</mi> <mo>,</mo> <mi>W</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>0.2489</mn></mrow></math>。因此，如果这个例子的矩阵运算是正确的，那么将*x*[11]增加 0.001 应该使*L*增加`0.01 × 0.2489`。实际上，我们看到这就是发生的：
 
 ```py
 X1 = X.copy()
@@ -1118,11 +1118,11 @@ print(round(
 
 ### 描述这些梯度的可视化
 
-回到本章开头我们注意到的内容，我们将问题中的元素*x*[11]通过一个包含许多操作的函数：矩阵乘法——实际上是将矩阵*X*中的九个输入与矩阵*W*中的六个输入组合在一起，得到六个输出——`sigmoid`函数，然后是求和。然而，我们也可以将这看作是一个名为“<math><mrow><mi>W</mi> <mi>N</mi> <mi>S</mi> <mi>L</mi></mrow></math>”的单一函数，如[图1-23](#fig_01-24)所示。
+回到本章开头我们注意到的内容，我们将问题中的元素*x*[11]通过一个包含许多操作的函数：矩阵乘法——实际上是将矩阵*X*中的九个输入与矩阵*W*中的六个输入组合在一起，得到六个输出——`sigmoid`函数，然后是求和。然而，我们也可以将这看作是一个名为“<math><mrow><mi>W</mi> <mi>N</mi> <mi>S</mi> <mi>L</mi></mrow></math>”的单一函数，如图 1-23 所示。
 
-![dlfs 0123](assets/dlfs_0123.png)
+![dlfs 0123](img/dlfs_0123.png)
 
-###### 图1-23. 描述嵌套函数的另一种方式：作为一个函数，“WNSL”
+###### 图 1-23. 描述嵌套函数的另一种方式：作为一个函数，“WNSL”
 
 由于每个函数都是可微的，整个过程只是一个可微函数，以*x*[11]为输入；因此，梯度就是回答问题“<math><mfrac><mrow><mi>d</mi><mi>L</mi></mrow> <mrow><mi>d</mi><msub><mi>x</mi> <mn>11</mn></msub></mrow></mfrac></math>”的答案。为了可视化这一点，我们可以简单地绘制*L*随着*x*[11]的变化而变化的情况。看一下*x*[11]的初始值，我们看到它是`-1.5775`：
 
@@ -1138,13 +1138,13 @@ X:
  [-1.4435 -0.3913  0.1539]]
 ```
 
-如果我们绘制从先前定义的计算图中将*X*和*W*输入的结果得到的*L*的值，或者换一种表示方法，从将`X`和`W`输入到前面代码中调用的函数中得到的结果，除了*x*[11]（或`X[0, 0]`）的值之外不改变，得到的图像看起来像[图1-24](#x11_vs_L_function_matrix_backward)所示。
+如果我们绘制从先前定义的计算图中将*X*和*W*输入的结果得到的*L*的值，或者换一种表示方法，从将`X`和`W`输入到前面代码中调用的函数中得到的结果，除了*x*[11]（或`X[0, 0]`）的值之外不改变，得到的图像看起来像图 1-24 所示。
 
-![dlfs 0124](assets/dlfs_0124.png)
+![dlfs 0124](img/dlfs_0124.png)
 
-###### 图1-24. L与*x*[11]的关系，保持X和W的其他值不变
+###### 图 1-24. L 与*x*[11]的关系，保持 X 和 W 的其他值不变
 
-实际上，在*x*[11]的情况下，通过直观观察，这个函数沿着*L*轴增加的距离大约是0.5（从略高于2.1到略高于2.6），我们知道我们正在展示*x*[11]-轴上的变化为2，这将使斜率大约为<math><mrow><mfrac><mrow><mn>0.5</mn></mrow> <mn>2</mn></mfrac> <mo>=</mo> <mn>0.25</mn></mrow></math> —这正是我们刚刚计算的！
+实际上，在*x*[11]的情况下，通过直观观察，这个函数沿着*L*轴增加的距离大约是 0.5（从略高于 2.1 到略高于 2.6），我们知道我们正在展示*x*[11]-轴上的变化为 2，这将使斜率大约为<math><mrow><mfrac><mrow><mn>0.5</mn></mrow> <mn>2</mn></mfrac> <mo>=</mo> <mn>0.25</mn></mrow></math> —这正是我们刚刚计算的！
 
 因此，我们复杂的矩阵数学实际上似乎已经使我们正确计算了相对于*X*的每个元素的*L*的偏导数。此外，相对于*W*的*L*的梯度也可以类似地计算。
 
@@ -1166,12 +1166,12 @@ dLdW = np.dot(dNdW, dSdN)
 
 在本章之后，您应该有信心能够理解复杂的嵌套数学函数，并通过将它们概念化为一系列箱子，每个代表一个单一的组成函数，通过连接的字符串来推理出它们的工作原理。具体来说，您可以编写代码来计算这些函数的输出相对于任何输入的导数，即使涉及到包含二维`ndarray`的矩阵乘法，也能理解这些导数计算背后的数学原理。这些基础概念正是我们在下一章开始构建和训练神经网络所需要的，以及在之后的章节中从头开始构建和训练深度学习模型所需要的。继续前进！
 
-^([1](ch01.html#idm45732632700344-marker)) 这将使我们能够轻松地在矩阵乘法中添加偏差。
+^(1) 这将使我们能够轻松地在矩阵乘法中添加偏差。
 
-^([2](ch01.html#idm45732630322664-marker)) 在整个过程中，我将提供指向GitHub存储库的相关补充材料的链接，该存储库包含本书的代码，包括[本章](https://oreil.ly/2ZUwKOZ)的代码。
+^(2) 在整个过程中，我将提供指向 GitHub 存储库的相关补充材料的链接，该存储库包含本书的代码，包括[本章](https://oreil.ly/2ZUwKOZ)的代码。
 
-^([3](ch01.html#idm45732628068456-marker)) 在接下来的部分中，我们将专注于计算`N`相对于`X`的梯度，但相对于`W`的梯度也可以通过类似的方式推理。
+^(3) 在接下来的部分中，我们将专注于计算`N`相对于`X`的梯度，但相对于`W`的梯度也可以通过类似的方式推理。
 
-^([4](ch01.html#idm45732627740296-marker)) 我们在[“矩阵链规则”](app01.html#matrix-chain-rule)中进行了这样的操作。
+^(4) 我们在“矩阵链规则”中进行了这样的操作。
 
-^([5](ch01.html#idm45732627323432-marker)) 完整的函数可以在[书的网站](https://oreil.ly/deep-learning-github)找到；它只是前一页显示的`matrix function backward sum`函数的一个子集。
+^(5) 完整的函数可以在[书的网站](https://oreil.ly/deep-learning-github)找到；它只是前一页显示的`matrix function backward sum`函数的一个子集。

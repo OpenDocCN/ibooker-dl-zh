@@ -1,4 +1,4 @@
-# 第4章. 深度学习的线性代数和微积分
+# 第四章. 深度学习的线性代数和微积分
 
 代数和微积分是数据科学的支柱，特别是基于这两个数学领域的概念的学习算法。本章以一种所有人都能理解的方式介绍了一些关键的代数和微积分主题。
 
@@ -16,49 +16,49 @@
 
 *向量*是一个具有大小（长度）和方向（箭头）的对象。向量的基本表示是带有坐标的箭头。但首先，让我们看看什么是坐标轴。
 
-x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系中不同点的位置。x轴是水平的，y轴是垂直的。
+x 轴和 y 轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系中不同点的位置。x 轴是水平的，y 轴是垂直的。
 
-这些坐标轴可以表示向量，其中x轴表示向量的水平分量，y轴表示其垂直分量。
+这些坐标轴可以表示向量，其中 x 轴表示向量的水平分量，y 轴表示其垂直分量。
 
-图4-1显示了一个简单的二维笛卡尔坐标系，带有两个坐标轴。
+图 4-1 显示了一个简单的二维笛卡尔坐标系，带有两个坐标轴。
 
-![](Images/dlf_graph12.png)
+![](img/dlf_graph12.png)
 
-###### 图4-1. 二维笛卡尔坐标系
+###### 图 4-1. 二维笛卡尔坐标系
 
 二维笛卡尔坐标系使用简单的括号来显示不同点的位置，遵循以下顺序：
 
 <math alttext="upper P o i n t c o o r d i n a t e s equals left-parenthesis h o r i z o n t a l l o c a t i o n left-parenthesis x right-parenthesis comma v e r t i c a l l o c a t i o n left-parenthesis y right-parenthesis right-parenthesis"><mrow><mi>P</mi> <mi>o</mi> <mi>i</mi> <mi>n</mi> <mi>t</mi> <mi>c</mi> <mi>o</mi> <mi>o</mi> <mi>r</mi> <mi>d</mi> <mi>i</mi> <mi>n</mi> <mi>a</mi> <mi>t</mi> <mi>e</mi> <mi>s</mi> <mo>=</mo> <mo>(</mo> <mi>h</mi> <mi>o</mi> <mi>r</mi> <mi>i</mi> <mi>z</mi> <mi>o</mi> <mi>n</mi> <mi>t</mi> <mi>a</mi> <mi>l</mi> <mi>l</mi> <mi>o</mi> <mi>c</mi> <mi>a</mi> <mi>t</mi> <mi>i</mi> <mi>o</mi> <mi>n</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo> <mo>,</mo> <mi>v</mi> <mi>e</mi> <mi>r</mi> <mi>t</mi> <mi>i</mi> <mi>c</mi> <mi>a</mi> <mi>l</mi> <mi>l</mi> <mi>o</mi> <mi>c</mi> <mi>a</mi> <mi>t</mi> <mi>i</mi> <mi>o</mi> <mi>n</mi> <mo>(</mo> <mi>y</mi> <mo>)</mo> <mo>)</mo></mrow></math>
 
-因此，如果你想绘制坐标为（2，3）的点A，你可能会从零点开始查看图表，向右移动两个点，然后向上移动三个点。点的结果应该看起来像图4-2。
+因此，如果你想绘制坐标为（2，3）的点 A，你可能会从零点开始查看图表，向右移动两个点，然后向上移动三个点。点的结果应该看起来像图 4-2。
 
-![](Images/dlf_graph13.png)
+![](img/dlf_graph13.png)
 
-###### 图4-2. A在坐标系上的位置
+###### 图 4-2. A 在坐标系上的位置
 
-现在让我们添加另一个点并在它们之间绘制一个向量。假设你还有坐标为（4，5）的点B。自然地，由于B的坐标都高于A的坐标，你会期望向量AB是向上倾斜的。图4-3显示了新点B和向量AB。
+现在让我们添加另一个点并在它们之间绘制一个向量。假设你还有坐标为（4，5）的点 B。自然地，由于 B 的坐标都高于 A 的坐标，你会期望向量 AB 是向上倾斜的。图 4-3 显示了新点 B 和向量 AB。
 
-![](Images/dlf_graph14.png)
+![](img/dlf_graph14.png)
 
-###### 图4-3. 向量AB连接A和B点的大小和方向
+###### 图 4-3. 向量 AB 连接 A 和 B 点的大小和方向
 
-然而，绘制了使用两点坐标的向量后，你如何引用这个向量呢？简单来说，向量AB有自己的坐标来表示它。记住，向量是从点A到点B的移动的表示。这意味着沿着X轴和Y轴的两点移动就是向量。在数学上，要找到向量，你应该将两个坐标点相减，同时保持方向。具体操作如下：
+然而，绘制了使用两点坐标的向量后，你如何引用这个向量呢？简单来说，向量 AB 有自己的坐标来表示它。记住，向量是从点 A 到点 B 的移动的表示。这意味着沿着 X 轴和 Y 轴的两点移动就是向量。在数学上，要找到向量，你应该将两个坐标点相减，同时保持方向。具体操作如下：
 
-+   *向量AB*意味着你从A到B，因此，你需要从点B的坐标中减去点A的坐标：
++   *向量 AB*意味着你从 A 到 B，因此，你需要从点 B 的坐标中减去点 A 的坐标：
 
 <math><mrow><mover><mrow><mi>A</mi> <mi>B</mi></mrow> <mo stretchy="true" style="math-style:normal;math-depth:0;">→</mo></mover> <mo>=</mo> <mo><</mo> <mn>4</mn> <mo>−</mo> <mn>2,5</mn> <mo>−</mo> <mn>3</mn> <mo>></mo></mrow></math><math><mrow><mover><mrow><mi>A</mi> <mi>B</mi></mrow> <mo stretchy="true" style="math-style:normal;math-depth:0;">→</mo></mover> <mo>=</mo> <mo><</mo> <mn>2,2</mn> <mo>></mo></mrow></math>
 
-+   *向量BA*表示从B到A，因此，您需要从点A的坐标中减去点B的坐标：
++   *向量 BA*表示从 B 到 A，因此，您需要从点 A 的坐标中减去点 B 的坐标：
 
 <math alttext="ModifyingAbove upper B upper A With right-arrow equals less-than 2 minus 4 comma 3 minus 5 greater-than"><mrow><mover accent="true"><mrow><mi>B</mi><mi>A</mi></mrow> <mo>→</mo></mover> <mo>=</mo> <mo><</mo> <mn>2</mn> <mo>-</mo> <mn>4</mn> <mo>,</mo> <mn>3</mn> <mo>-</mo> <mn>5</mn> <mo>></mo></mrow></math>
 
 <math alttext="ModifyingAbove upper B upper A With right-arrow equals less-than negative 2 comma negative 2 greater-than"><mrow><mover accent="true"><mrow><mi>B</mi><mi>A</mi></mrow> <mo>→</mo></mover> <mo>=</mo> <mo><</mo> <mo>-</mo> <mn>2</mn> <mo>,</mo> <mo>-</mo> <mn>2</mn> <mo>></mo></mrow></math>
 
-解释AB和BA向量时，你要考虑移动。AB向量表示从点A到点B的移动，水平和垂直方向分别为两个正点（向右和向上）。BA向量表示从点B到点A的移动，水平和垂直方向分别为两个负点（向左和向下）。
+解释 AB 和 BA 向量时，你要考虑移动。AB 向量表示从点 A 到点 B 的移动，水平和垂直方向分别为两个正点（向右和向上）。BA 向量表示从点 B 到点 A 的移动，水平和垂直方向分别为两个负点（向左和向下）。
 
 ###### 注意
 
-向量AB和BA虽然具有相同的斜率，但它们并不是同一物体。但是斜率到底是什么？
+向量 AB 和 BA 虽然具有相同的斜率，但它们并不是同一物体。但是斜率到底是什么？
 
 *斜率*是线上两点之间的垂直变化与水平变化之间的比率。您可以使用以下数学公式计算斜率：
 
@@ -70,21 +70,21 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 如果这两个向量只是线（没有方向），那么它们将是相同的对象。然而，添加方向性组件使它们成为两个可区分的数学对象。
 
-图4-4更详细地解释了斜率的概念，因为x向右移动了两个点，y向左移动了两个点。
+图 4-4 更详细地解释了斜率的概念，因为 x 向右移动了两个点，y 向左移动了两个点。
 
-![](Images/dlf_graph15.png)
+![](img/dlf_graph15.png)
 
-###### 图4-4。向量AB的x和y的变化
+###### 图 4-4。向量 AB 的 x 和 y 的变化
 
-图4-5展示了向量BA的x和y的变化。
+图 4-5 展示了向量 BA 的 x 和 y 的变化。
 
-![](Images/dlf_graph16.png)
+![](img/dlf_graph16.png)
 
-###### 图4-5。向量BA的x和y的变化
+###### 图 4-5。向量 BA 的 x 和 y 的变化
 
 ###### 注意
 
-具有大小为1的向量称为*单位向量*。
+具有大小为 1 的向量称为*单位向量*。
 
 研究人员通常使用向量作为速度的表示，尤其在工程领域。导航是一个严重依赖向量的领域。它允许导航员确定他们的位置并规划他们的目的地。自然地，大小表示速度，方向表示目的地。
 
@@ -94,17 +94,17 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 *标量*是具有大小但没有方向的值。与向量相反，标量用于表示温度和价格等元素。基本上，标量是数字。
 
-在机器学习中，x轴和y轴分别代表数据和模型的结果。在散点图中，独立（预测）变量由x轴表示，而依赖（预测）变量由y轴表示。
+在机器学习中，x 轴和 y 轴分别代表数据和模型的结果。在散点图中，独立（预测）变量由 x 轴表示，而依赖（预测）变量由 y 轴表示。
 
-*矩阵*是一个按行和列组织的包含数字的矩形数组。矩阵在计算机图形和其他领域中很有用，用于定义和操作线性方程组。矩阵与向量有何不同？最简单的答案是，向量是具有单列或单行的矩阵。这是一个3 x 3矩阵的基本示例：
+*矩阵*是一个按行和列组织的包含数字的矩形数组。矩阵在计算机图形和其他领域中很有用，用于定义和操作线性方程组。矩阵与向量有何不同？最简单的答案是，向量是具有单列或单行的矩阵。这是一个 3 x 3 矩阵的基本示例：
 
 <math alttext="Start 3 By 3 Matrix 1st Row 1st Column 5 2nd Column 2 3rd Column 9 2nd Row 1st Column negative 8 2nd Column 10 3rd Column 13 3rd Row 1st Column 1 2nd Column 5 3rd Column 12 EndMatrix"><mfenced open="[" close="]"><mtable><mtr><mtd><mn>5</mn></mtd> <mtd><mn>2</mn></mtd> <mtd><mn>9</mn></mtd></mtr> <mtr><mtd><mrow><mo>-</mo> <mn>8</mn></mrow></mtd> <mtd><mn>10</mn></mtd> <mtd><mn>13</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd> <mtd><mn>5</mn></mtd> <mtd><mn>12</mn></mtd></mtr></mtable></mfenced></math>
 
-矩阵的大小分别使用它们的行和列来表示。行是水平线，列是垂直线。以下表示是一个2 x 4矩阵：
+矩阵的大小分别使用它们的行和列来表示。行是水平线，列是垂直线。以下表示是一个 2 x 4 矩阵：
 
 <math alttext="Start 2 By 4 Matrix 1st Row 1st Column 5 2nd Column 2 3rd Column 1 4th Column 3 2nd Row 1st Column negative 8 2nd Column 10 3rd Column 9 4th Column 4 EndMatrix"><mfenced open="[" close="]"><mtable><mtr><mtd><mn>5</mn></mtd> <mtd><mn>2</mn></mtd> <mtd><mn>1</mn></mtd> <mtd><mn>3</mn></mtd></mtr> <mtr><mtd><mrow><mo>-</mo> <mn>8</mn></mrow></mtd> <mtd><mn>10</mn></mtd> <mtd><mn>9</mn></mtd> <mtd><mn>4</mn></mtd></mtr></mtable></mfenced></math>
 
-以下表示是另一个矩阵的示例。这次是一个4 x 2矩阵：
+以下表示是另一个矩阵的示例。这次是一个 4 x 2 矩阵：
 
 <math alttext="Start 4 By 2 Matrix 1st Row 1st Column 5 2nd Column 2 2nd Row 1st Column negative 8 2nd Column 10 3rd Row 1st Column 8 2nd Column 22 4th Row 1st Column 7 2nd Column 3 EndMatrix"><mfenced open="[" close="]"><mtable><mtr><mtd><mn>5</mn></mtd> <mtd><mn>2</mn></mtd></mtr> <mtr><mtd><mrow><mo>-</mo> <mn>8</mn></mrow></mtd> <mtd><mn>10</mn></mtd></mtr> <mtr><mtd><mn>8</mn></mtd> <mtd><mn>22</mn></mtd></mtr> <mtr><mtd><mn>7</mn></mtd> <mtd><mn>3</mn></mtd></mtr></mtable></mfenced></math>
 
@@ -134,23 +134,23 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="upper M a t r i x Subscript x y Baseline times upper M a t r i x Subscript y z Baseline equals upper M a t r i x Subscript x z"><mrow><mi>M</mi> <mi>a</mi> <mi>t</mi> <mi>r</mi> <mi>i</mi> <msub><mi>x</mi> <mrow><mi>x</mi><mi>y</mi></mrow></msub> <mo>×</mo> <mi>M</mi> <mi>a</mi> <mi>t</mi> <mi>r</mi> <mi>i</mi> <msub><mi>x</mi> <mrow><mi>y</mi><mi>z</mi></mrow></msub> <mo>=</mo> <mi>M</mi> <mi>a</mi> <mi>t</mi> <mi>r</mi> <mi>i</mi> <msub><mi>x</mi> <mrow><mi>x</mi><mi>z</mi></mrow></msub></mrow></math>
 
-这意味着第一个矩阵的列数必须等于第二个矩阵的行数，点乘的结果矩阵是第一个矩阵的行数和第二个矩阵的列数。点乘在这个1 x 3和3 x 1矩阵乘法的示例表示中解释（注意相同的列数和行数）：
+这意味着第一个矩阵的列数必须等于第二个矩阵的行数，点乘的结果矩阵是第一个矩阵的行数和第二个矩阵的列数。点乘在这个 1 x 3 和 3 x 1 矩阵乘法的示例表示中解释（注意相同的列数和行数）：
 
 <math alttext="Start 1 By 3 Matrix 1st Row 1st Column 1 2nd Column 2 3rd Column 3 EndMatrix times Start 3 By 1 Matrix 1st Row  3 2nd Row  2 3rd Row  1 EndMatrix equals Start 1 By 1 Matrix 1st Row  left-parenthesis 1 times 3 right-parenthesis plus left-parenthesis 2 times 2 right-parenthesis plus left-parenthesis 3 times 1 right-parenthesis EndMatrix equals Start 1 By 1 Matrix 1st Row  10 EndMatrix"><mrow><mfenced open="[" close="]"><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>2</mn></mtd> <mtd><mn>3</mn></mtd></mtr></mtable></mfenced> <mo>×</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>3</mn></mtd></mtr> <mtr><mtd><mn>2</mn></mtd></mtr> <mtr><mtd><mn>1</mn></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mrow><mo>(</mo> <mn>1</mn> <mo>×</mo> <mn>3</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>2</mn> <mo>×</mo> <mn>2</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>3</mn> <mo>×</mo> <mn>1</mn> <mo>)</mo></mrow></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>10</mn></mtd></mtr></mtable></mfenced></mrow></math>
 
-让我们再看一个2 x 2矩阵乘法的例子：
+让我们再看一个 2 x 2 矩阵乘法的例子：
 
 <math alttext="Start 2 By 2 Matrix 1st Row 1st Column 1 2nd Column 2 2nd Row 1st Column 0 2nd Column 1 EndMatrix times Start 2 By 2 Matrix 1st Row 1st Column 3 2nd Column 0 2nd Row 1st Column 2 2nd Column 1 EndMatrix equals Start 2 By 2 Matrix 1st Row 1st Column 7 2nd Column 2 2nd Row 1st Column 2 2nd Column 1 EndMatrix"><mrow><mfenced open="[" close="]"><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>2</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced> <mo>×</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>3</mn></mtd> <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>2</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>7</mn></mtd> <mtd><mn>2</mn></mtd></mtr> <mtr><mtd><mn>2</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced></mrow></math>
 
-有一种特殊类型的矩阵称为*单位矩阵*，基本上是矩阵的数字1。对于2 x 2维度，它定义如下：
+有一种特殊类型的矩阵称为*单位矩阵*，基本上是矩阵的数字 1。对于 2 x 2 维度，它定义如下：
 
 <math alttext="upper I equals Start 2 By 2 Matrix 1st Row 1st Column 1 2nd Column 0 2nd Row 1st Column 0 2nd Column 1 EndMatrix"><mrow><mi>I</mi> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced></mrow></math>
 
-对于3 x 3维度，如下所示：
+对于 3 x 3 维度，如下所示：
 
 <math alttext="upper I equals Start 3 By 3 Matrix 1st Row 1st Column 1 2nd Column 0 3rd Column 0 2nd Row 1st Column 0 2nd Column 1 3rd Column 0 3rd Row 1st Column 0 2nd Column 0 3rd Column 1 EndMatrix"><mrow><mi>I</mi> <mo>=</mo> <mfenced open="[" close="]"><mtable><mtr><mtd><mn>1</mn></mtd> <mtd><mn>0</mn></mtd> <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd> <mtd><mn>0</mn></mtd></mtr> <mtr><mtd><mn>0</mn></mtd> <mtd><mn>0</mn></mtd> <mtd><mn>1</mn></mtd></mtr></mtable></mfenced></mrow></math>
 
-将任何矩阵乘以单位矩阵会产生相同的原始矩阵。这就是为什么它可以被称为矩阵的1（将任何数字乘以1会得到相同的数字）。值得注意的是，矩阵乘法不是可交换的，这意味着乘法的顺序会改变结果，例如：
+将任何矩阵乘以单位矩阵会产生相同的原始矩阵。这就是为什么它可以被称为矩阵的 1（将任何数字乘以 1 会得到相同的数字）。值得注意的是，矩阵乘法不是可交换的，这意味着乘法的顺序会改变结果，例如：
 
 <math alttext="upper A upper B not-equals upper B upper A"><mrow><mi>A</mi> <mi>B</mi> <mo>≠</mo> <mi>B</mi> <mi>A</mi></mrow></math>
 
@@ -162,7 +162,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 数据表示
 
-矩阵通常表示具有行表示样本和列表示特征的数据。例如，矩阵中的一行可以表示一个时间步长中的OHLC数据。
+矩阵通常表示具有行表示样本和列表示特征的数据。例如，矩阵中的一行可以表示一个时间步长中的 OHLC 数据。
 
 线性代数
 
@@ -170,7 +170,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 数据关系矩阵
 
-如果您还记得第3章，协方差和相关性度量通常表示为矩阵。这些关系计算是机器学习中重要的概念。
+如果您还记得第三章，协方差和相关性度量通常表示为矩阵。这些关系计算是机器学习中重要的概念。
 
 ###### 注意
 
@@ -186,7 +186,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 ## 线性方程简介
 
-您已经在讨论线性回归和第3章统计推断中看到了线性方程的一个例子。*线性方程*基本上是呈现不同变量和常数之间的等式关系的公式。在机器学习的情况下，它通常是依赖变量（输出）和自变量（输入）之间的关系。理解线性方程的最佳方法是通过示例。​
+您已经在讨论线性回归和第三章统计推断中看到了线性方程的一个例子。*线性方程*基本上是呈现不同变量和常数之间的等式关系的公式。在机器学习的情况下，它通常是依赖变量（输出）和自变量（输入）之间的关系。理解线性方程的最佳方法是通过示例。​
 
 ###### 注意
 
@@ -196,9 +196,9 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="10 x equals 20"><mrow><mn>10</mn> <mi>x</mi> <mo>=</mo> <mn>20</mn></mrow></math>
 
-您应该将方程理解为“10乘以哪个数字等于20？”当一个常数直接附加到变量（如*x*）时，它指的是一个乘法运算。现在，要解出*x*（即找到使方程相等的*x*的值），您有一个明显的解决方案，即摆脱10，这样您就可以在方程的一边得到*x*，而在另一边得到其余部分。
+您应该将方程理解为“10 乘以哪个数字等于 20？”当一个常数直接附加到变量（如*x*）时，它指的是一个乘法运算。现在，要解出*x*（即找到使方程相等的*x*的值），您有一个明显的解决方案，即摆脱 10，这样您就可以在方程的一边得到*x*，而在另一边得到其余部分。
 
-自然地，为了消除10，您应该除以10，这样剩下的是1，如果乘以变量*x*则不会有任何变化。但是，请记住两个重要的事情：
+自然地，为了消除 10，您应该除以 10，这样剩下的是 1，如果乘以变量*x*则不会有任何变化。但是，请记住两个重要的事情：
 
 +   如果在方程的一边进行数学运算，则必须在另一边进行相同的运算。这就是它们被称为方程的原因。
 
@@ -216,11 +216,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="x equals 2"><mrow><mi>x</mi> <mo>=</mo> <mn>2</mn></mrow></math>
 
-这意味着方程的解是2。要验证这一点，您只需要将其代入原方程如下：
+这意味着方程的解是 2。要验证这一点，您只需要将其代入原方程如下：
 
 <math alttext="10 times 2 equals 20"><mrow><mn>10</mn> <mo>×</mo> <mn>2</mn> <mo>=</mo> <mn>20</mn></mrow></math>
 
-因此，需要两个10来得到20。
+因此，需要两个 10 来得到 20。
 
 ###### 注意
 
@@ -236,7 +236,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="x equals 18"><mrow><mi>x</mi> <mo>=</mo> <mn>18</mn></mrow></math>
 
-这意味着方程的解是18。要验证这一点，您只需要将其代入原方程如下：
+这意味着方程的解是 18。要验证这一点，您只需要将其代入原方程如下：
 
 <math alttext="eight-sixths times 18 equals 24"><mrow><mfrac><mn>8</mn> <mn>6</mn></mfrac> <mo>×</mo> <mn>18</mn> <mo>=</mo> <mn>24</mn></mrow></math>
 
@@ -244,11 +244,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="3 x minus 6 equals 12"><mrow><mn>3</mn> <mi>x</mi> <mo>-</mo> <mn>6</mn> <mo>=</mo> <mn>12</mn></mrow></math>
 
-解出*x*需要稍微重新排列方程。记住，目标是让*x*在一边，其余在另一边。在处理3之前，您必须摆脱常数6。解的第一部分如下：
+解出*x*需要稍微重新排列方程。记住，目标是让*x*在一边，其余在另一边。在处理 3 之前，您必须摆脱常数 6。解的第一部分如下：
 
 <math alttext="3 x minus 6 left-parenthesis plus 6 right-parenthesis equals 12 left-parenthesis plus 6 right-parenthesis"><mrow><mn>3</mn> <mi>x</mi> <mo>-</mo> <mn>6</mn> <mo>(</mo> <mo>+</mo> <mn>6</mn> <mo>)</mo> <mo>=</mo> <mn>12</mn> <mo>(</mo> <mo>+</mo> <mn>6</mn> <mo>)</mo></mrow></math>
 
-注意您必须在方程的两边都加上6。左边的部分将自行取消，而右边的部分将加起来得到18：
+注意您必须在方程的两边都加上 6。左边的部分将自行取消，而右边的部分将加起来得到 18：
 
 <math alttext="3 x equals 18"><mrow><mn>3</mn> <mi>x</mi> <mo>=</mo> <mn>18</mn></mrow></math>
 
@@ -260,7 +260,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="x equals 6"><mrow><mi>x</mi> <mo>=</mo> <mn>6</mn></mrow></math>
 
-这意味着方程的解是6。要验证这一点，只需将其代入原方程如下：
+这意味着方程的解是 6。要验证这一点，只需将其代入原方程如下：
 
 <math alttext="left-parenthesis 3 times 6 right-parenthesis minus 6 equals 12"><mrow><mo>(</mo> <mn>3</mn> <mo>×</mo> <mn>6</mn> <mo>)</mo> <mo>-</mo> <mn>6</mn> <mo>=</mo> <mn>12</mn></mrow></math>
 
@@ -276,11 +276,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="9 x equals 27"><mrow><mn>9</mn> <mi>x</mi> <mo>=</mo> <mn>27</mn></mrow></math>
 
-最后一步是除以9，这样您只剩下*x*：
+最后一步是除以 9，这样您只剩下*x*：
 
 <math alttext="x equals 3"><mrow><mi>x</mi> <mo>=</mo> <mn>3</mn></mrow></math>
 
-现在您可以通过在原方程中将3代入*x*来验证这一点。您会注意到方程的两边是相等的。
+现在您可以通过在原方程中将 3 代入*x*来验证这一点。您会注意到方程的两边是相等的。
 
 ###### 注意
 
@@ -314,15 +314,15 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 让我们从本节开头的前一个方程组开始，通过图形方式解决它。绘制两个函数实际上可以直接给出解。线性方程的交点是解。因此，交点的坐标（*x, y*）分别指代*x*和*y*的解。
 
-从图4-6可以看出，*x*=10，*y*=-10。将这些值代入各自的变量中可以得到正确答案：
+从图 4-6 可以看出，*x*=10，*y*=-10。将这些值代入各自的变量中可以得到正确答案：
 
 <math alttext="10 plus 10 equals 20"><mrow><mn>10</mn> <mo>+</mo> <mn>10</mn> <mo>=</mo> <mn>20</mn></mrow></math>
 
 <math alttext="left-parenthesis negative 10 right-parenthesis plus left-parenthesis 2 times 10 right-parenthesis equals 10"><mrow><mo>(</mo> <mo>-</mo> <mn>10</mn> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mn>2</mn> <mo>×</mo> <mn>10</mn> <mo>)</mo> <mo>=</mo> <mn>10</mn></mrow></math>
 
-![](Images/dlf_graph1.png)
+![](img/dlf_graph1.png)
 
-###### 图4-6。显示两个函数及其交点（解）的图形
+###### 图 4-6。显示两个函数及其交点（解）的图形
 
 由于函数是线性的，解它们有三种情况：
 
@@ -338,11 +338,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="4 x equals 20"><mrow><mn>4</mn> <mi>x</mi> <mo>=</mo> <mn>20</mn></mrow></math>
 
-图4-7将两者绘制在一起。由于它们完全相同，它们落在同一条线上。实际上，图4-7中有两条线，但由于它们相同，它们是无法区分的。对于线上的每个*x*，都有一个对应的*y*。
+图 4-7 将两者绘制在一起。由于它们完全相同，它们落在同一条线上。实际上，图 4-7 中有两条线，但由于它们相同，它们是无法区分的。对于线上的每个*x*，都有一个对应的*y*。
 
-![](Images/dlf_graph2.png)
+![](img/dlf_graph2.png)
 
-###### 图4-7。显示两个函数及其无限交点的图形
+###### 图 4-7。显示两个函数及其无限交点的图形
 
 现在，考虑以下系统：
 
@@ -350,11 +350,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="6 x equals 10"><mrow><mn>6</mn> <mi>x</mi> <mo>=</mo> <mn>10</mn></mrow></math>
 
-图4-8显示它们永远不会相交，这是直观的，因为你不能用不同的数字（由变量*x*表示）乘以相同的数字并期望得到相同的结果。
+图 4-8 显示它们永远不会相交，这是直观的，因为你不能用不同的数字（由变量*x*表示）乘以相同的数字并期望得到相同的结果。
 
-![](Images/dlf_graph3.png)
+![](img/dlf_graph3.png)
 
-###### 图4-8。显示两个函数及其不可能的交点的图形
+###### 图 4-8。显示两个函数及其不可能的交点的图形
 
 当有两个以上的变量时，代数方法用于解决它们，因为它们不能通过图形解决。这主要涉及两种方法，替换和消元。
 
@@ -404,7 +404,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="2 x plus 4 y equals 20" display="block"><mrow><mn>2</mn> <mi>x</mi> <mo>+</mo> <mn>4</mn> <mi>y</mi> <mo>=</mo> <mn>20</mn></mrow></math> <math alttext="3 x plus 2 y equals 10" display="block"><mrow><mn>3</mn> <mi>x</mi> <mo>+</mo> <mn>2</mn> <mi>y</mi> <mo>=</mo> <mn>10</mn></mrow></math>
 
-注意到有4*y*和2*y*，可以将第二个方程乘以2，然后将两个方程相减（这将消除*y*变量）：
+注意到有 4*y*和 2*y*，可以将第二个方程乘以 2，然后将两个方程相减（这将消除*y*变量）：
 
 <math alttext="2 x plus 4 y equals 20"><mrow><mn>2</mn> <mi>x</mi> <mo>+</mo> <mn>4</mn> <mi>y</mi> <mo>=</mo> <mn>20</mn></mrow></math>
 
@@ -416,7 +416,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="x equals 0"><mrow><mi>x</mi> <mo>=</mo> <mn>0</mn></mrow></math>
 
-因此，*x*=0。从图形上看，这意味着它们在*x*=0时相交（正好在垂直的*y*线上）。将*x*的值代入第一个公式得到*y*=5：
+因此，*x*=0。从图形上看，这意味着它们在*x*=0 时相交（正好在垂直的*y*线上）。将*x*的值代入第一个公式得到*y*=5：
 
 <math alttext="left-parenthesis 2 times 0 right-parenthesis plus 4 y equals 20"><mrow><mo>(</mo> <mn>2</mn> <mo>×</mo> <mn>0</mn> <mo>)</mo> <mo>+</mo> <mn>4</mn> <mi>y</mi> <mo>=</mo> <mn>20</mn></mrow></math>
 
@@ -440,11 +440,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 ## 三角学
 
-*三角学探讨了所谓的*三角函数*的行为，这些函数将三角形的角度与其边长联系起来。最常用的三角形是直角三角形，其中一个角为90°。图4-9展示了一个直角三角形的例子。
+*三角学探讨了所谓的*三角函数*的行为，这些函数将三角形的角度与其边长联系起来。最常用的三角形是直角三角形，其中一个角为 90°。图 4-9 展示了一个直角三角形的例子。
 
 ！[](Images/dlf_trig1.PNG)
 
-###### 图4-9。直角三角形
+###### 图 4-9。直角三角形
 
 让我们定义直角三角形的主要特征：
 
@@ -470,9 +470,9 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 ###### 注意
 
-关于双曲函数的部分非常重要，因为它构成了所谓的*激活函数*的基础，这是神经网络中的关键概念，是深度学习模型的主角。您将在第8章中详细了解它们。
+关于双曲函数的部分非常重要，因为它构成了所谓的*激活函数*的基础，这是神经网络中的关键概念，是深度学习模型的主角。您将在第八章中详细了解它们。
 
-欧拉数（表示为*e*）是数学中最重要的数字之一。它是一个*无理数*，即不能表示为分数的实数。 *无理* 一词源于无法用比例表达它的事实；这与其个性无关。欧拉数*e*也是自然对数*ln*的底数，其前几位数字为2.71828。获得*e*的最佳近似值的一个公式如下：
+欧拉数（表示为*e*）是数学中最重要的数字之一。它是一个*无理数*，即不能表示为分数的实数。 *无理* 一词源于无法用比例表达它的事实；这与其个性无关。欧拉数*e*也是自然对数*ln*的底数，其前几位数字为 2.71828。获得*e*的最佳近似值的一个公式如下：
 
 <math alttext="e equals left-parenthesis 1 plus StartFraction 1 Over n EndFraction right-parenthesis Superscript n"><mrow><mi>e</mi> <mo>=</mo> <msup><mrow><mo>(</mo><mn>1</mn><mo>+</mo><mfrac><mn>1</mn> <mi>n</mi></mfrac><mo>)</mo></mrow> <mi>n</mi></msup></mrow></math>
 
@@ -480,11 +480,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="f left-parenthesis x right-parenthesis equals e Superscript x"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>e</mi> <mi>x</mi></msup></mrow></math>
 
-在任何点，函数的斜率都是相同的值。看一下图4-10。
+在任何点，函数的斜率都是相同的值。看一下图 4-10。
 
 ！[](Images/dlf_graph4.png)
 
-###### 图4-10。自然指数函数的图形
+###### 图 4-10。自然指数函数的图形
 
 ###### 注意
 
@@ -504,11 +504,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="t a n h left-parenthesis x right-parenthesis equals StartFraction e Superscript x Baseline minus e Superscript negative x Baseline Over e Superscript x Baseline plus e Superscript negative x Baseline EndFraction"><mrow><mi>t</mi> <mi>a</mi> <mi>n</mi> <mi>h</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><msup><mi>e</mi> <mi>x</mi></msup> <mo>-</mo><msup><mi>e</mi> <mrow><mo>-</mo><mi>x</mi></mrow></msup></mrow> <mrow><msup><mi>e</mi> <mi>x</mi></msup> <mo>+</mo><msup><mi>e</mi> <mrow><mo>-</mo><mi>x</mi></mrow></msup></mrow></mfrac></mstyle></mrow></math>
 
-*tanh(x)*的关键特征之一是非线性，限制在[-1, 1]之间，并且它以零为中心。图4-11显示了*tanh(x)*的图形。
+*tanh(x)*的关键特征之一是非线性，限制在[-1, 1]之间，并且它以零为中心。图 4-11 显示了*tanh(x)*的图形。
 
-![](Images/dlf_graph5.png)
+![](img/dlf_graph5.png)
 
-###### 图4-11. tanh(x)的图形显示它在-1和1之间的限制
+###### 图 4-11. tanh(x)的图形显示它在-1 和 1 之间的限制
 
 ###### 注意
 
@@ -536,7 +536,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 优化
 
-在像梯度下降这样的优化方法中，极限可以用来调节步长并确保收敛到局部最小值（这是您将在第8章中学到的概念）。
+在像梯度下降这样的优化方法中，极限可以用来调节步长并确保收敛到局部最小值（这是您将在第八章中学到的概念）。
 
 特征选择
 
@@ -550,23 +550,23 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 极限的主要目的是在函数未定义时知道函数的值。但什么是未定义的函数？当你有一个给出不可能解决方案的函数（例如除以零）时，极限帮助你绕过这个问题，以便知道该点的函数值。因此，极限的目的是解决函数，即使它们是未定义的。
 
-请记住，将*x*作为输入的函数的解是*y*轴上的一个值。图4-12显示了以下函数的线性图：
+请记住，将*x*作为输入的函数的解是*y*轴上的一个值。图 4-12 显示了以下函数的线性图：
 
 <math alttext="f left-parenthesis x right-parenthesis equals x plus 2"><mrow><mi>f</mi> <mo>(</mo> <mi>x</mi> <mo>)</mo> <mo>=</mo> <mi>x</mi> <mo>+</mo> <mn>2</mn></mrow></math>
 
-![](Images/dlf_graph6.png)
+![](img/dlf_graph6.png)
 
-###### 图4-12. 函数f(x) = x + 2的图形
+###### 图 4-12. 函数 f(x) = x + 2 的图形
 
 图中函数的解是考虑到每次*x*的值的线性线上的值。
 
-当*x* = 4时，函数的解（*y*的值）是多少？显然，答案是6，因为将*x*的值替换为4会得到6。
+当*x* = 4 时，函数的解（*y*的值）是多少？显然，答案是 6，因为将*x*的值替换为 4 会得到 6。
 
 <math alttext="f left-parenthesis 4 right-parenthesis equals 4 plus 2 equals 6"><mrow><mi>f</mi> <mo>(</mo> <mn>4</mn> <mo>)</mo> <mo>=</mo> <mn>4</mn> <mo>+</mo> <mn>2</mn> <mo>=</mo> <mn>6</mn></mrow></math>
 
-从极限的角度来看这个解，就是说，当*x*从两侧（负侧和正侧）趋近于4时，函数的解是什么？表4-1简化了这个困境：
+从极限的角度来看这个解，就是说，当*x*从两侧（负侧和正侧）趋近于 4 时，函数的解是什么？表 4-1 简化了这个困境：
 
-表4-1. 寻找x
+表 4-1. 寻找 x
 
 | *f(x)* | *  x* |
 | --- | --- |
@@ -576,7 +576,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 | 6.001 | 4.001 |
 | 6.002 | 4.002 |
 
-从负侧接近相当于在4以下添加一个数字的一部分并分析结果。同样，从正侧接近相当于在4以上减去一个数字的一部分并分析结果。当x趋近于4时，解似乎收敛到6。这就是极限的解。
+从负侧接近相当于在 4 以下添加一个数字的一部分并分析结果。同样，从正侧接近相当于在 4 以上减去一个数字的一部分并分析结果。当 x 趋近于 4 时，解似乎收敛到 6。这就是极限的解。
 
 一般形式的极限按照以下约定书写：
 
@@ -610,13 +610,13 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="f left-parenthesis x right-parenthesis equals StartFraction x cubed minus 27 Over x minus 3 EndFraction"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><msup><mi>x</mi> <mn>3</mn></msup> <mo>-</mo><mn>27</mn></mrow> <mrow><mi>x</mi><mo>-</mo><mn>3</mn></mrow></mfrac></mstyle></mrow></math>
 
-当x = 3时函数的解是什么？代入会导致以下问题：
+当 x = 3 时函数的解是什么？代入会导致以下问题：
 
 <math alttext="f left-parenthesis 3 right-parenthesis equals StartFraction 3 cubed minus 27 Over 3 minus 3 EndFraction equals StartFraction 27 minus 27 Over 3 minus 3 EndFraction equals StartFraction 0 Over 0 EndFraction equals upper U n d e f i n e d"><mrow><mi>f</mi> <mrow><mo>(</mo> <mn>3</mn> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><msup><mn>3</mn> <mn>3</mn></msup> <mo>-</mo><mn>27</mn></mrow> <mrow><mn>3</mn><mo>-</mo><mn>3</mn></mrow></mfrac></mstyle> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><mn>27</mn><mo>-</mo><mn>27</mn></mrow> <mrow><mn>3</mn><mo>-</mo><mn>3</mn></mrow></mfrac></mstyle> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>0</mn> <mn>0</mn></mfrac></mstyle> <mo>=</mo> <mi>U</mi> <mi>n</mi> <mi>d</mi> <mi>e</mi> <mi>f</mi> <mi>i</mi> <mi>n</mi> <mi>e</mi> <mi>d</mi></mrow></math>
 
-然而，从表4-2所示的极限的角度来看，当你接近*x = 3*时，无论是从左侧还是右侧，解都趋向于27。
+然而，从表 4-2 所示的极限的角度来看，当你接近*x = 3*时，无论是从左侧还是右侧，解都趋向于 27。
 
-表4-2。找到x
+表 4-2。找到 x
 
 | f(x) |    x |
 | --- | --- |
@@ -628,11 +628,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 从图形上看，这可以看作是图表中沿着两个轴的不连续性。不连续性存在于坐标（3，27）附近的线上。
 
-有些函数没有极限。例如，当*x*趋近于5时，以下函数的极限是多少？
+有些函数没有极限。例如，当*x*趋近于 5 时，以下函数的极限是多少？
 
 <math alttext="limit Underscript x right-arrow 5 Endscripts StartFraction 1 Over x minus 5 EndFraction"><mrow><msub><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>x</mi><mo>→</mo><mn>5</mn></mrow></msub> <mfrac><mn>1</mn> <mrow><mi>x</mi><mo>-</mo><mn>5</mn></mrow></mfrac></mrow></math>
 
-看看表4-3，当*x*趋近于5时，结果在从两侧接近时高度发散。例如，从负侧接近，4.9999的极限是-10,000，从正侧接近，5.0001的极限是10,000。
+看看表 4-3，当*x*趋近于 5 时，结果在从两侧接近时高度发散。例如，从负侧接近，4.9999 的极限是-10,000，从正侧接近，5.0001 的极限是 10,000。
 
 | f(x) |    x |
 | --- | --- |
@@ -642,21 +642,21 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 | 5.0001 | 10000 |
 | 5.0002 | 5000 |
 
-请记住，一般极限存在时，两个单侧极限必须存在且相等，而这里并非如此。绘制图表得到图4-13，这可能有助于理解为什么极限不存在。
+请记住，一般极限存在时，两个单侧极限必须存在且相等，而这里并非如此。绘制图表得到图 4-13，这可能有助于理解为什么极限不存在。
 
-![](Images/dlf_graph7.png)
+![](img/dlf_graph7.png)
 
-###### 图4-13。证明极限不存在的函数图
+###### 图 4-13。证明极限不存在的函数图
 
 但是如果你想分析的函数看起来像这样呢：
 
 <math alttext="limit Underscript x right-arrow 5 Endscripts StartFraction 1 Over StartAbsoluteValue x minus 5 EndAbsoluteValue EndFraction"><mrow><msub><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>x</mi><mo>→</mo><mn>5</mn></mrow></msub> <mfrac><mn>1</mn> <mrow><mo>|</mo><mi>x</mi><mo>-</mo><mn>5</mn><mo>|</mo></mrow></mfrac></mrow></math>
 
-看看表4-3，似乎当x趋近于5时，结果迅速加速，趋向于一个非常大的数字，称为无穷大（∞）。看看表4-4：
+看看表 4-3，似乎当 x 趋近于 5 时，结果迅速加速，趋向于一个非常大的数字，称为无穷大（∞）。看看表 4-4：
 
 <math alttext="f left-parenthesis x right-parenthesis equals StartFraction 1 Over StartAbsoluteValue x minus 5 EndAbsoluteValue EndFraction"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>1</mn> <mrow><mo>|</mo><mi>x</mi><mo>-</mo><mn>5</mn><mo>|</mo></mrow></mfrac></mstyle></mrow></math>
 
-表4-3。找到x
+表 4-3。找到 x
 
 | f(x) |    x |
 | --- | --- |
@@ -670,11 +670,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 | 5.00002 | 50000 |
 | 5.00003 | 33333.33 |
 
-看看每一个微小步骤中*x*趋近于5时，*y*趋近于正无穷大。因此，极限问题的答案是正无穷大（+∞）。图4-14显示了函数的图形。注意当x趋近于5时它们的值都在上升。
+看看每一个微小步骤中*x*趋近于 5 时，*y*趋近于正无穷大。因此，极限问题的答案是正无穷大（+∞）。图 4-14 显示了函数的图形。注意当 x 趋近于 5 时它们的值都在上升。
 
-![](Images/dlf_graph8.png)
+![](img/dlf_graph8.png)
 
-###### 图4-14。证明当x趋近于5时极限存在的函数图
+###### 图 4-14。证明当 x 趋近于 5 时极限存在的函数图
 
 *连续*函数是在图表中没有间隙或空洞的函数，而*不连续*函数包含这样的间隙和空洞。这通常意味着后者包含函数解未定义的点，可能需要通过极限来近似。因此，连续性和极限是两个相关的概念。
 
@@ -694,7 +694,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="StartLayout 1st Row  limit Underscript x right-arrow 5 Endscripts x plus 10 minus 2 x equals 5 plus 10 minus left-parenthesis 2 times 5 right-parenthesis equals 5 EndLayout"><mtable displaystyle="true"><mtr><mtd columnalign="right"><mrow><munder><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>x</mi><mo>→</mo><mn>5</mn></mrow></munder> <mi>x</mi> <mo>+</mo> <mn>10</mn> <mo>-</mo> <mn>2</mn> <mi>x</mi> <mo>=</mo> <mn>5</mn> <mo>+</mo> <mn>10</mn> <mo>-</mo> <mrow><mo>(</mo> <mn>2</mn> <mo>×</mo> <mn>5</mn> <mo>)</mo></mrow> <mo>=</mo> <mn>5</mn></mrow></mtd></mtr></mtable></math>
 
-因此，极限的答案是5。
+因此，极限的答案是 5。
 
 *因子分解*方法是替换无效时的下一个选择（例如，在函数中插入*x*的值后极限未定义）。*因子分解*是通过使用因子改变方程的形式的方式，使得在使用替换方法时不再是未定义的。看下面的例子：
 
@@ -712,7 +712,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="limit Underscript x right-arrow negative 6 Endscripts x squared minus x plus 1 equals left-parenthesis negative 6 right-parenthesis squared minus left-parenthesis negative 6 right-parenthesis plus 1 equals 43"><mrow><msub><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>x</mi><mo>→</mo><mo>-</mo><mn>6</mn></mrow></msub> <msup><mi>x</mi> <mn>2</mn></msup> <mo>-</mo> <mi>x</mi> <mo>+</mo> <mn>1</mn> <mo>=</mo> <msup><mrow><mo>(</mo><mo>-</mo><mn>6</mn><mo>)</mo></mrow> <mn>2</mn></msup> <mo>-</mo> <mrow><mo>(</mo> <mo>-</mo> <mn>6</mn> <mo>)</mo></mrow> <mo>+</mo> <mn>1</mn> <mo>=</mo> <mn>43</mn></mrow></math>
 
-因此，当*x*趋向于-6时，函数的极限为43。
+因此，当*x*趋向于-6 时，函数的极限为 43。
 
 *共轭*方法是替换和因子分解无效时的下一个选择。共轭简单地是两个变量之间符号的改变。例如，*x* + *y*的共轭是*x* - *y*。在分数的情况下，通过将分子和分母乘以其中一个的共轭（最好使用具有平方根的项的共轭，因为它将被取消）来执行此操作。看下面的例子：
 
@@ -736,7 +736,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="limit Underscript x right-arrow 9 Endscripts StartRoot 9 EndRoot plus 3 equals 3 plus 3 equals 6"><mrow><msub><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>x</mi><mo>→</mo><mn>9</mn></mrow></msub> <msqrt><mn>9</mn></msqrt> <mo>+</mo> <mn>3</mn> <mo>=</mo> <mn>3</mn> <mo>+</mo> <mn>3</mn> <mo>=</mo> <mn>6</mn></mrow></math>
 
-因此，函数的解决方案是6。正如你所看到的，有时需要对方程进行准备工作，以便进行替换。
+因此，函数的解决方案是 6。正如你所看到的，有时需要对方程进行准备工作，以便进行替换。
 
 ###### 注意
 
@@ -758,7 +758,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 优化
 
-为了最小化损失函数（你将在第8章中看到的概念），优化方法使用导数来确定最陡下降的方向并修改模型参数。梯度下降是机器学习中最常用的优化技术之一。
+为了最小化损失函数（你将在第八章中看到的概念），优化方法使用导数来确定最陡下降的方向并修改模型参数。梯度下降是机器学习中最常用的优化技术之一。
 
 反向传播
 
@@ -766,7 +766,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 超参数调整
 
-为了提高模型的性能，导数用于灵敏度分析和调整超参数（这是第8章中你将完全掌握的另一个概念）。
+为了提高模型的性能，导数用于灵敏度分析和调整超参数（这是第八章中你将完全掌握的另一个概念）。
 
 不要忘记你从前一节关于极限学到的东西，因为你在本节中也会需要它们。微积分主要涉及导数和积分。本节讨论导数及其用途。
 
@@ -774,7 +774,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 导数和斜率是相关概念，但它们并不是同一回事。这里是两者之间的主要区别：
 
-+   斜率度量线的陡峭程度。它是y轴变化与*x*轴变化的比率。你已经在讨论线性代数的部分中看到过这一点。
++   斜率度量线的陡峭程度。它是 y 轴变化与*x*轴变化的比率。你已经在讨论线性代数的部分中看到过这一点。
 
 +   导数描述了给定函数的变化率。当函数上两点之间的距离趋近于零时，该函数在该点的导数是切线斜率的极限。
 
@@ -796,7 +796,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="f left-parenthesis x plus h right-parenthesis equals x squared plus 2 x h plus h squared plus 4 x plus 4 h minus 2"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>+</mo> <mi>h</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mn>2</mn> <mi>x</mi> <mi>h</mi> <mo>+</mo> <msup><mi>h</mi> <mn>2</mn></msup> <mo>+</mo> <mn>4</mn> <mi>x</mi> <mo>+</mo> <mn>4</mn> <mi>h</mi> <mo>-</mo> <mn>2</mn></mrow></math>
 
-现在，让我们将f(x + h)代入定义中：
+现在，让我们将 f(x + h)代入定义中：
 
 <math alttext="f prime left-parenthesis x right-parenthesis equals limit Underscript h right-arrow 0 Endscripts StartFraction x squared plus 2 x h plus h squared plus 4 x plus 4 h minus 2 minus x squared minus 4 x plus 2 Over h EndFraction"><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <msub><mo movablelimits="true" form="prefix">lim</mo> <mrow><mi>h</mi><mo>→</mo><mn>0</mn></mrow></msub> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo><mn>2</mn><mi>x</mi><mi>h</mi><mo>+</mo><msup><mi>h</mi> <mn>2</mn></msup> <mo>+</mo><mn>4</mn><mi>x</mi><mo>+</mo><mn>4</mn><mi>h</mi><mo>-</mo><mn>2</mn><mo>-</mo><msup><mi>x</mi> <mn>2</mn></msup> <mo>-</mo><mn>4</mn><mi>x</mi><mo>+</mo><mn>2</mn></mrow> <mi>h</mi></mfrac></mstyle></mrow></math>
 
@@ -812,19 +812,19 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="f prime left-parenthesis x right-parenthesis equals 2 x plus 4"><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>2</mn> <mi>x</mi> <mo>+</mo> <mn>4</mn></mrow></math>
 
-这就是原始函数*f(x)*的导数。如果你想找到函数在*x*=2时的导数，只需将其代入导数函数中：
+这就是原始函数*f(x)*的导数。如果你想找到函数在*x*=2 时的导数，只需将其代入导数函数中：
 
 <math alttext="f prime left-parenthesis 2 right-parenthesis equals 2 left-parenthesis 2 right-parenthesis plus 4 equals 8"><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mn>2</mn> <mo>)</mo></mrow> <mo>=</mo> <mn>2</mn> <mrow><mo>(</mo> <mn>2</mn> <mo>)</mo></mrow> <mo>+</mo> <mn>4</mn> <mo>=</mo> <mn>8</mn></mrow></math>
 
-看一下你刚刚解决的函数的图形。图4-15显示了原始函数的图形及其导数（直线）。注意*f'(2)*恰好在8处。当*x*=2时，*f(x)*的斜率为8。
+看一下你刚刚解决的函数的图形。图 4-15 显示了原始函数的图形及其导数（直线）。注意*f'(2)*恰好在 8 处。当*x*=2 时，*f(x)*的斜率为 8。
 
-![](Images/dlf_graph9.png)
+![](img/dlf_graph9.png)
 
-###### 图4-15。原始的f(x)及其导数f'(x)
+###### 图 4-15。原始的 f(x)及其导数 f'(x)
 
 ###### 注
 
-注意当*f(x)*触底并开始上升时，*f'(x)*在-2处穿过零线。这是本章稍后你会了解的一个概念。
+注意当*f(x)*触底并开始上升时，*f'(x)*在-2 处穿过零线。这是本章稍后你会了解的一个概念。
 
 你不太可能每次想要找到导数时都使用正式定义（可以用在每个函数上）。有导数规则可以让你通过快捷方式节省大量时间。第一个规则被称为*幂规则*，这是一种找到具有指数的函数的导数的方法。
 
@@ -836,13 +836,13 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="StartFraction d y Over d x EndFraction left-parenthesis a x Superscript n Baseline right-parenthesis equals left-parenthesis a period n right-parenthesis x Superscript n minus 1"><mrow><mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><mi>d</mi><mi>y</mi></mrow> <mrow><mi>d</mi><mi>x</mi></mrow></mfrac></mstyle> <mrow><mo>(</mo> <mi>a</mi> <msup><mi>x</mi> <mi>n</mi></msup> <mo>)</mo></mrow> <mo>=</mo> <mrow><mo>(</mo> <mi>a</mi> <mo>.</mo> <mi>n</mi> <mo>)</mo></mrow> <msup><mi>x</mi> <mrow><mi>n</mi><mo>-</mo><mn>1</mn></mrow></msup></mrow></math>
 
-基本上，这意味着通过将常数乘以指数然后从指数中减去1来找到导数。这里有一个例子：
+基本上，这意味着通过将常数乘以指数然后从指数中减去 1 来找到导数。这里有一个例子：
 
 <math alttext="f left-parenthesis x right-parenthesis equals x Superscript 4"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>x</mi> <mn>4</mn></msup></mrow></math>
 
 <math alttext="f prime left-parenthesis x right-parenthesis equals left-parenthesis 1 times 4 right-parenthesis x Superscript left-parenthesis 4 minus 1 right-parenthesis Baseline equals 4 x cubed"><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mrow><mo>(</mo> <mn>1</mn> <mo>×</mo> <mn>4</mn> <mo>)</mo></mrow> <msup><mi>x</mi> <mrow><mo>(</mo><mn>4</mn><mo>-</mo><mn>1</mn><mo>)</mo></mrow></msup> <mo>=</mo> <mn>4</mn> <msup><mi>x</mi> <mn>3</mn></msup></mrow></math>
 
-请记住，如果变量没有附加常数，这意味着该常数等于1。这里有一个更复杂的例子，但原则相同：
+请记住，如果变量没有附加常数，这意味着该常数等于 1。这里有一个更复杂的例子，但原则相同：
 
 <math alttext="f left-parenthesis x right-parenthesis equals 2 x squared plus 3 x Superscript 7 Baseline minus 2 x cubed"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>2</mn> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mn>3</mn> <msup><mi>x</mi> <mn>7</mn></msup> <mo>-</mo> <mn>2</mn> <msup><mi>x</mi> <mn>3</mn></msup></mrow></math>
 
@@ -852,7 +852,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="x Superscript 0 Baseline equals 1"><mrow><msup><mi>x</mi> <mn>0</mn></msup> <mo>=</mo> <mn>1</mn></mrow></math>
 
-有了这个说法，您可以想象常数始终乘以*x*的零次方（因为它不会改变它们的值）。现在，如果您想找到17的导数，下面是如何进行的：
+有了这个说法，您可以想象常数始终乘以*x*的零次方（因为它不会改变它们的值）。现在，如果您想找到 17 的导数，下面是如何进行的：
 
 <math alttext="17 equals 17 x Superscript 0 Baseline equals left-parenthesis 0 times 17 right-parenthesis x Superscript 0 minus 1 Baseline equals 0 x Superscript negative 1 Baseline equals 0"><mrow><mn>17</mn> <mo>=</mo> <mn>17</mn> <msup><mi>x</mi> <mn>0</mn></msup> <mo>=</mo> <mrow><mo>(</mo> <mn>0</mn> <mo>×</mo> <mn>17</mn> <mo>)</mo></mrow> <msup><mi>x</mi> <mrow><mn>0</mn><mo>-</mo><mn>1</mn></mrow></msup> <mo>=</mo> <mn>0</mn> <msup><mi>x</mi> <mrow><mo>-</mo><mn>1</mn></mrow></msup> <mo>=</mo> <mn>0</mn></mrow></math>
 
@@ -890,11 +890,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="h prime left-parenthesis x right-parenthesis equals 5 x Superscript 4 Baseline plus 6 x squared plus 2 x"><mrow><msup><mi>h</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>5</mn> <msup><mi>x</mi> <mn>4</mn></msup> <mo>+</mo> <mn>6</mn> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mn>2</mn> <mi>x</mi></mrow></math>
 
-图4-16显示了*h(x)*和*h'(x)*的图形。
+图 4-16 显示了*h(x)*和*h'(x)*的图形。
 
-![](Images/dlf_graph10.png)
+![](img/dlf_graph10.png)
 
-###### 图4-16。原始*h(x)*及其导数*h'(x)*
+###### 图 4-16。原始*h(x)*及其导数*h'(x)*
 
 下一步是看*商规则*，它处理两个函数的除法。正式定义如下：
 
@@ -928,7 +928,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="StartFraction d y Over d x EndFraction e Superscript x Baseline equals e Superscript x Baseline left-parenthesis ln e right-parenthesis equals e Superscript x"><mrow><mfrac><mrow><mi>d</mi><mi>y</mi></mrow> <mrow><mi>d</mi><mi>x</mi></mrow></mfrac> <msup><mi>e</mi> <mi>x</mi></msup> <mo>=</mo> <msup><mi>e</mi> <mi>x</mi></msup> <mrow><mo>(</mo> <mo form="prefix">ln</mo> <mi>e</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>e</mi> <mi>x</mi></msup></mrow></math>
 
-这是因为自然对数函数和指数函数彼此是互逆的，所以，术语*ln e*等于1。因此，指数函数* e*的导数就是它本身。
+这是因为自然对数函数和指数函数彼此是互逆的，所以，术语*ln e*等于 1。因此，指数函数* e*的导数就是它本身。
 
 同时，让我们讨论对数导数。到目前为止，您应该知道什么是指数和对数。两种类型对数的一般定义如下：
 
@@ -936,7 +936,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="StartFraction d y Over d x EndFraction ln x equals log Subscript e Baseline x equals StartFraction 1 Over x ln e EndFraction equals StartFraction 1 Over x EndFraction"><mrow><mfrac><mrow><mi>d</mi><mi>y</mi></mrow> <mrow><mi>d</mi><mi>x</mi></mrow></mfrac> <mo form="prefix">ln</mo> <mi>x</mi> <mo>=</mo> <msub><mo form="prefix">log</mo> <mi>e</mi></msub> <mi>x</mi> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="false"><mfrac><mn>1</mn> <mrow><mi>x</mi><mo form="prefix">ln</mo><mi>e</mi></mrow></mfrac></mstyle> <mo>=</mo> <mfrac><mn>1</mn> <mi>x</mi></mfrac></mrow></math>
 
-请注意，在自然对数的第二个导数函数中，再次遇到了术语*ln e*，因此简化变得非常容易，因为它等于1。
+请注意，在自然对数的第二个导数函数中，再次遇到了术语*ln e*，因此简化变得非常容易，因为它等于 1。
 
 以下是一个例子：
 
@@ -948,15 +948,15 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 ###### 注意
 
-请记住，对数*log*的底数是10，但自然对数*ln*的底数是*e*（~2.7182）
+请记住，对数*log*的底数是 10，但自然对数*ln*的底数是*e*（~2.7182）
 
-自然对数和对数函数实际上通过简单的乘法是线性相关的。如果您知道常数*a*的对数，您可以通过将*a*的对数乘以2.303来找到其自然对数*ln*。
+自然对数和对数函数实际上通过简单的乘法是线性相关的。如果您知道常数*a*的对数，您可以通过将*a*的对数乘以 2.303 来找到其自然对数*ln*。
 
 导数中的一个重要概念是*链式法则*。让我们回到幂规则，它处理变量上的指数。记住以下公式来找到导数：
 
 <math alttext="StartFraction d y Over d x EndFraction left-parenthesis a x Superscript n Baseline right-parenthesis equals left-parenthesis a period n right-parenthesis x Superscript n minus 1"><mrow><mstyle scriptlevel="0" displaystyle="false"><mfrac><mrow><mi>d</mi><mi>y</mi></mrow> <mrow><mi>d</mi><mi>x</mi></mrow></mfrac></mstyle> <mrow><mo>(</mo> <mi>a</mi> <msup><mi>x</mi> <mi>n</mi></msup> <mo>)</mo></mrow> <mo>=</mo> <mrow><mo>(</mo> <mi>a</mi> <mo>.</mo> <mi>n</mi> <mo>)</mo></mrow> <msup><mi>x</mi> <mrow><mi>n</mi><mo>-</mo><mn>1</mn></mrow></msup></mrow></math>
 
-这是一个简化版本，因为只有*x*，但实际情况是您必须乘以指数下的项的导数。到目前为止，您只看到*x*作为指数下的变量。*x*的导数是1，这就是为什么它被简化并隐藏的原因。然而，对于更复杂的函数，比如这个：
+这是一个简化版本，因为只有*x*，但实际情况是您必须乘以指数下的项的导数。到目前为止，您只看到*x*作为指数下的变量。*x*的导数是 1，这就是为什么它被简化并隐藏的原因。然而，对于更复杂的函数，比如这个：
 
 <math alttext="f left-parenthesis x right-parenthesis equals left-parenthesis 4 x plus 1 right-parenthesis squared"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mrow><mo>(</mo><mn>4</mn><mi>x</mi><mo>+</mo><mn>1</mn><mo>)</mo></mrow> <mn>2</mn></msup></mrow></math>
 
@@ -966,7 +966,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 1.  找到内部函数的导数并将其乘以剩余的函数。
 
-因此，解决方案如下（知道*4x + 1*的导数只是4）：
+因此，解决方案如下（知道*4x + 1*的导数只是 4）：
 
 <math alttext="f prime left-parenthesis x right-parenthesis equals 2 left-parenthesis 4 x plus 1 right-parenthesis .4"><mrow><msup><mi>f</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <mn>2</mn> <mrow><mo>(</mo> <mn>4</mn> <mi>x</mi> <mo>+</mo> <mn>1</mn> <mo>)</mo></mrow> <mo>.</mo> <mn>4</mn></mrow></math>
 
@@ -1034,11 +1034,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 <math alttext="integral 2 x d x"><mrow><mo>∫</mo> <mn>2</mn> <mi>x</mi> <mi>d</mi> <mi>x</mi></mrow></math>
 
-通常，看到微分过程（即求导数），你会返回2作为指数，这会给出以下答案：
+通常，看到微分过程（即求导数），你会返回 2 作为指数，这会给出以下答案：
 
 <math alttext="integral 2 x d x equals x squared"><mrow><mo>∫</mo> <mn>2</mn> <mi>x</mi> <mi>d</mi> <mi>x</mi> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup></mrow></math>
 
-这看起来不像原始函数。缺少常数5。但你无法知道这一点，甚至如果你知道有一个常数，那是什么？1？2？677？这就是为什么在积分过程中添加一个常数*C*，以便它代表丢失的常数。因此，积分问题的答案如下：
+这看起来不像原始函数。缺少常数 5。但你无法知道这一点，甚至如果你知道有一个常数，那是什么？1？2？677？这就是为什么在积分过程中添加一个常数*C*，以便它代表丢失的常数。因此，积分问题的答案如下：
 
 <math alttext="integral 2 x d x equals x squared plus upper C"><mrow><mo>∫</mo> <mn>2</mn> <mi>x</mi> <mi>d</mi> <mi>x</mi> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mi>C</mi></mrow></math>
 
@@ -1102,7 +1102,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 在定积分中，常数*C*将始终抵消，因此您可以在这类问题中将其略去。
 
-因此，*f(x)*图形下方和*x*-轴上方以及*x*-轴上[0, 6]之间的面积等于60平方单位。以下显示了积分的一些经验法则（毕竟，本章旨在刷新您的知识或让您对一些关键数学概念有基本的理解）：
+因此，*f(x)*图形下方和*x*-轴上方以及*x*-轴上[0, 6]之间的面积等于 60 平方单位。以下显示了积分的一些经验法则（毕竟，本章旨在刷新您的知识或让您对一些关键数学概念有基本的理解）：
 
 +   要找到一个常数的积分：
 
@@ -1140,7 +1140,7 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 强化学习
 
-积分在强化学习中用于计算奖励函数的期望值。强化学习在第10章中介绍。
+积分在强化学习中用于计算奖励函数的期望值。强化学习在第十章中介绍。
 
 贝叶斯模型
 
@@ -1162,21 +1162,21 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 几种机器和深度学习算法依赖于优化技术来减少误差函数。本节讨论了不同学习算法中的一个基本概念。
 
-*优化*是在可能解的宇宙中找到最佳解的过程。优化就是找到函数的最高点和最低点。图4-17显示了以下公式的图形：
+*优化*是在可能解的宇宙中找到最佳解的过程。优化就是找到函数的最高点和最低点。图 4-17 显示了以下公式的图形：
 
 <math alttext="f left-parenthesis x right-parenthesis equals x Superscript 4 Baseline minus 2 x squared plus x"><mrow><mi>f</mi> <mrow><mo>(</mo> <mi>x</mi> <mo>)</mo></mrow> <mo>=</mo> <msup><mi>x</mi> <mn>4</mn></msup> <mo>-</mo> <mn>2</mn> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mi>x</mi></mrow></math>
 
-![](Images/dlf_graph18.png)
+![](img/dlf_graph18.png)
 
-###### 图4-17。函数的图形
+###### 图 4-17。函数的图形
 
-当x轴右侧的值减少直到达到一个点开始增加时，存在*局部最小值*。该点不一定是函数中的最低点，因此称为*局部*。在图4-18中，函数在点A处有一个局部最小值。
+当 x 轴右侧的值减少直到达到一个点开始增加时，存在*局部最小值*。该点不一定是函数中的最低点，因此称为*局部*。在图 4-18 中，函数在点 A 处有一个局部最小值。
 
-当x轴右侧的值增加直到达到一个点开始减少时，存在*局部最大值*。该点不一定是函数中的最高点。在图4-18中，函数在点B处有一个局部最大值。
+当 x 轴右侧的值增加直到达到一个点开始减少时，存在*局部最大值*。该点不一定是函数中的最高点。在图 4-18 中，函数在点 B 处有一个局部最大值。
 
-当x轴右侧的值减少直到达到一个点开始增加时，存在*全局最小值*。该点必须是函数中的最低点，因此称为全局。在图4-18中，函数在点C处有一个全局最小值。
+当 x 轴右侧的值减少直到达到一个点开始增加时，存在*全局最小值*。该点必须是函数中的最低点，因此称为全局。在图 4-18 中，函数在点 C 处有一个全局最小值。
 
-当x轴右侧的值增加直到达到一个点开始减少时，存在*全局最大值*。该点必须是函数中的最高点。在图4-18中，没有全局最大值，因为函数将无限地继续而不形成顶点。您可以清楚地看到函数如何加速向上。
+当 x 轴右侧的值增加直到达到一个点开始减少时，存在*全局最大值*。该点必须是函数中的最高点。在图 4-18 中，没有全局最大值，因为函数将无限地继续而不形成顶点。您可以清楚地看到函数如何加速向上。
 
 在处理机器和深度学习模型时，目标是找到最小化所谓的*损失函数*（给出预测误差的函数）的模型参数（或输入）。如果损失函数是凸的，优化技术应该找到趋向于最小化损失函数的全局最小值的参数。此外，如果损失函数是非凸的，则收敛不能保证，优化可能只会导致接近局部最小值，这是目标的一部分，但这会留下全局最小值，这是最终目标。
 
@@ -1186,11 +1186,11 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 1.  第二步是执行第二阶导数测试（简单地计算导数的导数）。然后，将函数设置为零并解出*x*将给出所谓的拐点。*拐点*给出函数凹向上和凹向下的地方。
 
-换句话说，临界点是函数改变方向的地方，拐点是函数改变凹凸性的地方。图4-19显示了凹向上函数和凹向下函数之间的区别。
+换句话说，临界点是函数改变方向的地方，拐点是函数改变凹凸性的地方。图 4-19 显示了凹向上函数和凹向下函数之间的区别。
 
-![](Images/dlf_graph19.png)
+![](img/dlf_graph19.png)
 
-###### 图4-18。凹向上与凹向下函数
+###### 图 4-18。凹向上与凹向下函数
 
 <math alttext="upper C o n c a v e u p f u n c t i o n equals x squared"><mrow><mi>C</mi> <mi>o</mi> <mi>n</mi> <mi>c</mi> <mi>a</mi> <mi>v</mi> <mi>e</mi> <mi>u</mi> <mi>p</mi> <mi>f</mi> <mi>u</mi> <mi>n</mi> <mi>c</mi> <mi>t</mi> <mi>i</mi> <mi>o</mi> <mi>n</mi> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup></mrow></math>
 
@@ -1248,10 +1248,10 @@ x轴和y轴是垂直线，指定了平面的边界以及二维笛卡尔坐标系
 
 ## 总结
 
-第2、3和4章介绍了您需要开始理解基本机器学习和深度学习模型的主要数值概念。我已经尽最大努力尽可能简化技术要求，我鼓励您至少阅读这三章两次，以便您学到的一切变得自然而然。
+第 2、3 和 4 章介绍了您需要开始理解基本机器学习和深度学习模型的主要数值概念。我已经尽最大努力尽可能简化技术要求，我鼓励您至少阅读这三章两次，以便您学到的一切变得自然而然。
 
-自然地，这样一个复杂的领域需要更深入的数学知识，但我相信通过本章中所见的概念，您可以开始在Python中发现和构建模型。毕竟，它们来自软件包和库的预构建，本章的目的是理解您正在处理的内容，不太可能使用过时的工具从头构建模型。
+自然地，这样一个复杂的领域需要更深入的数学知识，但我相信通过本章中所见的概念，您可以开始在 Python 中发现和构建模型。毕竟，它们来自软件包和库的预构建，本章的目的是理解您正在处理的内容，不太可能使用过时的工具从头构建模型。
 
 到目前为止，您应该已经对数据科学和数学要求有一定的了解，这将让您舒适地开始。
 
-^([1](ch04.xhtml#idm46147468230768-marker)) 矩阵也可以包含符号和表达式，但为了简单起见，让我们坚持使用数字。
+^(1) 矩阵也可以包含符号和表达式，但为了简单起见，让我们坚持使用数字。
