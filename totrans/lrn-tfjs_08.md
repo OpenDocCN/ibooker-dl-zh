@@ -60,7 +60,7 @@ TensorFlow.js 并没有存在很长时间。因此，可用的模型数量有限
 
 这是转换器的安装命令：
 
-```py
+```js
 $ pip install tensorflowjs[wizard]
 ```
 

@@ -124,20 +124,20 @@ TensorFlow Lite 最初是在 Linux 环境中开发的，因此我们的许多工
 
 我们通过上述项目生成来实现这一点。如果您从 GitHub 获取 TensorFlow 源代码，可以使用 Linux 上的标准 Makefile 方法为许多平台构建。例如，这个命令行应该编译和测试库的 x86 版本：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test
 ```
 
 您可以构建特定目标，比如为 SparkFun Edge 平台构建语音唤醒示例，使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET="sparkfun_edge" micro_speech_bin
 ```
 
 如果您在 Windows 机器上运行或想要使用 Keil、Mbed、Arduino 或其他专门的构建系统，那么项目生成就派上用场了。您可以通过在 Linux 上运行以下命令行来生成一个准备在 Mbed IDE 中使用的文件夹：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET="disco_f746ng" generate_micro_speech_mbed_project
 ```
@@ -154,7 +154,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 语音唤醒词示例代码需要从麦克风中获取音频数据，但不幸的是没有跨平台的方法来捕获音频。因为我们至少需要在各种设备上进行编译，所以我们编写了一个默认实现，它只返回一个充满零值的缓冲区，而不使用麦克风。以下是该模块的接口是什么样子的，来自[*audio_provider.h*](https://oreil.ly/J5N0N)：
 
-```py
+```cpp
 TfLiteStatus GetAudioSamples(tflite::ErrorReporter* error_reporter,
                              int start_ms, int duration_ms,
                              int* audio_samples_size, int16_t** audio_samples);
@@ -169,7 +169,7 @@ int32_t LatestAudioTimestamp();
 
 因为默认实现不能依赖于麦克风的存在，所以[*audio_provider.cc*](https://oreil.ly/8V1Ll)中的两个函数的实现非常简单：
 
-```py
+```cpp
 namespace {
 int16_t g_dummy_audio_data[kMaxAudioSampleSize];
 int32_t g_latest_audio_timestamp = 0;
@@ -204,7 +204,7 @@ int32_t LatestAudioTimestamp() {
 
 语音唤醒词示例中使用的模型严重依赖深度卷积操作，该操作在[*tensorflow/lite/micro/kernels/depthwise_conv.cc*](https://oreil.ly/a16dw)中有一个未经优化的实现。核心算法在[*tensorflow/lite/kernels/internal/reference/depthwiseconv_uint8.h*](https://oreil.ly/2gQ-e)中实现，并被写成一组嵌套循环。以下是代码本身：
 
-```py
+```cpp
    for (int b = 0; b < batches; ++b) {
       for (int out_y = 0; out_y < output_height; ++out_y) {
         for (int out_x = 0; out_x < output_width; ++out_x) {
@@ -270,7 +270,7 @@ int32_t LatestAudioTimestamp() {
 
 如果您只是添加一个模块或操作的专门版本，您根本不需要更新 Makefile。有一个名为[`specialize()`](https://oreil.ly/teIF6)的自定义函数，它会自动获取字符串（包含平台名称以及任何自定义标签）的`ALL_TAGS`列表和源文件列表，并返回替换原始版本的正确专门版本的列表。这也使您有灵活性，在命令行上手动指定标签。例如，这样：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET="bluepill" TAGS="portable_optimized foo" test
 ```
@@ -281,7 +281,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 Makefile 依赖于在根级别定义要构建的源文件和头文件列表，然后根据指定的平台和标签进行修改。这些修改发生在从父构建项目包含的子 Makefiles 中。例如，[*tensorflow/lite/micro/tools/make/targets*](https://oreil.ly/79zOB)文件夹中的所有*.inc*文件都会自动包含。如果您查看其中一个，比如用于 Ambiq 和 SparkFun Edge 平台的[*apollo3evb_makefile.inc*](https://oreil.ly/gKKXO)，您会看到它检查了是否已为此构建指定了目标芯片；如果有，它会定义许多标志并修改源列表。以下是包含一些最有趣部分的简化版本：
 
-```py
+```cpp
 ifeq ($(TARGET),$(filter $(TARGET),apollo3evb sparkfun_edge))
   export PATH := $(MAKEFILE_DIR)/downloads/gcc_embedded/bin/:$(PATH)
   TARGET_ARCH := cortex-m4
@@ -335,7 +335,7 @@ TensorFlow 旨在为其所有代码编写单元测试，我们已经在第五章
 
 如果您在*tensorflow/tensorflow/lite/experimental/micro*的直接子文件夹中添加文件，您应该能够将其命名为*<something>_test.cc*，并且它将被自动捕获。如果您正在测试示例内的模块，则需要向`microlite_test` Makefile 辅助函数添加显式调用，例如[此处](https://oreil.ly/wkYgu)：
 
-```py
+```cpp
 # Tests the feature provider module using the mock audio provider.
 $(eval $(call microlite_test,feature_provider_mock_test,\
 $(FEATURE_PROVIDER_MOCK_TEST_SRCS),$(FEATURE_PROVIDER_MOCK_TEST_HDRS)))
@@ -345,7 +345,7 @@ $(FEATURE_PROVIDER_MOCK_TEST_SRCS),$(FEATURE_PROVIDER_MOCK_TEST_HDRS)))
 
 要使用它，创建一个包含头文件的*.cc*文件。在新行上以`TF_LITE_MICRO_TESTS_BEGIN`语句开始，然后定义一系列测试函数，每个函数都有一个`TF_LITE_MICRO_TEST()`宏。在每个测试中，您调用像`TF_LITE_MICRO_EXPECT_EQ()`这样的宏来断言您希望从正在测试的函数中看到的预期结果。在所有测试函数的末尾，您将需要`TF_LITE_MICRO_TESTS_END`。这里是一个基本示例：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/testing/micro_test.h"
 
 TF_LITE_MICRO_TESTS_BEGIN
@@ -359,7 +359,7 @@ TF_LITE_MICRO_TESTS_END
 
 如果您为您的平台编译此代码，您将获得一个正常的二进制文件，您应该能够运行它。执行它将输出类似于这样的日志信息到`stderr`（或者在您的平台上由`ErrorReporter`写入的任何等效内容）：
 
-```py
+```cpp
 ----------------------------------------------------------------------------
 Testing SomeTest
 1/1 tests passed
@@ -379,7 +379,7 @@ TensorFlow Lite 绝对需要的唯一平台依赖是能够将字符串打印到�
 
 在 Linux 和大多数其他桌面操作系统上，这将是许多 C 培训课程的经典“hello world”示例。它通常看起来像这样：
 
-```py
+```cpp
 #include <stdio.h>
 
 int main(int argc, char** argv) {
@@ -393,7 +393,7 @@ int main(int argc, char** argv) {
 
 相反，大多数平台定义了自己的调试日志接口。这些接口的调用方式通常取决于主机和微控制器之间使用的连接类型，以及嵌入式系统上运行的硬件架构和操作系统（如果有）。例如，Arm Cortex-M 微控制器支持[*semihosting*](https://oreil.ly/LmC4k)，这是在开发过程中在主机和目标系统之间通信的标准。如果你正在使用类似[OpenOCD](https://oreil.ly/lSn0n)的连接从主机机器上，从微控制器调用[`SYS_WRITE0`](https://oreil.ly/6IyrK)系统调用将导致寄存器 1 中的零终止字符串参数显示在 OpenOCD 终端上。在这种情况下，等效“hello world”程序的代码将如下所示：
 
-```py
+```cpp
 void DebugLog(const char* s) {
   asm("mov r0, #0x04\n"  // SYS_WRITE0
       "mov r1, %[str]\n"
@@ -412,7 +412,7 @@ int main(int argc, char** argv) {
 
 如何做到这一点在不同平台上会有很大差异，但一个常见的方法是使用串行 UART 连接到主机。这是在 Mbed 上如何做的：
 
-```py
+```cpp
 #include <mbed.h>
 
 // On mbed platforms, we set up a serial port and write to it for debug logging.
@@ -428,7 +428,7 @@ int main(int argc, char** argv) {
 
 这里有一个稍微复杂一点的 Arduino 示例：
 
-```py
+```cpp
 #include "Arduino.h"
 
 // The Arduino DUE uses a different object for the default serial port shown in
@@ -469,14 +469,14 @@ int main(int argc, char** argv) {
 
 作为第一步，我们将使用已经存在的`DebugLog()`函数的测试。首先，运行以下命令行：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   generate_micro_error_reporter_test_make_project
 ```
 
 当你查看*tensorflow/lite/micro/tools/make/gen/linux_x86_64/prj/micro_error_reporter_test/make/*（如果你在不同的主机平台上，请将*linux*替换为*osx*或*windows*），你应该会看到一些像*tensorflow*和*third_party*这样的文件夹。这些文件夹包含 C++源代码，如果你将它们拖入你的 IDE 或构建系统并编译所有文件，你应该会得到一个可执行文件，用于测试我们需要创建的错误报告功能。你第一次尝试构建这段代码很可能会失败，因为它仍在使用[*debug_log.cc*](https://oreil.ly/fDkLh)中的默认`DebugLog()`实现，依赖于*stdio.h*和 C 标准库。为了解决这个问题，修改*debug_log.cc*，删除`#include` `<cstdio>`语句，并用一个什么都不做的实现替换`DebugLog()`：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/debug_log.h"
 
 extern "C" void DebugLog(const char* s) {
@@ -490,7 +490,7 @@ extern "C" void DebugLog(const char* s) {
 
 实际的测试代码存在于[*tensorflow/lite/micro/micro_error_reporter_test.cc*](https://oreil.ly/0jD00)，看起来是这样的：
 
-```py
+```cpp
 int main(int argc, char** argv) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -503,7 +503,7 @@ int main(int argc, char** argv) {
 
 它不直接调用`DebugLog()`，而是通过处理变量数量等内容的`ErrorReporter`接口，但它确实依赖于您刚刚编写的代码作为其基础实现。如果一切正常，您应该在调试控制台中看到类似以下内容：
 
-```py
+```cpp
 Number: 42
 Badly-formed format string
 Another  badly-formed  format string
@@ -512,7 +512,7 @@ Another  badly-formed  format string
 
 在这方面工作后，您将希望将`DebugLog()`的实现放回主源代码树中。为此，您将使用我们之前讨论过的子文件夹专业化技术。您需要决定一个短名称（不含大写字母、空格或其他特殊字符），用于标识您的平台。例如，我们已经支持的一些平台使用*arduino*、*sparkfun_edge*和*linux*。在本教程中，我们将使用*my_mcu*。首先，在您从 GitHub 检出的源代码副本中的*tensorflow/lite/micro/*中创建一个名为*my_mcu*的新子文件夹（不是您刚生成或下载的那个）。将带有您实现的*debug_log.cc*文件复制到该*my_mcu*文件夹中，并使用 Git 进行源代码跟踪。将生成的项目文件复制到备份位置，然后运行以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile TARGET=my_mcu clean
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=my_mcu generate_micro_error_reporter_test_make_project
@@ -524,7 +524,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 如果成功，恭喜：您现在已启用所有 TensorFlow 测试和可执行目标！实现调试日志记录是您需要进行的唯一必需的特定于平台的更改；代码库中的其他所有内容应该以足够便携的方式编写，以便在任何支持 C++11 的工具链上构建和运行，无需标准库链接，只需使用`math`库。要创建所有目标，以便在 IDE 中尝试它们，您可以从终端运行以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile generate_projects \
   TARGET=my_mcu
 ```
@@ -543,14 +543,14 @@ make -f tensorflow/lite/micro/tools/make/Makefile generate_projects \
 
 如果您已经正确配置了所有构建设置，您将能够运行类似以下的命令来生成可刷写的二进制文件（根据您的平台设置目标）：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=bluepill micro_error_reporter_test_bin
 ```
 
 如果您已经正确配置了运行测试的脚本和环境，您可以这样做来运行平台的所有测试：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile TARGET=bluepill test
 ```
 
@@ -634,13 +634,13 @@ FlatBuffers 使用*模式*来定义我们要序列化的数据结构，以及一
 
 具有讽刺意味的是，要开始，我们需要滚动到[模式的最末尾](https://oreil.ly/aHYM-)。在这里，我们看到一行声明`root_type`为`Model`：
 
-```py
+```cpp
 root_type Model;
 ```
 
 FlatBuffers 需要一个作为文件中包含的其他数据结构树的根的单个容器对象。这个声明告诉我们，这种格式的根将是一个`Model`。要了解这意味着什么，我们再向上滚动几行到`Model`的定义：
 
-```py
+```cpp
 table Model {
 ```
 
@@ -648,7 +648,7 @@ table Model {
 
 您可以通过查看[`micro_speech`示例的`main()`函数](https://oreil.ly/StkFf)来了解实际应用中如何使用这个功能：
 
-```py
+```cpp
   // Map the model into a usable data structure. This doesn't involve any
   // copying or parsing, it's a very lightweight operation.
   const tflite::Model* model =
@@ -657,7 +657,7 @@ table Model {
 
 `g_tiny_conv_micro_features_model_data`变量是指向包含序列化 TensorFlow Lite 模型的内存区域的指针，而对`::tflite::GetModel()`的调用实际上只是一个转换，以获取由该底层内存支持的 C++对象。它不需要任何内存分配或遍历数据结构，因此这是一个非常快速和高效的调用。要理解我们如何使用它，请看我们在数据结构上执行的下一个操作：
 
-```py
+```cpp
   if (model->version() != TFLITE_SCHEMA_VERSION) {
     error_reporter->Report(
         "Model provided is schema version %d not equal "
@@ -669,7 +669,7 @@ table Model {
 
 如果您查看[模式中`Model`定义的开始](https://oreil.ly/vPpDw)，您可以看到此代码所引用的`version`属性的定义：
 
-```py
+```cpp
   // Version of the schema.
   version:uint;
 ```
@@ -678,7 +678,7 @@ table Model {
 
 要了解文件格式的更复杂部分，值得跟随`MicroInterpreter`类的流程，因为它加载模型并准备执行。构造函数接收一个指向内存中模型的指针，例如前面示例中的`g_tiny_conv_micro_features_model_data`。它访问的第一个属性是[缓冲区](https://oreil.ly/nQjwY)：
 
-```py
+```cpp
   const flatbuffers::Vector<flatbuffers::Offset<Buffer>>* buffers =
       model->buffers();
 ```
@@ -687,7 +687,7 @@ table Model {
 
 要了解`buffers`数组代表的更多信息，值得查看[模式定义](https://oreil.ly/QOTlY)：
 
-```py
+```cpp
 // Table of raw data buffers (used for constant tensors). Referenced by tensors
 // by index. The generous alignment accommodates mmap-friendly data structures.
 table Buffer {
@@ -699,7 +699,7 @@ table Buffer {
 
 我们访问的下一个属性是[子图列表](https://oreil.ly/9Fa9V)：
 
-```py
+```cpp
   auto* subgraphs = model->subgraphs();
   if (subgraphs->size() != 1) {
     error_reporter->Report("Only 1 subgraph is currently supported.\n");
@@ -711,7 +711,7 @@ table Buffer {
 
 子图是一组操作符、它们之间的连接以及它们使用的缓冲区、输入和输出。未来可能需要多个子图来支持一些高级模型，例如支持控制流，但目前我们想要在微控制器上支持的所有网络都有一个单独的子图，因此我们可以通过确保当前模型满足该要求来简化后续的代码。要了解子图中的内容，我们可以回顾一下[模式](https://oreil.ly/Z9mLn)：
 
-```py
+```cpp
 // The root type, defining a subgraph, which typically represents an entire
 // model.
 table SubGraph {
@@ -737,13 +737,13 @@ table SubGraph {
 
 每个子图的第一个属性是张量列表，`MicroInterpreter`代码访问它[如此](https://oreil.ly/EsO7M)：
 
-```py
+```cpp
   tensors_ = subgraph_->tensors();
 ```
 
 正如我们之前提到的，`Buffer`对象只保存权重的原始值，没有关于它们类型或形状的任何元数据。张量是存储常量缓冲区的额外信息的地方。它们还为临时数组（如输入、输出或激活层）保存相同的信息。您可以在它们的定义中看到这些元数据[在模式文件的顶部附近](https://oreil.ly/mH0IL)：
 
-```py
+```cpp
 table Tensor {
   // The tensor shape. The meaning of each entry is operator-specific but
   // builtin ops use: [batch size, height, width, number of channels] (That's
@@ -770,13 +770,13 @@ table Tensor {
 
 回到`MicroInterpreter`代码，我们从子图中提取的第二个主要属性是[操作符列表](https://oreil.ly/6Yl8d)：
 
-```py
+```cpp
 operators_ = subgraph_->operators();
 ```
 
 这个列表保存了模型的图结构。要了解这是如何编码的，我们可以回到[`Operator`的模式定义](https://oreil.ly/xTs7j)：
 
-```py
+```cpp
 // An operator takes tensors as inputs and outputs. The type of operation being
 // performed is determined by an index into the list of valid OperatorCodes,
 // while the specifics of each operations is configured using builtin_options
@@ -816,7 +816,7 @@ table Operator {
 
 对于内置操作，参数结构在模式中列出。以下是`Conv2D`的示例：
 
-```py
+```cpp
 table Conv2DOptions {
   padding:Padding;
   stride_w:int;
@@ -831,7 +831,7 @@ table Conv2DOptions {
 
 如果操作符代码表明是自定义操作符，我们事先不知道参数列表的结构，因此无法生成代码对象。相反，参数信息被打包到[FlexBuffer](https://oreil.ly/qPwo9)中。这是 FlatBuffer 库提供的一种格式，用于在不事先知道结构的情况下编码任意数据，这意味着实现操作符的代码需要访问生成的数据，指定类型是什么，并且语法比内置操作符更混乱。以下是[一些目标检测代码](https://oreil.ly/xQoTR)的示例：
 
-```py
+```cpp
   const flexbuffers::Map& m = flexbuffers::GetRoot(buffer_t, length).AsMap();
   op_data->max_detections = m["max_detections"].AsInt32();
 ```
@@ -854,7 +854,7 @@ table Conv2DOptions {
 
 一旦文件从较大的头文件中分离出来，您需要从*reference_ops.h*中包含它，以便所有使用该头文件的现有用户仍然看到您移动的函数（尽管我们的 Micro 代码将单独包含分离的头文件）。您可以查看我们如何为`conv2d` [这里](https://oreil.ly/jtXLU)。您还需要将头文件添加到`kernels/internal/BUILD:reference_base`和`kernels/internal/BUILD:legacy_reference_base`构建规则中。在进行这些更改后，您应该能够运行测试套件并看到所有现有的移动测试都通过了：
 
-```py
+```cpp
 bazel test tensorflow/lite/kernels:all
 ```
 
@@ -892,7 +892,7 @@ bazel test tensorflow/lite/kernels:all
 
 现在您已经创建了运算符实现和测试文件，您需要检查它们是否有效。您需要使用 Bazel 开源构建系统来执行此操作。在[*BUILD*文件](https://oreil.ly/CbwMI)中添加一个`tflite_micro_cc_test`规则，然后尝试构建和运行以下命令行（将`conv`替换为您的运算符名称）：
 
-```py
+```cpp
 bazel test ttensorflow/lite/micro/kernels:conv_test --test_output=streamed
 ```
 
@@ -910,7 +910,7 @@ Google 开源项目的标准构建系统是 Bazel，但不幸的是，使用 Baz
 
 要在这种环境中测试您的操作员，请`cd`到文件夹，并运行以下命令（将您自己的操作员名称替换为`conv`）：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test_conv_test
 ```
 
@@ -918,7 +918,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile test_conv_test
 
 这仍然在您本地的 Intel x86 桌面机上本地运行，尽管它使用与嵌入式目标相同的构建机制。您现在可以尝试将代码编译并刷写到像 SparkFun Edge 这样的真实微控制器上（只需在 Makefile 行中传入`TARGET=sparkfun_edge`即可），但为了让生活更轻松，我们还提供了 Cortex-M3 设备的软件仿真。您应该能够通过执行以下命令来运行您的测试：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile TARGET=bluepill test_conv_test
 ```
 

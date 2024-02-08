@@ -106,7 +106,7 @@ TensorFlow Lite 支持 100 多种操作，但在单个模型中不太可能需�
 
 如果你只使用了少数操作，你不需要像我们使用大型`AllOpsResolver`那样将注册包装在一个新类中。相反，你可以创建一个`MicroMutableOpResolver`类的实例，并直接添加你需要的操作注册。`MicroMutableOpResolver`实现了`OpResolver`接口，但有额外的方法让你添加操作到列表中（这就是为什么它被命名为`Mutable`）。这是用来实现`AllOpsResolver`的类，也是你自己的解析器类的一个很好的基础，但直接调用它可能更简单。我们在一些示例中使用了这种方法，你可以在这个来自[`micro_speech`示例](https://oreil.ly/gdZts)的片段中看到它是如何工作的：
 
-```py
+```cpp
   static tflite::MicroMutableOpResolver micro_mutable_op_resolver;
   micro_mutable_op_resolver.AddBuiltin(
       tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
@@ -124,7 +124,7 @@ TensorFlow Lite 支持 100 多种操作，但在单个模型中不太可能需�
 
 如果你使用 GCC 工具链，你可以使用像`nm`这样的工具来获取目标（*.o*）中间文件中函数和对象的大小信息。这里有一个构建二进制文件然后检查编译后的*audio_provider.cc*对象文件中项目大小的示例：
 
-```py
+```cpp
 nm -S tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/obj/tensorflow/lite/micro/ \
   examples/micro_speech/sparkfun_edge/audio_provider.o
@@ -132,7 +132,7 @@ nm -S tensorflow/lite/micro/tools/make/gen/ \
 
 你应该会看到类似以下的结果：
 
-```py
+```cpp
 00000140 t $d
 00000258 t $d
 00000088 t $d
@@ -202,7 +202,7 @@ nm -S tensorflow/lite/micro/tools/make/gen/ \
 
 我们发现的最佳方法是将源代码与反汇编函数混合在一起。幸运的是，`objdump`工具通过使用`-S`标志让我们可以做到这一点——但与`nm`不同，您不能使用安装在 Linux 或 macOS 桌面上的标准版本。相反，您需要使用随您的工具链一起提供的版本。如果您正在使用 TensorFlow Lite for Microcontrollers 的 Makefile 构建，通常会自动下载。它通常会存在于类似*tensorflow/lite/micro/tools/make/downloads/gcc_embedded/bin*的位置。以下是一个运行以查看*audio_provider.cc*内部函数更多信息的命令：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/downloads/gcc_embedded/bin/ \
   arm-none-eabi-objdump -S tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/obj/tensorflow/lite/micro/examples/ \
@@ -211,7 +211,7 @@ tensorflow/lite/micro/tools/make/downloads/gcc_embedded/bin/ \
 
 我们不会展示所有的输出，因为太长了；相反，我们只展示一个简化版本，只显示我们感兴趣的函数：
 
-```py
+```cpp
 ...
 Disassembly of section .text._Z18InitAudioRecordingPN6tflite13ErrorReporterE:
 

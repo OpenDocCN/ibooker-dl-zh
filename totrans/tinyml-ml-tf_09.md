@@ -148,7 +148,7 @@ TensorFlow Lite 解释器
 
 首先是*person_detection_test.cc*。我们首先引入模型需要的操作：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -162,14 +162,14 @@ TfLiteRegistration* Register_AVERAGE_POOL_2D();
 
 接下来，我们定义一个适合模型大小的张量区域。通常情况下，这个数字是通过试错确定的：
 
-```py
+```cpp
 const int tensor_arena_size = 70 * 1024;
 uint8_t tensor_arena[tensor_arena_size];
 ```
 
 然后我们进行典型的设置工作，准备解释器运行，包括使用`MicroMutableOpResolver`注册必要的操作：
 
-```py
+```cpp
 // Set up logging.
 tflite::MicroErrorReporter micro_error_reporter;
 tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -204,7 +204,7 @@ interpreter.AllocateTensors();
 
 我们的下一步是检查输入张量。我们检查它是否具有预期数量的维度，以及其维度是否适当：
 
-```py
+```cpp
 // Get information about the memory area to use for the model's input.
 TfLiteTensor* input = interpreter.input(0);
 
@@ -222,7 +222,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteUInt8, input->type);
 
 告诉我们预期维度的常量`kNumRows`、`kNumCols`和`kNumChannels`在[*model_settings.h*](https://oreil.ly/ae2OI)中定义。它们看起来像这样：
 
-```py
+```cpp
 constexpr int kNumCols = 96;
 constexpr int kNumRows = 96;
 constexpr int kNumChannels = 1;
@@ -232,7 +232,7 @@ constexpr int kNumChannels = 1;
 
 接下来在代码中，我们使用简单的`for`循环将测试图像复制到输入张量中：
 
-```py
+```cpp
 // Copy an image with a person into the memory area used for the input.
 const uint8_t* person_data = g_person_data;
 for (int i = 0; i < input->bytes; ++i) {
@@ -244,7 +244,7 @@ for (int i = 0; i < input->bytes; ++i) {
 
 在我们填充了输入张量之后，我们运行推断。这和以往一样简单：
 
-```py
+```cpp
 // Run the model on this input and make sure it succeeds.
 TfLiteStatus invoke_status = interpreter.Invoke();
 if (invoke_status != kTfLiteOk) {
@@ -255,7 +255,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 
 现在我们检查输出张量，确保它具有预期的大小和形状：
 
-```py
+```cpp
 TfLiteTensor* output = interpreter.output(0);
 TF_LITE_MICRO_EXPECT_EQ(4, output->dims->size);
 TF_LITE_MICRO_EXPECT_EQ(1, output->dims->data[0]);
@@ -269,7 +269,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteUInt8, output->type);
 
 类别的总数作为常量`kCategoryCount`可用，它位于*model_settings.h*中，还有一些其他有用的值：
 
-```py
+```cpp
 constexpr int kCategoryCount = 3;
 constexpr int kPersonIndex = 1;
 constexpr int kNotAPersonIndex = 2;
@@ -280,7 +280,7 @@ extern const char* kCategoryLabels[kCategoryCount];
 
 还有一个类别标签数组`kCategoryLabels`，在[*model_settings.cc*](https://oreil.ly/AB0zS)中实现：
 
-```py
+```cpp
 const char* kCategoryLabels[kCategoryCount] = {
     "unused",
     "person",
@@ -290,7 +290,7 @@ const char* kCategoryLabels[kCategoryCount] = {
 
 接下来的代码块记录“人”和“非人”分数，并断言“人”分数更高——因为我们传入的是一个人的图像：
 
-```py
+```cpp
 uint8_t person_score = output->data.uint8[kPersonIndex];
 uint8_t no_person_score = output->data.uint8[kNotAPersonIndex];
 error_reporter->Report(
@@ -307,7 +307,7 @@ TF_LITE_MICRO_EXPECT_GT(person_score, no_person_score);
 
 接下来，我们测试没有人的图像，由`g_no_person_data`持有：
 
-```py
+```cpp
 const uint8_t* no_person_data = g_no_person_data;
 for (int i = 0; i < input->bytes; ++i) {
     input->data.uint8[i] = no_person_data[i];
@@ -316,7 +316,7 @@ for (int i = 0; i < input->bytes; ++i) {
 
 推理运行后，我们断言“非人”分数更高：
 
-```py
+```cpp
 person_score = output->data.uint8[kPersonIndex];
 no_person_score = output->data.uint8[kNotAPersonIndex];
 error_reporter->Report(
@@ -329,7 +329,7 @@ TF_LITE_MICRO_EXPECT_GT(no_person_score, person_score);
 
 运行测试同样简单。只需从 TensorFlow 存储库的根目录发出以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_person_detection_test
 ```
@@ -342,7 +342,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 图像提供程序负责从摄像头获取数据，并以适合写入模型输入张量的格式返回数据。文件[*image_provider.h*](https://oreil.ly/5Vjbe)定义了其接口：
 
-```py
+```cpp
 TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int image_width,
                       int image_height, int channels, uint8_t* image_data);
 ```
@@ -351,7 +351,7 @@ TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int image_width,
 
 [*image_provider_test.cc*](https://oreil.ly/Nbl9x)中的测试调用此参考实现以展示其用法。我们的首要任务是创建一个数组来保存图像数据。这发生在以下行中：
 
-```py
+```cpp
 uint8_t image_data[kMaxImageSize];
 ```
 
@@ -359,7 +359,7 @@ uint8_t image_data[kMaxImageSize];
 
 设置了这个数组后，我们可以调用`GetImage()`函数从摄像头捕获图像：
 
-```py
+```cpp
 TfLiteStatus get_status =
     GetImage(error_reporter, kNumCols, kNumRows, kNumChannels, image_data);
 TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, get_status);
@@ -370,7 +370,7 @@ TF_LITE_MICRO_EXPECT_NE(image_data, nullptr);
 
 最后，测试通过返回的数据以显示所有内存位置都是可读的。即使图像在技术上具有行、列和通道，但实际上数据被展平为一维数组：
 
-```py
+```cpp
 uint32_t total = 0;
 for (int i = 0; i < kMaxImageSize; ++i) {
     total += image_data[i];
@@ -379,7 +379,7 @@ for (int i = 0; i < kMaxImageSize; ++i) {
 
 要运行此测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_image_provider_test
 ```
@@ -392,7 +392,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 接口非常简单：
 
-```py
+```cpp
 void RespondToDetection(tflite::ErrorReporter* error_reporter,
                         uint8_t person_score, uint8_t no_person_score);
 ```
@@ -401,14 +401,14 @@ void RespondToDetection(tflite::ErrorReporter* error_reporter,
 
 [*detection_responder.cc*](https://oreil.ly/5Wjjt)中的参考实现只是记录这些值。*detection_responder_test.cc*中的测试调用该函数几次：
 
-```py
+```cpp
 RespondToDetection(error_reporter, 100, 200);
 RespondToDetection(error_reporter, 200, 100);
 ```
 
 要运行测试并查看输出，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_detection_responder_test
 ```
@@ -421,7 +421,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 首先，我们引入模型所需的所有操作：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -435,7 +435,7 @@ TfLiteRegistration* Register_AVERAGE_POOL_2D();
 
 接下来，我们声明一堆变量来保存重要的移动部件：
 
-```py
+```cpp
 tflite::ErrorReporter* g_error_reporter = nullptr;
 const tflite::Model* g_model = nullptr;
 tflite::MicroInterpreter* g_interpreter = nullptr;
@@ -444,14 +444,14 @@ TfLiteTensor* g_input = nullptr;
 
 之后，我们为张量操作分配一些工作内存：
 
-```py
+```cpp
 constexpr int g_tensor_arena_size = 70 * 1024;
 static uint8_t tensor_arena[kTensorArenaSize];
 ```
 
 在`setup()`函数中，在任何其他操作发生之前运行，我们创建一个错误报告器，加载我们的模型，设置一个解释器实例，并获取模型输入张量的引用：
 
-```py
+```cpp
 void setup() {
   // Set up logging.
   static tflite::MicroErrorReporter micro_error_reporter;
@@ -499,7 +499,7 @@ void setup() {
 
 代码的下一部分在程序的主循环中被不断调用。它首先使用图像提供程序获取图像，通过传递一个输入张量的引用，使图像直接写入其中：
 
-```py
+```cpp
 void loop() {
   // Get image from provider.
   if (kTfLiteOk != GetImage(g_error_reporter, kNumCols, kNumRows, kNumChannels,
@@ -510,7 +510,7 @@ void loop() {
 
 然后运行推理，获取输出张量，并从中读取“人”和“无人”分数。这些分数被传递到检测响应器的`RespondToDetection()`函数中：
 
-```py
+```cpp
   // Run the model on this input and make sure it succeeds.
   if (kTfLiteOk != g_interpreter->Invoke()) {
     g_error_reporter->Report("Invoke failed.");
@@ -529,7 +529,7 @@ void loop() {
 
 循环本身在程序的`main()`函数中定义，该函数位于[*main.cc*](https://oreil.ly/_PR3L)中。它一次调用`setup()`函数，然后重复调用`loop()`函数，直到无限循环：
 
-```py
+```cpp
 int main(int argc, char* argv[]) {
   setup();
   while (true) {
@@ -544,20 +544,20 @@ int main(int argc, char* argv[]) {
 
 首先，使用以下命令构建程序：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile person_detection
 ```
 
 构建完成后，您可以使用以下命令运行示例：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/osx_x86_64/bin/ \
 person_detection
 ```
 
 您会看到程序的输出在屏幕上滚动，直到按下 Ctrl-C 终止它：
 
-```py
+```cpp
 person score:129 no person score 202
 person score:129 no person score 202
 person score:129 no person score 202
@@ -604,7 +604,7 @@ Arducam 相机模块具有一颗 200 万像素的图像传感器，分辨率为 
 
 `GetImage()`函数是图像提供程序与外部世界的接口。在我们的应用程序主循环中调用它以获取一帧图像数据。第一次调用时，我们需要初始化相机。这通过调用`InitCamera()`函数来实现，如下所示：
 
-```py
+```cpp
   static bool g_is_camera_initialized = false;
   if (!g_is_camera_initialized) {
     TfLiteStatus init_status = InitCamera(error_reporter);
@@ -620,7 +620,7 @@ Arducam 相机模块具有一颗 200 万像素的图像传感器，分辨率为 
 
 `GetImage()`函数调用的下一个函数是`PerformCapture()`：
 
-```py
+```cpp
 TfLiteStatus capture_status = PerformCapture(error_reporter);
 ```
 
@@ -628,7 +628,7 @@ TfLiteStatus capture_status = PerformCapture(error_reporter);
 
 接下来我们调用的函数是`ReadData()`：
 
-```py
+```cpp
   TfLiteStatus read_data_status = ReadData(error_reporter);
 ```
 
@@ -636,7 +636,7 @@ TfLiteStatus capture_status = PerformCapture(error_reporter);
 
 当我们有 JPEG 编码的图像时，我们的下一步是将其解码为原始图像数据。这发生在`DecodeAndProcessImage()`函数中：
 
-```py
+```cpp
   TfLiteStatus decode_status = DecodeAndProcessImage(
       error_reporter, image_width, image_height, image_data);
 ```
@@ -653,7 +653,7 @@ Arduino Nano 33 BLE Sense 内置了 RGB LED，这是一个包含独立红色、�
 
 `RespondToDetection()`函数接受两个分数，一个用于“人”类别，另一个用于“非人”。第一次调用时，它设置蓝色、绿色和黄色 LED 为输出：
 
-```py
+```cpp
 void RespondToDetection(tflite::ErrorReporter* error_reporter,
                         uint8_t person_score, uint8_t no_person_score) {
   static bool is_initialized = false;
@@ -666,7 +666,7 @@ void RespondToDetection(tflite::ErrorReporter* error_reporter,
 
 接下来，为了指示推理刚刚完成，我们关闭所有 LED，然后非常简要地闪烁蓝色 LED：
 
-```py
+```cpp
   // Note: The RGB LEDs on the Arduino Nano 33 BLE
   // Sense are on when the pin is LOW, off when HIGH.
 
@@ -684,7 +684,7 @@ void RespondToDetection(tflite::ErrorReporter* error_reporter,
 
 接下来，我们根据哪个类别的分数更高来打开和关闭适当的 LED：
 
-```py
+```cpp
   // Switch on the green LED when a person is detected,
   // the red when no person is detected
   if (person_score > no_person_score) {
@@ -698,7 +698,7 @@ void RespondToDetection(tflite::ErrorReporter* error_reporter,
 
 最后，我们使用`error_reporter`实例将分数输出到串行端口：
 
-```py
+```cpp
   error_reporter->Report("Person score: %d No person score: %d", person_score,
                          no_person_score);
 }
@@ -773,7 +773,7 @@ Arducam Arduino 库可从[GitHub](https://oreil.ly/93OKK)获取。要安装它�
 
 您会看到一堆`#define`语句。确保它们都被注释掉，除了`#define OV2640_MINI_2MP_PLUS`，如此处所示：
 
-```py
+```cpp
 //Step 1: select the hardware platform, only one at a time
 //#define OV2640_MINI_2MP
 //#define OV3640_MINI_3MP
@@ -794,7 +794,7 @@ Arducam Arduino 库可从[GitHub](https://oreil.ly/93OKK)获取。要安装它�
 
 安装完库之后，您需要配置它以禁用一些与 Arduino Nano 33 BLE Sense 不兼容的可选组件。打开*Arduino/libraries/JPEGDecoder/src/User_Config.h*，确保`#define LOAD_SD_LIBRARY`和`#define LOAD_SDFAT_LIBRARY`都被注释掉，如文件中的摘录所示：
 
-```py
+```cpp
 // Comment out the next #defines if you are not using an SD Card to store
 // the JPEGs
 // Commenting out the line is NOT essential but will save some FLASH space if
@@ -841,7 +841,7 @@ Arducam Arduino 库可从[GitHub](https://oreil.ly/93OKK)获取。要安装它�
 
 您还可以通过 Arduino 串行监视器查看推断的结果。要做到这一点，请从“工具”菜单中打开串行监视器。您将看到一个详细的日志，显示应用程序运行时发生的情况。还有一个有趣的功能是勾选“显示时间戳”框，这样您就可以看到每个过程需要多长时间：
 
-```py
+```cpp
 14:17:50.714 -> Starting capture
 14:17:50.714 -> Image captured
 14:17:50.784 -> Reading 3080 bytes from ArduCAM
@@ -883,7 +883,7 @@ SparkFun Edge 板经过优化，以实现低功耗。当与同样高效的相机
 
 `GetImage()` 函数是图像提供程序与世界的接口。它在我们的应用程序的主循环中被调用以获取一帧图像数据。第一次调用时，我们需要初始化摄像头。这通过调用 `InitCamera()` 函数来实现，如下所示：
 
-```py
+```cpp
 // Capture single frame.  Frame pointer passed in to reduce memory usage.  This
 // allows the input tensor to be used instead of requiring an extra copy.
 TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int frame_width,
@@ -904,7 +904,7 @@ TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int frame_width,
 
 摄像头模块具有自动曝光功能，它会在捕获帧时自动校准曝光设置。为了让它有机会在我们尝试执行推理之前校准，`GetImage()` 函数的下一部分使用摄像头驱动程序的 `hm01b0_blocking_read_oneframe_scaled()` 函数捕获几帧图像。我们不对捕获的数据做任何处理；我们只是为了让摄像头模块的自动曝光功能有一些材料可以使用：
 
-```py
+```cpp
     // Drop a few frames until auto exposure is calibrated.
     for (int i = 0; i < kFramesToInitialize; ++i) {
       hm01b0_blocking_read_oneframe_scaled(frame, frame_width, frame_height,
@@ -916,7 +916,7 @@ TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int frame_width,
 
 设置完成后，`GetImage()` 函数的其余部分非常简单。我们只需调用 `hm01b0_blocking_read_oneframe_scaled()` 来捕获一幅图像：
 
-```py
+```cpp
 hm01b0_blocking_read_oneframe_scaled(frame, frame_width, frame_height,
                                      channels);
 ```
@@ -933,7 +933,7 @@ hm01b0_blocking_read_oneframe_scaled(frame, frame_width, frame_height,
 
 `RespondToDetection()` 函数接受两个分数，一个用于“人”类别，另一个用于“非人”。第一次调用时，它会为蓝色、绿色和黄色 LED 设置输出：
 
-```py
+```cpp
 void RespondToDetection(tflite::ErrorReporter* error_reporter,
                         uint8_t person_score, uint8_t no_person_score) {
   static bool is_initialized = false;
@@ -949,7 +949,7 @@ void RespondToDetection(tflite::ErrorReporter* error_reporter,
 
 因为该函数每次推理调用一次，所以下面的代码片段会导致它在每次执行推理时切换蓝色 LED 的开关：
 
-```py
+```cpp
 // Toggle the blue LED every time an inference is performed.
 static int count = 0;
 if (++count & 1) {
@@ -961,7 +961,7 @@ if (++count & 1) {
 
 最后，如果检测到一个人，它会点亮绿色 LED，如果没有检测到一个人，它会点亮蓝色 LED。它还使用 `ErrorReporter` 实例记录分数：
 
-```py
+```cpp
 am_hal_gpio_output_clear(AM_BSP_GPIO_LED_YELLOW);
 am_hal_gpio_output_clear(AM_BSP_GPIO_LED_GREEN);
 if (person_score > no_person_score) {
@@ -1000,7 +1000,7 @@ error_reporter->Report("person score:%d no person score %d", person_score,
 
 在终端中，克隆 TensorFlow 存储库并切换到其目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 cd tensorflow
 ```
@@ -1011,21 +1011,21 @@ cd tensorflow
 
 以下命令下载所有必需的依赖项，然后为 SparkFun Edge 编译一个二进制文件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=sparkfun_edge person_detection_bin
 ```
 
 二进制文件被创建为*.bin*文件，位于以下位置：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/
   sparkfun_edge_cortex-m4/bin/person_detection.bin
 ```
 
 要检查文件是否存在，可以使用以下命令：
 
-```py
+```cpp
 test -f tensorflow/lite/micro/tools/make/gen \
   /sparkfun_edge_cortex-m4/bin/person_detection.bin \
   &&  echo "Binary was successfully created" || echo "Binary is missing"
@@ -1041,7 +1041,7 @@ test -f tensorflow/lite/micro/tools/make/gen \
 
 输入以下命令设置一些虚拟的加密密钥，供开发使用：
 
-```py
+```cpp
 cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0 \
   /tools/apollo3_scripts/keys_info0.py \
 tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0 \
@@ -1050,7 +1050,7 @@ tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0 \
 
 接下来，运行以下命令创建一个已签名的二进制文件。如果需要，将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_image_blob.py \
   --bin tensorflow/lite/micro/tools/make/gen/ \
@@ -1063,7 +1063,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 这将创建文件*main_nonsecure_ota.bin*。现在运行此命令创建文件的最终版本，您可以使用该文件刷写设备，使用下一步中将使用的脚本：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_wireupdate_blob.py \
   --load-address 0x20000 \
@@ -1105,7 +1105,7 @@ SparkFun Edge 将当前运行的程序存储在其 1 兆字节的闪存中。如
 
 在通过 USB 连接设备之前，运行以下命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1115,7 +1115,7 @@ ls /dev/tty*
 
 这应该输出一个附加设备列表，看起来像以下内容：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1123,7 +1123,7 @@ ls /dev/tty*
 
 现在，将编程器连接到计算机的 USB 端口，并再次运行以下命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1133,7 +1133,7 @@ ls /dev/tty*
 
 您应该在输出中看到一个额外的项目，如下例所示。您的新项目可能有不同的名称。这个新项目是设备的名称：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1148,7 +1148,7 @@ ls /dev/tty*
 
 在确定设备名称后，将其放入一个 shell 变量以备后用：
 
-```py
+```cpp
 export DEVICENAME=<*your device name here*>
 
 ```
@@ -1161,13 +1161,13 @@ export DEVICENAME=<*your device name here*>
 
 首先创建一个环境变量来指定波特率，即数据发送到设备的速度：
 
-```py
+```cpp
 export BAUD_RATE=921600
 ```
 
 现在将以下命令粘贴到终端中，但*不要立即按 Enter*！命令中的`${DEVICENAME}`和`${BAUD_RATE}`将被替换为您在前面部分设置的值。如有必要，请记得将`python3`替换为`python`。
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/uart_wired_update.py -b \
   ${BAUD_RATE} ${DEVICENAME} -r 1 -f main_nonsecure_wire.bin -i 6
@@ -1191,7 +1191,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 您现在应该在屏幕上看到类似以下内容：
 
-```py
+```cpp
 Connecting with Corvette over serial port /dev/cu.usbserial-1440...
 Sending Hello.
 Received response for Hello
@@ -1222,7 +1222,7 @@ Sending Data Packet of length  8180
 
 程序将继续在终端上打印行。最终，您会看到类似以下内容：
 
-```py
+```cpp
 [...lots more Sending Data Packet of length  8180...]
 Sending Data Packet of length  8180
 Sending Data Packet of length  6440
@@ -1254,13 +1254,13 @@ Done.
 
 该程序将检测结果记录到串行端口。要查看它们，我们可以使用波特率为 115200 监视板的串行端口输出。在 macOS 和 Linux 上，以下命令应该有效：
 
-```py
+```cpp
 screen ${DEVICENAME} 115200
 ```
 
 您应该最初看到类似以下内容的输出：
 
-```py
+```cpp
 Apollo3 Burst Mode is Available
 
                                Apollo3 operating in Burst Mode (96MHz)
@@ -1268,7 +1268,7 @@ Apollo3 Burst Mode is Available
 
 当板捕获帧并运行推断时，您应该看到它打印调试信息：
 
-```py
+```cpp
 Person score: 130 No person score: 204
 Person score: 220 No person score: 87
 ```

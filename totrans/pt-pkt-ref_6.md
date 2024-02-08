@@ -38,14 +38,14 @@
 
 ```py
 device = torch.device("cuda" if
-  torch.cuda.is_available() else "cpu") ![1](Images/1.png)
+  torch.cuda.is_available() else "cpu") # ①
 
-model.to(device) ![2](Images/2.png)
+model.to(device) # ②
 for epoch in range(n_epochs):
   for data in trainloader:
     input, labels = data
-    input = input.to(device) ![3](Images/3.png)
-    labels = labels.to(device) ![3](Images/3.png)
+    input = input.to(device) # ③
+    labels = labels.to(device) # ③
     optimizer.zero_grad()
 
     output = model(input)
@@ -81,7 +81,7 @@ for epoch in range(n_epochs):
 &#33;curl 'https://raw.githubusercontent.com/pytorch' \
   '/xla/master/contrib/scripts/env-setup.py' \
   -o pytorch-xla-env-setup.py
-&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; ![1](Images/1.png)
+&#33;python pytorch-xla-env-setup.py --version &#34;nightly&#34; # ①
 ```
 
 <1>这些是打算在笔记本中运行的命令。在命令行上运行时，请省略“!”。
@@ -113,7 +113,7 @@ for epoch in range(n_epochs):
     loss.backward()
     optimizer.step()
 
-print(output.device) ![1](Images/1.png)
+print(output.device) # ①
 # out: xla:1
 ```
 
@@ -202,11 +202,11 @@ def dist_training_loop(rank,
                        optimizer):
     dist.init_process_group("gloo",
                     rank=rank,
-                    world_size=world_size) ![1](Images/1.png)
+                    world_size=world_size) # ①
 
-    model = model.to(rank) ![2](Images/2.png)
+    model = model.to(rank) # ②
     ddp_model = DDP(model,
-                    device_ids=[rank]) ![3](Images/3.png)
+                    device_ids=[rank]) # ③
     optimizer = optimizer(
                   ddp_model.parameters(),
                   lr=0.001)
@@ -214,9 +214,9 @@ def dist_training_loop(rank,
     for epochs in range(n_epochs):
       for input, labels in dataloader:
         input = input.to(rank)
-        labels = labels.to(rank) ![4](Images/4.png)
+        labels = labels.to(rank) # ④
         optimizer.zero_grad()
-        outputs = ddp_model(input) ![5](Images/5.png)
+        outputs = ddp_model(input) # ⑤
         loss = loss_fn(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -299,11 +299,11 @@ class TwoGPUAlexNet(AlexNet):
       ret = []
 
       for s_next in splits:
-        s_prev = self.seq2(s_prev) ![1](Images/1.png)
+        s_prev = self.seq2(s_prev) # ①
         ret.append(self.fc(
             s_prev.view(s_prev.size(0), -1)))
 
-        s_prev = self.seq1(s_next).to('cuda:1') ![2](Images/2.png)
+        s_prev = self.seq1(s_next).to('cuda:1') # ②
 
       s_prev = self.seq2(s_prev)
       ret.append(self.fc(
@@ -330,7 +330,7 @@ optimizer = optim.SGD(model.parameters(), lr=0.001)
 for epochs in range(n_epochs):
   for input, labels in dataloader;
     input = input.to("cuda:0")
-    labels = labels.to("cuda:1") ![1](Images/1.png)
+    labels = labels.to("cuda:1") # ①
     optimizer.zero_grad()
     outputs = model(input)
     loss_fn(outputs, labels).backward()
@@ -390,7 +390,7 @@ def model_parallel_training(rank, world_size):
     dev0 = rank * 2
     dev1 = rank * 2 + 1
     mp_model = Simple2GPUModel(dev0, dev1)
-    ddp_mp_model = DDP(mp_model) ![1](Images/1.png)
+    ddp_mp_model = DDP(mp_model) # ①
 
     loss_fn = nn.MSELoss()
     optimizer = optim.SGD(
@@ -399,9 +399,9 @@ def model_parallel_training(rank, world_size):
     for epochs in range(n_epochs):
       for input, labels in dataloader:
         input = input.to(dev0),
-        labels = labels,to(dev1) ![2](Images/2.png)
+        labels = labels,to(dev1) # ②
         optimizer.zero_grad()
-        outputs = ddp_mp_model(input) ![3](Images/3.png)
+        outputs = ddp_mp_model(input) # ③
         loss = loss_fn(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -445,7 +445,7 @@ c10d 组件是一个用于在进程之间传输张量的通信库。c10d 被 DDP
  >>> python -m torch.distributed.launch
          --nproc_per_node=NUM_GPUS
          --nnodes=2
-         --node_rank=0 ![1](Images/1.png)
+         --node_rank=0 # ①
          --master_addr="192.168.1.1"
          --master_port=1234
          TRAINING_SCRIPT.py (--arg1 --arg2 --arg3)
@@ -461,7 +461,7 @@ c10d 组件是一个用于在进程之间传输张量的通信库。c10d 被 DDP
 >>> python -m torch.distributed.launch
         --nproc_per_node=NUM_GPUS
         --nnodes=2
-        --node_rank=1 ![1](Images/1.png)
+        --node_rank=1 # ①
         --master_addr="192.168.1.1"
         --master_port=1234
         TRAINING_SCRIPT.py (--arg1 --arg2 --arg3)
@@ -513,8 +513,8 @@ class Net(nn.Module):
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, nodes_1) ![1](Images/1.png)
-        self.fc2 = nn.Linear(nodes_1, nodes_2) ![2](Images/2.png)
+        self.fc1 = nn.Linear(16 * 5 * 5, nodes_1) # ①
+        self.fc2 = nn.Linear(nodes_1, nodes_2) # ②
         self.fc3 = nn.Linear(nodes_2, 10)
 
     def forward(self, x):
@@ -604,12 +604,12 @@ def train_model(config):
     torch.cuda.is_available() else "cpu")
 
   model = Net(config['nodes_1'],
-      config['nodes_2']).to(device=device) ![1](Images/1.png)
+      config['nodes_2']).to(device=device) # ①
 
   criterion = nn.CrossEntropyLoss()
   optimizer = optim.SGD(model.parameters(),
                         lr=config['lr'],
-                        momentum=0.9) ![2](Images/2.png)
+                        momentum=0.9) # ②
 
   trainset, testset = load_data()
 
@@ -621,12 +621,12 @@ def train_model(config):
   trainloader = torch.utils.data.DataLoader(
       train_subset,
       batch_size=int(config["batch_size"]),
-      shuffle=True) ![3](Images/3.png)
+      shuffle=True) # ③
 
   valloader = torch.utils.data.DataLoader(
       val_subset,
       batch_size=int(config["batch_size"]),
-      shuffle=True) ![3](Images/3.png)
+      shuffle=True) # ③
 
   for epoch in range(10):
       train_loss = 0.0
@@ -978,11 +978,11 @@ for name, module in model.named_modules():
     if isinstance(module, torch.nn.Conv2d):
         prune.random_unstructured(module,
                               name='weight',
-                              amount=0.3) ![1](Images/1.png)
+                              amount=0.3) # ①
     elif isinstance(module, torch.nn.Linear):
         prune.random_unstructured(module,
                               name='weight',
-                              amount=0.5) ![2](Images/2.png)
+                              amount=0.5) # ②
 ```
 
 ①

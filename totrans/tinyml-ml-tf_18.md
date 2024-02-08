@@ -76,13 +76,13 @@ TensorFlow Lite for Microcontrollers 唯一需要的平台特定功能是`DebugL
 
 你应该始终能够自己向代码中注入日志语句。这些语句不需要有意义，只需要说明代码中的位置。你甚至可以定义一个自动跟踪宏，就像这样：
 
-```py
+```cpp
 #define TRACE DebugLog(__FILE__ ":" __LINE__)
 ```
 
 然后在你的代码中像这样使用它：
 
-```py
+```cpp
 int main(int argc, char**argv) {
   TRACE;
   InitSomething();
@@ -101,7 +101,7 @@ int main(int argc, char**argv) {
 
 有时候追踪并不能提供足够的信息来解释出现问题的原因，或者问题可能只会在你无法访问日志的环境中发生，比如生产环境。在这种情况下，我们建议使用所谓的“散弹式调试”。这类似于我们在第十五章中介绍的“散弹式性能分析”，只需要注释掉代码的部分部分，看看错误是否仍然发生。如果你从应用程序的顶层开始，逐步向下工作，通常可以做到类似于二分查找的方式来确定哪些代码行导致了问题。例如，你可以从主循环中的某些内容开始：
 
-```py
+```cpp
 int main(int argc, char**argv) {
   InitSomething();
   while (true) {
@@ -118,7 +118,7 @@ int main(int argc, char**argv) {
 
 我们的经验中，导致这种情况的头号原因是超出程序堆栈。这是存储本地变量的地方，而 TensorFlow Lite for Microcontrollers 广泛使用这些变量来存储相对较大的对象；因此，它需要比许多其他嵌入式应用程序更多的空间。不幸的是，确切的所需大小并不容易确定。通常，最大的贡献者是您需要传递给`SimpleTensorAllocator`的内存区域，该区域在示例中被分配为本地数组：
 
-```py
+```cpp
   // Create an area of memory to use for input, output, and intermediate arrays.
   // The size of this will depend on the model you're using, and may need to be
   // determined by experimentation.

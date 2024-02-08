@@ -78,7 +78,7 @@ TFHub 将这些模型称为*图像特征向量*模型。[您可以缩小搜索�
 
 ##### 示例 11-1。图像特征向量模型之一
 
-```py
+```js
 imagenet/mobilenet_v2_130_224/feature_vector
 ```
 
@@ -134,7 +134,7 @@ feature_vector
 
 图像已经是 224 x 224，所以你可以用以下代码加载它们：
 
-```py
+```js
 console.log("Loading huge CSV - this will take a while");
 const numImages = 130; // between 1 and 150 // Get Y values const labels = await dfd.read_csv("chess_labels.csv", numImages); // ①
 const Y = labels.tensor; // ②
@@ -159,7 +159,7 @@ console.log("Finished loading CSVs", chessTensor.shape, Y.shape);
 
 经过一段时间，这段代码会打印出 130 个准备好的图像和编码的 X 和 Y 形状：
 
-```py
+```js
 Finished loading CSVs (4) [130, 224, 224, 3] (2) [130, 6]
 ```
 
@@ -175,7 +175,7 @@ Finished loading CSVs (4) [130, 224, 224, 3] (2) [130, 6]
 
 ##### 示例 11-2\. 加载和使用特征向量模型
 
-```py
+```js
 // Load feature model
 const tfhubURL =
   "https://oreil.ly/P2t2k";
@@ -189,7 +189,7 @@ console.log(`Features stack ${featureX.shape}`);
 
 控制台日志的输出是
 
-```py
+```js
 Features stack 130,1664
 ```
 
@@ -203,7 +203,7 @@ Features stack 130,1664
 
 ##### 示例 11-3\. 一个包含 64 层的小模型，最后一层是 6
 
-```py
+```js
 // Create NN const transferModel = tf.sequential({
   layers: [                              // ①
     tf.layers.dense({
@@ -228,7 +228,7 @@ Features stack 130,1664
 
 在训练代码中没有什么新的。模型基于特征输出进行训练。由于特征输出与原始图像张量相比非常小，训练速度非常快。
 
-```py
+```js
 transferModel.compile({
   optimizer: "adam",
   loss: "categoricalCrossentropy",
@@ -266,7 +266,7 @@ await transferModel.fit(featureX, Y, {
 
 MobileNet 有大量的层，其中一些是你以前从未见过的。让我们来看一下。加载与本章相关联的 MobileNet 模型，并使用`model.summary()`来查看层的摘要。这会打印出一个庞大的层列表。不要感到不知所措。当你从底部向上阅读时，最后两个带有激活的卷积层被称为`conv_preds`和`conv_pw_13_relu`：
 
-```py
+```js
 ...
 
 conv_pw_13 (Conv2D)          [null,7,7,256]            65536
@@ -300,7 +300,7 @@ MobileNet 是一个复杂的模型，即使你不必理解所有的层来用它�
 
 ##### 示例 11-4。
 
-```py
+```js
 const featureModel = await tf.loadLayersModel('mobilenet/model.json')
 console.log('ORIGINAL MODEL')
 featureModel.summary()
@@ -321,7 +321,7 @@ shavedModel.summary()
 
 现在你可以将修剪后的模型用作特征模型。这将为你带来与 TFHub 相同的双模型系统。你的第二个模型需要读取`conv_pw_13_relu`的输出：
 
-```py
+```js
 // Create NN
 const transferModel = tf.sequential({
   layers: [
@@ -346,7 +346,7 @@ const transferModel = tf.sequential({
 
 那么现在如何统一这两个模型呢？答案出奇地简单。创建第三个顺序模型，并使用`model.add`添加两个模型。代码如下：
 
-```py
+```js
 // combine the models
 const combo = tf.sequential()
 combo.add(shavedModel)
@@ -387,7 +387,7 @@ KNN，就像 MobileNet 一样，由 Google 提供了一个 JS 包装器。我们
 
 为了进行这个快速演示，您将导入三个 NPM 模块：
 
-```py
+```js
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js">
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.0">
@@ -401,7 +401,7 @@ src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2">
 
 KNN 分类器需要每个类别的示例。为了简化这个过程，我创建了以下辅助函数：
 
-```py
+```js
 // domID is the DOM element ID // classID is the unique class index function addExample(domID, classID) {
   const features = mobileNet.infer( // ①
     document.getElementById(domID), // ②
@@ -425,7 +425,7 @@ MobileNet 模型返回图像的特征（有时称为*嵌入*）。如果未设�
 
 现在您可以使用这个辅助方法为每个类别添加示例。您只需命名图像元素的唯一 DOM ID 以及应与之关联的类别。添加三个示例就像这样简单：
 
-```py
+```js
 // Add examples of two classes
 addExample('bunny1', 0)
 addExample('bunny2', 0)
@@ -437,7 +437,7 @@ addExample('sport3', 1)
 
 最后，预测的系统是相同的。获取图像的特征，并要求分类器根据 KNN 识别输入基于哪个类。
 
-```py
+```js
 // Moment of truth const testImage = document.getElementById('test')
 const testFeature = mobileNet.infer(testImage, true);
 const predicted = await classifier.predictClass(testFeature)

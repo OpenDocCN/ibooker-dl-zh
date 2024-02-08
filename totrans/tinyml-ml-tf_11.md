@@ -156,7 +156,7 @@ TF Lite 解释器
 
 首先，我们列出模型将需要的操作：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -172,7 +172,7 @@ TfLiteRegistration* Register_SOFTMAX();
 
 测试本身（通常）通过设置推理所需的所有内容并获取模型输入张量的指针开始：
 
-```py
+```cpp
 // Set up logging
 tflite::MicroErrorReporter micro_error_reporter;
 tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -222,7 +222,7 @@ TfLiteTensor* input = interpreter.input(0);
 
 然后，我们检查输入张量以确保其预期形状：
 
-```py
+```cpp
 // Make sure the input has the properties we expect
 TF_LITE_MICRO_EXPECT_NE(nullptr, input);
 TF_LITE_MICRO_EXPECT_EQ(4, input->dims->size);
@@ -239,7 +239,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, input->type);
 
 在我们确认输入形状后，我们向输入张量写入一些数据：
 
-```py
+```cpp
 // Provide an input value
 const float* ring_features_data = g_circle_micro_f9643d42_nohash_4_data;
 error_reporter->Report("%d", input->bytes);
@@ -252,7 +252,7 @@ for (int i = 0; i < (input->bytes / sizeof(float)); ++i) {
 
 接下来，我们以熟悉的方式运行推理：
 
-```py
+```cpp
 // Run the model on this input and check that it succeeds
 TfLiteStatus invoke_status = interpreter.Invoke();
 if (invoke_status != kTfLiteOk) {
@@ -263,7 +263,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 
 之后，我们调查输出张量以确保它的形状符合我们的预期：
 
-```py
+```cpp
 // Obtain a pointer to the output tensor and make sure it has the
 // properties we expect.
 TfLiteTensor* output = interpreter.output(0);
@@ -277,7 +277,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, output->type);
 
 然后，我们可以测试我们的数据，以确保推理结果符合我们的预期。我们传入了圆形手势的数据，因此我们期望“环”得分最高：
 
-```py
+```cpp
 // There are four possible classes in the output, each with a score.
 const int kWingIndex = 0;
 const int kRingIndex = 1;
@@ -297,7 +297,7 @@ TF_LITE_MICRO_EXPECT_GT(ring_score, negative_score);
 
 然后我们为“斜坡”手势重复整个过程：
 
-```py
+```cpp
   // Now test with a different input, from a recording of "Slope".
   const float* slope_features_data = g_angle_micro_f2e59fea_nohash_1_data;
   for (int i = 0; i < (input->bytes / sizeof(float)); ++i) {
@@ -325,7 +325,7 @@ TF_LITE_MICRO_EXPECT_GT(ring_score, negative_score);
 
 要运行此测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test_magic_wand_test
 ```
 
@@ -337,7 +337,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile test_magic_wand_test
 
 第一个测试非常简单：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestSetup) {
   static tflite::MicroErrorReporter micro_error_reporter;
   TfLiteStatus setup_status = SetupAccelerometer(&micro_error_reporter);
@@ -349,7 +349,7 @@ TF_LITE_MICRO_TEST(TestSetup) {
 
 下一个测试展示了如何使用加速计处理程序填充输入张量的数据：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestAccelerometer) {
   float input[384] = {0.0};
   tflite::MicroErrorReporter micro_error_reporter;
@@ -378,7 +378,7 @@ TF_LITE_MICRO_TEST(TestAccelerometer) {
 
 要运行这些测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_gesture_accelerometer_handler_test
 ```
@@ -397,7 +397,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 所需的最小推理次数因手势而异，因为有些手势执行时间较长。它还因设备而异，因为更快的设备能够更频繁地运行推理。为 SparkFun Edge 开发板调整的默认值位于[*constants.cc*](https://oreil.ly/ktGgw)中：
 
-```py
+```cpp
 const int kConsecutiveInferenceThresholds[3] = {15, 12, 10};
 ```
 
@@ -407,7 +407,7 @@ const int kConsecutiveInferenceThresholds[3] = {15, 12, 10};
 
 首先，我们定义一些变量，用于跟踪上次看到的手势以及连续记录的相同手势数量：
 
-```py
+```cpp
 // How many times the most recent gesture has been matched in a row
 int continuous_count = 0;
 // The result of the last prediction
@@ -416,7 +416,7 @@ int last_predict = -1;
 
 接下来，我们定义`PredictGesture()`函数，并确定最近推断中是否有任何手势类别的概率大于 0.8：
 
-```py
+```cpp
 // Return the result of the last prediction
 // 0: wing("W"), 1: ring("O"), 2: slope("angle"), 3: unknown
 int PredictGesture(float* output) {
@@ -431,7 +431,7 @@ int PredictGesture(float* output) {
 
 变量`continuous_count`用于跟踪最近发现的手势连续预测的次数。如果没有手势类别满足 0.8 的概率阈值，我们通过将`continuous_count`设置为`0`和`last_predict`设置为`3`（“未知”类别的索引）来重置任何正在进行的检测过程，表示最近的结果不是已知手势：
 
-```py
+```cpp
   // No gesture was detected above the threshold
   if (this_predict == -1) {
     continuous_count = 0;
@@ -442,7 +442,7 @@ int PredictGesture(float* output) {
 
 接下来，如果最近的预测与之前的预测一致，我们增加`continuous_count`。否则，我们将其重置为`0`。我们还将最近的预测存储在`last_predict`中：
 
-```py
+```cpp
   if (last_predict == this_predict) {
     continuous_count += 1;
   } else {
@@ -453,7 +453,7 @@ int PredictGesture(float* output) {
 
 在`PredictGesture()`的下一部分中，我们使用`should_continuous_count`来检查当前手势是否已经达到其阈值。如果没有，我们返回一个`3`，表示一个未知手势：
 
-```py
+```cpp
   // If we haven't yet had enough consecutive matches for this gesture,
   // report a negative result
   if (continuous_count < kConsecutiveInferenceThresholds[this_predict]) {
@@ -463,7 +463,7 @@ int PredictGesture(float* output) {
 
 如果我们通过了这一点，这意味着我们确认了一个有效的手势。在这种情况下，我们重置所有变量：
 
-```py
+```cpp
   // Otherwise, we've seen a positive result, so clear all our variables
   // and report it
   continuous_count = 0;
@@ -476,7 +476,7 @@ int PredictGesture(float* output) {
 
 手势预测器的测试位于[*gesture_predictor_test.cc*](https://oreil.ly/5BZzt)中。第一个测试展示了一个成功的预测：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(SuccessfulPrediction) {
   // Use the threshold from the 0th gesture
   int threshold = kConsecutiveInferenceThresholds[0];
@@ -498,7 +498,7 @@ TF_LITE_MICRO_TEST(SuccessfulPrediction) {
 
 接下来的测试展示了如果一个类别的连续高概率运行被另一个类别的高概率中断会发生什么：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(FailPartWayThere) {
   // Use the threshold from the 0th gesture
   int threshold = kConsecutiveInferenceThresholds[0];
@@ -521,7 +521,7 @@ TF_LITE_MICRO_TEST(FailPartWayThere) {
 
 最终的测试展示了`PredictGesture()`如何忽略低于其阈值的概率。在循环中，我们输入了恰好正确数量的预测以满足类别`0`的阈值。然而，尽管类别`0`的概率最高，但其值为 0.7，低于`PredictGesture()`的内部阈值 0.8。这导致类别`3`的“未知”预测：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(InsufficientProbability) {
   // Use the threshold from the 0th gesture
   int threshold = kConsecutiveInferenceThresholds[0];
@@ -538,7 +538,7 @@ TF_LITE_MICRO_TEST(InsufficientProbability) {
 
 要运行这些测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_gesture_predictor_test
 ```
@@ -547,7 +547,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 输出处理程序非常简单；它只是获取`PredictGesture()`返回的类索引，并将结果显示给用户。在[*output_handler_test.cc*](https://oreil.ly/QWkeL)中展示了它的接口：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestCallability) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -560,7 +560,7 @@ TF_LITE_MICRO_TEST(TestCallability) {
 
 要运行此测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_gesture_output_handler_test
 ```
@@ -569,7 +569,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 所有这些组件都在[*main_functions.cc*](https://oreil.ly/ggNtD)中汇聚，其中包含我们程序的核心逻辑。首先设置通常的变量，以及一些额外的变量：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -605,7 +605,7 @@ bool should_clear_buffer = false;
 
 接下来，`setup()`函数执行所有通常的清理工作，以便我们准备好运行推断：
 
-```py
+```cpp
 void setup() {
   // Set up logging. Google style is to avoid globals or statics because of
   // lifetime uncertainty, but since this has a trivial destructor it's okay.
@@ -676,7 +676,7 @@ void setup() {
 
 更有趣的事情发生在`loop()`函数中，这仍然非常简单：
 
-```py
+```cpp
 void loop() {
   // Attempt to read new data from the accelerometer
   bool got_data = ReadAccelerometer(error_reporter, model_input->data.f,
@@ -708,7 +708,7 @@ void loop() {
 
 在 *main.cc* 中，`main()` 函数启动我们的程序，运行 `setup()`，并在循环中调用 `loop()` 函数：
 
-```py
+```cpp
 int main(int argc, char* argv[]) {
   setup();
   while (true) {
@@ -719,13 +719,13 @@ int main(int argc, char* argv[]) {
 
 就是这样！要在开发计算机上构建程序，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile magic_wand
 ```
 
 然后，要运行程序，请输入以下内容：
 
-```py
+```cpp
 ./tensorflow/lite/micro/tools/make/gen/osx_x86_64/bin/magic_wand
 ```
 
@@ -753,7 +753,7 @@ Arduino Nano 33 BLE Sense 具有三轴加速度计以及蓝牙支持，体积小
 
 常量 `kConsecutiveInferenceThresholds` 在文件 [*arduino/constants.cc*](https://oreil.ly/5bBt0) 中重新定义：
 
-```py
+```cpp
 // The number of expected consecutive inferences for each gesture type.
 // Established with the Arduino Nano 33 BLE Sense.
 const int kConsecutiveInferenceThresholds[3] = {8, 5, 4};
@@ -771,7 +771,7 @@ Arduino 加速度计处理程序位于 [*arduino/accelerometer_handler.cc*](http
 
 首先，实现包括自己的头文件，以及一些其他文件：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/magic_wand/
   accelerometer_handler.h"
 
@@ -785,7 +785,7 @@ Arduino 加速度计处理程序位于 [*arduino/accelerometer_handler.cc*](http
 
 接下来，我们设置一些变量：
 
-```py
+```cpp
 // A buffer holding the last 200 sets of 3-channel values
 float save_data[600] = {0.0};
 // Most recent position in the save_data buffer
@@ -802,7 +802,7 @@ int sample_skip_counter = 1;
 
 接下来在文件中，程序的主循环调用`SetupAccelerometer()`函数，准备好捕获数据的板：
 
-```py
+```cpp
 TfLiteStatus SetupAccelerometer(tflite::ErrorReporter* error_reporter) {
   // Wait until we know the serial port is ready
   while (!Serial) {
@@ -819,7 +819,7 @@ TfLiteStatus SetupAccelerometer(tflite::ErrorReporter* error_reporter) {
 
 下一步是开始考虑降采样。我们首先查询 IMU 库以确定板的采样率。当我们得到这个数字后，我们将其除以我们的目标采样率，该目标采样率在[*constants.h*](https://oreil.ly/rQaSw)中的`kTargetHz`中定义：
 
-```py
+```cpp
   // Determine how many measurements to keep in order to
   // meet kTargetHz
   float sample_rate = IMU.accelerationSampleRate();
@@ -832,7 +832,7 @@ TfLiteStatus SetupAccelerometer(tflite::ErrorReporter* error_reporter) {
 
 现在我们已经确定了降采样的参数，我们向用户发送一条消息，告诉他们应用程序已经准备好了，然后从`SetupAccelerometer()`函数返回：
 
-```py
+```cpp
   error_reporter->Report("Magic starts!");
 
   return kTfLiteOk;
@@ -841,7 +841,7 @@ TfLiteStatus SetupAccelerometer(tflite::ErrorReporter* error_reporter) {
 
 接下来，我们定义`ReadAccelerometer()`。这个函数的任务是捕获新数据并将其写入模型的输出张量。它从一些代码开始，用于在成功识别手势后清除其内部缓冲区，为任何后续手势做好准备：
 
-```py
+```cpp
 bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
                        int length, bool reset_buffer) {
   // Clear the buffer if required, e.g. after a successful prediction
@@ -854,7 +854,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 接下来，我们使用 IMU 库在循环中检查是否有可用数据。如果有数据可用，我们读取它：
 
-```py
+```cpp
   // Keep track of whether we stored any new data
   bool new_data = false;
   // Loop through new samples and add to buffer
@@ -873,7 +873,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 接下来，我们实现我们超级简单的降采样算法：
 
-```py
+```cpp
     // Throw away this sample unless it's the nth
     if (sample_skip_counter != sample_every_n) {
       sample_skip_counter += 1;
@@ -885,7 +885,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 如果执行超过这一点，我们计划保留数据。为了做到这一点，我们将数据写入我们的`save_data`缓冲区中的连续位置：
 
-```py
+```cpp
     // Write samples to our buffer, converting to milli-Gs
     // and flipping y and x order for compatibility with
     // model (sensor orientation is different on Arduino
@@ -899,7 +899,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 我们循环的最后几行做一些家务，设置一些在我们循环中使用的状态变量：
 
-```py
+```cpp
     // Since we took a sample, reset the skip counter
     sample_skip_counter = 1;
     // If we reached the end of the circle buffer, reset
@@ -914,7 +914,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 获取这些新数据后，我们进行更多的检查。这次，我们确保我们有足够的数据来执行推理。如果没有，或者这次没有捕获到新数据，我们将在不执行任何操作的情况下从函数中返回：
 
-```py
+```cpp
   // Skip this round if data is not ready yet
   if (!new_data) {
     return false;
@@ -935,7 +935,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 如果我们走到这一步，我们已经获得了一些新数据。我们复制适当数量的数据，包括我们的新样本，到输入张量中：
 
-```py
+```cpp
   // Copy the requested number of bytes to the provided input tensor
   for (int i = 0; i < length; ++i) {
     int ring_array_index = begin_index + i - length;
@@ -957,7 +957,7 @@ Arduino Nano 33 BLE Sense 板上的加速度计配备有一个称为[*FIFO 缓�
 
 函数第一次运行时，LED 被配置为输出：
 
-```py
+```cpp
 void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
   // The first time this method runs, set up our LED
   static bool is_initialized = false;
@@ -969,7 +969,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 接下来，LED 在每次推理时切换开关：
 
-```py
+```cpp
   // Toggle the LED every time an inference is performed
   static int count = 0;
   ++count;
@@ -982,7 +982,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 最后，我们根据匹配的手势打印一些漂亮的 ASCII 艺术：
 
-```py
+```cpp
   // Print some ASCII art for each gesture
   if (kind == 0) {
     error_reporter->Report(
@@ -1047,7 +1047,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 打开*Arduino_LSM9DS1/src/LSM9DS1.cpp*驱动源文件，然后转到名为`LSM9DS1Class::begin()`的函数。在函数末尾插入以下行，即在`return 1`语句之前立即插入：
 
-```py
+```cpp
 // Enable FIFO (see docs https://www.st.com/resource/en/datasheet/DM00103319.pdf)
 // writeRegister(LSM9DS1_ADDRESS, 0x23, 0x02);
 // Set continuous mode
@@ -1056,7 +1056,7 @@ writeRegister(LSM9DS1_ADDRESS, 0x2E, 0xC0);
 
 接下来，找到名为`LSM9DS1Class::accelerationAvailable()`的函数。你会看到以下几行：
 
-```py
+```cpp
 if (readRegister(LSM9DS1_ADDRESS, LSM9DS1_STATUS_REG) & 0x01) {
   return 1;
 }
@@ -1064,7 +1064,7 @@ if (readRegister(LSM9DS1_ADDRESS, LSM9DS1_STATUS_REG) & 0x01) {
 
 注释掉那些行，然后用以下内容替换它们：
 
-```py
+```cpp
 // Read FIFO_SRC. If any of the rightmost 8 bits have a value, there is data.
 if (readRegister(LSM9DS1_ADDRESS, 0x2F) & 63) {
   return 1;
@@ -1097,7 +1097,7 @@ if (readRegister(LSM9DS1_ADDRESS, 0x2F) & 63) {
 
 要尝试一些手势，请在 Tools 菜单中选择 Serial Monitor。最初你应该看到以下输出：
 
-```py
+```cpp
 Magic starts!
 ```
 
@@ -1115,7 +1115,7 @@ Magic starts!
 
 最容易开始的是“wing”。你应该快速移动手，大约需要一秒钟来执行手势。如果成功了，你应该看到以下输出，红色 LED 应该点亮：
 
-```py
+```cpp
 WING:
 *         *         *
  *       * *       *
@@ -1135,7 +1135,7 @@ WING:
 
 接下来，尝试“环”手势，用手（或魔杖的尖端）画一个顺时针圆圈。再次，尽量花费一秒钟执行手势。您应该看到以下内容如同魔术般出现：
 
-```py
+```cpp
 RING:
           *
        *     *
@@ -1148,7 +1148,7 @@ RING:
 
 SparkFun Edge
 
-```py
+```cpp
 SLOPE:
         *
        *
@@ -1184,7 +1184,7 @@ SLOPE:
 
 捕获加速度计数据的第一步是配置硬件。`SetupAccelerometer()`函数通过设置加速度计所需的各种低级参数来启动这个过程：
 
-```py
+```cpp
 TfLiteStatus SetupAccelerometer(tflite::ErrorReporter* error_reporter) {
   // Set the clock frequency.
   am_hal_clkgen_control(AM_HAL_CLKGEN_CONTROL_SYSCLK_MAX, 0);
@@ -1204,7 +1204,7 @@ SparkFun Edge 配有三轴加速度计、电池支架和蓝牙支持。这使它
 
 加速度计运行后，我们启用其[FIFO 缓冲区](https://oreil.ly/kFEa0)。这是一个特殊的内存缓冲区，位于加速度计本身上，可以保存最后 32 个数据点。通过启用它，我们能够在我们的应用程序代码忙于运行推断时继续收集加速度计测量数据。函数的其余部分设置缓冲区并在出现问题时记录错误：
 
-```py
+```cpp
   // Enable the accelerometer's FIFO buffer.
   // Note: LIS2DH12 has a FIFO buffer which holds up to 32 data entries. It
   // accumulates data while the CPU is busy. Old data will be overwritten if
@@ -1234,7 +1234,7 @@ SparkFun Edge 配有三轴加速度计、电池支架和蓝牙支持。这使它
 
 首先，如果`reset_buffer`参数为`true`，`ReadAccelerometer()`会对其数据缓冲区进行重置。在检测到有效手势后执行此操作，以便为进一步手势提供一个干净的基础。作为这个过程的一部分，我们使用`am_util_delay_ms()`让我们的代码等待 10 毫秒。没有这个延迟，当读取新数据时代码经常会挂起（截至目前为止，原因尚不清楚，但如果您确定有更好的修复方法，TensorFlow 开源项目欢迎拉取请求）：
 
-```py
+```cpp
 bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
                        int length, bool reset_buffer) {
   // Clear the buffer if required, e.g. after a successful prediction
@@ -1249,7 +1249,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 重置主缓冲区后，`ReadAccelerometer()`会检查加速度计的 FIFO 缓冲区中是否有任何新数据可用。如果还没有可用的数据，我们就从函数中返回：
 
-```py
+```cpp
   // Check FIFO buffer for new samples
   lis2dh12_fifo_src_reg_t status;
   if (lis2dh12_fifo_status_get(&dev_ctx, &status)) {
@@ -1272,7 +1272,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 函数的下一部分循环遍历新数据并将其存储在另一个更大的缓冲区中。首先，我们设置一个特殊类型为`axis3bit16_t`的结构体，用于保存加速度计数据。然后我们调用`lis2dh12_acceleration_raw_get()`来填充下一个可用的测量值。如果此函数失败，将返回零，此时我们会显示错误：
 
-```py
+```cpp
   // Load data from FIFO buffer
   axis3bit16_t data_raw_acceleration;
   for (int i = 0; i < samples; i++) {
@@ -1285,7 +1285,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 如果成功获取了测量值，我们将其转换为毫 G，这是模型期望的测量单位，然后将其写入`save_data[]`，这是一个我们用作缓冲区以存储将用于推理的值的数组。加速度计每个轴的值是连续存储的：
 
-```py
+```cpp
     } else {
       // Convert each raw 16-bit value into floating point values representing
       // milli-Gs, a unit of acceleration, and store in the current position of
@@ -1306,7 +1306,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 我们现在已经将所有新数据合并到我们的`save_data[]`缓冲区中。接下来，我们检查是否有足够的数据进行预测。在测试模型时，发现我们总缓冲区大小的三分之一是可靠预测所需的最少数据量；因此，如果我们至少有这么多数据，我们将`pending_initial_data`标志设置为`false`（默认为`true`）：
 
-```py
+```cpp
   // Check if we are ready for prediction or still pending more initial data
   if (pending_initial_data && begin_index >= 200) {
     pending_initial_data = false;
@@ -1315,7 +1315,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 接下来，如果仍然没有足够的数据来运行推理，我们将返回`false`：
 
-```py
+```cpp
   // Return if we don't have enough data
   if (pending_initial_data) {
     return false;
@@ -1324,7 +1324,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 如果我们走到这一步，缓冲区中有足够的数据来运行推理。函数的最后部分将请求的数据从缓冲区复制到`input`参数中，该参数是指向模型输入张量的指针：
 
-```py
+```cpp
   // Copy the requested number of bytes to the provided input tensor
   for (int i = 0; i < length; ++i) {
     int ring_array_index = begin_index + i - length;
@@ -1344,7 +1344,7 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
 输出处理程序位于[*sparkfun_edge/output_handler.cc*](https://oreil.ly/ix1o1)，非常简单。第一次运行时，我们为 LED 配置输出：
 
-```py
+```cpp
 void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
   // The first time this method runs, set up our LEDs correctly
   static bool is_initialized = false;
@@ -1359,7 +1359,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 接下来，我们每次推理时切换黄色 LED：
 
-```py
+```cpp
   // Toggle the yellow LED every time an inference is performed
   static int count = 0;
   ++count;
@@ -1372,7 +1372,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 之后，我们检查检测到了哪个手势。对于每个单独的手势，我们点亮一个 LED，清除所有其他 LED，并通过串行端口输出一些漂亮的 ASCII 艺术。以下是处理“翼”手势的代码：
 
-```py
+```cpp
   // Set the LED color and print a symbol (red: wing, blue: ring, green: slope)
   if (kind == 0) {
     error_reporter->Report(
@@ -1386,7 +1386,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, int kind) {
 
 在串行端口监视器上，输出将如下所示：
 
-```py
+```cpp
 WING:
 *         *         *
  *       * *       *
@@ -1422,7 +1422,7 @@ WING:
 
 打开一个终端窗口，克隆 TensorFlow 存储库，然后切换到其目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 cd tensorflow
 ```
@@ -1433,21 +1433,21 @@ cd tensorflow
 
 以下命令下载所有必需的依赖项，然后为 SparkFun Edge 编译一个二进制文件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
  TARGET=sparkfun_edge magic_wand_bin
 ```
 
 二进制文件将被创建为一个*.bin*文件，位于以下位置：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/
  sparkfun_edge_cortex-m4/bin/magic_wand.bin
 ```
 
 要检查文件是否存在，您可以使用以下命令：
 
-```py
+```cpp
 test -f tensorflow/lite/micro/tools/make/gen/sparkfun_edge_ \
   cortex-m4/bin/magic_wand.bin &&  echo "Binary was successfully created" || \
   echo "Binary is missing"
@@ -1463,7 +1463,7 @@ test -f tensorflow/lite/micro/tools/make/gen/sparkfun_edge_ \
 
 输入以下命令设置一些虚拟加密密钥，供开发使用：
 
-```py
+```cpp
 cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
   tools/apollo3_scripts/keys_info0.py
   tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
@@ -1472,7 +1472,7 @@ cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
 
 接下来，运行以下命令以创建一个已签名的二进制文件。如果需要，将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_image_blob.py \
   --bin tensorflow/lite/micro/tools/make/gen/ \
@@ -1485,7 +1485,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 这将创建文件*main_nonsecure_ota.bin*。现在，运行此命令创建文件的最终版本，您可以使用该文件刷写设备，使用下一步中将使用的脚本：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
 AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_wireupdate_blob.py \
 --load-address 0x20000 \
@@ -1527,7 +1527,7 @@ SparkFun Edge 将当前运行的程序存储在其 1 兆字节的闪存中。如
 
 在通过 USB 连接设备之前，请运行以下命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1537,7 +1537,7 @@ ls /dev/tty*
 
 这应该输出一个附加设备列表，看起来类似于以下内容：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1545,7 +1545,7 @@ ls /dev/tty*
 
 现在，将编程器连接到计算机的 USB 端口，并再次运行命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1555,7 +1555,7 @@ ls /dev/tty*
 
 您应该在输出中看到一个额外的项目，就像以下示例一样。您的新项目可能有不同的名称。这个新项目是设备的名称：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1570,7 +1570,7 @@ ls /dev/tty*
 
 确定设备名称后，将其放入一个 shell 变量以供以后使用：
 
-```py
+```cpp
 export DEVICENAME=<*your device name here*>
 
 ```
@@ -1583,13 +1583,13 @@ export DEVICENAME=<*your device name here*>
 
 首先创建一个环境变量来指定波特率，即数据发送到设备的速度：
 
-```py
+```cpp
 export BAUD_RATE=921600
 ```
 
 现在将以下命令粘贴到您的终端中，但*不要按 Enter*！命令中的`${DEVICENAME}`和`${BAUD_RATE}`将替换为您在前几节中设置的值。如有必要，请将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/uart_wired_update.py -b \
   ${BAUD_RATE} ${DEVICENAME} -r 1 -f main_nonsecure_wire.bin -i 6
@@ -1615,7 +1615,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 现在您应该会看到类似以下内容出现在屏幕上：
 
-```py
+```cpp
 Connecting with Corvette over serial port /dev/cu.usbserial-1440...
 Sending Hello.
 Received response for Hello
@@ -1646,7 +1646,7 @@ Sending Data Packet of length  8180
 
 程序将继续在终端上打印行。最终，您会看到类似以下内容：
 
-```py
+```cpp
 [...lots more Sending Data Packet of length  8180...]
 Sending Data Packet of length  8180
 Sending Data Packet of length  6440
@@ -1666,13 +1666,13 @@ Done.
 
 接下来，使用以下命令开始打印设备的串行输出：
 
-```py
+```cpp
 screen ${DEVICENAME} 115200
 ```
 
 最初您应该会看到以下输出：
 
-```py
+```cpp
 Magic starts!
 ```
 
@@ -1690,7 +1690,7 @@ Magic starts!
 
 最容易开始的是“翅膀”。您应该将手移动得足够快，以便大约一秒钟完成手势。如果成功，红色 LED 灯应该会亮起，并且您应该会看到以下输出：
 
-```py
+```cpp
 WING:
 *         *         *
  *       * *       *
@@ -1710,7 +1710,7 @@ WING:
 
 接下来尝试“环”手势，用手（或魔杖的尖端）顺时针画一个圆圈。再次，尽量花大约一秒钟来执行手势。您应该会看到以下内容，仿佛是魔法般出现的：
 
-```py
+```cpp
 RING:
           *
        *     *
@@ -1723,7 +1723,7 @@ RING:
 
 对于最后一个手势，在空中画一个三角形的角。最好通过 ASCII 艺术演示来描述，如下所示：
 
-```py
+```cpp
 SLOPE:
         *
        *

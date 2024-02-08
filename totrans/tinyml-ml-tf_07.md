@@ -184,7 +184,7 @@ GitHub 上的示例文件包含了每个组件的测试。我们将逐步学习�
 
 为此，我们首先在测试文件的顶部定义我们的模型将需要的操作：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -198,7 +198,7 @@ TfLiteRegistration* Register_SOFTMAX();
 
 接下来，我们设置日志记录并加载我们的模型，正常进行：
 
-```py
+```cpp
 // Set up logging.
 tflite::MicroErrorReporter micro_error_reporter;
 tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -216,7 +216,7 @@ if (model->version() != TFLITE_SCHEMA_VERSION) {
 
 加载模型后，我们声明一个`MicroMutableOpResolver`并使用其方法`AddBuiltin()`来添加我们之前列出的操作：
 
-```py
+```cpp
 tflite::MicroMutableOpResolver micro_mutable_op_resolver;
 micro_mutable_op_resolver.AddBuiltin(
     tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
@@ -236,7 +236,7 @@ micro_mutable_op_resolver.AddBuiltin(tflite::BuiltinOperator_SOFTMAX,
 
 设置好`MicroMutableOpResolver`后，我们就像往常一样继续，设置解释器及其工作内存：
 
-```py
+```cpp
 // Create an area of memory to use for input, output, and intermediate arrays.
 const int tensor_arena_size = 10 * 1024;
 uint8_t tensor_arena[tensor_arena_size];
@@ -250,7 +250,7 @@ interpreter.AllocateTensors();
 
 接下来，我们检查输入张量的大小。但是，这次有点不同：
 
-```py
+```cpp
 // Get information about the memory area to use for the model's input.
 TfLiteTensor* input = interpreter.input(0);
 // Make sure the input has the properties we expect.
@@ -267,7 +267,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteUInt8, input->type);
 
 接下来，我们获取一个“yes”样本频谱图，存储在常量`g_yes_micro_f2e59fea_nohash_1_data`中。该常量在文件[*micro_features/yes_micro_features_data.cc*](https://oreil.ly/rVn8O)中定义，该文件被此测试包含。频谱图存在为 1D 数组，我们只需迭代它将其复制到输入张量中：
 
-```py
+```cpp
 // Copy a spectrogram created from a .wav audio file of someone saying "Yes"
 // into the memory area used for the input.
 const uint8_t* yes_features_data = g_yes_micro_f2e59fea_nohash_1_data;
@@ -278,7 +278,7 @@ for (int i = 0; i < input->bytes; ++i) {
 
 在输入被分配之后，我们运行推断并检查输出张量的大小和形状：
 
-```py
+```cpp
 // Run the model on this input and make sure it succeeds.
 TfLiteStatus invoke_status = interpreter.Invoke();
 if (invoke_status != kTfLiteOk) {
@@ -299,7 +299,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteUInt8, output->type);
 
 接下来的代码块检查概率是否符合预期。输出张量的每个元素始终代表一个特定的类别，因此我们知道要检查每个类别的哪个索引。这个顺序在训练期间定义：
 
-```py
+```cpp
 // There are four possible classes in the output, each with a score.
 const int kSilenceIndex = 0;
 const int kUnknownIndex = 1;
@@ -320,7 +320,7 @@ TF_LITE_MICRO_EXPECT_GT(yes_score, no_score);
 
 当我们对“是”满意时，我们用“否”频谱图做同样的事情。首先，我们复制一个输入并运行推断：
 
-```py
+```cpp
 // Now test with a different input, from a recording of "No".
 const uint8_t* no_features_data = g_no_micro_f9643d42_nohash_4_data;
 for (int i = 0; i < input->bytes; ++i) {
@@ -336,7 +336,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 
 推断完成后，我们确认“no”获得了最高分数：
 
-```py
+```cpp
 // Make sure that the expected "No" score is higher than the other classes.
 silence_score = output->data.uint8[kSilenceIndex];
 unknown_score = output->data.uint8[kUnknownIndex];
@@ -351,7 +351,7 @@ TF_LITE_MICRO_EXPECT_GT(no_score, yes_score);
 
 要运行此测试，请从 TensorFlow 存储库的根目录发出以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_micro_speech_test
 ```
@@ -368,7 +368,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 音频提供程序的核心部分是一个名为`GetAudioSamples()`的函数，在*audio_provider.h*中定义。它看起来像这样：
 
-```py
+```cpp
 TfLiteStatus GetAudioSamples(tflite::ErrorReporter* error_reporter,
                              int start_ms, int duration_ms,
                              int* audio_samples_size, int16_t** audio_samples);
@@ -384,7 +384,7 @@ TfLiteStatus GetAudioSamples(tflite::ErrorReporter* error_reporter,
 
 通过查看测试，我们可以看到这一点。[*audio_provider_test.cc*](https://oreil.ly/9XgFg)中有两个测试，但我们只需要查看第一个来学习如何使用音频提供程序：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestAudioProvider) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -418,7 +418,7 @@ TF_LITE_MICRO_TEST(TestAudioProvider) {
 
 要运行音频提供程序测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_audio_provider_test
 ```
@@ -431,7 +431,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 其接口在[*feature_provider.h*](https://oreil.ly/59uTO)中定义，如下所示：
 
-```py
+```cpp
 class FeatureProvider {
  public:
   // Create the provider, and bind it to an area of memory. This memory should
@@ -466,7 +466,7 @@ class FeatureProvider {
 
 文件*feature_provider_mock_test.cc*包含两个测试。这是第一个：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestFeatureProviderMockYes) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -490,7 +490,7 @@ TF_LITE_MICRO_TEST(TestFeatureProviderMockYes) {
 
 要创建一个`FeatureProvider`，我们调用它的构造函数，传入`feature_size`和`feature_data`参数：
 
-```py
+```cpp
 FeatureProvider feature_provider(kFeatureElementCount, feature_data);
 ```
 
@@ -500,7 +500,7 @@ FeatureProvider feature_provider(kFeatureElementCount, feature_data);
 
 为了获取过去一秒钟的音频特征，会调用`feature_provider.PopulateFeatureData()`：
 
-```py
+```cpp
 TfLiteStatus populate_status = feature_provider.PopulateFeatureData(
       error_reporter, /* last_time_in_ms= */ 0, /* time_in_ms= */ 970,
       &how_many_new_slices);
@@ -514,7 +514,7 @@ TfLiteStatus populate_status = feature_provider.PopulateFeatureData(
 
 在调用`PopulateFeatureData()`之后，我们检查其结果是否符合预期。我们将生成的数据与由模拟音频提供者提供的“yes”输入的已知频谱图进行比较：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, populate_status);
 TF_LITE_MICRO_EXPECT_EQ(kFeatureSliceCount, how_many_new_slices);
 for (int i = 0; i < kFeatureElementCount; ++i) {
@@ -527,7 +527,7 @@ for (int i = 0; i < kFeatureElementCount; ++i) {
 
 运行测试时，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_feature_provider_mock_test
 ```
@@ -550,7 +550,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 我们可以在*feature_provider.cc*中了解这个过程是如何发生的。首先，它根据上次调用`PopulateFeatureData()`的时间确定实际需要生成哪些片段：
 
-```py
+```cpp
 // Quantize the time into steps as long as each window stride, so we can
 // figure out which audio data we need to fetch.
 const int last_step = (last_time_in_ms / kFeatureSliceStrideMs);
@@ -565,7 +565,7 @@ int slices_needed = current_step - last_step;
 
 如果它以前没有运行过，或者它在一秒钟前运行过，它将生成最大数量的片段：
 
-```py
+```cpp
 if (is_first_run_) {
   TfLiteStatus init_status = InitializeMicroFeatures(error_reporter);
   if (init_status != kTfLiteOk) {
@@ -584,7 +584,7 @@ if (slices_needed > kFeatureSliceCount) {
 
 接下来，它计算应保留多少现有片段，并将数组中的数据移动以为任何新片段腾出空间：
 
-```py
+```cpp
 const int slices_to_keep = kFeatureSliceCount - slices_needed;
 const int slices_to_drop = kFeatureSliceCount - slices_to_keep;
 // If we can avoid recalculating some slices, just move the existing data
@@ -619,7 +619,7 @@ if (slices_to_keep > 0) {
 
 在移动数据之后，它开始一个循环，每次迭代一次，它都需要一个新的片段。在这个循环中，它首先使用`GetAudioSamples()`从音频提供程序请求该片段的音频：
 
-```py
+```cpp
 for (int new_slice = slices_to_keep; new_slice < kFeatureSliceCount;
      ++new_slice) {
   const int new_step = (current_step - kFeatureSliceCount + 1) + new_slice;
@@ -639,7 +639,7 @@ for (int new_slice = slices_to_keep; new_slice < kFeatureSliceCount;
 
 它还传递了一个指针`new_slice_data`，指向新数据应写入的内存位置：
 
-```py
+```cpp
   uint8_t* new_slice_data = feature_data_ + (new_slice * kFeatureSliceSize);
   size_t num_samples_read;
   TfLiteStatus generate_status = GenerateMicroFeatures(
@@ -689,7 +689,7 @@ for (int new_slice = slices_to_keep; new_slice < kFeatureSliceCount;
 
 你可以在[*recognize_commands.h*](https://oreil.ly/5W3Ea)中看到它的接口，这里部分重现：
 
-```py
+```cpp
 class RecognizeCommands {
  public:
   explicit RecognizeCommands(tflite::ErrorReporter* error_reporter,
@@ -723,7 +723,7 @@ class RecognizeCommands {
 
 首先，我们确保输入张量的形状和类型是正确的：
 
-```py
+```cpp
 TfLiteStatus RecognizeCommands::ProcessLatestResults(
     const TfLiteTensor* latest_results, const int32_t current_time_ms,
     const char** found_command, uint8_t* score, bool* is_new_command) {
@@ -748,7 +748,7 @@ TfLiteStatus RecognizeCommands::ProcessLatestResults(
 
 接下来，我们检查`current_time_ms`以验证它是否在我们的平均窗口中最近的结果之后：
 
-```py
+```cpp
 if ((!previous_results_.empty()) &&
     (current_time_ms < previous_results_.front().time_)) {
   error_reporter_->Report(
@@ -761,7 +761,7 @@ if ((!previous_results_.empty()) &&
 
 之后，我们将最新的结果添加到我们将要进行平均的结果列表中：
 
-```py
+```cpp
 // Add the latest results to the head of the queue.
 previous_results_.push_back({current_time_ms, latest_results->data.uint8});
 // Prune any earlier results that are too old for the averaging window.
@@ -773,7 +773,7 @@ while ((!previous_results_.empty()) &&
 
 如果我们的平均窗口中的结果少于最小数量（由`minimum_count_`定义，默认为`3`），我们无法提供有效的平均值。在这种情况下，我们将输出指针设置为指示`found_command`是最近的顶级命令，分数为 0，并且该命令不是新的：
 
-```py
+```cpp
 // If there are too few results, assume the result will be unreliable and
 // bail.
 const int64_t how_many_results = previous_results_.size();
@@ -790,7 +790,7 @@ if ((how_many_results < minimum_count_) ||
 
 否则，我们继续通过平均窗口中的所有分数：
 
-```py
+```cpp
 // Calculate the average score across all the results in the window.
 int32_t average_scores[kCategoryCount];
 for (int offset = 0; offset < previous_results_.size(); ++offset) {
@@ -812,7 +812,7 @@ for (int i = 0; i < kCategoryCount; ++i) {
 
 现在我们有足够的信息来确定哪个类别是我们的赢家。建立这一点是一个简单的过程：
 
-```py
+```cpp
 // Find the current highest scoring category.
 int current_top_index = 0;
 int32_t current_top_score = 0;
@@ -827,7 +827,7 @@ const char* current_top_label = kCategoryLabels[current_top_index];
 
 最后一部分逻辑确定结果是否是有效检测。为了做到这一点，它确保其分数高于检测阈值（默认为 200），并且它没有在上次有效检测之后发生得太快，这可能是一个错误结果的指示：
 
-```py
+```cpp
 // If we've recently had another label trigger, assume one that occurs too
 // soon afterwards is a bad result.
 int64_t time_since_last_top;
@@ -856,7 +856,7 @@ if ((current_top_score > detection_threshold_) &&
 
 让我们走一遍`RecognizeCommandsTestBasic`中的一个测试，演示了如何使用`RecognizeCommands`。首先，我们只是创建了该类的一个实例：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(RecognizeCommandsTestBasic) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -866,7 +866,7 @@ TF_LITE_MICRO_TEST(RecognizeCommandsTestBasic) {
 
 接下来，我们创建一个包含一些虚假推理结果的张量，这将由`ProcessLatestResults()`使用来决定是否听到了命令：
 
-```py
+```cpp
 TfLiteTensor results = tflite::testing::CreateQuantizedTensor(
     {255, 0, 0, 0}, tflite::testing::IntArrayFromInitializer({2, 1, 4}),
     "input_tensor", 0.0f, 128.0f);
@@ -874,7 +874,7 @@ TfLiteTensor results = tflite::testing::CreateQuantizedTensor(
 
 然后，我们设置一些变量，这些变量将被`ProcessLatestResults()`的输出设置：
 
-```py
+```cpp
 const char* found_command;
 uint8_t score;
 bool is_new_command;
@@ -882,7 +882,7 @@ bool is_new_command;
 
 最后，我们调用`ProcessLatestResults()`，提供这些变量的指针以及包含结果的张量。我们断言该函数将返回`kTfLiteOk`，表示输入已成功处理：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(
     kTfLiteOk, recognize_commands.ProcessLatestResults(
                    &results, 0, &found_command, &score, &is_new_command));
@@ -892,7 +892,7 @@ TF_LITE_MICRO_EXPECT_EQ(
 
 要运行所有测试，请使用以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_recognize_commands_test
 ```
@@ -907,7 +907,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 现在，让我们看一下它非常简单的参考实现，它只是将检测结果记录为文本。您可以在文件[*command_responder.cc*](https://oreil.ly/kMjg2)中找到它：
 
-```py
+```cpp
 void RespondToCommand(tflite::ErrorReporter* error_reporter,
                       int32_t current_time, const char* found_command,
                       uint8_t score, bool is_new_command) {
@@ -924,7 +924,7 @@ void RespondToCommand(tflite::ErrorReporter* error_reporter,
 
 在[*command_responder_test.cc*](https://oreil.ly/loLZo)中对此函数的测试同样简单。它只是调用该函数，因为它无法测试生成正确的输出：
 
-```py
+```cpp
 TF_LITE_MICRO_TEST(TestCallability) {
   tflite::MicroErrorReporter micro_error_reporter;
   tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -938,7 +938,7 @@ TF_LITE_MICRO_TEST(TestCallability) {
 
 要运行此测试，请在终端中输入以下内容：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   test_command_responder_test
 ```
@@ -953,7 +953,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 首先，我们列出要使用的操作：
 
-```py
+```cpp
 namespace tflite {
 namespace ops {
 namespace micro {
@@ -967,7 +967,7 @@ TfLiteRegistration* Register_SOFTMAX();
 
 接下来，我们设置全局变量：
 
-```py
+```cpp
 namespace {
 tflite::ErrorReporter* error_reporter = nullptr;
 const tflite::Model* model = nullptr;
@@ -989,7 +989,7 @@ uint8_t tensor_arena[kTensorArenaSize];
 
 接下来，在`setup()`函数中，我们加载模型，设置解释器，添加操作并分配张量：
 
-```py
+```cpp
 void setup() {
   // Set up logging.
   static tflite::MicroErrorReporter micro_error_reporter;
@@ -1033,7 +1033,7 @@ void setup() {
 
 在分配张量之后，我们检查输入张量是否具有正确的形状和类型：
 
-```py
+```cpp
   // Get information about the memory area to use for the model's input.
   model_input = interpreter->input(0);
   if ((model_input->dims->size != 4) || (model_input->dims->data[0] != 1) ||
@@ -1047,7 +1047,7 @@ void setup() {
 
 接下来是有趣的部分。首先，我们实例化一个`FeatureProvider`，将其指向我们的输入张量：
 
-```py
+```cpp
   // Prepare to access the audio spectrograms from a microphone or other source
   // that will provide the inputs to the neural network.
   static FeatureProvider static_feature_provider(kFeatureElementCount,
@@ -1057,7 +1057,7 @@ void setup() {
 
 然后我们创建一个`RecognizeCommands`实例并初始化我们的`previous_time`变量：
 
-```py
+```cpp
   static RecognizeCommands static_recognizer(error_reporter);
   recognizer = &static_recognizer;
 
@@ -1067,7 +1067,7 @@ void setup() {
 
 接下来，是我们的`loop()`函数的时间了。就像前面的例子一样，这个函数将被无限次调用。在循环中，我们首先使用特征提供程序创建一个频谱图：
 
-```py
+```cpp
 void loop() {
   // Fetch the spectrogram for the current time.
   const int32_t current_time = LatestAudioTimestamp();
@@ -1090,7 +1090,7 @@ void loop() {
 
 当我们有了输入后，我们只需调用解释器：
 
-```py
+```cpp
   // Run the model on the spectrogram input and make sure it succeeds.
   TfLiteStatus invoke_status = interpreter->Invoke();
   if (invoke_status != kTfLiteOk) {
@@ -1101,7 +1101,7 @@ void loop() {
 
 现在，模型的输出张量已经填充了每个类别的概率。为了解释它们，我们使用我们的`RecognizeCommands`实例。我们获取输出张量的指针，然后设置一些变量来接收`ProcessLatestResults()`的输出：
 
-```py
+```cpp
   // Obtain a pointer to the output tensor
   TfLiteTensor* output = interpreter->output(0);
   // Determine whether a command was recognized based on the output of inference
@@ -1118,7 +1118,7 @@ void loop() {
 
 最后，我们调用命令响应器的`RespondToCommand()`方法，以便它可以通知用户是否检测到了一个单词：
 
-```py
+```cpp
   // Do something based on the recognized command. The default implementation
   // just prints to the error console, but you should replace this with your
   // own function for a real application.
@@ -1131,7 +1131,7 @@ void loop() {
 
 我们的`setup()`和`loop()`函数是由我们的`main()`函数调用的，该函数在*main.cc*中定义，当应用程序启动时开始循环：
 
-```py
+```cpp
 int main(int argc, char* argv[]) {
   setup();
   while (true) {
@@ -1144,13 +1144,13 @@ int main(int argc, char* argv[]) {
 
 示例包含一个与 macOS 兼容的音频提供程序。如果您有 Mac，可以在开发机器上运行示例。首先，使用以下命令构建它：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile micro_speech
 ```
 
 构建完成后，您可以使用以下命令运行示例：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/osx_x86_64/bin/micro_speech
 ```
 
@@ -1158,7 +1158,7 @@ tensorflow/lite/micro/tools/make/gen/osx_x86_64/bin/micro_speech
 
 尝试说“是”和“否”。您应该看到类似以下的输出：
 
-```py
+```cpp
 Heard yes (201) @4056ms
 Heard no (205) @6448ms
 Heard unknown (201) @13696ms
@@ -1218,14 +1218,14 @@ Arduino Nano 33 BLE Sense 还具有内置 LED，这是我们用来指示已识�
 
 Arduino 的替代命令响应器位于[*arduino/command_responder.cc*](https://oreil.ly/URkYi)。让我们浏览一下它的源代码。首先，我们包含命令响应器头文件和 Arduino 平台的库头文件：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/micro_speech/command_responder.h"
 #include "Arduino.h"
 ```
 
 接下来，我们开始实现我们的函数：
 
-```py
+```cpp
 // Toggles the LED every inference, and keeps it on for 3 seconds if a "yes"
 // was heard
 void RespondToCommand(tflite::ErrorReporter* error_reporter,
@@ -1235,7 +1235,7 @@ void RespondToCommand(tflite::ErrorReporter* error_reporter,
 
 我们的下一步是将内置 LED 的引脚设置为输出模式，以便我们可以打开和关闭它。我们在一个`if`语句中执行此操作，该语句仅运行一次，这要归功于名为`is_initialized`的`static bool`。请记住，`static`变量在函数调用之间保留其状态：
 
-```py
+```cpp
 static bool is_initialized = false;
 if (!is_initialized) {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -1245,14 +1245,14 @@ if (!is_initialized) {
 
 接下来，我们设置另外两个`static`变量来跟踪上次检测到“yes”的时间以及已执行的推理次数：
 
-```py
+```cpp
 static int32_t last_yes_time = 0;
 static int count = 0;
 ```
 
 现在是有趣的部分。如果`is_new_command`参数为`true`，我们知道我们听到了什么，因此我们使用`ErrorReporter`实例记录它。但是如果我们听到的是“yes”——我们通过检查`found_command`字符数组的第一个字符来确定——我们存储当前时间并打开 LED：
 
-```py
+```cpp
 if (is_new_command) {
   error_reporter->Report("Heard %s (%d) @%dms", found_command, score,
                          current_time);
@@ -1266,7 +1266,7 @@ if (is_new_command) {
 
 接下来，我们实现了在几秒钟后关闭 LED 的行为——确切地说是三秒：
 
-```py
+```cpp
 // If last_yes_time is non-zero but was >3 seconds ago, zero it
 // and switch off the LED.
 if (last_yes_time != 0) {
@@ -1285,7 +1285,7 @@ if (last_yes_time != 0) {
 
 以下是最终的代码块：
 
-```py
+```cpp
 // Otherwise, toggle the LED every time an inference is performed.
 ++count;
 if (count & 1) {
@@ -1397,7 +1397,7 @@ SparkFun Edge 既有麦克风，又有一排四个彩色 LED 灯—红色、蓝�
 
 SparkFun Edge 的命令响应器实现在[*sparkfun_edge/command_responder.cc*](https://oreil.ly/i-3eJ)中。该文件以一些包含开始：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/micro_speech/command_responder.h"
 #include "am_bsp.h"
 ```
@@ -1406,7 +1406,7 @@ SparkFun Edge 的命令响应器实现在[*sparkfun_edge/command_responder.cc*](
 
 在函数定义内部，我们首先将连接到 LED 的引脚设置为输出：
 
-```py
+```cpp
 // This implementation will light up the LEDs on the board in response to
 // different commands.
 void RespondToCommand(tflite::ErrorReporter* error_reporter,
@@ -1426,7 +1426,7 @@ void RespondToCommand(tflite::ErrorReporter* error_reporter,
 
 接下来是将切换蓝色 LED 打开和关闭的代码。我们使用一个`count`变量来执行此操作，方式与 Arduino 实现相同：
 
-```py
+```cpp
 static int count = 0;
 // Toggle the blue LED every time an inference is performed.
 ++count;
@@ -1447,7 +1447,7 @@ if (count & 1) {
 
 接下来，根据刚刚听到的单词点亮适当的 LED。默认情况下，我们清除所有 LED，因此如果最近没有听到单词，则所有 LED 将熄灭：
 
-```py
+```cpp
 am_hal_gpio_output_clear(AM_BSP_GPIO_LED_RED);
 am_hal_gpio_output_clear(AM_BSP_GPIO_LED_YELLOW);
 am_hal_gpio_output_clear(AM_BSP_GPIO_LED_GREEN);
@@ -1455,7 +1455,7 @@ am_hal_gpio_output_clear(AM_BSP_GPIO_LED_GREEN);
 
 然后，我们使用一些简单的`if`语句根据听到的命令点亮适当的 LED：
 
-```py
+```cpp
 if (is_new_command) {
   error_reporter->Report("Heard %s (%d) @%dms", found_command, score,
                          current_time);
@@ -1497,7 +1497,7 @@ if (is_new_command) {
 
 在您的终端中，克隆 TensorFlow 存储库，然后切换到其目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 cd tensorflow
 ```
@@ -1508,21 +1508,21 @@ cd tensorflow
 
 以下命令下载所有所需的依赖项，然后为 SparkFun Edge 编译一个二进制文件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=sparkfun_edge TAGS=cmsis-nn micro_speech_bin
 ```
 
 二进制文件被创建为*.bin*文件，在以下位置：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/bin/micro_speech.bin
 ```
 
 要检查文件是否存在，可以使用以下命令：
 
-```py
+```cpp
 test -f tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/bin/micro_speech.bin \
   &&  echo "Binary was successfully created" || echo "Binary is missing"
@@ -1536,7 +1536,7 @@ test -f tensorflow/lite/micro/tools/make/gen/ \
 
 输入以下命令设置一些虚拟加密密钥，以供开发使用：
 
-```py
+```cpp
 cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
   tools/apollo3_scripts/keys_info0.py \
   tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
@@ -1545,7 +1545,7 @@ cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
 
 接下来，运行以下命令创建一个已签名的二进制文件。如有必要，用`python3`替换`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_image_blob.py \
   --bin tensorflow/lite/micro/tools/make/gen/ \
@@ -1557,7 +1557,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 这将创建文件*main_nonsecure_ota.bin*。现在运行此命令以创建文件的最终版本，该文件可用于使用下一步中将使用的脚本刷写设备：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_wireupdate_blob.py \
   --load-address 0x20000 \
@@ -1596,7 +1596,7 @@ SparkFun Edge 将当前运行的程序存储在其 1 兆字节的闪存中。如
 
 在通过 USB 连接设备之前，运行以下命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1606,7 +1606,7 @@ ls /dev/tty*
 
 这应该输出一个附加设备列表，看起来类似于以下内容：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1614,7 +1614,7 @@ ls /dev/tty*
 
 现在，将编程器连接到计算机的 USB 端口，并再次运行命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -1624,7 +1624,7 @@ ls /dev/tty*
 
 您应该看到输出中有一个额外的项目，如下例所示。您的新项目可能有不同的名称。这个新项目是设备的名称：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -1639,7 +1639,7 @@ ls /dev/tty*
 
 确定设备名称后，将其放入 shell 变量以供以后使用：
 
-```py
+```cpp
 export DEVICENAME=<*your device name here*>
 
 ```
@@ -1652,13 +1652,13 @@ export DEVICENAME=<*your device name here*>
 
 首先创建一个环境变量来指定波特率，即数据发送到设备的速度：
 
-```py
+```cpp
 export BAUD_RATE=921600
 ```
 
 现在将以下命令粘贴到你的终端中，但*不要立即按回车*！命令中的`${DEVICENAME}`和`${BAUD_RATE}`将被替换为你在前面部分设置的值。如果需要，请记得将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/uart_wired_update.py \
   -b ${BAUD_RATE} ${DEVICENAME} \
@@ -1678,7 +1678,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 现在你应该在屏幕上看到类似以下内容的东西：
 
-```py
+```cpp
 Connecting with Corvette over serial port /dev/cu.usbserial-1440...
 Sending Hello.
 Received response for Hello
@@ -1711,7 +1711,7 @@ Sending Data Packet of length  8180
 
 继续按住按钮`14`直到看到`发送数据包长度为 8180`。在看到这个之后你可以释放按钮（但如果继续按住也没关系）。程序将继续在终端上打印行。最终，你会看到类似以下内容的东西：
 
-```py
+```cpp
 [...lots more Sending Data Packet of length  8180...]
 Sending Data Packet of length  8180
 Sending Data Packet of length  6440
@@ -1739,13 +1739,13 @@ Done.
 
 程序还将成功识别记录到串行端口。要查看这些数据，我们可以使用波特率为 115200 监视板子的串行端口输出。在 macOS 和 Linux 上，以下命令应该有效：
 
-```py
+```cpp
 screen ${DEVICENAME} 115200
 ```
 
 你应该最初看到类似以下内容的输出：
 
-```py
+```cpp
 Apollo3 Burst Mode is Available
 
                                Apollo3 operating in Burst Mode (96MHz)
@@ -1753,7 +1753,7 @@ Apollo3 Burst Mode is Available
 
 尝试通过说“yes”或“no”来发出一些命令。你应该看到板子为每个命令打印调试信息：
 
-```py
+```cpp
 Heard yes (202) @65536ms
 ```
 
@@ -1795,7 +1795,7 @@ STM32F746G 的 LCD 驱动程序提供了一些方法，我们可以使用这些�
 
 首先，我们包含一些头文件：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/micro_speech/command_responder.h"
 #include "LCD_DISCO_F746NG.h"
 ```
@@ -1804,13 +1804,13 @@ STM32F746G 的 LCD 驱动程序提供了一些方法，我们可以使用这些�
 
 接下来，我们实例化一个`LCD_DISCO_F746NG`对象，其中包含我们用来控制 LCD 的方法：
 
-```py
+```cpp
 LCD_DISCO_F746NG lcd;
 ```
 
 在接下来的几行中，声明了`RespondToCommand()`函数，并检查是否已使用新命令调用它：
 
-```py
+```cpp
 // When a command is detected, write it to the display and log it to the
 // serial port.
 void RespondToCommand(tflite::ErrorReporter *error_reporter,
@@ -1825,7 +1825,7 @@ void RespondToCommand(tflite::ErrorReporter *error_reporter,
 
 接下来，我们使用一个大的`if`语句来确定每个命令被找到时会发生什么。首先是“是”：
 
-```py
+```cpp
 if (*found_command == 'y') {
   lcd.Clear(0xFF0F9D58);
   lcd.DisplayStringAt(0, LINE(5), (uint8_t *)"Heard yes!", CENTER_MODE);
@@ -1839,7 +1839,7 @@ if (*found_command == 'y') {
 
 我们继续`if`语句以涵盖剩下的三种可能性，“否”，“未知”和“沉默”（由`else`块捕获）：
 
-```py
+```cpp
 } else if (*found_command == 'n') {
   lcd.Clear(0xFFDB4437);
   lcd.DisplayStringAt(0, LINE(5), (uint8_t *)"Heard no :(", CENTER_MODE);
@@ -1876,14 +1876,14 @@ if (*found_command == 'y') {
 
 为此，请运行以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=mbed TAGS="cmsis-nn disco_f746ng" generate_micro_speech_mbed_project
 ```
 
 这将创建一个新目录：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
   micro_speech/mbed
 ```
@@ -1892,7 +1892,7 @@ tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
 
 首先，切换到目录，以便您可以在其中运行一些命令：
 
-```py
+```cpp
 cd tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/micro_speech/mbed
 ```
 
@@ -1900,19 +1900,19 @@ cd tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/micro_speech/mbed
 
 首先，使用以下命令告诉 Mbed 当前目录是 Mbed 项目的根目录：
 
-```py
+```cpp
 mbed config root .
 ```
 
 接下来，指示 Mbed 下载依赖项并准备构建：
 
-```py
+```cpp
 mbed deploy
 ```
 
 默认情况下，Mbed 使用 C++98 构建项目。然而，TensorFlow Lite 需要 C++11。运行以下 Python 片段修改 Mbed 配置文件，以便使用 C++11。您可以直接在命令行中键入或粘贴：
 
-```py
+```cpp
 python -c 'import fileinput, glob;
 for filename in glob.glob("mbed-os/tools/profiles/*.json"):
   for line in fileinput.input(filename, inplace=True):
@@ -1921,19 +1921,19 @@ for filename in glob.glob("mbed-os/tools/profiles/*.json"):
 
 最后，运行以下命令进行编译：
 
-```py
+```cpp
 mbed compile -m DISCO_F746NG -t GCC_ARM
 ```
 
 这应该会在以下路径生成一个二进制文件：
 
-```py
+```cpp
 ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin
 ```
 
 STM32F746G 开发板的一个好处是部署非常容易。要部署，只需将 STM 板插入并将文件复制到其中。在 macOS 上，您可以使用以下命令来执行此操作：
 
-```py
+```cpp
 cp ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin /Volumes/DIS_F746NG/
 ```
 
@@ -1955,26 +1955,26 @@ cp ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin /Volumes/DIS_F746NG/
 
 在 macOS 和 Linux 上，当您发出以下命令时，设备应该会列出：
 
-```py
+```cpp
 ls /dev/tty*
 ```
 
 它看起来会像下面这样：
 
-```py
+```cpp
 /dev/tty.usbmodem1454203
 ```
 
 在识别设备后，使用以下命令连接到设备，将<`*/dev/tty.devicename*`>替换为设备在*/dev*中显示的名称：
 
-```py
+```cpp
 screen /dev/<*tty.devicename 9600*>
 
 ```
 
 尝试通过说“yes”或“no”来发出一些命令。您应该看到板子为每个命令打印调试信息：
 
-```py
+```cpp
 Heard yes (202) @65536ms
 ```
 

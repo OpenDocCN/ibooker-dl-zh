@@ -8,7 +8,7 @@
 
 这样做的缺点是，从检查代码中不再明显地了解模型使用的底层操作。相反，它们将作为层的一部分被创建，这些层代表图中的较大块在一个调用中。这是一个问题，因为了解模型使用了哪些 TensorFlow 操作对于理解模型是否能在 TensorFlow Lite 中运行以及资源需求是非常重要的。幸运的是，即使从 Keras 中，只要可以使用[`tf.keras.backend.get_session()`](https://oreil.ly/4zurk)检索底层的`Session`对象，你仍然可以访问底层的低级操作。如果你直接在 TensorFlow 中编码，很可能已经将会话存储在一个变量中，所以下面的代码仍然有效：
 
-```py
+```cpp
 for op in sess.graph.get_operations():
   print(op.type)
 ```

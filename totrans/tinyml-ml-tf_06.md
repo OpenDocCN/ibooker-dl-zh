@@ -64,7 +64,7 @@ PWM 仅在某些 Arduino 设备的某些引脚上可用，但使用起来非常�
 
 让我们来看一下源代码：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/output_handler.h"
 #include "Arduino.h"
 #include "tensorflow/lite/micro/examples/hello_world/constants.h"
@@ -74,7 +74,7 @@ PWM 仅在某些 Arduino 设备的某些引脚上可用，但使用起来非常�
 
 接下来，我们定义函数并指示它第一次运行时要执行的操作：
 
-```py
+```cpp
 // Adjusts brightness of an LED to represent the current y value
 void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
                   float y_value) {
@@ -97,7 +97,7 @@ if (!is_initialized) {
 
 接下来，我们计算 LED 的期望亮度：
 
-```py
+```cpp
 // Calculate the brightness of the LED such that y=-1 is fully off
 // and y=1 is fully on. The LED's brightness can range from 0-255.
 int brightness = (int)(127.5f * (y_value + 1));
@@ -107,7 +107,7 @@ Arduino 允许我们将 PWM 输出的电平设置为 0 到 255 之间的数字�
 
 下一步是实际设置 LED 的亮度：
 
-```py
+```cpp
 // Set the brightness of the LED. If the specified pin does not support PWM,
 // this will result in the LED being on when y > 127, off otherwise.
 analogWrite(LED_BUILTIN, brightness);
@@ -121,7 +121,7 @@ Arduino 平台的[`analogWrite()`](https://oreil.ly/nNseR)函数接受一个介�
 
 最后，我们使用`ErrorReporter`实例记录亮度值：
 
-```py
+```cpp
 // Log the current brightness value for display in the Arduino plotter
 error_reporter->Report("%d\n", brightness);
 ```
@@ -246,7 +246,7 @@ Arduino IDE 包含用于捕获和显示通过串行端口接收的数据的工�
 
 LED（红色、绿色、蓝色和黄色）在以下顺序中物理排列：
 
-```py
+```cpp
                          [ R G B Y ]
 ```
 
@@ -272,7 +272,7 @@ LED（红色、绿色、蓝色和黄色）在以下顺序中物理排列：
 
 让我们开始逐步进行：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/output_handler.h"
 #include "am_bsp.h"
 ```
@@ -287,7 +287,7 @@ LED（红色、绿色、蓝色和黄色）在以下顺序中物理排列：
 
 接下来，我们定义`HandleOutput()`函数，并指示在其第一次运行时要执行的操作：
 
-```py
+```cpp
 void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
                   float y_value) {
   // The first time this method runs, set up our LEDs correctly
@@ -311,7 +311,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
 
 然后我们使用`am_hal_gpio_output_clear()`清除所有输出，以便所有 LED 都关闭。与 Arduino 实现一样，我们使用名为`is_initialized`的`static`变量，以确保此块中的代码仅运行一次。接下来，我们确定如果`y`值为负时应点亮哪些 LED：
 
-```py
+```cpp
 // Set the LEDs to represent negative values
 if (y_value < 0) {
   // Clear unnecessary LEDs
@@ -331,7 +331,7 @@ if (y_value < 0) {
 
 接下来，我们做同样的事情，但是对于`y`的正值：
 
-```py
+```cpp
   // Set the LEDs to represent positive values
 } else if (y_value > 0) {
   // Clear unnecessary LEDs
@@ -350,7 +350,7 @@ if (y_value < 0) {
 
 LED 就是这样。我们最后要做的是将当前的输出值记录到串口上正在监听的人：
 
-```py
+```cpp
 // Log the current X and Y values
 error_reporter->Report("x_value: %f, y_value: %f\n", x_value, y_value);
 ```
@@ -379,7 +379,7 @@ error_reporter->Report("x_value: %f, y_value: %f\n", x_value, y_value);
 
 首先，打开一个终端，克隆 TensorFlow 存储库，然后切换到其目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 cd tensorflow
 ```
@@ -390,7 +390,7 @@ cd tensorflow
 
 以下命令下载所有必需的依赖项，然后为 SparkFun Edge 编译一个二进制文件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=sparkfun_edge hello_world_bin
 ```
@@ -401,14 +401,14 @@ make -f tensorflow/lite/micro/tools/make/Makefile \
 
 二进制文件将被创建为*.bin*文件，位置如下：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/bin/hello_world.bin
 ```
 
 要检查文件是否存在，您可以使用以下命令：
 
-```py
+```cpp
 test -f tensorflow/lite/micro/tools/make/gen/ \
   sparkfun_edge_cortex-m4/bin/hello_world.bin \
   &&  echo "Binary was successfully created" || echo "Binary is missing"
@@ -424,7 +424,7 @@ test -f tensorflow/lite/micro/tools/make/gen/ \
 
 输入以下命令设置一些虚拟的加密密钥，供开发使用：
 
-```py
+```cpp
 cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
   tools/apollo3_scripts/keys_info0.py \
   tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
@@ -433,7 +433,7 @@ cp tensorflow/lite/micro/tools/make/downloads/AmbiqSuite-Rel2.0.0/ \
 
 接下来，运行以下命令创建一个已签名的二进制文件。如有必要，将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_image_blob.py \
   --bin tensorflow/lite/micro/tools/make/gen/ \
@@ -445,7 +445,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 这将创建文件*main_nonsecure_ota.bin*。现在运行以下命令以创建文件的最终版本，您可以使用该文件通过下一步中将使用的脚本刷写设备：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/create_cust_wireupdate_blob.py \
   --load-address 0x20000 \
@@ -489,7 +489,7 @@ SparkFun Edge 将当前运行的程序存储在其 1 兆字节的闪存中。如
 
 在通过 USB 连接设备之前，请运行以下命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -499,7 +499,7 @@ ls /dev/tty*
 
 这应该输出一个类似以下内容的附加设备列表：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -507,7 +507,7 @@ ls /dev/tty*
 
 现在，将编程器连接到计算机的 USB 端口，并再次运行命令：
 
-```py
+```cpp
 # macOS:
 ls /dev/cu*
 
@@ -517,7 +517,7 @@ ls /dev/tty*
 
 您应该在输出中看到一个额外的项目，如下例所示。您的新项目可能有不同的名称。这个新项目是设备的名称：
 
-```py
+```cpp
 /dev/cu.Bluetooth-Incoming-Port
 /dev/cu.MALS
 /dev/cu.SOC
@@ -532,7 +532,7 @@ ls /dev/tty*
 
 确定设备名称后，将其放入一个 shell 变量以供以后使用：
 
-```py
+```cpp
 export DEVICENAME=<*your device name here*>
 
 ```
@@ -545,13 +545,13 @@ export DEVICENAME=<*your device name here*>
 
 首先创建一个环境变量来指定波特率，即数据发送到设备的速度：
 
-```py
+```cpp
 export BAUD_RATE=921600
 ```
 
 现在将以下命令粘贴到您的终端中——但*不要按 Enter 键*！命令中的`${DEVICENAME}`和`${BAUD_RATE}`将被替换为您在前面部分设置的值。如果需要，请记得将`python3`替换为`python`：
 
-```py
+```cpp
 python3 tensorflow/lite/micro/tools/make/downloads/ \
   AmbiqSuite-Rel2.0.0/tools/apollo3_scripts/ \
   uart_wired_update.py -b ${BAUD_RATE} \
@@ -576,7 +576,7 @@ python3 tensorflow/lite/micro/tools/make/downloads/ \
 
 现在您应该在屏幕上看到类似以下内容的东西：
 
-```py
+```cpp
 Connecting with Corvette over serial port /dev/cu.usbserial-1440...
 Sending Hello.
 Received response for Hello
@@ -607,7 +607,7 @@ Sending Data Packet of length  8180
 
 程序将继续在终端上打印行。最终您会看到类似以下内容的东西：
 
-```py
+```cpp
 [...lots more Sending Data Packet of length  8180...]
 Sending Data Packet of length  8180
 Sending Data Packet of length  6440
@@ -629,13 +629,13 @@ Done.
 
 在程序运行时，板子会记录调试信息。要查看它，我们可以使用波特率 115200 监视板子的串行端口输出。在 macOS 和 Linux 上，以下命令应该有效：
 
-```py
+```cpp
 screen ${DEVICENAME} 115200
 ```
 
 您会看到大量的输出飞过！要停止滚动，请按下 Ctrl-A，紧接着按 Esc。然后您可以使用箭头键浏览输出，其中包含对各种`x`值运行推断的结果：
 
-```py
+```cpp
 x_value: 1.1843798*2², y_value: -1.9542645*2^-1
 ```
 
@@ -689,7 +689,7 @@ STM32F746G 配备了一个附加的 LCD 屏幕，这将使我们能够构建一�
 
 让我们来看一下：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/output_handler.h"
 #include "LCD_DISCO_F746NG.h"
 #include "tensorflow/lite/micro/examples/hello_world/constants.h"
@@ -699,7 +699,7 @@ STM32F746G 配备了一个附加的 LCD 屏幕，这将使我们能够构建一�
 
 接下来，我们设置了大量变量。首先是`LCD_DISCO_F746NG`的一个实例，它在*LCD_DISCO_F74NG.h*中定义，并提供了我们可以用来控制 LCD 的方法：
 
-```py
+```cpp
 // The LCD driver
 LCD_DISCO_F746NG lcd;
 ```
@@ -708,7 +708,7 @@ LCD_DISCO_F746NG lcd;
 
 接下来，我们定义一些控制视觉外观和感觉的常量：
 
-```py
+```cpp
 // The colors we'll draw
 const uint32_t background_color = 0xFFF4B400;  // Yellow
 const uint32_t foreground_color = 0xFFDB4437;  // Red
@@ -726,7 +726,7 @@ const int dot_radius = 10;
 
 然后我们声明了一些变量，定义了动画的形状和大小：
 
-```py
+```cpp
 // Size of the drawable area
 int width;
 int height;
@@ -738,7 +738,7 @@ int x_increment;
 
 在变量之后，我们定义了`HandleOutput()`函数，并告诉它在第一次运行时要做什么：
 
-```py
+```cpp
 // Animates a dot across the screen to represent the current x and y values
 void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
                   float y_value) {
@@ -763,7 +763,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
 
 里面有很多内容！首先，我们使用属于`lcd`的方法来设置背景和前景颜色。奇怪命名的`lcd.SetTextColor()`设置我们绘制的任何东西的颜色，不仅仅是文本：
 
-```py
+```cpp
 // Set the background and foreground colors
 lcd.Clear(background_color);
 lcd.SetTextColor(foreground_color);
@@ -771,14 +771,14 @@ lcd.SetTextColor(foreground_color);
 
 接下来，我们计算实际可以绘制到屏幕的部分，以便知道在哪里绘制我们的圆。如果我们搞错了，我们可能会尝试绘制超出屏幕边缘，导致意想不到的结果：
 
-```py
+```cpp
 width = lcd.GetXSize() - (dot_radius * 2);
 height = lcd.GetYSize() - (dot_radius * 2);
 ```
 
 之后，我们确定屏幕中间的位置，我们将在其下方绘制负`y`值。我们还计算屏幕宽度中表示一个单位`x`值的像素数。请注意我们如何使用`static_cast`确保获得浮点结果：
 
-```py
+```cpp
 // Calculate the y axis midpoint
 midpoint = height / 2;
 // Calculate fractional pixels per unit of x_value
@@ -789,14 +789,14 @@ x_increment = static_cast<float>(width) / kXrange;
 
 初始化完成后，我们可以开始输出。首先，清除任何先前的绘图：
 
-```py
+```cpp
 // Clear the previous drawing
 lcd.Clear(background_color);
 ```
 
 接下来，我们使用`x_value`来计算我们应该在显示器的*x*轴上绘制点的位置：
 
-```py
+```cpp
 // Calculate x position, ensuring the dot is not partially offscreen,
 // which causes artifacts and crashes
 int x_pos = dot_radius + static_cast<int>(x_value * x_increment);
@@ -804,7 +804,7 @@ int x_pos = dot_radius + static_cast<int>(x_value * x_increment);
 
 然后我们对`y`值执行相同的操作。这有点复杂，因为我们希望在`midpoint`上方绘制正值，在下方绘制负值：
 
-```py
+```cpp
 // Calculate y position, ensuring the dot is not partially offscreen
 int y_pos;
 if (y_value >= 0) {
@@ -819,14 +819,14 @@ if (y_value >= 0) {
 
 一旦确定了它的位置，我们就可以继续绘制点：
 
-```py
+```cpp
 // Draw the dot
 lcd.FillCircle(x_pos, y_pos, dot_radius);
 ```
 
 最后，我们使用我们的`ErrorReporter`将`x`和`y`值记录到串行端口：
 
-```py
+```cpp
 // Log the current X and Y values
 error_reporter->Report("x_value: %f, y_value: %f\n", x_value, y_value);
 ```
@@ -857,14 +857,14 @@ error_reporter->Report("x_value: %f, y_value: %f\n", x_value, y_value);
 
 为了这样做，请运行以下命令：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile \
   TARGET=mbed TAGS="CMSIS disco_f746ng" generate_hello_world_mbed_project
 ```
 
 这将导致创建一个新目录：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
   hello_world/mbed
 ```
@@ -873,7 +873,7 @@ tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
 
 首先，切换到目录，以便您可以在其中运行一些命令：
 
-```py
+```cpp
 cd tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
   hello_world/mbed
 ```
@@ -882,19 +882,19 @@ cd tensorflow/lite/micro/tools/make/gen/mbed_cortex-m4/prj/ \
 
 要开始，请使用以下命令指定 Mbed 当前目录是 Mbed 项目的根目录：
 
-```py
+```cpp
 mbed config root .
 ```
 
 接下来，指示 Mbed 下载依赖项并准备构建：
 
-```py
+```cpp
 mbed deploy
 ```
 
 默认情况下，Mbed 将使用 C++98 构建项目。但是，TensorFlow Lite 需要 C++11。运行以下 Python 片段修改 Mbed 配置文件，以便使用 C++11。您可以直接在命令行中键入或粘贴：
 
-```py
+```cpp
 python -c 'import fileinput, glob;
 for filename in glob.glob("mbed-os/tools/profiles/*.json"):
   for line in fileinput.input(filename, inplace=True):
@@ -903,19 +903,19 @@ for filename in glob.glob("mbed-os/tools/profiles/*.json"):
 
 最后，运行以下命令进行编译：
 
-```py
+```cpp
 mbed compile -m DISCO_F746NG -t GCC_ARM
 ```
 
 这应该会在以下路径生成一个二进制文件：
 
-```py
+```cpp
 cp ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin
 ```
 
 使用 Mbed 启动的一个好处是，像 STM32F746G 这样的 Mbed 启用板的部署非常简单。要部署，只需将 STM 板插入并将文件复制到其中。在 macOS 上，您可以使用以下命令执行此操作：
 
-```py
+```cpp
 cp ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin /Volumes/DIS_F746NG/
 ```
 
@@ -925,26 +925,26 @@ cp ./BUILD/DISCO_F746NG/GCC_ARM/mbed.bin /Volumes/DIS_F746NG/
 
 在 macOS 和 Linux 上，当您发出以下命令时，设备应该会列出：
 
-```py
+```cpp
 ls /dev/tty*
 ```
 
 它看起来会像下面这样：
 
-```py
+```cpp
 /dev/tty.usbmodem1454203
 ```
 
 确定设备后，请使用以下命令连接到设备，将<*`/dev/tty.devicename`*>替换为设备名称，该名称显示在*/dev*中：
 
-```py
+```cpp
 screen /<*dev/tty.devicename*> 9600
 
 ```
 
 您会看到很多输出飞过。要停止滚动，请按 Ctrl-A，然后立即按 Esc。然后，您可以使用箭头键浏览输出，其中包含在各种`x`值上运行推断的结果：
 
-```py
+```cpp
 x_value: 1.1843798*2², y_value: -1.9542645*2^-1
 ```
 

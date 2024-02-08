@@ -167,16 +167,16 @@ Torchvision 为计算机视觉和图像处理提供了许多著名的预训练�
 from torch.optim.lr_scheduler import StepLR
 
 device = torch.device("cuda:0" if
-  torch.cuda.is_available() else "cpu") ![1](Images/1.png)
+  torch.cuda.is_available() else "cpu") # ①
 
 model = model.to(device)
-criterion = nn.CrossEntropyLoss() ![2](Images/2.png)
+criterion = nn.CrossEntropyLoss() # ②
 optimizer = optim.SGD(model.parameters(),
                       lr=0.001,
-                      momentum=0.9) ![3](Images/3.png)
+                      momentum=0.9) # ③
 exp_lr_scheduler = StepLR(optimizer,
                           step_size=7,
-                          gamma=0.1) ![4](Images/4.png)
+                          gamma=0.1) # ④
 ```
 
 ①
@@ -204,7 +204,7 @@ num_epochs=25
 
 for epoch in range(num_epochs):
 
-  model.train() ![1](Images/1.png)
+  model.train() # ①
   running_loss = 0.0
   running_corrects = 0
 
@@ -225,13 +225,13 @@ for epoch in range(num_epochs):
       torch.sum(preds == labels.data) \
         /inputs.size(0)
 
-  exp_lr_scheduler.step() ![2](Images/2.png)
+  exp_lr_scheduler.step() # ②
   train_epoch_loss = \
     running_loss / len(train_loader)
   train_epoch_acc = \
     running_corrects / len(train_loader)
 
-  model.eval() ![3](Images/3.png)
+  model.eval() # ③
   running_loss = 0.0
   running_corrects = 0
 
@@ -279,24 +279,24 @@ for epoch in range(num_epochs):
 ```py
 import matplotlib.pyplot as plt
 
-def imshow(inp, title=None): ![1](Images/1.png)
-    inp = inp.numpy().transpose((1, 2, 0)) ![2](Images/2.png)
+def imshow(inp, title=None): # ①
+    inp = inp.numpy().transpose((1, 2, 0)) # ②
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
-    inp = std * inp + mean ![3](Images/3.png)
+    inp = std * inp + mean # ③
     inp = np.clip(inp, 0, 1)
     plt.imshow(inp)
     if title is not None:
         plt.title(title)
 
-inputs, classes = next(iter(val_loader)) ![4](Images/4.png)
+inputs, classes = next(iter(val_loader)) # ④
 out = torchvision.utils.make_grid(inputs)
 class_names = val_dataset.classes
 
-outputs = model(inputs.to(device)) ![5](Images/5.png)
-_, preds = torch.max(outputs,1) ![6](Images/6.png)
+outputs = model(inputs.to(device)) # ⑤
+_, preds = torch.max(outputs,1) # ⑥
 
-imshow(out, title=[class_names[x] for x in preds]) ![7](Images/7.png)
+imshow(out, title=[class_names[x] for x in preds]) # ⑦
 ```
 
 ①
@@ -378,16 +378,16 @@ from torchtext.datasets import IMDB
 from torch.utils.data.dataset import random_split
 
 train_iter, test_iter = IMDB(
-    split=('train', 'test')) ![1](Images/1.png)
+    split=('train', 'test')) # ①
 
-train_dataset = list(train_iter) ![2](Images/2.png)
+train_dataset = list(train_iter) # ②
 test_data = list(test_iter)
 
 num_train = int(len(train_dataset) * 0.70)
 train_data, valid_data = \
     random_split(train_dataset,
         [num_train,
-         len(train_dataset) - num_train]) ![3](Images/3.png)
+         len(train_dataset) - num_train]) # ③
 ```
 
 ①
@@ -434,15 +434,15 @@ from torchtext.data.utils import get_tokenizer
 from collections import Counter
 from torchtext.vocab import Vocab
 
-tokenizer = get_tokenizer('spacy') ![1](Images/1.png)
+tokenizer = get_tokenizer('spacy') # ①
 counter = Counter()
 for (label, line) in train_data:
     counter.update(generate_bigrams(
-        tokenizer(line))) ![2](Images/2.png)
+        tokenizer(line))) # ②
 vocab = Vocab(counter,
               max_size = 25000,
               vectors = "glove.6B.100d",
-              unk_init = torch.Tensor.normal_,) ![3](Images/3.png)
+              unk_init = torch.Tensor.normal_,) # ③
 ```
 
 ①
@@ -592,15 +592,15 @@ model = FastText(
 我们不会从头开始训练我们的嵌入层，而是使用预训练的嵌入来初始化层的权重。这个过程类似于我们在“使用迁移学习进行图像分类”示例中使用预训练权重的方式：
 
 ```py
-pretrained_embeddings = vocab.vectors ![1](Images/1.png)
+pretrained_embeddings = vocab.vectors # ①
 model.embedding.weight.data.copy_(
-                    pretrained_embeddings) ![2](Images/2.png)
+                    pretrained_embeddings) # ②
 
 EMBEDDING_DIM = 100
-unk_idx = vocab['<UNK>'] ![3](Images/3.png)
+unk_idx = vocab['<UNK>'] # ③
 pad_idx = vocab['<PAD>']
 model.embedding.weight.data[unk_idx] = \
-      torch.zeros(EMBEDDING_DIM)          ![4](Images/4.png)
+      torch.zeros(EMBEDDING_DIM)          # ④
 model.embedding.weight.data[pad_idx] = \
       torch.zeros(EMBEDDING_DIM)
 ```
@@ -714,8 +714,8 @@ for epoch in range(5):
 ```py
 test_loss = 0
 test_acc = 0
-model.eval() ![1](Images/1.png)
-with torch.no_grad(): ![1](Images/1.png)
+model.eval() # ①
+with torch.no_grad(): # ①
   for label, text, _ in test_dataloader:
     predictions = model(text).squeeze(1)
     loss = criterion(predictions, label)
@@ -1013,7 +1013,7 @@ for epoch in range(N_EPOCHS):
     # Train Discriminator with an all-real batch.
     netD.zero_grad()
     real_images = batch[0].to(device) *2. - 1.
-    output = netD(real_images).view(-1) ![1](Images/1.png)
+    output = netD(real_images).view(-1) # ①
     errD_real = criterion(output, real_labels)
     D_x = output.mean().item()
 
@@ -1022,18 +1022,18 @@ for epoch in range(N_EPOCHS):
                          CODING_SIZE))
     noise = noise.view(-1,100,1,1).to(device)
     fake_images = netG(noise)
-    output = netD(fake_images).view(-1) ![2](Images/2.png)
+    output = netD(fake_images).view(-1) # ②
     errD_fake = criterion(output, fake_labels)
     D_G_z1 = output.mean().item()
     errD = errD_real + errD_fake
-    errD.backward(retain_graph=True) ![3](Images/3.png)
+    errD.backward(retain_graph=True) # ③
     optimizerD.step()
 
     # Train Generator to generate better fakes.
     netG.zero_grad()
-    output = netD(fake_images).view(-1) ![4](Images/4.png)
-    errG = criterion(output, real_labels) ![5](Images/5.png)
-    errG.backward() ![6](Images/6.png)
+    output = netD(fake_images).view(-1) # ④
+    errG = criterion(output, real_labels) # ⑤
+    errG.backward() # ⑥
     D_G_z2 = output.mean().item()
     optimizerG.step()
 
@@ -1044,7 +1044,7 @@ for epoch in range(N_EPOCHS):
     D_real.append(D_x)
     D_fake.append(D_G_z2)
 
-  test_images = netG(z).to('cpu').detach() ![7](Images/7.png)
+  test_images = netG(z).to('cpu').detach() # ⑦
   test_out_images.append(test_images)
 ```
 

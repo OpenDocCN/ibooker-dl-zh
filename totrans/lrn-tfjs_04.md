@@ -56,7 +56,7 @@
 
 ##### 示例 3-1。创建您的第一个张量
 
-```py
+```js
 // creating our first tensor
 const dataArray = [8, 6, 7, 5, 3, 0, 9]
 const first = tf.tensor(dataArray) // ①
@@ -83,7 +83,7 @@ const first_again = tf.tensor1d(dataArray) // ②
 
 如果您希望强制创建的张量具有特定类型，请随时利用 `tf.tensor` 函数的第三个参数，该参数明确定义了张量的类型结构。
 
-```py
+```js
 // creating a 'float32' tensor (the default)
 const first = tf.tensor([1.1, 2.2, 3.3], null, 'float32') // ①
 
@@ -124,7 +124,7 @@ const guess_again = tf.tensor([1, 3.141592654, false]) // ⑤
 
 让我们应用我们所学到的知识：
 
-```py
+```js
 const second = tf.tensor1d([8, 6, 7, 5, 3, 0, 9]) // ①
 
 // Whoopsie!
@@ -189,7 +189,7 @@ console.log("Data Type:", second.dtype) // ⑤
 
 既然您有了一个目标，让我们编写一些代码将棋盘转换为张量。我们甚至将探索张量创建的附加参数。
 
-```py
+```js
 // This code creates a 1D `Float32` tensor
 const a = tf.tensor([1, 0, 0, 0, -1, 0, 1, 0, 0])
 
@@ -256,7 +256,7 @@ const d = tf.tensor([1, 0, 0, 0, -1, 0, 1, 0, 0], [3, 3], 'int32') // ②
 
 ##### 示例 3-2. 内存中遗留的张量
 
-```py
+```js
 /* Check the number of tensors in memory
 *  and the footprint size.
 *  Both of these logs should be zero.
@@ -279,7 +279,7 @@ console.log(tf.memory().numBytes)
 
 示例 3-2 中的代码将在日志中打印以下内容：
 
-```py
+```js
 0
 0
 1
@@ -307,7 +307,7 @@ console.log(tf.memory().numBytes)
 
 您将很快习惯清理张量。确保学习以下代码，它将演示 `tidy()` 和 `keep()` 的使用：
 
-```py
+```js
 // Start at zero tensors
 console.log('start', tf.memory().numTensors)
 
@@ -362,7 +362,7 @@ chaser.dispose() // ⑤
 
 ##### 示例 3-3. 混合 JS 和张量
 
-```py
+```js
 const tensorArray = []
 for (let i = 0; i < 10; i++) {
   tensorArray.push(tf.tensor([i, i, i]))
@@ -383,7 +383,7 @@ for (let i = 0; i < 10; i++) {
 
 以下代码探讨了使用先前描述的方法转换、打印和解析张量并进行张量操作的过程：
 
-```py
+```js
 const snap = tf.tensor([1,2,3])
 const crackle = tf.tensor([3.141592654])
 const pop = tf.tensor([[1,2,3],[4,5,6]])
@@ -405,7 +405,7 @@ tf.dispose([snap, crackle, pop])
 
 这个日志显示了保存张量及其相关属性的 JavaScript 结构。您可以看到形状，`isDisposedInternal`为 false，因为它尚未被处理，但这只是一个指向数据的指针，而不是包含数据。这个日志打印如下：
 
-```py
+```js
 {
   "kept": false,
   "isDisposedInternal": false,
@@ -426,7 +426,7 @@ tf.dispose([snap, crackle, pop])
 
 在张量上调用`.print`会直接将内部值的实际打印输出到控制台。这个日志打印如下：
 
-```py
+```js
 Tensor
     [3.1415927]
 ```
@@ -435,7 +435,7 @@ Tensor
 
 `.arraySync`将 2D 张量的值作为 2D JavaScript 数组返回给我们。这个日志打印如下：
 
-```py
+```js
 Welcome Back Array!
 [
   [
@@ -455,7 +455,7 @@ Welcome Back Array!
 
 `.dataSync`给我们提供了 2D 张量的值作为一个 1D [Float32Array](https://oreil.ly/ozV2H)对象，有效地将数据展平。记录一个类型化数组看起来像一个具有索引作为属性的对象。这个日志打印：
 
-```py
+```js
 Welcome Back Typed!
 {
   "0": 1,
@@ -485,7 +485,7 @@ Welcome Back Typed!
 
 张量具有数学上的好处。我不必编写任何代码来执行以前的计算。虽然编写自定义代码不会很复杂，但会是非优化和冗余的。有用的、可扩展的数学运算是内置的。TensorFlow.js 使线性代数对于张量等结构变得易于访问和优化。我可以用以下代码快速得到以前矩阵的答案：
 
-```py
+```js
   const mat1 = [
     [91, 82, 13],
     [15, 23, 62],
@@ -527,7 +527,7 @@ Welcome Back Typed!
 
 以下是数据：
 
-```py
+```js
 const users = ['Gant', 'Todd',  'Jed', 'Justin'] // ①
 const bands = [ // ②
   'Nirvana',
@@ -593,7 +593,7 @@ const band_feats = tf.tensor([
 
 接下来，你将根据他们的投票计算每个用户最喜欢的流派：
 
-```py
+```js
 // User's favorite styles
 const user_feats = tf.matMul(user_votes, band_feats)
 // Print the answers
@@ -602,7 +602,7 @@ user_feats.print()
 
 现在`user_feats`包含用户在每个乐队的特征上的点积。我们打印的结果将如下所示：
 
-```py
+```js
 Tensor
     [[27, 18, 24, 2 , 1 , 15],
      [14, 6 , 18, 4 , 2 , 10],
@@ -616,7 +616,7 @@ Tensor
 
 最后，让我们把这些数据带回 JavaScript。编写这段代码可以这样写：
 
-```py
+```js
 // Let's make them pretty
 const top_user_features = tf.topk(user_feats, features.length)
 // Back to JavaScript
@@ -638,7 +638,7 @@ users.map((u, i) => {
 
 结果日志如下所示：
 
-```py
+```js
 Gant
 [
   "Grunge",
@@ -697,7 +697,7 @@ Justin
 
 > 给定这个美国电话号码数组，删除重复项。
 
-```py
+```js
 // Clean up the duplicates
 const callMeMaybe = tf.tensor([8367677, 4209111, 4209111, 8675309, 8367677])
 ```

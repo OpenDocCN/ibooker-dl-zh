@@ -57,28 +57,28 @@ train_data = CIFAR10(root="./train/",
 让我们探索`train_data`数据集对象。我们可以使用其方法和属性访问有关数据集的信息，如下面的代码所示：
 
 ```py
-print(train_data) ![1](Images/1.png)
+print(train_data) # ①
 # out:
 # Dataset CIFAR10
 #     Number of datapoints: 50000
 #     Root location: ./train/
 #     Split: Train
 
-print(len(train_data)) ![2](Images/2.png)
+print(len(train_data)) # ②
 # out: 50000
 
-print(train_data.data.shape) # ndarray ![3](Images/3.png)
+print(train_data.data.shape) # ndarray # ③
 # out: (50000, 32, 32, 3)
 
-print(train_data.targets) # list ![4](Images/4.png)
+print(train_data.targets) # list # ④
 # out: [6, 9, ...,  1, 1]
 
-print(train_data.classes) ![5](Images/5.png)
+print(train_data.classes) # ⑤
 # out: ['airplane', 'automobile', 'bird',
 #       'cat', 'deer', 'dog', 'frog',
 #       'horse', 'ship', 'truck']
 
-print(train_data.class_to_idx) ![6](Images/6.png)
+print(train_data.class_to_idx) # ⑥
 # out:
 # {'airplane': 0, 'automobile': 1, 'bird': 2,
 #  'cat': 3, 'deer': 4, 'dog': 5, 'frog': 6,
@@ -195,13 +195,13 @@ train_transforms = transforms.Compose([
   transforms.RandomHorizontalFlip(),
   transforms.ToTensor(),
   transforms.Normalize(
-      mean=(0.4914, 0.4822, 0.4465), ![1](Images/1.png)
+      mean=(0.4914, 0.4822, 0.4465), # ①
       std=(0.2023, 0.1994, 0.2010))])
 
 train_data = CIFAR10(root="./train/",
                      train=True,
                      download=True,
-                     transform=train_transforms) ![2](Images/2.png)
+                     transform=train_transforms) # ②
 ```
 
 ①
@@ -532,13 +532,13 @@ import torch.nn.functional as F
 
 class SimpleNet(nn.Module):
 
-    def __init__(self): ![1](Images/1.png)
-        super(SimpleNet, self).__init__() ![2](Images/2.png)
+    def __init__(self): # ①
+        super(SimpleNet, self).__init__() # ②
         self.fc1 = nn.Linear(2048, 256)
         self.fc2 = nn.Linear(256, 64)
         self.fc3 = nn.Linear(64,2)
 
-    def forward(self, x): ![3](Images/3.png)
+    def forward(self, x): # ③
         x = x.view(-1, 2048)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -573,7 +573,7 @@ PyTorch 使用术语*module*来描述 NN 层或块。Python 使用这个术语�
 以下代码显示了如何通过实例化名为`simplenet`的模型对象来创建模型：
 
 ```py
-simplenet = SimpleNet() ![1](Images/1.png)
+simplenet = SimpleNet() # ①
 
 print(simplenet)
 # out:
@@ -587,7 +587,7 @@ print(simplenet)
 # )
 
 input = torch.rand(2048)
-output = simplenet(input) ![2](Images/2.png)
+output = simplenet(input) # ②
 ```
 
 ①
@@ -837,7 +837,7 @@ PyTorch 相对于其他机器学习框架的一个关键优势是其灵活性，
 from torch import nn
 import torch.nn.functional as F
 
-class LeNet5(nn.Module): ![1](Images/1.png)
+class LeNet5(nn.Module): # ①
     def __init__(self):
         super(LeNet5, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -858,8 +858,8 @@ class LeNet5(nn.Module): ![1](Images/1.png)
         return x
 
 device = ('cuda' if torch.cuda.is_available()
-  else 'cpu') ![2](Images/2.png)
-model = LeNet5().to(device=device) ![3](Images/3.png)
+  else 'cpu') # ②
+model = LeNet5().to(device=device) # ③
 ```
 
 ①
@@ -885,7 +885,7 @@ from torch import optim
 from torch import nn
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), ![1](Images/1.png)
+optimizer = optim.SGD(model.parameters(), # ①
                       lr=0.001,
                       momentum=0.9)
 ```
@@ -904,21 +904,21 @@ PyTorch 优化器要求您使用`parameters()`方法传入模型参数（即`mod
 
 ```py
 N_EPOCHS = 10
-for epoch in range(N_EPOCHS): ![1](Images/1.png)
+for epoch in range(N_EPOCHS): # ①
 
     epoch_loss = 0.0
     for inputs, labels in trainloader:
-        inputs = inputs.to(device) ![2](Images/2.png)
+        inputs = inputs.to(device) # ②
         labels = labels.to(device)
 
-        optimizer.zero_grad() ![3](Images/3.png)
+        optimizer.zero_grad() # ③
 
-        outputs = model(inputs) ![4](Images/4.png)
-        loss = criterion(outputs, labels) ![5](Images/5.png)
-        loss.backward() ![6](Images/6.png)
-        optimizer.step() ![7](Images/7.png)
+        outputs = model(inputs) # ④
+        loss = criterion(outputs, labels) # ⑤
+        loss.backward() # ⑥
+        optimizer.step() # ⑦
 
-        epoch_loss += loss.item() ![8](Images/8.png)
+        epoch_loss += loss.item() # ⑧
     print("Epoch: {} Loss: {}".format(epoch,
            epoch_loss/len(trainloader)))
 
@@ -1092,7 +1092,7 @@ for epoch in range(N_EPOCHS):
 
     # Training
     train_loss = 0.0
-    model.train() ![1](Images/1.png)
+    model.train() # ①
     for inputs, labels in trainloader:
         inputs = inputs.to(device)
         labels = labels.to(device)
@@ -1108,7 +1108,7 @@ for epoch in range(N_EPOCHS):
 
     # Validation
     val_loss = 0.0
-    model.eval() ![2](Images/2.png)
+    model.eval() # ②
     for inputs, labels in valloader:
         inputs = inputs.to(device)
         labels = labels.to(device)
@@ -1168,16 +1168,16 @@ CIFAR-10 提供了自己的测试数据集，我们在本章前面创建了`test
 ```py
 num_correct = 0.0
 for x_test_batch, y_test_batch in testloader:
-  model.eval() ![1](Images/1.png)
+  model.eval() # ①
   y_test_batch = y_test_batch.to(device)
   x_test_batch = x_test_batch.to(device)
-  y_pred_batch = model(x_test_batch) ![2](Images/2.png)
-  _, predicted = torch.max(y_pred_batch, 1) ![3](Images/3.png)
+  y_pred_batch = model(x_test_batch) # ②
+  _, predicted = torch.max(y_pred_batch, 1) # ③
   num_correct += (predicted ==
-    y_test_batch).float().sum() ![4](Images/4.png)
+    y_test_batch).float().sum() # ④
 
 accuracy = num_correct/(len(testloader) \
-  *testloader.batch_size) ![5](Images/5.png)
+  *testloader.batch_size) # ⑤
 
 print(len(testloader), testloader.batch_size)
 # out: 625 16

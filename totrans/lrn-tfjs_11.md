@@ -70,7 +70,7 @@
 
 感谢 TensorFlow.js，添加卷积层与添加密集层一样简单，但称为`conv2d`，并具有自己的属性。
 
-```py
+```js
 tf.layers.conv2d({
   filters: 32, // ①
   kernelSize: 3, // ②
@@ -139,7 +139,7 @@ tf.layers.conv2d({
 
 类似于`conv2d`，最大池化被添加为一层，通常紧跟在卷积之后：
 
-```py
+```js
 tf.layers.maxPooling2d({
   poolSize: 2, // ①
   strides: 2   // ②
@@ -250,7 +250,7 @@ tf.layers.maxPooling2d({
 
 ##### 示例 10-1\. 理想的设置
 
-```py
+```js
   // Read images
   const [X, Y] = await folderToTensors() // ①
 
@@ -311,13 +311,13 @@ tf.layers.maxPooling2d({
 
 你可以通过以下方式使用 NPM 安装`glob`：
 
-```py
+```js
 $ npm i glob
 ```
 
 现在节点模块可用，可以被要求或导入：
 
-```py
+```js
 const glob = require('glob')
 // OR
 import { default as glob } from 'glob'
@@ -331,7 +331,7 @@ import { default as glob } from 'glob'
 
 将每个字符串读入这两个数组的过程可以通过以下方式完成：
 
-```py
+```js
 files.forEach((file) => {
   const imageData = fs.readFileSync(file)
   const answer = encodeDir(file)
@@ -345,7 +345,7 @@ files.forEach((file) => {
 
 `encodeDir`函数是我编写的一个简单函数，用于查看每个图像的路径并返回一个相关的预测数字：
 
-```py
+```js
 function encodeDir(filePath) {
   if (filePath.includes('bird')) return 0
   if (filePath.includes('lion')) return 1
@@ -372,7 +372,7 @@ function encodeDir(filePath) {
 
 要对 X 和 Y 进行相同的排列混洗，可以使用`tf.utils.shuffleCombo`。*我听说向 TensorFlow.js 添加此功能的人非常酷。*
 
-```py
+```js
 // Shuffle the data (keep XS[n] === YS[n])
 tf.util.shuffleCombo(XS, YS)
 ```
@@ -385,7 +385,7 @@ TensorFlow.js 有一个名为`oneHot`的方法，它将数字转换为独热编�
 
 现在，您可以将 X 和 Y 数组值堆叠成一个大张量，并通过除以`255`来将图像归一化为值`0-1`。堆叠和编码看起来像这样：
 
-```py
+```js
 // Stack values
 console.log('Stacking')
 const X = tf.stack(XS)
@@ -403,7 +403,7 @@ tf.dispose([XS, X])
 
 由于处理数千个图像，您的计算机可能会在每个日志之间暂停。代码打印以下内容：
 
-```py
+```js
 Stacking
 Images all converted to tensors:
 X [ 87541, 28, 28, 1 ]
@@ -418,7 +418,7 @@ Y [ 87541, 10 ]
 
 您应该能够仅通过描述编写模型层，但这里是创建所描述的顺序模型的代码：
 
-```py
+```js
 const model = tf.sequential()
 
 // Conv + Pool combo
@@ -480,7 +480,7 @@ model.add(
 
 这个新的用于非二进制分类数据的最终层意味着您需要将损失函数从`binaryCrossentropy`更改为`categoricalCrossentropy`。因此，现在`model.compile`的代码看起来像这样：
 
-```py
+```js
 model.compile({
   optimizer: 'adam',
   loss: 'categoricalCrossentropy',
@@ -492,7 +492,7 @@ model.compile({
 
 ##### 示例 10-2。`model.summary()`的输出
 
-```py
+```js
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
@@ -584,7 +584,7 @@ _________________________________________________________________
 
 您可以使用这三个事件构建一个简单的可绘制画布。您将使用一些新方法来移动画布路径和绘制线条，但这是相当易读的。以下代码设置了一个：
 
-```py
+```js
 const canvas = document.getElementById("sketchpad");
 const context = canvas.getContext("2d");
 context.lineWidth = 14;
@@ -632,14 +632,14 @@ canvas.addEventListener("mouseup", drawEnd, false);
 
 为了解决这个问题，你可以添加一个清除函数，在画布上绘制一个大的白色正方形，这样黑色线条就会在白色背景上，就像训练图像一样。这也是你可以在绘画之间清除画布的函数。要用白色背景填充画布，你可以使用 `fillRect` 方法，就像你在 第六章 中用来勾画标签的方法一样。
 
-```py
+```js
 context.fillStyle = "#fff";
 context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 ```
 
 一旦画布用白色背景初始化，你就可以对画布绘制进行预测了。
 
-```py
+```js
 async function makePrediction(canvas, model) {
   const drawTensor = tf.browser.fromPixels(canvas, 1) // ①
   const resize = tf.image.resizeNearestNeighbor(drawTensor, [28,28], true) // ②
@@ -673,7 +673,7 @@ async function makePrediction(canvas, model) {
 
 现在你已经得到了结果，你可以以任何你喜欢的格式展示答案。我个人是按照房间组织了分数，并用它们来设置标签的不透明度。这样，你可以在每画一条线时得到反馈。标签的不透明度取决于值 `0-1`，这与 softmax 预测结果非常契合。
 
-```py
+```js
 function displayResults(predictions) {
   // Get Scores
   const ravenclaw = predictions[0] + predictions[2] + predictions[3]

@@ -96,7 +96,7 @@ MobileNet 是一种用于低延迟、低功耗模型的特定架构。这使得�
 
 你可以通过几行代码查看图像的结果。以下代码就是这样做的，也可以在[本章的源代码](https://oreil.ly/JLo5C)中找到：
 
-```py
+```js
 tf.ready().then(() => {
   const modelPath =
     "https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1"; // '// ①
@@ -152,7 +152,7 @@ tf.ready().then(() => {
 
 绘制模型检测的完整代码可以在[书籍源代码文件*too_many.html*](https://oreil.ly/bMPVa)中找到。这段代码使用了与上一章节中对象定位部分描述的相同技术，但参数顺序已调整以适应模型的预期输出。
 
-```py
+```js
 const results = await model.executeAsync(readyfied);
 const boxes = await results[1].squeeze().array();
 
@@ -195,7 +195,7 @@ boxes.forEach((box, idx) => {
 
 你需要最高排名的预测。你可以通过抑制低于给定分数的任何边界框来实现这一点。通过一次调用`topk`来识别整个检测系列中的最高分数，如下所示：
 
-```py
+```js
 const prominentDetection = tf.topk(results[0]);
 // Print it to be sure
 prominentDetection.indices.print()
@@ -246,7 +246,7 @@ Soft-NMS 最好的部分是它内置在 TensorFlow.js 中。我建议您为所�
 
 在使用非异步高级方法时要小心，因为它们可能会锁定整个 UI。如果出于任何原因想要移除 Soft-NMS 方面，可以将最后一个参数（Soft-NMS Sigma）设置为零，然后您就得到了传统的 NMS。
 
-```py
+```js
 const nmsDetections = await tf.image.nonMaxSuppressionWithScoreAsync(
   justBoxes, // shape [numBoxes, 4]
   justValues, // shape [numBoxes]
@@ -261,7 +261,7 @@ const nmsDetections = await tf.image.nonMaxSuppressionWithScoreAsync(
 
 结果将是一个具有两个属性的对象。`selectedIndices`属性将是一个张量，其中包含通过筛选的框的索引，`selectedScores`将是它们对应的分数。您可以循环遍历所选结果并绘制边界框。
 
-```py
+```js
 const chosen = await nmsDetections.selectedIndices.data(); // ①
 chosen.forEach((detection) => {
   ctx.strokeStyle = "#0F0";
@@ -349,7 +349,7 @@ UI 已经取得了很大进展。覆盖层应该能够识别检测和它们的�
 
 重要的是文本在背景框之后绘制，否则框将覆盖文本。对于我们的目的，标签将使用略有不同颜色的绿色绘制，而不是边界框。
 
-```py
+```js
 // Draw the label background.
 ctx.fillStyle = "#0B0";
 ctx.font = "16px sans-serif"; // ①
@@ -413,7 +413,7 @@ ctx.fillText(label, startX, startY); // ⑥
 
 总的来说，绘制边界框、标签框和标签的单个循环如下所示：
 
-```py
+```js
 chosen.forEach((detection) => {
   ctx.strokeStyle = "#0F0";
   ctx.lineWidth = 4;
@@ -472,7 +472,7 @@ chosen.forEach((detection) => {
 
 ##### 示例 6-1。分解代码库
 
-```py
+```js
 async function doStuff() {
   try {
     const model = await loadModel()  // ①
@@ -511,13 +511,13 @@ async function doStuff() {
 
 你可以通过更换标签来开始。原始的`img`标签：
 
-```py
+```js
 <img id="mystery" src="/dinner.jpg" height="100%" />
 ```
 
 变成以下内容：
 
-```py
+```js
 <video id="mystery" height="100%" autoplay></video>
 ```
 
@@ -527,7 +527,7 @@ async function doStuff() {
 
 为了我们的目的，我们只会设置默认的网络摄像头。这对应于示例 6-1 中的第四点。如果你对`getUserMedia`不熟悉，请花点时间分析视频元素如何连接到网络摄像头。这也是你可以将画布上下文设置移动到适应视频元素的时间。
 
-```py
+```js
 async function setupWebcam(videoRef) {
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     const webcamStream = await navigator.mediaDevices.getUserMedia({ // ①
@@ -591,7 +591,7 @@ promise 解析后，你将需要将信息传递给检测和绘制循环。
 
 最后，您执行检测和绘图的方式与对图像执行的方式相同。在每次调用的开始时，您需要删除上一次调用的所有检测；否则，您的画布将慢慢填满旧的检测。清除画布很简单；您可以使用`clearRect`来删除指定坐标的任何内容。传递整个画布的宽度和高度将擦除所有内容。
 
-```py
+```js
 ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 ```
 
@@ -599,7 +599,7 @@ ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
 在示例 6-1 中确定的`performDetections`函数应该在无限循环中递归调用自身。该函数的循环速度可能比画布绘制速度更快。为了确保不浪费循环，使用浏览器的`requestAnimationFrame`来限制这一点：
 
-```py
+```js
 // Loop forever
 requestAnimationFrame(() => {
   performDetections(model, videoRef, camDetails)
@@ -620,7 +620,7 @@ requestAnimationFrame(() => {
 
 NMS 简化了排序和消除检测。假设您想解决识别顶级预测然后将它们从高到低排序的问题，以便您可以创建类似图 6-6 的图形。与其依赖 NMS 来找到您最可行和最高值，您需要自己解决最高值问题。将这个小但类似的分组视为整个检测数据集。想象这个`[1, 6, 5]`的张量检测集合是您的`result[0]`，您只想要具有最高置信度值的前三个检测。您如何解决这个问题？
 
-```py
+```js
   const t = tf.tensor([[
     [1, 2, 3, 4, 5],
     [1.1, 2.1, 3.1, 4.1, 5.1],

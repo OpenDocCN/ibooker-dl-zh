@@ -45,7 +45,7 @@ from torch import Tensor
 class Linear(nn.Module):
 
     def __init__(self, in_features,
-                 out_features, bias): ![1](Images/1.png)
+                 out_features, bias): # ①
         super(Linear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -69,10 +69,10 @@ class Linear(nn.Module):
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
 
-    def forward(self, input: Tensor) -> Tensor: ![2](Images/2.png)
+    def forward(self, input: Tensor) -> Tensor: # ②
         return F.linear(input,
                         self.weight,
-                        self.bias) ![3](Images/3.png)
+                        self.bias) # ③
 ```
 
 ①
@@ -191,7 +191,7 @@ class MyReLU(nn.Module):
 这是函数版本：
 
 ```py
-import torch.nn.functional as F ![1](Images/1.png)
+import torch.nn.functional as F # ①
 
 class SimpleNet(nn.Module):
   def __init__(self, D_in, H, D_out):
@@ -200,7 +200,7 @@ class SimpleNet(nn.Module):
     self.fc2 = nn.Linear(H, D_out)
 
   def forward(self, x):
-    x = F.relu(self.fc1(x)) ![2](Images/2.png)
+    x = F.relu(self.fc1(x)) # ②
     return self.fc2(x)
 ```
 
@@ -218,9 +218,9 @@ class SimpleNet(nn.Module):
 class SimpleNet(nn.Module):
   def __init__(self, D_in, H, D_out):
     super(SimpleNet, self).__init__()
-    self.net = nn.Sequential( ![1](Images/1.png)
+    self.net = nn.Sequential( # ①
         nn.Linear(D_in, H),
-        nn.ReLU(), ![2](Images/2.png)
+        nn.ReLU(), # ②
         nn.Linear(H, D_out)
     )
 
@@ -241,10 +241,10 @@ class SimpleNet(nn.Module):
 我们可以创建自己的自定义 ComplexReLU 激活函数来处理我们之前创建的`ComplexLinear`层中的复数值。以下代码展示了函数版本和类版本：
 
 ```py
-def complex_relu(in_r, in_i): ![1](Images/1.png)
+def complex_relu(in_r, in_i): # ①
     return (F.relu(in_r), F.relu(in_i))
 
-class ComplexReLU(nn.Module): ![2](Images/2.png)
+class ComplexReLU(nn.Module): # ②
   def __init__(self):
       super(ComplexReLU, self).__init__()
 
@@ -353,7 +353,7 @@ def alexnet(pretrained=False,
 这使我们能够直接调用该类来计算给定 NN 输出和真实值的损失。然后我们可以一次计算所有 NN 参数的梯度，即进行反向传播。以下代码展示了如何在代码中实现这一点：
 
 ```py
-loss_fcn = nn.MSELoss() ![1](Images/1.png)
+loss_fcn = nn.MSELoss() # ①
 loss = loss_fcn(outputs, targets)
 loss.backward()
 ```
@@ -443,8 +443,8 @@ class Optimizer(object):
 
     def __init__(self, params, defaults):
         self.defaults = defaults
-        self.state = defaultdict(dict) ![1](Images/1.png)
-        self.param_groups = [] ![2](Images/2.png)
+        self.state = defaultdict(dict) # ①
+        self.param_groups = [] # ②
 
         param_groups = list(params)
         if len(param_groups) == 0:
@@ -467,7 +467,7 @@ class Optimizer(object):
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def zero_grad(self): ![3](Images/3.png)
+    def zero_grad(self): # ③
 
         for group in self.param_groups:
             for p in group['params']:
@@ -475,7 +475,7 @@ class Optimizer(object):
                     p.grad.detach_()
                     p.grad.zero_()
 
-    def step(self, closure): ![4](Images/4.png)
+    def step(self, closure): # ④
         raise NotImplementedError
 ```
 
@@ -592,14 +592,14 @@ with torch.no_grad():
 
 ```py
 for epoch in range(n_epochs):
-    total_train_loss = 0.0 ![1](Images/1.png)
-    total_val_loss = 0.0  ![1](Images/1.png)
+    total_train_loss = 0.0 # ①
+    total_val_loss = 0.0  # ①
 
     if (epoch == epoch//2):
       optimizer = optim.SGD(model.parameters(),
-                            lr=0.001) ![2](Images/2.png)
+                            lr=0.001) # ②
     # Training
-    model.train() ![3](Images/3.png)
+    model.train() # ③
     for data in train_dataloader:
         input, targets = data
         optimizer.zero_grad()
@@ -607,21 +607,21 @@ for epoch in range(n_epochs):
         train_loss = criterion(output, targets)
         train_loss.backward()
         optimizer.step()
-        total_train_loss += train_loss ![1](Images/1.png)
+        total_train_loss += train_loss # ①
 
     # Validation
-    model.eval() ![3](Images/3.png)
+    model.eval() # ③
     with torch.no_grad():
       for input, targets in val_dataloader:
           output = model(input)
           val_loss = criterion(output, targets)
-          total_val_loss += val_loss ![1](Images/1.png)
+          total_val_loss += val_loss # ①
 
     print("""Epoch: {}
  Train Loss: {}
  Val Loss {}""".format(
          epoch, total_train_loss,
-         total_val_loss)) ![1](Images/1.png)
+         total_val_loss)) # ①
 
 # Testing
 model.eval()

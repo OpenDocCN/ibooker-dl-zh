@@ -16,20 +16,20 @@ Arduino IDE 要求源文件以一定的方式打包。TensorFlow Lite for Microc
 
 如果您需要自己生成文件，请打开终端窗口，克隆 TensorFlow 存储库，并切换到其目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 cd tensorflow
 ```
 
 现在运行以下脚本以生成*.zip*文件：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/ci_build/test_arduino.sh
 ```
 
 文件将被创建在以下位置：
 
-```py
+```cpp
 tensorflow/lite/micro/tools/make/gen/arduino_x86_64/ \
   prj/micro_speech/tensorflow_lite.zip
 ```

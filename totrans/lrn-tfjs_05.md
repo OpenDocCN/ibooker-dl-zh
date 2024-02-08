@@ -50,7 +50,7 @@ RGB 系统是艺术模仿生活的另一个例子。人眼使用 RGB，这是基
 
 代码将会是以下简单的形式：
 
-```py
+```js
 const checky = tf.tensor([
   [
     [1, 1, 1],
@@ -85,7 +85,7 @@ const checky = tf.tensor([
 
 我们之前的黑白棋盘图案示例可以通过使用最后的知识大大简化。现在我们可以用张量构建相同的图像，代码如下：
 
-```py
+```js
 const checkySmalls = tf.tensor([
   [[1],[0],[1],[0]],
   [[0],[1],[0],[1]],
@@ -125,7 +125,7 @@ const checkySmalls = tf.tensor([
 
 让我们回到您之前制作的 4 x 3 的方格图像。您手工编码了 12 个像素值。如果您想制作一个 200 x 200 的方格图像，那将是 40,000 个像素值用于简单的灰度。相反，我们将使用`.tile`方法来扩展一个简单的 2 x 2 张量。
 
-```py
+```js
 // 2 x 2 checker pattern
   const lil = tf.tensor([  // ①
     [[1], [0]],
@@ -192,13 +192,13 @@ const checkySmalls = tf.tensor([
 
 要设置我们的第一个画布渲染，您需要在我们的 HTML 中有一个带有 ID 的画布，以便您可以引用它。对于那些熟悉 HTML 加载顺序复杂性的人来说，您需要在尝试从 JavaScript 中访问它之前使画布存在*之前*（或者遵循您网站的任何最佳实践，比如检查文档准备就绪状态）：
 
-```py
+```js
 <canvas id="randomness"></canvas>
 ```
 
 现在您可以通过 ID 访问此画布，并将其传递给我们的`browser.toPixels`方法。
 
-```py
+```js
 const bigMess = tf.randomUniform([400, 400, 3]); // ①
 const myCanvas = document.getElementById("randomness"); // ②
 tf.browser.toPixels(bigMess, myCanvas).then(() => { // ③
@@ -238,7 +238,7 @@ tf.browser.toPixels(bigMess, myCanvas).then(() => { // ③
 
 让我们用一个简单的`img`标签和`id`设置我们的 DOM 图像：
 
-```py
+```js
 <img id="gant" src="/gant.jpg" />
 ```
 
@@ -250,7 +250,7 @@ tf.browser.toPixels(bigMess, myCanvas).then(() => { // ③
 
 在`img`放置并 DOM 加载完成后，您可以调用`browser.fromPixels`获取结果：
 
-```py
+```js
 // Simply read from the DOM
 const gantImage = document.getElementById('gant') // ①
 const gantTensor = tf.browser.fromPixels(gantImage) // ②
@@ -271,7 +271,7 @@ console.log( // ③
 
 记录证明我们现在有了一个张量！这将打印以下内容：
 
-```py
+```js
 Successful conversion from DOM to a 372,500,3 tensor
 ```
 
@@ -281,7 +281,7 @@ Successful conversion from DOM to a 372,500,3 tensor
 
 完美！但是如果我们的图像不在页面的元素中怎么办？只要服务器允许跨域加载 (`Access-Control-Allow-Origin "*"`)，您就可以动态加载和处理外部图像。这就是 [JavaScript 图像对象示例](https://oreil.ly/dSjiI) 的用武之地。我们可以这样将图像转换为张量：
 
-```py
+```js
 // Now load an image object in JavaScript
 const cake = new Image() // ①
 cake.crossOrigin = 'anonymous' // ②
@@ -344,7 +344,7 @@ cake.onload = () => { // ④
 
 从张量中写入 JPG，就像在[*GitHub 的第四章节中的 *chapter4/node/node-encode*](https://oreil.ly/Nn9nX)中发现的那样，可以简单地这样做：
 
-```py
+```js
   const bigMess = tf.randomUniform([400, 400, 3], 0, 255); // ①
   tf.node.encodeJpeg(bigMess).then((f) => { // ②
     fs.writeFileSync("simple.jpg", f); // ③
@@ -366,7 +366,7 @@ cake.onload = () => { // ④
 
 因为您要写入的文件是 JPG，您可以启用各种配置选项。让我们再写入另一张图片，并在此过程中修改默认设置：
 
-```py
+```js
 const bigMess = tf.randomUniform([400, 400, 3], 0, 255);
 tf.node
   .encodeJpeg(
@@ -435,7 +435,7 @@ tf.node
 
 我们可以轻松地写入 PNG 如下：
 
-```py
+```js
 const bigMess = tf.randomUniform([400, 400, 3], 0, 255);
 tf.node.encodePng(bigMess).then((f) => {
   fs.writeFileSync("simple.png", f);
@@ -451,7 +451,7 @@ PNG 参数并不那么先进。您只有一个新参数，而且它是一个神�
 
 由于 PNG 在压缩随机性方面表现糟糕，您可以将第二个参数设置为`9`，得到与默认设置大小相近的文件：
 
-```py
+```js
 tf.node.encodePng(bigMess, 9).then((f) => {
   fs.writeFileSync("advanced.png", f);
   console.log("Full featured PNG 'advanced.png' written");
@@ -474,7 +474,7 @@ Node 提供了解码 BMP、JPG、PNG 甚至 GIF 文件格式的功能。但是�
 
 这个示例代码依赖于一个名为*cake.jpg*的文件进行加载和解码为张量。此演示中使用的代码和图像资源可在 GitHub 的第四章[*chapter4/node/node-decode*](https://oreil.ly/k8jjE)中找到。
 
-```py
+```js
 import * as tf from '@tensorflow/tfjs-node'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -512,7 +512,7 @@ tf.tidy(() => {
 
 这个示例代码解码了一个动画 GIF。您将要使用的示例 GIF 是一个 500 x 372 的动画 GIF，有 20 帧：
 
-```py
+```js
 const gantCakeTensor = tf.node.decodeImage(gantCake, 3, 'int32', true)
 console.log(`Success: local file to a ${gantCakeTensor.shape} tensor`)
 ```
@@ -547,7 +547,7 @@ console.log(`Success: local file to a ${gantCakeTensor.shape} tensor`)
 
 在本章的相应源代码中，您显示一幅图像，然后在旁边的画布上镜像该图像。您可以在 GitHub 的[*simple/simple-image-manipulation/mirror.html*](https://oreil.ly/83b9B)中访问此示例。此操作的完整代码如下：
 
-```py
+```js
 // Simple Tensor Flip
 const lemonadeImage = document.getElementById("lemonade");
 const lemonadeCanvas = document.getElementById("lemonadeCanvas");
@@ -585,7 +585,7 @@ Figure 4-8 显示了在轴`1`上使用`tf.reverse`的结果。
 
 您可以使用以下代码在单个图像上执行`tf.image.flipLeftRight`：
 
-```py
+```js
 // Batch Tensor Flip
 const cakeImage = document.getElementById("cake");
 const cakeCanvas = document.getElementById("cakeCanvas");
@@ -638,7 +638,7 @@ TensorFlow.js 有两种优秀的方法用于调整图像大小，并且两者都
 
 直白地说，`resizeBilinear`会模糊，而`resizeNearestNeighbor`会像素化，当它们需要为新数据进行外推时。让我们使用这两种方法放大图像并进行比较。您可以在[*simple/simple-image-manipulation/resize.html*](https://oreil.ly/ieQLD)中查看此示例。
 
-```py
+```js
 // Simple Tensor Flip
 const newSize = [768, 560] // 4x larger // ①
 const littleGantImage = document.getElementById("littleGant");
@@ -714,7 +714,7 @@ gantTensor.dispose();
 
 通过给定切片的起始位置和大小，你可以在任何轴上裁剪出你想要的任何部分。你可以在 GitHub 上的[*simple/simple-image-manipulation/crop.html*](https://oreil.ly/QDmBD)找到这个例子。要裁剪单个图像，请使用以下代码：
 
-```py
+```js
 // Simple Tensor Crop
 const startingPoint = [0, 40, 0]; // ①
 const newSize = [265, 245, 3]; // ②
@@ -812,7 +812,7 @@ lemonadeTensor.dispose();
 
 1.  以下结果的秩和大小是多少：
 
-    ```py
+    ```js
     [.keep-together]#`tf.slice(myTensor, [0,0,0], [20, 20, 3])`?#
     ```
 

@@ -28,7 +28,7 @@
 
 第一部分，在许可证标题下方（指定任何人都可以在[Apache 2.0](https://oreil.ly/Xa5_x)开源许可下使用或共享此代码），如下所示：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/sine_model_data.h"
 #include "tensorflow/lite/micro/kernels/all_ops_resolver.h"
 #include "tensorflow/lite/micro/micro_error_reporter.h"
@@ -78,7 +78,7 @@
 
 代码的下一部分用于 TensorFlow Lite for Microcontrollers 测试框架。看起来像这样：
 
-```py
+```cpp
 TF_LITE_MICRO_TESTS_BEGIN
 
 TF_LITE_MICRO_TEST(LoadModelAndPerformInference) {
@@ -94,7 +94,7 @@ TF_LITE_MICRO_TEST(LoadModelAndPerformInference) {
 
 文件中剩余的代码是我们测试的实际逻辑。让我们看一下第一部分：
 
-```py
+```cpp
 // Set up logging
 tflite::MicroErrorReporter micro_error_reporter;
 tflite::ErrorReporter* error_reporter = &micro_error_reporter;
@@ -108,7 +108,7 @@ tflite::ErrorReporter* error_reporter = &micro_error_reporter;
 
 第一个声明看起来很简单，但是第二行看起来有点奇怪，带有`*`和`&`字符？为什么我们要声明一个`ErrorReporter`当我们已经有一个`MicroErrorReporter`了？
 
-```py
+```cpp
 tflite::ErrorReporter* error_reporter = &micro_error_reporter;
 ```
 
@@ -130,7 +130,7 @@ tflite::ErrorReporter* error_reporter = &micro_error_reporter;
 
 我们立即建立打印调试信息的机制的原因是为了记录代码中发生的任何问题。我们在下一段代码中依赖于这一点：
 
-```py
+```cpp
 // Map the model into a usable data structure. This doesn't involve any
 // copying or parsing, it's a very lightweight operation.
 const tflite::Model* model = ::tflite::GetModel(g_sine_model_data);
@@ -149,7 +149,7 @@ error_reporter->Report(
 
 一旦`model`准备好，我们调用一个检索模型版本号的方法：
 
-```py
+```cpp
 if (model->version() != TFLITE_SCHEMA_VERSION) {
 ```
 
@@ -161,7 +161,7 @@ if (model->version() != TFLITE_SCHEMA_VERSION) {
 
 如果版本号不匹配，我们仍然会继续，但我们会使用我们的`error_reporter`记录一个警告：
 
-```py
+```cpp
 error_reporter->Report(
     "Model provided is schema version %d not equal "
     "to supported version %d.\n",
@@ -180,7 +180,7 @@ error_reporter->Report(
 
 到目前为止一切顺利！我们的代码可以记录错误，我们已经将模型加载到一个方便的结构中，并检查它是否是兼容的版本。鉴于我们一路上在回顾一些 C++概念，我们进展有点慢，但事情开始变得清晰起来了。接下来，我们创建一个`AllOpsResolver`的实例：
 
-```py
+```cpp
 // This pulls in all the operation implementations we need
 tflite::ops::micro::AllOpsResolver resolver;
 ```
@@ -193,7 +193,7 @@ tflite::ops::micro::AllOpsResolver resolver;
 
 我们几乎已经准备好创建一个解释器所需的所有要素。我们需要做的最后一件事是分配一个工作内存区域，我们的模型在运行时将需要这个内存区域：
 
-```py
+```cpp
 // Create an area of memory to use for input, output, and intermediate arrays.
 // Finding the minimum value for your model may require some trial and error.
 const int tensor_arena_size = 2 × 1024;
@@ -210,7 +210,7 @@ uint8_t tensor_arena[tensor_arena_size];
 
 现在我们已经声明了`tensor_arena`，我们准备设置解释器。下面是具体步骤：
 
-```py
+```cpp
 // Build an interpreter to run the model with
 tflite::MicroInterpreter interpreter(model, resolver, tensor_arena,
                                      tensor_arena_size, error_reporter);
@@ -227,7 +227,7 @@ interpreter.AllocateTensors();
 
 在我们创建了一个解释器之后，我们需要为我们的模型提供一些输入。为此，我们将我们的输入数据写入模型的输入张量：
 
-```py
+```cpp
 // Obtain a pointer to the model's input tensor
 TfLiteTensor* input = interpreter.input(0);
 ```
@@ -236,7 +236,7 @@ TfLiteTensor* input = interpreter.input(0);
 
 在 TensorFlow Lite 中，张量由`TfLiteTensor`结构表示，该结构在[*c_api_internal.h*](https://oreil.ly/Qvhre)中定义。这个结构提供了一个 API 来与张量进行交互和了解张量。在下一段代码中，我们使用这个功能来验证我们的张量看起来和感觉正确。因为我们将经常使用张量，让我们通过这段代码来熟悉`TfLiteTensor`结构的工作方式：
 
-```py
+```cpp
 // Make sure the input has the properties we expect
 TF_LITE_MICRO_EXPECT_NE(nullptr, input);
 // The property "dims" tells us the tensor's shape. It has one element for
@@ -258,13 +258,13 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, input->type);
 
 我们首先检查的是我们的输入张量是否实际存在。为了做到这一点，我们断言它*不等于*`nullptr`，这是一个特殊的 C++值，表示一个指针实际上没有指向任何数据：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_NE(nullptr, input);
 ```
 
 我们接下来检查的是我们输入张量的*形状*。如第三章中讨论的，所有张量都有一个形状，这是描述它们维度的一种方式。我们模型的输入是一个标量值（表示一个单个数字）。然而，由于[Keras 层接受输入的方式](https://oreil.ly/SFiRV)，这个值必须提供在一个包含一个数字的 2D 张量中。对于输入 0，它应该是这样的：
 
-```py
+```cpp
 [[0]]
 ```
 
@@ -272,13 +272,13 @@ TF_LITE_MICRO_EXPECT_NE(nullptr, input);
 
 `TfLiteTensor`结构包含一个`dims`成员，描述张量的维度。该成员是一个类型为`TfLiteIntArray`的结构，也在*c_api_internal.h*中定义。它的`size`成员表示张量的维度数。由于输入张量应该是 2D 的，我们可以断言`size`的值为`2`：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(2, input->dims->size);
 ```
 
 我们可以进一步检查`dims`结构，以确保张量的结构是我们期望的。它的`data`变量是一个数组，每个维度有一个元素。每个元素是一个表示该维度大小的整数。因为我们期望一个包含每个维度一个元素的 2D 张量，我们可以断言两个维度都包含一个单一元素：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(1, input->dims->data[0]);
 TF_LITE_MICRO_EXPECT_EQ(1, input->dims->data[1]);
 ```
@@ -287,7 +287,7 @@ TF_LITE_MICRO_EXPECT_EQ(1, input->dims->data[1]);
 
 张量结构体的`type`变量告诉我们张量的数据类型。我们将提供一个 32 位浮点数，由常量`kTfLiteFloat32`表示，我们可以轻松地断言类型是正确的：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, input->type);
 ```
 
@@ -297,7 +297,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, input->type);
 
 要运行推理，我们需要向我们的输入张量添加一个值，然后指示解释器调用模型。之后，我们将检查模型是否成功运行。这是它的样子：
 
-```py
+```cpp
 // Provide an input value
 input->data.f[0] = 0.;
 
@@ -311,7 +311,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 
 TensorFlow Lite 的`TfLiteTensor`结构有一个`data`变量，我们可以用来设置输入张量的内容。你可以在这里看到它被使用：
 
-```py
+```cpp
 input->data.f[0] = 0.;
 ```
 
@@ -319,7 +319,7 @@ input->data.f[0] = 0.;
 
 `TfLitePtrUnion`联合在[*c_api_internal.h*](https://oreil.ly/v4h7K)中声明。这是它的样子：
 
-```py
+```cpp
 // A union of pointers that points to memory for a given tensor.
 typedef union {
   int32_t* i32;
@@ -342,7 +342,7 @@ typedef union {
 
 由于指针指向一块内存块，我们可以在指针名称后使用方括号(`[]`)来指示程序在哪里存储数据。在我们的例子中，我们这样做：
 
-```py
+```cpp
 input->data.f[0] = 0.;
 ```
 
@@ -352,7 +352,7 @@ input->data.f[0] = 0.;
 
 设置完输入张量后，是时候运行推理了。这是一个一行代码：
 
-```py
+```cpp
 TfLiteStatus invoke_status = interpreter.Invoke();
 ```
 
@@ -360,7 +360,7 @@ TfLiteStatus invoke_status = interpreter.Invoke();
 
 `Invoke()`方法返回一个`TfLiteStatus`对象，让我们知道推理是否成功或是否有问题。它的值可以是`kTfLiteOk`或`kTfLiteError`。我们检查是否有错误，并在有错误时报告：
 
-```py
+```cpp
 if (invoke_status != kTfLiteOk) {
     error_reporter->Report("Invoke failed\n");
 }
@@ -368,7 +368,7 @@ if (invoke_status != kTfLiteOk) {
 
 最后，我们断言状态必须是`kTfLiteOk`，以便我们的测试通过：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 ```
 
@@ -378,13 +378,13 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteOk, invoke_status);
 
 与输入一样，我们模型的输出通过`TfLiteTensor`访问，获取指向它的指针同样简单：
 
-```py
+```cpp
 TfLiteTensor* output = interpreter.output(0);
 ```
 
 输出与输入一样，是一个嵌套在 2D 张量中的浮点标量值。为了测试，我们再次检查输出张量的预期大小、维度和类型：
 
-```py
+```cpp
 TF_LITE_MICRO_EXPECT_EQ(2, output->dims->size);
 TF_LITE_MICRO_EXPECT_EQ(1, input->dims->data[0]);
 TF_LITE_MICRO_EXPECT_EQ(1, input->dims->data[1]);
@@ -393,7 +393,7 @@ TF_LITE_MICRO_EXPECT_EQ(kTfLiteFloat32, output->type);
 
 是的，一切看起来都很好。现在，我们获取输出值并检查它，确保它符合我们的高标准。首先，我们将其分配给一个`float`变量：
 
-```py
+```cpp
 // Obtain the output value from the tensor
 float value = output->data.f[0];
 ```
@@ -402,7 +402,7 @@ float value = output->data.f[0];
 
 接下来，我们使用`TF_LITE_MICRO_EXPECT_NEAR`来证明该值接近我们期望的值：
 
-```py
+```cpp
 // Check that the output value is within 0.05 of the expected value
 TF_LITE_MICRO_EXPECT_NEAR(0., value, 0.05);
 ```
@@ -415,7 +415,7 @@ TF_LITE_MICRO_EXPECT_NEAR(0., value, 0.05);
 
 如果这个测试通过，情况看起来很好。其余的测试会再次运行推理几次，只是为了进一步证明我们的模型正在工作。要再次运行推理，我们只需要为我们的输入张量分配一个新值，调用 `interpreter.Invoke()`，并从输出张量中读取输出：
 
-```py
+```cpp
 // Run inference on several more values and confirm the expected outputs
 input->data.f[0] = 1.;
 interpreter.Invoke();
@@ -437,7 +437,7 @@ TF_LITE_MICRO_EXPECT_NEAR(-0.959, value, 0.05);
 
 在我们的测试中，我们已经证明了 TensorFlow Lite for Microcontrollers 可以成功加载我们的模型，分配适当的输入和输出张量，运行推理，并返回预期的结果。最后要做的是使用宏指示测试的结束：
 
-```py
+```cpp
 }
 
 TF_LITE_MICRO_TESTS_END
@@ -469,13 +469,13 @@ TF_LITE_MICRO_TESTS_END
 
 在你拥有所有工具之后，打开一个终端并输入以下命令来下载 TensorFlow 源代码，其中包括我们正在使用的示例代码。它将在你运行它的任何位置创建一个包含源代码的目录：
 
-```py
+```cpp
 git clone https://github.com/tensorflow/tensorflow.git
 ```
 
 接下来，切换到刚刚创建的 *tensorflow* 目录：
 
-```py
+```cpp
 cd tensorflow
 ```
 
@@ -487,7 +487,7 @@ cd tensorflow
 
 要使用 Make 运行我们的测试，我们可以发出以下命令，确保我们是从使用 Git 下载的*tensorflow*目录的根目录运行。我们首先指定要使用的 Makefile，然后是*target*，即我们要构建的组件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test_hello_world_test
 ```
 
@@ -497,7 +497,7 @@ Makefile 被设置为为了运行测试，我们提供一个以`test_`为前缀�
 
 您需要等待一段时间才能完成这个过程。当文本停止飞过时，最后几行应该是这样的：
 
-```py
+```cpp
 Testing LoadModelAndPerformInference
 1/1 tests passed
 ~~~ALL TESTS PASSED~~~
@@ -507,31 +507,31 @@ Testing LoadModelAndPerformInference
 
 要查看测试失败时会发生什么，让我们引入一个错误。打开测试文件*hello_world_test.cc*。它将位于相对于目录根目录的路径：
 
-```py
+```cpp
 tensorflow/lite/micro/examples/hello_world/hello_world_test.cc
 ```
 
 为了使测试失败，让我们为模型提供不同的输入。这将导致模型的输出发生变化，因此检查我们输出值的断言将失败。找到以下行：
 
-```py
+```cpp
 input->data.f[0] = 0.;
 ```
 
 更改分配的值，如下所示：
 
-```py
+```cpp
 input->data.f[0] = 1.;
 ```
 
 现在保存文件，并使用以下命令再次运行测试（记得要从*tensorflow*目录的根目录运行）：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test_hello_world_test
 ```
 
 代码将被重建，测试将运行。您看到的最终输出应该如下所示：
 
-```py
+```cpp
 Testing LoadModelAndPerformInference
 0.0486171 near value failed at tensorflow/lite/micro/examples/hello_world/\
   hello_world_test.cc:94
@@ -617,7 +617,7 @@ sine_model_data.h, sine_model_data.cc
 
 这个文件包含了我们程序的核心逻辑。它从一些熟悉的`#include`语句和一些新的语句开始：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/main_functions.h"
 #include "tensorflow/lite/micro/examples/hello_world/constants.h"
 #include "tensorflow/lite/micro/examples/hello_world/output_handler.h"
@@ -633,7 +633,7 @@ sine_model_data.h, sine_model_data.cc
 
 文件的下一部分设置了将在*main_functions.cc*中使用的全局变量：
 
-```py
+```cpp
 namespace {
 tflite::ErrorReporter* error_reporter = nullptr;
 const tflite::Model* model = nullptr;
@@ -657,7 +657,7 @@ uint8_t tensor_arena[kTensorArenaSize];
 
 `setup()`的第一部分几乎与我们的测试中的相同。我们设置日志记录，加载我们的模型，设置解释器并分配内存：
 
-```py
+```cpp
 void setup() {
   // Set up logging.
   static tflite::MicroErrorReporter micro_error_reporter;
@@ -692,7 +692,7 @@ void setup() {
 
 到目前为止都是熟悉的领域。然而，在这一点之后，事情有点不同。首先，我们获取输入张量和输出张量的指针：
 
-```py
+```cpp
   // Obtain pointers to the model's input and output tensors.
   input = interpreter->input(0);
   output = interpreter->output(0);
@@ -702,7 +702,7 @@ void setup() {
 
 最后，为了结束`setup()`函数，我们将我们的`inference_count`变量设置为`0`：
 
-```py
+```cpp
   // Keep track of how many inferences we have performed.
   inference_count = 0;
 }
@@ -714,13 +714,13 @@ void setup() {
 
 为了做到这一点，我们需要编写一些在循环中运行的代码。首先，我们声明一个名为`loop()`的函数，接下来我们将逐步介绍。我们放在这个函数中的代码将被重复运行，一遍又一遍：
 
-```py
+```cpp
 void loop() {
 ```
 
 首先在我们的`loop()`函数中，我们必须确定要传递给模型的值（让我们称之为我们的`x`值）。我们使用两个常量来确定这一点：`kXrange`，它指定最大可能的`x`值为 2π，以及`kInferencesPerCycle`，它定义了我们希望在从 0 到 2π的步骤中执行的推断数量。接下来的几行代码计算`x`值：
 
-```py
+```cpp
 // Calculate an x value to feed into the model. We compare the current
 // inference_count to the number of inferences per cycle to determine
 // our position within the range of possible x values the model was
@@ -740,7 +740,7 @@ float x_val = position * kXrange;
 
 我们代码的下一部分应该看起来很熟悉；我们将我们的`x`值写入模型的输入张量，运行推断，然后从输出张量中获取结果（让我们称之为我们的`y`值）：
 
-```py
+```cpp
 // Place our calculated x value in the model's input tensor
 input->data.f[0] = x_val;
 
@@ -760,7 +760,7 @@ float y_val = output->data.f[0];
 
 以下一行调用了在*output_handler.cc*中定义的`HandleOutput()`函数：
 
-```py
+```cpp
 // Output the results. A custom HandleOutput function can be implemented
 // for each supported hardware target.
 HandleOutput(error_reporter, x_val, y_val);
@@ -772,7 +772,7 @@ HandleOutput(error_reporter, x_val, y_val);
 
 文件*output_handler.cc*定义了我们的`HandleOutput()`函数。它的实现非常简单：
 
-```py
+```cpp
 void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
                   float y_value) {
   // Log the current X and Y values
@@ -790,7 +790,7 @@ void HandleOutput(tflite::ErrorReporter* error_reporter, float x_value,
 
 我们在`loop()`函数中做的最后一件事是增加我们的`inference_count`计数器。如果它已经达到了在`kInferencesPerCycle`中定义的每个周期的最大推理次数，我们将其重置为 0：
 
-```py
+```cpp
 // Increment the inference_counter, and reset it if we have reached
 // the total number per cycle
 inference_count += 1;
@@ -809,13 +809,13 @@ if (inference_count 	>= kInferencesPerCycle) inference_count = 0;
 
 文件*main.cc*非常简短而简洁。首先，它包含了一个*main_functions.h*的`#include`语句，这将引入那里定义的`setup()`和`loop()`函数：
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/hello_world/main_functions.h"
 ```
 
 接下来，它声明了`main()`函数本身：
 
-```py
+```cpp
 int main(int argc, char* argv[]) {
   setup();
   while (true) {
@@ -836,13 +836,13 @@ int main(int argc, char* argv[]) {
 
 为了给我们的应用程序代码进行测试运行，我们首先需要构建它。输入以下 Make 命令以为我们的程序创建一个可执行二进制文件：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile hello_world
 ```
 
 当构建完成后，您可以使用以下命令运行应用程序二进制文件，具体取决于您的操作系统：
 
-```py
+```cpp
 # macOS:
 tensorflow/lite/micro/tools/make/gen/osx_x86_64/bin/hello_world
 
@@ -857,7 +857,7 @@ tensorflow/lite/micro/tools/make/gen/windows_x86_64/bin/hello_world
 
 在运行二进制文件之后，您应该希望看到一堆输出滚动过去，看起来像这样：
 
-```py
+```cpp
 x_value: 1.4137159*2¹, y_value: 1.374213*2^-2
 
 x_value: 1.5707957*2¹, y_value: -1.4249528*2^-5

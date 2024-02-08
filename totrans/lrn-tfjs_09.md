@@ -80,7 +80,7 @@
 
 ##### 示例 8-1。构建一个假设模型
 
-```py
+```js
 model.add(ALayer)
 model.add(BLayer)
 model.add(CLayer)
@@ -92,7 +92,7 @@ model.add(CLayer)
 
 让我们回到您试图编码的模型。当前问题的架构模型目标只有一个具有一个神经元的层。当您编写该单个层时，您将定义您的输入和输出。
 
-```py
+```js
 // The entire inner workings of the model
 model.add(
   tf.layers.dense({
@@ -128,7 +128,7 @@ model.add(
 
 当您准备告诉模型使用特定的学习指标并且添加完所有层到模型后，这一切都包含在 `.compile` 调用中。TensorFlow.js 足够聪明，了解梯度下降和均方误差。您可以通过它们的批准字符串等效项来识别它们，而不是编写这些函数：
 
-```py
+```js
 model.compile({
   optimizer: "sgd",
   loss: "meanSquaredError"
@@ -145,7 +145,7 @@ model.compile({
 
 ##### 示例 8-2\. 在 Layers 模型上调用 `model.summary()` 打印层
 
-```py
+```js
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
@@ -169,7 +169,7 @@ _________________________________________________________________
 
 现在您已经熟悉了高级概念，您可能迫不及待地想用代码解决这个问题。以下是用数据训练模型的代码，然后立即要求模型为值`10`提供答案，如前所述。
 
-```py
+```js
 // Inputs
 const xs = tf.tensor([-1, 0, 1, 2, 3, 4]); // ①
 // Answers we want from inputs
@@ -267,7 +267,7 @@ model.fit(xs, ys, { epochs: 300 }).then(history => { // ⑤
 
 指数函数可能返回一些非常大的数字，加快模型训练速度的一个技巧是保持数字及其之间的距离较小。您会一次又一次地看到这一点。对于我们的目的，模型的训练数据将是 0 到 10 之间的数字。
 
-```py
+```js
 const jsxs = [];
 const jsys = [];
 
@@ -301,7 +301,7 @@ const ys = tf.tensor(jsys);
 
 要添加这一层并为其提供激活函数，您将在序列中指定一个新的密集层：
 
-```py
+```js
 model.add(
   tf.layers.dense({
     inputShape: 1, // ①
@@ -337,7 +337,7 @@ model.add(
 
 ##### 示例 8-3。调用`model.summary()`以获取当前结构
 
-```py
+```js
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
@@ -363,7 +363,7 @@ TensorFlow.js 拥有各种令人惊奇的工具，可帮助您识别训练进度
 
 由于您已经熟悉一个 epoch（对训练数据的完整运行），这是您在本例中将使用的时刻。这是一个简洁但有效的获取某种控制台消息的方法。
 
-```py
+```js
 const printCallback = { // ①
   onEpochEnd: (epoch, log) => { // ②
     console.log(epoch, log); // ③
@@ -389,7 +389,7 @@ const printCallback = { // ①
 
 剩下要做的就是将您的对象传递给模型的`fit`配置，同时传递您的 epochs，您应该在模型训练时看到日志。
 
-```py
+```js
 await model.fit(xs, ys, {
   epochs: 100,
   callbacks: printCallback
@@ -420,7 +420,7 @@ await model.fit(xs, ys, {
 
 更新后的编译代码如下：
 
-```py
+```js
 model.compile({
   optimizer: "adam",
   loss: "meanSquaredError"
@@ -441,7 +441,7 @@ model.compile({
 
 情况看起来不错，但还有一个功能我们应该添加，有时可以显著缩短训练时间。在一台相当不错的机器上，这 100 个时期大约需要 100 秒才能运行。您可以通过一行批处理数据来加快训练速度。当您将`batchSize`属性分配给`fit`配置时，训练速度会大大加快。尝试在 fit 调用中添加批处理大小：
 
-```py
+```js
 await model.fit(xs, ys, {
   epochs: 100,
   callbacks: printCallback,
@@ -469,7 +469,7 @@ await model.fit(xs, ys, {
 
 使用 Layers 模型架构，您可以通过添加一个新层来构建这个模型。请参阅以下代码：
 
-```py
+```js
 model.add(
   tf.layers.dense({
     inputShape: 1,
@@ -506,7 +506,7 @@ model.add(
 
 从头到尾的整个源代码如下：
 
-```py
+```js
 const jsxs = [];((("improving training", "adding more neurons and layers")))
 const jsys = [];
 

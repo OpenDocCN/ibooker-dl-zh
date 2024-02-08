@@ -118,7 +118,7 @@ Colab 现在将在具有 GPU 的后端计算机（称为*运行时*）上运行�
 
 第一个是`WANTED_WORDS`，允许我们选择要训练模型的单词：
 
-```py
+```cpp
 os.environ["WANTED_WORDS"] = "yes,no"
 ```
 
@@ -132,7 +132,7 @@ os.environ["WANTED_WORDS"] = "yes,no"
 
 要选择单词，我们只需将它们包含在逗号分隔的列表中。让我们选择单词“on”和“off”来训练我们的新模型：
 
-```py
+```cpp
 os.environ["WANTED_WORDS"] = "on,off"
 ```
 
@@ -144,7 +144,7 @@ os.environ["WANTED_WORDS"] = "on,off"
 
 还要注意`TRAINING_STEPS`和`LEARNING_RATE`变量：
 
-```py
+```cpp
 os.environ["TRAINING_STEPS"]="15000,3000"
 os.environ["LEARNING_RATE"]="0.001,0.0001"
 ```
@@ -159,7 +159,7 @@ os.environ["LEARNING_RATE"]="0.001,0.0001"
 
 现在，我们将保持这些值不变，但知道它们是什么是很好的。运行单元格。您将看到以下输出打印：
 
-```py
+```cpp
 Training these words: on,off
 Training steps in each stage: 15000,3000
 Learning rate in each stage: 0.001,0.0001
@@ -194,7 +194,7 @@ Total number of training steps: 18000
 
 以下单元格运行开始训练的脚本。您可以看到它有很多命令行参数：
 
-```py
+```cpp
 !python tensorflow/tensorflow/examples/speech_commands/train.py \
 --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
 --wanted_words=${WANTED_WORDS} --silence_percentage=25 --unknown_percentage=25 \
@@ -207,7 +207,7 @@ Total number of training steps: 18000
 
 保持参数不变，运行单元格。您将开始看到一些输出流过。在下载语音命令数据集时，它将暂停一段时间：
 
-```py
+```cpp
 >> Downloading speech_commands_v0.02.tar.gz 18.1%
 ```
 
@@ -327,7 +327,7 @@ Total number of training steps: 18000
 
 为了冻结我们的模型，我们运行一个脚本。您将在下一个单元格中找到它，在“冻结图”部分。脚本的调用如下：
 
-```py
+```cpp
 !python tensorflow/tensorflow/examples/speech_commands/freeze.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --wanted_words=${WANTED_WORDS} --quantize=1 \
@@ -348,7 +348,7 @@ Total number of training steps: 18000
 
 在“转换模型”部分，运行第一个单元格：
 
-```py
+```cpp
 !toco
   --graph_def_file=/content/tiny_conv.pb --output_file= \
   /content/tiny_conv.tflite \
@@ -365,7 +365,7 @@ Total number of training steps: 18000
 
 查看这个模型有多小，在下一个单元格中运行以下代码：
 
-```py
+```cpp
 import os
 model_size = os.path.getsize("/content/tiny_conv.tflite")
 print("Model is %d bytes" % model_size)
@@ -379,7 +379,7 @@ print("Model is %d bytes" % model_size)
 
 回到“转换为 C 文件”中，我们使用`xxd`命令将 TensorFlow Lite 模型转换为 C 数组。我们将在下一个单元格中做同样的事情：
 
-```py
+```cpp
 # Install xxd if it is not available
 !apt-get -qq install xxd
 # Save the file as a C source file
@@ -390,7 +390,7 @@ print("Model is %d bytes" % model_size)
 
 输出的最后部分将是文件的内容，其中包括一个 C 数组和一个保存其长度的整数，如下所示（您看到的确切值可能略有不同）：
 
-```py
+```cpp
 unsigned char _content_tiny_conv_tflite[] = {
   0x1c, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x0e, 0x00, 0x18, 0x00, 0x04, 0x00, 0x08, 0x00, 0x0c, 0x00,
@@ -425,7 +425,7 @@ unsigned int _content_tiny_conv_tflite_len = 18208;
 
 *tiny_conv_micro_features_model_data.cc*文件包含一个看起来像这样的数组声明：
 
-```py
+```cpp
 const unsigned char
     g_tiny_conv_micro_features_model_data[] DATA_ALIGN_ATTRIBUTE = {
         0x18, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33, 0x00, 0x00, 0x0e, 0x00,
@@ -446,7 +446,7 @@ const int g_tiny_conv_micro_features_model_data_len = 18208;
 
 接下来，打开*micro_features/micro_model_settings.cc*。这个文件包含一个类标签的数组：
 
-```py
+```cpp
 const char* kCategoryLabels[kCategoryCount] = {
     "silence",
     "unknown",
@@ -459,7 +459,7 @@ const char* kCategoryLabels[kCategoryCount] = {
 
 以下是预期的代码：
 
-```py
+```cpp
 const char* kCategoryLabels[kCategoryCount] = {
     "silence",
     "unknown",
@@ -480,7 +480,7 @@ const char* kCategoryLabels[kCategoryCount] = {
 
 位于*arduino/command_responder.cc*中的 Arduino 命令响应器在听到“yes”时会点亮 LED 3 秒钟。让我们将其更新为在听到“on”或“off”时点亮 LED。在文件中，找到以下`if`语句：
 
-```py
+```cpp
 // If we heard a "yes", switch on an LED and store the time.
 if (found_command[0] == 'y') {
   last_yes_time = current_time;
@@ -490,7 +490,7 @@ if (found_command[0] == 'y') {
 
 `if`语句测试命令的第一个字母是否为“y”，表示“yes”。如果我们将这个“y”改为“o”，LED 将点亮“on”或“off”，因为它们都以“o”开头：
 
-```py
+```cpp
 if (found_command[0] == 'o') {
   last_yes_time = current_time;
   digitalWrite(LED_BUILTIN, HIGH);
@@ -503,7 +503,7 @@ if (found_command[0] == 'o') {
 
 位于*sparkfun_edge/command_responder.cc*中的 SparkFun Edge 命令响应器会根据听到的“yes”或“no”点亮不同的 LED。在文件中，找到以下`if`语句：
 
-```py
+```cpp
 if (found_command[0] == 'y') {
   am_hal_gpio_output_set(AM_BSP_GPIO_LED_YELLOW);
 }
@@ -517,7 +517,7 @@ if (found_command[0] == 'u') {
 
 很容易更新这些，使得“on”和“off”分别点亮不同的 LED：
 
-```py
+```cpp
 if (found_command[0] == 'o' && found_command[1] == 'n') {
   am_hal_gpio_output_set(AM_BSP_GPIO_LED_YELLOW);
 }
@@ -537,7 +537,7 @@ if (found_command[0] == 'u') {
 
 位于*disco_f746ng/command_responder.cc*中的 STM32F746G 命令响应器会根据听到的命令显示不同的单词。在文件中，找到以下`if`语句：
 
-```py
+```cpp
 if (*found_command == 'y') {
   lcd.Clear(0xFF0F9D58);
   lcd.DisplayStringAt(0, LINE(5), (uint8_t *)"Heard yes!", CENTER_MODE);
@@ -555,7 +555,7 @@ if (*found_command == 'y') {
 
 很容易更新以便响应“on”和“off”：
 
-```py
+```cpp
 if (found_command[0] == 'o' && found_command[1] == 'n') {
   lcd.Clear(0xFF0F9D58);
   lcd.DisplayStringAt(0, LINE(5), (uint8_t *)"Heard on!", CENTER_MODE);
@@ -587,7 +587,7 @@ if (found_command[0] == 'o' && found_command[1] == 'n') {
 
 要训练模型，您需要安装 TensorFlow 的夜间版本。要卸载任何现有版本并替换为已确认可用的版本，请使用以下命令：
 
-```py
+```cpp
 pip uninstall -y tensorflow tensorflow_estimator
 pip install -q tf-estimator-nightly==1.14.0.dev2019072901 \
   tf-nightly-gpu==1.15.0.dev20190729
@@ -595,14 +595,14 @@ pip install -q tf-estimator-nightly==1.14.0.dev2019072901 \
 
 接下来，打开命令行并切换到用于存储代码的目录。使用以下命令克隆 TensorFlow 并打开一个已确认可用的特定提交：
 
-```py
+```cpp
 git clone -q https://github.com/tensorflow/tensorflow
 git -c advice.detachedHead=false -C tensorflow checkout 17ce384df70
 ```
 
 现在您可以运行*train.py*脚本来训练模型。这将训练一个能识别“是”和“不”的模型，并将检查点文件输出到*/tmp*：
 
-```py
+```cpp
 python tensorflow/tensorflow/examples/speech_commands/train.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --wanted_words="on,off" --silence_percentage=25 --unknown_percentage=25 \
@@ -613,7 +613,7 @@ python tensorflow/tensorflow/examples/speech_commands/train.py \
 
 训练后，运行以下脚本来冻结模型：
 
-```py
+```cpp
 python tensorflow/tensorflow/examples/speech_commands/freeze.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --wanted_words="on,off" --quantize=1 --output_file=/tmp/tiny_conv.pb \
@@ -622,7 +622,7 @@ python tensorflow/tensorflow/examples/speech_commands/freeze.py \
 
 接下来，将模型转换为 TensorFlow Lite 格式：
 
-```py
+```cpp
 toco
   --graph_def_file=/tmp/tiny_conv.pb --output_file=/tmp/tiny_conv.tflite \
   --input_shapes=1,49,40,1 --input_arrays=Reshape_2 \
@@ -632,7 +632,7 @@ toco
 
 最后，将文件转换为 C 源文件，以便编译到嵌入式系统中：
 
-```py
+```cpp
 xxd -i /tmp/tiny_conv.tflite > /tmp/tiny_conv_micro_features_model_data.cc
 ```
 
@@ -792,7 +792,7 @@ xxd -i /tmp/tiny_conv.tflite > /tmp/tiny_conv_micro_features_model_data.cc
 
 以下是使用现有数据集训练不同单词的示例：
 
-```py
+```cpp
 python tensorflow/examples/speech_commands/train.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --wanted_words="up,down,left,right" --silence_percentage=15 \
@@ -805,7 +805,7 @@ python tensorflow/examples/speech_commands/train.py \
 
 如果您在根目录*/tmp/my_wavs*中有名为*glass*和*laughter*的 WAV 文件夹，这是如何训练您自己的模型的：
 
-```py
+```cpp
 python tensorflow/examples/speech_commands/train.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --data_url="" --data_dir=/tmp/my_wavs/ --wanted_words="laughter,glass" \
@@ -824,20 +824,20 @@ README 中有在 Google Cloud 上运行的说明，但这是一个用 Python 编
 
 记录的文件以 OGG 压缩音频的形式存储在 Google Cloud 存储桶中，但训练需要 WAV 文件，因此您需要将它们转换。而且很可能您的一些录音包含错误，比如人们忘记说单词或说得太轻，因此在可能的情况下自动过滤出这些错误是有帮助的。如果您已经在`BUCKET_NAME`变量中设置了您的存储桶名称，您可以通过使用以下 bash 命令将文件复制到本地机器开始：
 
-```py
+```cpp
 mkdir oggs
 gsutil -m cp gs://${BUCKET_NAME}/* oggs/
 ```
 
 压缩的 OGG 格式的一个好处是安静或无声的音频会生成非常小的文件，因此一个很好的第一步是删除那些特别小的文件，比如：
 
-```py
+```cpp
 find ${BASEDIR}/oggs -iname "*.ogg" -size -5k -delete
 ```
 
 我们发现将 OGG 转换为 WAV 的最简单方法是使用[FFmpeg 项目](https://ffmpeg.org/)，它提供了一个命令行工具。以下是一组命令，可以将一个目录中的所有 OGG 文件转换为我们需要的格式：
 
-```py
+```cpp
 mkdir -p ${BASEDIR}/wavs
 find ${BASEDIR}/oggs -iname "*.ogg" -print0 | \
   xargs -0 basename -s .ogg | \
@@ -846,7 +846,7 @@ find ${BASEDIR}/oggs -iname "*.ogg" -print0 | \
 
 开放语音录制应用程序为每个单词记录超过一秒的音频。这确保了用户的话语被捕捉到，即使他们的时间比我们预期的早或晚一点。训练需要一秒钟的录音，并且最好是单词位于每个录音的中间。我们创建了一个小型开源实用程序，用于查看每个录音随时间的音量，以便正确居中并修剪音频，使其仅为一秒钟。在终端中输入以下命令来使用它：
 
-```py
+```cpp
 git clone https://github.com/petewarden/extract_loudest_section \
   /tmp/extract_loudest_section_github
 pushd /tmp/extract_loudest_section_github
@@ -869,7 +869,7 @@ mkdir -p ${BASEDIR}/trimmed_wavs
 
 以下是如何使用其中一些命令行参数来控制增强：
 
-```py
+```cpp
 python tensorflow/examples/speech_commands/train.py \
   --model_architecture=tiny_conv --window_stride=20 --preprocess=micro \
   --wanted_words="yes,no" --silence_percentage=25 --unknown_percentage=25 \
@@ -881,7 +881,7 @@ python tensorflow/examples/speech_commands/train.py \
 
 我们之前训练的“是”/“否”模型旨在小而快速。它只有 18 KB，并且执行一次需要 400,000 次算术运算。为了符合这些约束条件，它牺牲了准确性。如果您正在设计自己的应用程序，您可能希望做出不同的权衡，特别是如果您试图识别超过两个类别。您可以通过修改*models.py*文件指定自己的模型架构，然后使用`--model_architecture`参数。您需要编写自己的模型创建函数，例如`create_tiny_conv_model0`，但要指定您想要的模型中的层。然后，您可以更新`create_model0`中的`if`语句，为您的架构命名，并在通过命令行传递架构参数时调用您的新创建函数。您可以查看一些现有的创建函数以获取灵感，包括如何处理辍学。如果您已添加了自己的模型代码，以下是如何调用它的方法：
 
-```py
+```cpp
 python tensorflow/examples/speech_commands/train.py \
  --model_architecture=my_model_name --window_stride=20 --preprocess=micro \
   --wanted_words="yes,no" --silence_percentage=25 \--unknown_percentage=25 \

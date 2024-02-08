@@ -92,7 +92,7 @@
 
 ##### 示例 12-1。骰子一和二的数组表示
 
-```py
+```js
 [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -129,7 +129,7 @@
 
 在代码中实现这一点，想象一下增加骰子的大小，然后在周围滑动一个 12 x 12 的窗口，稍微偏离中心剪切图像的新版本：这是一种*填充和裁剪增强*。
 
-```py
+```js
 const pixelShift = async (inputTensor, mutations = []) => {
   // Add 1px white padding to height and width
   const padded = inputTensor.pad( // ①
@@ -169,7 +169,7 @@ const pixelShift = async (inputTensor, mutations = []) => {
 
 您可以通过随机组合这九个移位图像来创建新的变体。有很多方法可以组合这些图像中的任意两个。一种方法是使用`tf.where`，并将两个图像中较小的保留在它们的新组合图像中。这样可以保留任意两个移位骰子的黑色像素。
 
-```py
+```js
 // Creates combinations take any two from array // (like Python itertools.combinations) const combos = async (tensorArray) => {
   const startSize = tensorArray.length
   for (let i = 0; i < startSize - 1; i++) {
@@ -231,7 +231,7 @@ const pixelShift = async (inputTensor, mutations = []) => {
 
 您可以立即开始训练，或者将数据保存到文件中。[本章相关的代码](https://oreil.ly/Vr98u)会写入一个文件。本节的主要功能可以用以下代码概括：
 
-```py
+```js
 const createDataObject = async () => {
   const inDice = require('./dice.json').data
   const diceData = {}
@@ -260,7 +260,7 @@ const createDataObject = async () => {
 
 现在您总共有将近两千张图片，可以尝试训练您的模型。数据应该被堆叠和洗牌：
 
-```py
+```js
 const diceImages = [].concat(  // ①
   diceData['0'],
   diceData['1'],
@@ -302,7 +302,7 @@ const diceImages = [].concat(  // ①
 
 从这里，您可以拆分出一个测试集，也可以不拆分。如果您需要帮助，可以查看相关代码。一旦您按照自己的意愿拆分了数据，然后将这两个 JavaScript 数组转换为正确的张量：
 
-```py
+```js
 const trainX = tf.tensor(diceImages).expandDims(3)  // ①
 const trainY = tf.oneHot(answers, numOptions) // ②
 ```
@@ -317,7 +317,7 @@ const trainY = tf.oneHot(answers, numOptions) // ②
 
 该模型采用了简单而小型的设计。您可能会找到更好的结构，但对于这个，我选择了两个隐藏层。随时回来并尝试使用架构进行实验，看看您可以获得什么样的速度和准确性。
 
-```py
+```js
 const model = tf.sequential()
 model.add(tf.layers.flatten({ inputShape }))
 model.add(tf.layers.dense({
@@ -357,7 +357,7 @@ model.add(tf.layers.dense({
 
 应用程序代码的核心应该看起来像这样：
 
-```py
+```js
 const dicify = async () => {
   const modelPath = '/dice-model/model.json'
   const dModel = await tf.loadLayersModel(modelPath)
@@ -377,7 +377,7 @@ const dicify = async () => {
 
 `cutData`方法将利用`tf.split`，它沿着一个轴将张量分割为 N 个子张量。您可以通过使用`tf.split`沿着每个轴将图像分割成一个补丁或图像网格来进行预测。
 
-```py
+```js
 const numDice = 32
 const preSize = numDice * 10
 const cutData = async (id) => {
@@ -423,7 +423,7 @@ const cutData = async (id) => {
 
 从预测答案重建和创建大张量的代码可能如下所示：
 
-```py
+```js
 const displayPredictions = async (answers) => {
   tf.tidy(() => {
     const diceTensors = diceData.map( // ①

@@ -575,7 +575,7 @@ print(resp.json())
 要使用`ngrok`运行我们的 Flask 应用程序，我们只需要添加两行代码，如下注释所示：
 
 ```py
-from flask_ngrok import run_with_ngrok ![1](Images/1.png)
+from flask_ngrok import run_with_ngrok # ①
 
 @app.route("/")
 def home():
@@ -583,7 +583,7 @@ def home():
 
 app.run()
 app = Flask(__name__)
-run_with_ngrok(app) ![2](Images/2.png)
+run_with_ngrok(app) # ②
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -595,7 +595,7 @@ def predict():
   return jsonify({'class_id': class_id,
                   'class_name': class_name})
 
-app.run() ![3](Images/3.png)
+app.run() # ③
 ```
 
 ①
@@ -723,13 +723,13 @@ from torch.utils.mobile_optimizer \ import optimize_for_mobile
 
 model = torchvision.models.vgg16(pretrained=True)
 model.eval()
-example = torch.rand(1, 3, 224, 224) ![1](Images/1.png)
+example = torch.rand(1, 3, 224, 224) # ①
 
 traced_script_module = \
-  torch.jit.trace(model, example) ![2](Images/2.png)
+  torch.jit.trace(model, example) # ②
 torchscript_model_optimized = \
-  optimize_for_mobile(traced_script_module) ![3](Images/3.png)
-torchscript_model_optimized.save("model.pt") ![4](Images/4.png)
+  optimize_for_mobile(traced_script_module) # ③
+torchscript_model_optimized.save("model.pt") # ④
 ```
 
 ①

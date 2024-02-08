@@ -99,14 +99,14 @@ z = z.to("cpu")
 import numpy
 
 # Created from preexisting arrays
-w = torch.tensor([1,2,3]) ![1](Images/1.png)
-w = torch.tensor((1,2,3)) ![2](Images/2.png)
-w = torch.tensor(numpy.array([1,2,3])) ![3](Images/3.png)
+w = torch.tensor([1,2,3]) # ①
+w = torch.tensor((1,2,3)) # ②
+w = torch.tensor(numpy.array([1,2,3])) # ③
 
 # Initialized by size
-w = torch.empty(100,200) ![4](Images/4.png)
-w = torch.zeros(100,200) ![5](Images/5.png)
-w = torch.ones(100,200)  ![6](Images/6.png)
+w = torch.empty(100,200) # ④
+w = torch.zeros(100,200) # ⑤
+w = torch.ones(100,200)  # ⑥
 ```
 
 ①
@@ -139,9 +139,9 @@ w = torch.ones(100,200)  ![6](Images/6.png)
 
 ```py
 # Initialized by size with random values
-w = torch.rand(100,200)     ![1](Images/1.png)
-w = torch.randn(100,200)    ![2](Images/2.png)
-w = torch.randint(5,10,(100,200))  ![3](Images/3.png)
+w = torch.rand(100,200)     # ①
+w = torch.randn(100,200)    # ②
+w = torch.randint(5,10,(100,200))  # ③
 
 # Initialized with specified data type or device
 w = torch.empty((100,200), dtype=torch.float64,
@@ -156,7 +156,7 @@ x = torch.empty_like(w)
 
 创建一个 100×200 的张量，元素来自区间 0,1)上的均匀分布。
 
-![2 元素是均值为 0、方差为 1 的正态分布随机数。// ③
+![2 元素是均值为 0、方差为 1 的正态分布随机数。// # ③
 
 元素是介于 5 和 10 之间的随机整数。
 
@@ -247,14 +247,14 @@ w.int()       # w remains a float32 after the cast
 w = w.int()   # w changes to an int32 after the cast
 
 # Use the to() method to cast to a new type
-w = w.to(torch.float64) ![1](Images/1.png)
-w = w.to(dtype=torch.float64) ![2](Images/2.png)
+w = w.to(torch.float64) # ①
+w = w.to(dtype=torch.float64) # ②
 
 # Python automatically converts data types during
 # operations
 x = torch.tensor([1,2,3], dtype=torch.int32)
 y = torch.tensor([1,2,3], dtype=torch.float32)
-z = x + y ![3](Images/3.png)
+z = x + y # ③
 print(z.dtype)
 # out: torch.float32
 ```

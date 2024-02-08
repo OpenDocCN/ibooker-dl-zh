@@ -112,7 +112,7 @@ TensorFlow Lite for Microcontrollers 中所有操作的默认实现都是为了�
 
 要开始优化过程，请使用前面描述的子文件夹专业化方法在*kernels*根目录中创建一个新目录。将参考内核实现复制到该子文件夹中，作为您代码的起点。为确保构建正确，请运行与该操作相关的单元测试，并确保它仍然通过；如果您传递了正确的标签，它应该使用新的实现：
 
-```py
+```cpp
 make -f tensorflow/lite/micro/tools/make/Makefile test_depthwise_conv_\
   test TAGS="portable_optimized"
 ```
@@ -121,7 +121,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile test_depthwise_conv_\
 
 有了代表性的基准测试数据，现在您应该能够快速迭代潜在的优化。一个很好的第一步是找到初始实现的最内部循环。这是代码中将被最频繁运行的部分，因此对其进行改进将比算法的其他部分产生更大的影响。通过查看代码并找到最深度嵌套的`for`循环（或等效部分），您应该能够识别出这一部分，但值得验证您是否有适当的部分，通过将其注释掉并再次运行基准测试。如果延迟显著下降（希望至少降低 50%），则您已经找到了需要关注的正确区域。例如，从[深度卷积的参考实现](https://oreil.ly/8S4kS)中获取这段代码：
 
-```py
+```cpp
     for (int b = 0; b < batches; ++b) {
       for (int out_y = 0; out_y < output_height; ++out_y) {
         for (int out_x = 0; out_x < output_width; ++out_x) {
@@ -169,7 +169,7 @@ make -f tensorflow/lite/micro/tools/make/Makefile test_depthwise_conv_\
 
 仅通过检查缩进，就可以确定正确的内部循环如下所示：
 
-```py
+```cpp
                   const int in_x =
                       in_x_origin + dilation_width_factor * filter_x;
                   const int in_y =

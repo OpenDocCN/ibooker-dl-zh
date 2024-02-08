@@ -94,7 +94,7 @@ Keras 是在 TensorFlow 中构建模型的推荐接口，但在创建人员检�
 
 Slim 的模型定义是[TensorFlow 模型存储库](https://oreil.ly/iamdB)的一部分，因此要开始，您需要从 GitHub 下载它：
 
-```py
+```cpp
 ! cd ~
 ! git clone https://github.com/tensorflow/models.git
 ```
@@ -105,7 +105,7 @@ Slim 的模型定义是[TensorFlow 模型存储库](https://oreil.ly/iamdB)的�
 
 要使用 Slim，您需要确保 Python 可以找到其模块并安装一个依赖项。以下是如何在 iPython 笔记本中执行此操作：
 
-```py
+```cpp
 ! pip install contextlib2
 import os
 new_python_path = (os.environ.get("PYTHONPATH") or '') + ":models/research/slim"
@@ -114,7 +114,7 @@ new_python_path = (os.environ.get("PYTHONPATH") or '') + ":models/research/slim"
 
 通过像这样的`EXPORT`语句更新`PYTHONPATH`仅适用于当前的 Jupyter 会话，因此如果您直接使用 bash，您应该将其添加到持久性启动脚本中，运行类似于这样的内容：
 
-```py
+```cpp
 echo 'export PYTHONPATH=$PYTHONPATH:models/research/slim' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -127,7 +127,7 @@ source ~/.bashrc
 
 数据集设计用于训练本地化模型，因此图像没有用“人”、“非人”类别标记，我们希望对其进行训练。相反，每个图像都附带一个包含其包含的所有对象的边界框列表。“人”是这些对象类别之一，因此为了获得我们想要的分类标签，我们需要寻找带有人边界框的图像。为了确保它们不会太小而无法识别，我们还需要排除非常小的边界框。Slim 包含一个方便的脚本，可以同时下载数据并将边界框转换为标签：
 
-```py
+```cpp
 ! python download_and_convert_data.py \
   --dataset_name=visualwakewords \
   --dataset_dir=data/visualwakewords
@@ -139,7 +139,7 @@ source ~/.bashrc
 
 使用*tf.slim*处理训练的好处之一是我们通常需要修改的参数可用作命令行参数，因此我们只需调用标准的*train_image_classifier.py*脚本来训练我们的模型。您可以使用此命令构建我们在示例中使用的模型：
 
-```py
+```cpp
 ! python models/research/slim/train_image_classifier.py \
     --train_dir=vww_96_grayscale \
     --dataset_name=visualwakewords \
@@ -177,7 +177,7 @@ source ~/.bashrc
 
 启动脚本后，您应该看到类似以下的输出：
 
-```py
+```cpp
 INFO:tensorflow:global step 4670: loss = 0.7112 (0.251 sec/step)
   I0928 00:16:21.774756 140518023943616 learning.py:507] global step 4670: loss
   = 0.7112 (0.251 sec/step)
@@ -210,7 +210,7 @@ TensorBoard 在打开时默认显示 SCALARS 选项卡，但在训练期间可�
 
 损失函数与模型训练的好坏相关，但它不是一个直接可理解的度量标准。我们真正关心的是模型正确检测到多少人，但要让它计算这一点，我们需要运行一个单独的脚本。您不需要等到模型完全训练，可以检查`--train_dir`文件夹中任何检查点的准确性。要执行此操作，请运行以下命令：
 
-```py
+```cpp
 ! python models/research/slim/eval_image_classifier.py \
     --alsologtostderr \
     --checkpoint_path=vww_96_grayscale/model.ckpt-698580 \
@@ -225,7 +225,7 @@ TensorBoard 在打开时默认显示 SCALARS 选项卡，但在训练期间可�
 
 您需要确保`--checkpoint_path`指向有效的检查点数据集。检查点存储在三个单独的文件中，因此值应为它们的公共前缀。例如，如果您有一个名为*model.ckpt-5179.data-00000-of-00001*的检查点文件，则前缀将是*model.ckpt-5179*。脚本应该生成类似于以下内容的输出：
 
-```py
+```cpp
 INFO:tensorflow:Evaluation [406/406]
 I0929 22:52:59.936022 140225887045056 evaluation.py:167] Evaluation [406/406]
 eval/Accuracy[0.717438412]eval/Recall_5[1]
@@ -241,7 +241,7 @@ eval/Accuracy[0.717438412]eval/Recall_5[1]
 
 Slim 每次运行其脚本时都会从`model_name`生成架构，因此要在 Slim 之外使用模型，需要将其保存为通用格式。我们将使用 GraphDef protobuf 序列化格式，因为 Slim 和 TensorFlow 的其余部分都能理解它：
 
-```py
+```cpp
 ! python models/research/slim/export_inference_graph.py \
     --alsologtostderr \
     --dataset_name=visualwakewords \
@@ -257,7 +257,7 @@ Slim 每次运行其脚本时都会从`model_name`生成架构，因此要在 Sl
 
 将训练好的权重与操作图一起存储的过程称为*冻结*。这将所有图中的变量转换为常量，加载它们的值后从检查点文件中。接下来的命令使用了百万次训练步骤的检查点，但您可以提供任何有效的检查点路径。图冻结脚本存储在主 TensorFlow 存储库中，因此在运行此命令之前，您需要从 GitHub 下载这个脚本：
 
-```py
+```cpp
 ! git clone https://github.com/tensorflow/tensorflow
 ! python tensorflow/tensorflow/python/tools/freeze_graph.py \
     --input_graph=vww_96_grayscale_graph.pb \
@@ -272,7 +272,7 @@ Slim 每次运行其脚本时都会从`model_name`生成架构，因此要在 Sl
 
 量化是一个棘手而复杂的过程，仍然是一个活跃的研究领域，因此将我们迄今为止训练的浮点图转换为 8 位实体需要相当多的代码。您可以在第十五章中找到更多关于量化是什么以及它是如何工作的解释，但在这里我们将向您展示如何在我们训练的模型中使用它。大部分代码是准备示例图像以馈送到训练网络中，以便测量典型使用中激活层的范围。我们依赖`TFLiteConverter`类来处理量化并将其转换为我们需要用于推理引擎的 TensorFlow Lite FlatBuffer 文件：
 
-```py
+```cpp
 import tensorflow as tf
 import io
 import PIL
@@ -317,7 +317,7 @@ open("vww_96_grayscale_quantized.tflite", "wb").write(tflite_quant_model)
 
 转换器会写出一个文件，但大多数嵌入式设备没有文件系统。为了从我们的程序中访问序列化数据，我们必须将其编译到可执行文件中并存储在闪存中。最简单的方法是将文件转换为 C 数据数组，就像我们在之前的章节中所做的那样：
 
-```py
+```cpp
 # Install xxd if it is not available
 ! apt-get -qq install xxd
 # Save the file as a C source file
@@ -330,7 +330,7 @@ open("vww_96_grayscale_quantized.tflite", "wb").write(tflite_quant_model)
 
 COCO 数据集中有 60 多种不同的对象类型，因此自定义模型的一种简单方法是在构建训练数据集时选择其中一种而不是`person`。以下是一个查找汽车的示例：
 
-```py
+```cpp
 ! python models/research/slim/datasets/build_visualwakewords_data.py \
    --logtostderr \
    --train_image_dir=coco/raw-data/train2014 \

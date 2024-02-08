@@ -120,7 +120,7 @@ TensorFlow 可以做很多不同的事情。在本章中，我们将使用[Keras
 
 我们的第一个代码单元格位于“导入依赖项”下面。它设置了我们需要训练和转换模型的所有库。以下是代码：
 
-```py
+```cpp
 # TensorFlow is an open source machine learning library
 !pip install tensorflow==2.0
 import tensorflow as tf
@@ -150,7 +150,7 @@ import math
 
 依赖项将开始安装，并会看到一些输出。最终您应该看到以下行，表示库已成功安装：
 
-```py
+```cpp
 Successfully installed tensorboard-2.0.0 tensorflow-2.0.0 tensorflow-estimator-2.0.0
 ```
 
@@ -184,7 +184,7 @@ Successfully installed tensorboard-2.0.0 tensorflow-2.0.0 tensorflow-estimator-2
 
 这是这个单元格的完整代码，它使用 NumPy（我们之前导入的`np`）生成随机数并计算它们的正弦值：
 
-```py
+```cpp
 # We'll generate this many sample datapoints
 SAMPLES = 1000
 
@@ -217,7 +217,7 @@ plt.show()
 
 最后，您会看到一些神秘的代码调用`plt`，这是我们对 Matplotlib 的别名：
 
-```py
+```cpp
 # Plot our data. The 'b.' argument tells the library to print blue dots.
 plt.plot(x_values, y_values, 'b.')
 plt.show()
@@ -233,7 +233,7 @@ plt.show()
 
 这就是我们的数据！这是沿着一个漂亮、平滑的正弦曲线的随机点的选择。我们可以使用这个来训练我们的模型。然而，这样做太容易了。深度学习网络的一个令人兴奋的地方是它们能够从噪音中提取模式。这使它们能够在训练混乱的真实世界数据时进行预测。为了展示这一点，让我们向我们的数据点添加一些随机噪音并绘制另一个图表：
 
-```py
+```cpp
 # Add a small random number to each y value
 y_values += 0.1 * np.random.randn(*y_values.shape)
 
@@ -260,7 +260,7 @@ plt.show()
 
 以下代码分割我们的数据，然后将每个集合绘制为不同的颜色：
 
-```py
+```cpp
 # We'll use 60% of our data for training and 20% for testing. The remaining 20%
 # will be used for validation. Calculate the indices of each section.
 TRAIN_SPLIT =  int(0.6 * SAMPLES)
@@ -301,7 +301,7 @@ plt.show()
 
 实际上，执行此操作的代码非常简单。它使用*Keras*，TensorFlow 的用于创建深度学习网络的高级 API：
 
-```py
+```cpp
 # We'll use Keras to create a simple model architecture
 from tf.keras import layers
 model_1 = tf.keras.Sequential()
@@ -322,7 +322,7 @@ model_1.summary()
 
 首先，我们使用 Keras 创建一个`Sequential`模型，这意味着每个神经元层都堆叠在下一个层上，就像我们在图 3-1 中看到的那样。然后我们定义两个层。这是第一层的定义：
 
-```py
+```cpp
 model_1.add(layers.Dense(16, activation='relu', input_shape=(1,)))
 ```
 
@@ -330,7 +330,7 @@ model_1.add(layers.Dense(16, activation='relu', input_shape=(1,)))
 
 激活是通过一个简单的公式计算的，用 Python 显示。我们永远不需要自己编写这个代码，因为它由 Keras 和 TensorFlow 处理，但随着我们深入学习，了解这个公式将会很有帮助：
 
-```py
+```cpp
 activation = activation_function((input * weight) + bias)
 ```
 
@@ -340,7 +340,7 @@ activation = activation_function((input * weight) + bias)
 
 ReLU 是一个简单的函数，在 Python 中显示如下：
 
-```py
+```cpp
 def relu(input):
     return max(0.0, input)
 ```
@@ -363,7 +363,7 @@ ReLU 返回较大的值：它的输入或零。如果输入值为负，则 ReLU 
 
 来自我们第一层的激活数字将作为输入传递给我们的第二层，该层在以下行中定义：
 
-```py
+```cpp
 model_1.add(layers.Dense(1))
 ```
 
@@ -371,7 +371,7 @@ model_1.add(layers.Dense(1))
 
 因为这个神经元有多个输入，所以它有对应的每个输入的权重值。神经元的输出是通过以下公式计算的，如 Python 中所示：
 
-```py
+```cpp
 # Here, `inputs` and `weights` are both NumPy arrays with 16 elements each
 output = sum((inputs * weights)) + bias
 ```
@@ -380,7 +380,7 @@ output = sum((inputs * weights)) + bias
 
 网络的权重和偏差在训练期间学习。在本章前面显示的代码中的`compile()`步骤配置了一些在训练过程中使用的重要参数，并准备好模型进行训练：
 
-```py
+```cpp
 model_1.compile(optimizer='rmsprop', loss='mse', metrics=['mae'])
 ```
 
@@ -392,14 +392,14 @@ model_1.compile(optimizer='rmsprop', loss='mse', metrics=['mae'])
 
 在编译模型后，我们可以使用以下行打印关于其架构的一些摘要信息：
 
-```py
+```cpp
 # Print a summary of the model's architecture
 model_1.summary()
 ```
 
 在 Colab 中运行单元格以定义模型。您将看到以下输出打印：
 
-```py
+```cpp
 Model: "sequential"
 _________________________________________________________________
 Layer (type)                 Output Shape              Param #
@@ -430,14 +430,14 @@ _________________________________________________________________
 
 在 Keras 中训练模型，我们只需调用其`fit()`方法，传递所有数据和一些其他重要参数。下一个单元格中的代码显示了如何：
 
-```py
+```cpp
 history_1 = model_1.fit(x_train, y_train, epochs=1000, batch_size=16,
                      validation_data=(x_validate, y_validate))
 ```
 
 运行单元格中的代码开始训练。您将看到一些日志开始出现：
 
-```py
+```cpp
 Train on 600 samples, validate on 200 samples
 Epoch 1/1000
 600/600 [==============================] - 1s 1ms/sample - loss: 0.7887 - mae: 0.7848 - val_loss: 0.5824 - val_mae: 0.6867
@@ -447,7 +447,7 @@ Epoch 2/1000
 
 我们的模型现在正在训练。这将需要一些时间，所以在等待时，让我们详细了解我们对`fit()`的调用：
 
-```py
+```cpp
 history_1 = model_1.fit(x_train, y_train, epochs=1000, batch_size=16,
                      validation_data=(x_validate, y_validate))
 ```
@@ -492,12 +492,12 @@ history_1 = model_1.fit(x_train, y_train, epochs=1000, batch_size=16,
 
 这是我们第一个和最后一个时代的日志：
 
-```py
+```cpp
 Epoch 1/1000
 600/600 [==============================] - 1s 1ms/sample - loss: 0.7887 - mae: 0.7848 - val_loss: 0.5824 - val_mae: 0.6867
 ```
 
-```py
+```cpp
 Epoch 1000/1000
 600/600 [==============================] - 0s 124us/sample - loss: 0.1524 - mae: 0.3039 - val_loss: 0.1737 - val_mae: 0.3249
 ```
@@ -532,7 +532,7 @@ Epoch 1000/1000
 
 下一个单元格从历史对象中提取训练和验证损失数据，并将其绘制在图表上：
 
-```py
+```cpp
 loss = history_1.history['loss']
 val_loss = history_1.history['val_loss']
 
@@ -559,7 +559,7 @@ plt.show()
 
 损失在最初几个时期急剧下降，这使得其余的图表非常难以阅读。让我们通过运行下一个单元格来跳过前 100 个时期：
 
-```py
+```cpp
 # Exclude the first few epochs so the graph is easier to read
 SKIP = 100
 
@@ -584,7 +584,7 @@ plt.show()
 
 为了更深入地了解我们模型的性能，我们可以绘制更多数据。这次，让我们绘制平均绝对误差。运行下一个单元格来执行：
 
-```py
+```cpp
 # Draw a graph of mean absolute error, which is another way of
 # measuring the amount of error in the prediction.
 mae = history_1.history['mae']
@@ -613,7 +613,7 @@ plt.show()
 
 这发生在以下单元格中：
 
-```py
+```cpp
 # Use the model to make predictions from our validation data
 predictions = model_1.predict(x_train)
 
@@ -644,7 +644,7 @@ plt.show()
 
 运行以下单元格以重新定义我们的模型，方式与之前相同，但在中间增加了 16 个神经元的额外层：
 
-```py
+```cpp
 model_2 = tf.keras.Sequential()
 
 # First layer takes a scalar input and feeds it through 16 "neurons." The
@@ -666,7 +666,7 @@ model_2.summary()
 
 正如您所看到的，代码基本上与我们第一个模型相同，但增加了一个`Dense`层。让我们运行这个单元格来查看`summary()`结果：
 
-```py
+```cpp
 Model: "sequential_1"
 _________________________________________________________________
 Layer (type)                 Output Shape              Param #
@@ -687,14 +687,14 @@ _________________________________________________________________
 
 接下来的单元格将训练我们的新模型。由于我们的第一个模型改进得太快，这次让我们训练更少的时代——只有 600 个。运行这个单元格开始训练：
 
-```py
+```cpp
 history_2 = model_2.fit(x_train, y_train, epochs=600, batch_size=16,
                      validation_data=(x_validate, y_validate))
 ```
 
 训练完成后，我们可以查看最终日志，快速了解事情是否有所改善：
 
-```py
+```cpp
 Epoch 600/600
 600/600 [==============================] - 0s 150us/sample - loss: 0.0115 - mae: 0.0859 - val_loss: 0.0104 - val_mae: 0.0806
 ```
@@ -703,7 +703,7 @@ Epoch 600/600
 
 为了了解情况如何，让我们运行下一个单元格。它设置为生成我们上次使用的相同图表。首先，我们绘制损失的图表：
 
-```py
+```cpp
 # Draw a graph of the loss, which is the distance between
 # the predicted and actual values during training and validation.
 loss = history_2.history['loss']
@@ -724,7 +724,7 @@ plt.show()
 
 接下来，我们绘制相同的损失图，但跳过前 100 个时代，以便更好地看到细节：
 
-```py
+```cpp
 # Exclude the first few epochs so the graph is easier to read
 SKIP = 100
 
@@ -747,7 +747,7 @@ plt.show()
 
 最后，我们绘制相同一组时代的平均绝对误差：
 
-```py
+```cpp
 plt.clf()
 
 # Draw a graph of mean absolute error, which is another way of
@@ -794,7 +794,7 @@ plt.show()
 
 考虑到这一点，接下来的单元将评估我们的模型与测试数据的表现：
 
-```py
+```cpp
 # Calculate and print the loss on our test dataset
 loss = model_2.evaluate(x_test, y_test)
 
@@ -814,7 +814,7 @@ plt.show()
 
 现在我们可以运行单元，了解我们的模型表现如何！首先，让我们看看`evaluate()`的结果：
 
-```py
+```cpp
 200/200 [==============================] - 0s 71us/sample - loss: 0.0103 - mae: 0.0718
 ```
 
@@ -862,7 +862,7 @@ TensorFlow Lite 解释器
 
 运行单元格将模型转换为这两种变体：
 
-```py
+```cpp
 # Convert the model to the TensorFlow Lite format without quantization
 converter = tf.lite.TFLiteConverter.from_keras_model(model_2)
 tflite_model = converter.convert()
@@ -909,7 +909,7 @@ open("sine_model_quantized.tflite," "wb").write(tflite_model)
 
 这听起来很多，但现在不要太担心；我们将在第五章中详细介绍。现在，运行以下单元格，使用两个模型进行预测，并将它们与原始未转换的模型的结果一起绘制在图表上：
 
-```py
+```cpp
 # Instantiate an interpreter for each model
 sine_model = tf.lite.Interpreter('sine_model.tflite')
 sine_model_quantized = tf.lite.Interpreter('sine_model_quantized.tflite')
@@ -969,7 +969,7 @@ plt.show()
 
 由于量化使模型变小，让我们比较两个转换后的模型，看看大小上的差异。运行以下单元格计算它们的大小并进行比较：
 
-```py
+```cpp
 import os
 basic_model_size = os.path.getsize("sine_model.tflite")
 print("Basic model is %d bytes" % basic_model_size)
@@ -981,7 +981,7 @@ print("Difference is %d bytes" % difference)
 
 您应该看到以下输出：
 
-```py
+```cpp
 Basic model is 2736 bytes
 Quantized model is 2512 bytes
 Difference is 224 bytes
@@ -1005,7 +1005,7 @@ Difference is 224 bytes
 
 以下单元格在我们的量化模型上运行`xxd`，将输出写入名为*sine_model_quantized.cc*的文件，并将其打印到屏幕上：
 
-```py
+```cpp
 # Install xxd if it is not available
 !apt-get -qq install xxd
 # Save the file as a C source file
@@ -1016,7 +1016,7 @@ Difference is 224 bytes
 
 输出非常长，所以我们不会在这里全部复制，但这里有一个片段，包括开头和结尾：
 
-```py
+```cpp
 unsigned char sine_model_quantized_tflite[] = {
   0x1c, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33, 0x00, 0x00, 0x12, 0x00,
   0x1c, 0x00, 0x04, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x10, 0x00, 0x14, 0x00,

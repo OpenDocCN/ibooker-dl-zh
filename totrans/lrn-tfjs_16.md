@@ -6,7 +6,7 @@ MobileNet 模型可以检测各种不同类型的卡车。您可以通过查看�
 
 包含 HTML 和 JavaScript 的整个解决方案在这里：
 
-```py
+```js
 <!DOCTYPE html>
 <html>
   <head>
@@ -62,7 +62,7 @@ MobileNet 模型可以检测各种不同类型的卡车。您可以通过查看�
 
 这个简单的练习是关于查找 TensorFlow.js `tf.unique`方法。一旦找到这个友好的方法，就很容易构建一个解决方案，就像这样：
 
-```py
+```js
 const callMeMaybe = tf.tensor([8367677, 4209111, 4209111, 8675309, 8367677])
 const uniqueTensor = tf.unique(callMeMaybe).values
 const result = uniqueTensor.arraySync()
@@ -75,7 +75,7 @@ console.log(`There are ${result.length} unique values`, result)
 
 一种优雅的解决方案是对`randomUniform`创建的张量使用`topk`进行排序。由于`randomUniform`创建的值在`0`和`1`之间，并且`topk`沿着最后一个轴对值进行排序，您可以使用以下代码完成这个练习：
 
-```py
+```js
 const rando = tf.randomUniform([400, 400]) // ①
 const sorted = tf.topk(rando, 400).values // ②
 const answer = sorted.reshape([400, 400, 1]) // ③
@@ -95,7 +95,7 @@ const answer = sorted.reshape([400, 400, 1]) // ③
 
 先前的解决方案非常冗长，可以压缩为一行代码：
 
-```py
+```js
 tf.topk(tf.randomUniform([400, 400]), 400).values
 ```
 
@@ -109,7 +109,7 @@ tf.topk(tf.randomUniform([400, 400]), 400).values
 
 以下代码可能引用原始人脸定位代码中创建的一些变量，特别是原始的`fromPixels`张量`myTensor`：
 
-```py
+```js
 // Same bounding calculations but for the tensor
 const tHeight = myTensor.shape[0] // ①
 const tWidth = myTensor.shape[1]
@@ -149,7 +149,7 @@ const readyFace = tf.image
 
 使用`topk`的问题在于它仅在特定张量的最终维度上起作用。因此，您可以通过两次调用`topk`来找到两个维度上的最大值。第二次您可以将结果限制为前三名。
 
-```py
+```js
 const { indices, values } = tf.topk(t)
 const topvals = values.squeeze()
 const sorted = tf.topk(topvals, 3)
@@ -175,7 +175,7 @@ sorted.indices.print()
 
 构建模型的代码应该如下所示：
 
-```py
+```js
 const model = tf.sequential();
 
 model.add(
@@ -210,7 +210,7 @@ model.compile({
 
 ##### 示例 B-1\. 模型摘要
 
-```py
+```js
 _________________________________________________________________
 Layer (type)                 Output shape              Param #
 =================================================================
@@ -234,7 +234,7 @@ _________________________________________________________________
 
 您可以应用这个方法创建一个新行，按该行分组，然后使用`.mean()`对幸存者的平均值进行表格化。
 
-```py
+```js
 mega_df['Name'] = mega_df['Name'].apply((x) => x.split(/,\s(.*?)\./)[1])
 grp = mega_df.groupby(['Name'])
 table(grp.col(['Survived']).mean())
@@ -252,7 +252,7 @@ table(grp.col(['Survived']).mean())
 
 为了保存最高的验证准确性，而不是最后的验证准确性，您可以在时期结束回调中添加一个条件保存。这可以避免您意外地陷入过拟合时期的困扰。
 
-```py
+```js
 // initialize best at zero
 let best = 0
 
@@ -284,7 +284,7 @@ onEpochEnd: async (_epoch, logs) => {
 
 加载新的图像数据：
 
-```py
+```js
 const dfy = await dfd.read_csv('labels.csv')
 const dfx = await dfd.read_csv('images.csv')
 
@@ -294,7 +294,7 @@ const X = dfx.tensor.reshape([dfx.shape[0], 28, 28, 1])
 
 将基础模型削减为特征模型：
 
-```py
+```js
 const model = await tf.loadLayersModel('sorting_hat/model.json')
 const layer = model.getLayer('max_pooling2d_MaxPooling2D3')
 const shaved = tf.model({
@@ -307,7 +307,7 @@ const XFEATURES = shaved.predict(X)
 
 创建读取特征的新层：
 
-```py
+```js
 transferModel = tf.sequential({
   layers: [
     tf.layers.flatten({ inputShape: shaved.outputs[0].shape.slice(1) }),
@@ -324,7 +324,7 @@ transferModel.compile({
 
 训练新层：
 
-```py
+```js
 await transferModel.fit(XFEATURES, Y, {
   epochs: 10,
   validationSplit: 0.1,
@@ -348,7 +348,7 @@ await transferModel.fit(XFEATURES, Y, {
 
 以下代码将具有 `input` ID 的图像转换为一个二值化图像，该图像显示在同一页上名为 `output` 的画布上：
 
-```py
+```js
 // Simply read from the DOM
 const inputImage = document.getElementById('input')
 const inTensor = tf.browser.fromPixels(inputImage, 1)

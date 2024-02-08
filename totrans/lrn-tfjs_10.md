@@ -42,7 +42,7 @@
 
 这可以扩展到 N 个值的 N 个分类*只要类别是互斥的*。在设计模型时，你会在最终层强制使用 softmax，并且输出的数量将是你希望支持的类别数量。为了实现 True 或 False 的结果，你的模型架构将在最终层上使用 softmax 激活，有两个输出。
 
-```py
+```js
 // Final layer softmax True/False
 model.add(
   tf.layers.dense({
@@ -54,7 +54,7 @@ model.add(
 
 如果您试图从输入中检测几件事情会发生什么？例如，胸部 X 光可能同时对肺炎和肺气肿呈阳性。在这种情况下，Softmax 不起作用，因为输出必须总和为一，对一个的信心必须与另一个对抗。在这种情况下，有一种激活可以强制每个节点的值在零和一之间，因此您可以实现每个节点的概率。这种激活称为 *sigmoid* 激活。这可以扩展到 N 个值，用于 N 个不相互排斥的分类。这意味着您可以通过具有 `sigmoid` 的单个输出来实现真/假模型（二元分类），其中接近零为假，接近一为真：
 
-```py
+```js
 // Final layer sigmoid True/False
 model.add(
   tf.layers.dense({
@@ -122,13 +122,13 @@ model.add(
 
 要安装 Danfo.js 的 Node 版本，您将运行以下命令：
 
-```py
+```js
 $ npm i danfojs-node
 ```
 
 如果您使用简单的 Node.js，则可以`require` Danfo.js，或者如果您已经配置了代码以使用 ES6+，则可以`import`：
 
-```py
+```js
 const dfd = require("danfojs-node");
 ```
 
@@ -152,7 +152,7 @@ DataFrame 有能力将其内容打印到控制台，以及许多其他辅助函�
 
 让我们回顾一下以下代码，它将 CSV 文件读入 DataFrame，然后在控制台上打印几行：
 
-```py
+```js
 const df = await dfd.read_csv("file://../../extra/titanic data/train.csv");  // ①
 df.head().print(); // ②
 ```
@@ -175,7 +175,7 @@ DataFrame 可以限制为前五行，然后打印。
 
 Danfo.js 和 Pandas 有许多有用的命令，可以帮助您熟悉加载的数据。一个流行的方法是调用`.describe()`，它试图分析每列的内容作为报告：
 
-```py
+```js
 // Print the describe data
 df.describe().print();
 ```
@@ -194,7 +194,7 @@ df.describe().print();
 
 您可以使用`isna()`找到所有缺失字段，它将为每个缺失字段返回`true`或`false`。然后，您可以对这些值进行求和或计数以获得结果。以下是将报告数据集的空单元格或属性的代码：
 
-```py
+```js
 // Count of empty spots
 empty_spots = df.isna().sum();
 empty_spots.print();
@@ -227,7 +227,7 @@ empty_rate.print();
 
 要合并 CSV 文件，您将创建两个 DataFrame，然后沿着轴连接它们，就像对张量一样。您可能会感觉到张量训练引导您管理和清理数据的路径，并且这并非偶然。尽管术语可能略有不同，但您从前几章积累的概念和直觉将对您有所帮助。
 
-```py
+```js
 // Load the training CSV
 const df = await dfd.read_csv("file://../../extra/titanic data/train.csv");
 console.log("Train Size", df.shape[0]) // ①
@@ -269,7 +269,7 @@ mega.describe().print() // ③
 
 对于这个数据集，我们将删除对结果影响较小的列，例如乘客的姓名、ID、票和舱位。您可能会认为其中许多特征可能非常重要，您是对的。但是，我们将让您在本书之外的范围内研究这些特征。
 
-```py
+```js
 // Remove feature columns that seem less useful
 const clean = mega.drop({
   columns: ["Name", "PassengerId", "Ticket", "Cabin"],
@@ -284,7 +284,7 @@ const clean = mega.drop({
 
 您可以使用以下代码删除所有空行：
 
-```py
+```js
 // Remove all rows that have empty spots
 const onlyFull = clean.dropna();
 console.log(`After mega-clean the row-count is now ${onlyFull.shape[0]}`);
@@ -296,7 +296,7 @@ console.log(`After mega-clean the row-count is now ${onlyFull.shape[0]}`);
 
 `Embarked`的值，供参考，分别是：C = 瑟堡，Q = 昆士敦，S = 南安普敦。有几种方法可以对其进行编码。一种方法是用数字等价物对其进行编码。Danfo.js 有一个`LabelEncoder`，它可以读取整个列，然后将值转换为数字编码的等价物。`LabelEncoder`将标签编码为介于`0`和`n-1`之间的值。要对`Embarked`列进行编码，您可以使用以下代码：
 
-```py
+```js
 // Handle embarked characters - convert to numbers
 const encode = new dfd.LabelEncoder(); // ①
 encode.fit(onlyFull["Embarked"]); // ②
@@ -332,7 +332,7 @@ onlyFull.head().print(); // ④
 
 DataFrame 对象具有`to_csv`转换器，可选择性地接受要写入的文件参数。`to_csv`命令会写入参数文件并返回一个 promise，该 promise 解析为 CSV 内容。重新拆分 DataFrame 并写入两个文件的整个代码可能如下所示：
 
-```py
+```js
 // 800 random to training
 const newTrain = onlyFull.sample(800)
 console.log(`newTrain row count: ${newTrain.shape[0]}`)
@@ -358,7 +358,7 @@ Y 值，或*答案*，是通过抓取`Survived`列来选择的。由于这是单
 
 机器学习模型期望张量，而由于 Danfo.js 建立在 TensorFlow.js 上，将 DataFrame 转换为张量非常简单。最终，您可以通过访问`.tensor`属性将 DataFrame 转换为张量。
 
-```py
+```js
 // Get cleaned data
 const df = await dfd.read_csv("file://../../extra/cleaned/newTrain.csv");
 console.log("Train Size", df.shape[0]);
@@ -380,7 +380,7 @@ const testY = dft["Survived"].tensor;
 
 模型的组成如下：
 
-```py
+```js
 model.add(
   tf.layers.dense({
     inputShape,
@@ -427,7 +427,7 @@ model.compile({
 
 当您将模型`fit`到数据时，您可以识别测试数据，并获得模型以前从未见过的数据的结果。这有助于防止过拟合：
 
-```py
+```js
 await model.fit(trainX, trainY, {
   batchSize: 32,
   epochs: 100,
@@ -465,7 +465,7 @@ Danfo 笔记本，或[Dnotebook](https://dnotebook.jsdata.org)，是一个交互
 
 通过创建全局命令来安装 Dnotebook：
 
-```py
+```js
 $ npm install -g dnotebook
 ```
 
@@ -497,7 +497,7 @@ $ npm install -g dnotebook
 
 现在您已经有了数据，让我们寻找可以强调的重要区别，以供我们的模型使用。在电影《泰坦尼克号》中，当装载救生艇时他们大声喊着“妇女和儿童优先”。那真的发生了吗？一个想法是检查男性与女性的幸存率。您可以通过使用`groupby`来做到这一点。然后您可以打印每个组的平均值。
 
-```py
+```js
 grp = mega_df.groupby(['Sex'])
 table(grp.col(['Survived']).mean())
 ```
@@ -510,7 +510,7 @@ table(grp.col(['Survived']).mean())
 
 您可能会想知道也许只是因为*泰坦尼克号*上有更多女性，这就解释了倾斜的结果，所以您可以快速使用`count()`来检查，而不是像刚才那样使用`mean()`：
 
-```py
+```js
 survival_count = grp.col(['Survived']).count()
 table(survival_count)
 ```
@@ -521,7 +521,7 @@ table(survival_count)
 
 要查询幸存者，您可以使用 DataFrame 的 query 方法：
 
-```py
+```js
 survivors = mega_df.query({column: "Survived", is: "==", to: 1 })
 ```
 
@@ -529,7 +529,7 @@ survivors = mega_df.query({column: "Survived", is: "==", to: 1 })
 
 直方图可以使用以下方式创建：
 
-```py
+```js
 viz(`agehist`, x => survivors["Age"].plot(x).hist())
 ```
 
@@ -555,7 +555,7 @@ viz(`agehist`, x => survivors["Age"].plot(x).hist())
 
 要进行独热编码，Danfo.js 和 Pandas 都有一个`get_dummies`方法，可以将一列转换为多个列，其中只有一个列的值为 1。在 TensorFlow.js 中，进行独热编码的方法称为`oneHot`，但在 Danfo.js 中，`get_dummies`是向二进制变量致敬的方法，统计学中通常称为*虚拟变量*。编码结果后，您可以使用`drop`和`addColumn`进行切换：
 
-```py
+```js
 // Handle person sex - convert to one-hot
 const sexOneHot = dfd.get_dummies(mega['Sex']) // ①
 sexOneHot.head().print()
@@ -579,7 +579,7 @@ mega.addColumn({ column: 'female', value: sexOneHot['1'] })
 
 接下来，您可以使用`apply`方法为年龄创建桶。`apply`方法允许您在整个列上运行条件代码。根据我们的需求，我们将定义一个在我们的图表中看到的重要年龄组的函数，如下所示：
 
-```py
+```js
 // Group children, young, and over 40yrs
 function ageToBucket(x) {
   if (x < 10) {
@@ -594,7 +594,7 @@ function ageToBucket(x) {
 
 然后，您可以使用您定义的`ageToBucket`函数创建并添加一个完全新的列来存储这些桶：
 
-```py
+```js
 // Create Age buckets
 ageBuckets = mega['Age'].apply(ageToBucket)
 mega.addColumn({ column: 'Age_bucket', value: ageBuckets })
@@ -608,7 +608,7 @@ mega.addColumn({ column: 'Age_bucket', value: ageBuckets })
 
 将归一化视为一种特征。如果您正在处理来自各个国家的 10 种不同货币，可能会感到困惑。归一化会缩放输入，使它们具有相对影响的大小。
 
-```py
+```js
 const scaler = new dfd.MinMaxScaler()
 scaledData = scaler.fit(featuredData)
 scaledData.head().print()
@@ -618,7 +618,7 @@ scaledData.head().print()
 
 生成的`fit`如下所示：
 
-```py
+```js
 await model.fit(trainX, trainY, {
   batchSize: 32,
   epochs: 100,

@@ -667,7 +667,7 @@ PyTorch 与 TensorBoard 的集成最初是由一个名为 TensorBoardX 的开源
 ```py
 from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter() ![1](Images/1.png)
+writer = SummaryWriter() # ①
 ```
 
 ①
@@ -696,7 +696,7 @@ for epoch in range(N_EPOCHS):
     print("Epoch: {} Loss: {}".format(epoch,
         epoch_loss/len(trainloader)))
     writer.add_scalar('Loss/train',
-        epoch_loss/len(trainloader), epoch) ![1](Images/1.png)
+        epoch_loss/len(trainloader), epoch) # ①
 ```
 
 ①

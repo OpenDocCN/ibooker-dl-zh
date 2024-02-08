@@ -74,7 +74,7 @@ TensorFlow，没有任何额外的“.js”或“Lite”，是谷歌的第一个
 
 管理网站依赖项的最流行方式之一是使用包管理器。如果您习惯使用 NPM 或 Yarn 构建项目，您可以通过 NPM 注册表访问代码[*https://oreil.ly/R2lB8*](https://oreil.ly/R2lB8)。只需在命令行安装依赖项：
 
-```py
+```js
 # Import with npm
 $ npm i @tensorflow/tfjs
 
@@ -84,7 +84,7 @@ $ yarn add @tensorflow/tfjs
 
 导入`tfjs`包后，您可以在 JavaScript 项目中使用以下 ES6 JavaScript 导入代码导入此代码：
 
-```py
+```js
 import * as tf from '@tensorflow/tfjs';
 ```
 
@@ -92,7 +92,7 @@ import * as tf from '@tensorflow/tfjs';
 
 如果网站不使用包管理器，您可以简单地向 HTML 文档添加一个脚本标签。这是您可以在项目中包含 TensorFlow.js 的第二种方式。您可以下载并在本地托管 TensorFlow.js，或者利用内容传送网络（CDN）。我们将把脚本标签指向 CDN 托管的脚本源：
 
-```py
+```js
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.7.0/dist/tf.min.js">
 </script>
 ```
@@ -111,7 +111,7 @@ import * as tf from '@tensorflow/tfjs';
 
 对于 Node.js，您可能需要在`@tensorflow/tfjs-node`和`@tensorflow/tfjs-node-gpu`之间进行选择。如果您的计算机配置了 NVIDIA GPU 并正确设置了 CUDA 软件，您可以使用后者 GPU 加速的软件包。Compute Unified Device Architecture（CUDA）允许通过并行计算平台直接访问 GPU 加速的 NVIDIA 硬件。虽然 GPU 软件包是 TensorFlow.js 选项中绝对最快的，但由于其硬件和软件约束，它也是最不可能准备好并配置好的软件包。目前，我们的示例将在安装`tfjs-node`上运行，并将可选的 CUDA 配置留给您。
 
-```py
+```js
 # Import with npm
 $ npm i @tensorflow/tfjs-node
 
@@ -125,13 +125,13 @@ $ yarn add @tensorflow/tfjs-node
 
 如果您的 NPM 安装成功，恭喜！您已准备好从此包中导入。如果您已经设置了 Node 来处理 ES6，您可以使用以下代码导入：
 
-```py
+```js
 import * as tf from '@tensorflow/tfjs-node';
 ```
 
 如果您尚未配置 Node.js 软件包以处理 ES6 导入，您仍然可以使用经典的 require 访问代码：
 
-```py
+```js
 const tf = require('@tensorflow/tfjs-node');
 ```
 
@@ -141,7 +141,7 @@ const tf = require('@tensorflow/tfjs-node');
 
 将此代码添加到您的 JavaScript 中，如果在控制台中看到一个版本打印出来，您的导入就可以继续进行了！
 
-```py
+```js
 console.log(tf.version.tfjs);
 ```
 
@@ -181,7 +181,7 @@ console.log(tf.version.tfjs);
 
 要运行代码，请导航至*chapter2/web/web-example*并执行 NPM 安装（`npm i`）。完成后，在*package.json*中有一个脚本可以启动所有内容。您只需运行启动脚本：
 
-```py
+```js
 $ npm run start
 ```
 
@@ -193,7 +193,7 @@ Node.js 示例与 Parcel NPM 示例一样易于运行。虽然 Node.js 通常没
 
 为了准备这个示例，请导航至*chapter2/node-example*并执行 NPM 安装（`npm i`）。如果遇到任何问题，您可能需要运行`npm i -g ts-node nodemon node-gyp`来确保您拥有所需的库，以确保我们所有的魔法发生。一旦您的节点包正确放置，您可以随时通过运行启动脚本来启动项目：
 
-```py
+```js
 $ npm run start
 ```
 
@@ -251,7 +251,7 @@ TensorFlow.js 有大量预先编写的代码和模型可供我们利用。这些
 
 ##### 示例 2-1。输入句子的完整毒性报告
 
-```py
+```js
 [{
       "label":"identity_attack",
       "results":[{
@@ -317,19 +317,19 @@ TensorFlow.js 有大量预先编写的代码和模型可供我们利用。这些
 
 但不要只听我的话；现在轮到您运行代码了。您可以通过以下方式将模型添加到您的网站：
 
-```py
+```js
 $ npm install @tensorflow-models/toxicity
 ```
 
 然后导入库：
 
-```py
+```js
 import * as toxicity from "@tensorflow-models/toxicity";
 ```
 
 或者您可以直接从 CDN 添加脚本。³ 脚本标签的顺序很重要，所以确保在尝试使用模型之前将标签放在页面上：
 
-```py
+```js
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity@1.2.2">
 </script>
 ```
@@ -338,7 +338,7 @@ import * as toxicity from "@tensorflow-models/toxicity";
 
 以下是加载模型并对三个句子进行分类的示例。这个确切的示例可以在[GitHub 上的章节代码](https://oreil.ly/sTs5a)的相关部分中以三种不同形式找到。
 
-```py
+```js
 // minimum positive prediction confidence
 // If this isn't passed, the default is 0.85
 const threshold = 0.5;
@@ -379,7 +379,7 @@ toxicity.load(threshold).then((model) => {
 
 ##### 示例 2-2\. 侮辱部分结果
 
-```py
+```js
   ...
   {
     "label": "insult",

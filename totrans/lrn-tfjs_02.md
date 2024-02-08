@@ -300,7 +300,7 @@ TypeScript 有很多选项，最明显的是强类型。然而，为了易于理
 
 要运行这些示例，请使用 Yarn 或 Node Package Manager（NPM）安装依赖项，然后执行启动脚本：
 
-```py
+```js
 # Install dependencies with NPM
 $ npm i
 # Run the start script to start the server
@@ -323,7 +323,7 @@ $ yarn start
 
 要运行这些示例，请使用 Yarn 或 NPM 安装依赖项，然后执行启动脚本：
 
-```py
+```js
 # Install dependencies with NPM
 $ npm i
 # Run the start script to start the server

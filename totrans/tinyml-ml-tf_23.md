@@ -20,7 +20,7 @@ Arduino Nano 33 BLE Sense 具有内置麦克风。要从麦克风接收音频数
 
 在第一部分中，我们引入了一些依赖项。*PDM.h*库定义了我们将用来从麦克风获取数据的 API。文件*micro_model_settings.h*包含了与我们模型数据需求相关的常量，这将帮助我们以正确的格式提供音频数据。
 
-```py
+```cpp
 #include "tensorflow/lite/micro/examples/micro_speech/
   audio_provider.h"
 
@@ -31,7 +31,7 @@ Arduino Nano 33 BLE Sense 具有内置麦克风。要从麦克风接收音频数
 
 接下来的代码块是设置一些重要变量的地方：
 
-```py
+```cpp
 namespace {
 bool g_is_audio_initialized = false;
 // An internal buffer able to fit 16x our sample size
@@ -53,7 +53,7 @@ volatile int32_t g_latest_audio_timestamp = 0;
 
 设置这些变量后，我们定义回调函数，每当有新的音频数据可用时就会调用它。以下是完整的函数：
 
-```py
+```cpp
 void CaptureSamples() {
   // This is how many bytes of new data we have each time this is called
   const int number_of_samples = DEFAULT_PDM_BUFFER_SIZE;
@@ -77,7 +77,7 @@ void CaptureSamples() {
 
 首先，我们确定每次调用回调函数时将接收多少新数据。我们使用这个数据来确定一个以毫秒表示缓冲区中最近音频样本的时间的数字：
 
-```py
+```cpp
 // This is how many bytes of new data we have each time this is called
 const int number_of_samples = DEFAULT_PDM_BUFFER_SIZE;
 // Calculate what timestamp the last audio sample represents
@@ -90,7 +90,7 @@ const int32_t time_in_ms =
 
 接下来，我们将每个回调的样本数（`number_of_samples`）除以每毫秒的样本数以获取每个回调获得的数据的毫秒数：
 
-```py
+```cpp
 (number_of_samples / (kAudioSampleFrequency / 1000))
 ```
 
@@ -98,7 +98,7 @@ const int32_t time_in_ms =
 
 当我们有了这个数字后，我们可以使用它来获取*所有样本历史记录*中最近样本的索引。为此，我们将先前最近音频样本的时间戳乘以每毫秒的样本数：
 
-```py
+```cpp
 const int32_t start_sample_offset =
     g_latest_audio_timestamp * (kAudioSampleFrequency / 1000);
 ```
@@ -107,7 +107,7 @@ const int32_t start_sample_offset =
 
 现在，我们有了我们新样本在*所有样本历史记录*中的索引。接下来，我们需要将其转换为实际缓冲区内样本的正确索引。为此，我们可以通过缓冲区长度除以历史索引并获取余数。这是使用模运算符（`%`）完成的：
 
-```py
+```cpp
 // Determine the index of this sample in our ring buffer
 const int capture_index = start_sample_offset % kAudioCaptureBufferSize;
 ```
@@ -116,7 +116,7 @@ const int capture_index = start_sample_offset % kAudioCaptureBufferSize;
 
 接下来，我们使用`PDM.read()`方法将最新音频读入音频捕获缓冲区：
 
-```py
+```cpp
 // Read the data to the correct place in our buffer
 PDM.read(g_audio_capture_buffer + capture_index, DEFAULT_PDM_BUFFER_SIZE);
 ```
@@ -125,7 +125,7 @@ PDM.read(g_audio_capture_buffer + capture_index, DEFAULT_PDM_BUFFER_SIZE);
 
 最后，我们更新`g_latest_audio_timestamp`：
 
-```py
+```cpp
 // This is how we let the outside world know that new audio data has arrived.
 g_latest_audio_timestamp = time_in_ms;
 ```
@@ -134,7 +134,7 @@ g_latest_audio_timestamp = time_in_ms;
 
 您可能想知道是什么使`CaptureSamples()`充当回调函数。它如何知道何时有新音频可用？这是我们代码的下一部分处理的，这部分是启动音频捕获的函数：
 
-```py
+```cpp
 TfLiteStatus InitAudioRecording(tflite::ErrorReporter* error_reporter) {
   // Hook up the callback that will be called with each sample
   PDM.onReceive(CaptureSamples);
@@ -157,7 +157,7 @@ TfLiteStatus InitAudioRecording(tflite::ErrorReporter* error_reporter) {
 
 我们刚刚探讨的两个函数允许我们启动捕获音频的过程并将捕获的音频存储在缓冲区中。接下来的函数`GetAudioSamples()`为我们代码的其他部分（即特征提供者）提供了获取音频数据的机制：
 
-```py
+```cpp
 TfLiteStatus GetAudioSamples(tflite::ErrorReporter* error_reporter,
                              int start_ms, int duration_ms,
                              int* audio_samples_size, int16_t** audio_samples) {
@@ -175,20 +175,20 @@ TfLiteStatus GetAudioSamples(tflite::ErrorReporter* error_reporter,
 
 在这一点之后，我们可以假设捕获缓冲区中存储了一些音频。我们的任务是找出正确音频数据在缓冲区中的位置。为了做到这一点，我们首先确定我们想要的第一个样本在*所有样本历史*中的索引：
 
-```py
+```cpp
 const int start_offset = start_ms * (kAudioSampleFrequency / 1000);
 ```
 
 接下来，我们确定我们想要抓取的样本总数：
 
-```py
+```cpp
 const int duration_sample_count =
     duration_ms * (kAudioSampleFrequency / 1000);
 ```
 
 现在我们有了这些信息，我们可以确定在我们的音频捕获缓冲区中从哪里读取。我们将在循环中读取数据：
 
-```py
+```cpp
 for (int i = 0; i < duration_sample_count; ++i) {
   // For each sample, transform its index in the history of all samples into
   // its index in g_audio_capture_buffer
@@ -202,7 +202,7 @@ for (int i = 0; i < duration_sample_count; ++i) {
 
 接下来，为了从这个函数中获取数据，我们使用作为参数提供的两个指针。它们分别是`audio_samples_size`，指向音频样本的数量，和`audio_samples`，指向输出缓冲区：
 
-```py
+```cpp
   // Set pointers to provide access to the audio
   *audio_samples_size = kMaxAudioSampleSize;
   *audio_samples = g_audio_output_buffer;
@@ -215,7 +215,7 @@ for (int i = 0; i < duration_sample_count; ++i) {
 
 然后，在最后部分，我们定义`LatestAudioTimestamp()`：
 
-```py
+```cpp
 int32_t LatestAudioTimestamp() { return g_latest_audio_timestamp; }
 ```
 
