@@ -127,8 +127,13 @@ const checkySmalls = tf.tensor([
 
 ```py
 // 2 x 2 checker pattern
-constlil=tf.tensor(![1[[1],[0]],[[0],[1]]]);// tile it
-constbig=lil.tile([100,100,1])②
+  const lil = tf.tensor([  // ①
+    [[1], [0]],
+    [[0], [1]]
+  ]);
+  // tile it
+  const big = lil.tile([100, 100, 1]) // ②
+
 ```
 
 ①
@@ -194,8 +199,13 @@ constbig=lil.tile([100,100,1])②
 现在您可以通过 ID 访问此画布，并将其传递给我们的`browser.toPixels`方法。
 
 ```py
-constbigMess=tf.randomUniform([400,400,3]);①constmyCanvas=document.getElementById("randomness");②tf.browser.toPixels(bigMess,myCanvas).then(()=>{③// It's not bad practice to clean up and make sure we got everything
-bigMess.dispose();console.log("Make sure we cleaned up",tf.memory().numTensors);});
+const bigMess = tf.randomUniform([400, 400, 3]); // ①
+const myCanvas = document.getElementById("randomness"); // ②
+tf.browser.toPixels(bigMess, myCanvas).then(() => { // ③
+  // It's not bad practice to clean up and make sure we got everything
+  bigMess.dispose();
+  console.log("Make sure we cleaned up", tf.memory().numTensors);
+});
 ```
 
 ①
@@ -241,7 +251,12 @@ bigMess.dispose();console.log("Make sure we cleaned up",tf.memory().numTensors);
 在`img`放置并 DOM 加载完成后，您可以调用`browser.fromPixels`获取结果：
 
 ```py
-// Simply read from the DOM constgantImage=document.getElementById('gant')①constgantTensor=tf.browser.fromPixels(gantImage)②console.log(③`Successful conversion from DOM to a ${gantTensor.shape} tensor`)
+// Simply read from the DOM
+const gantImage = document.getElementById('gant') // ①
+const gantTensor = tf.browser.fromPixels(gantImage) // ②
+console.log( // ③
+  `Successful conversion from DOM to a ${gantTensor.shape} tensor`
+)
 ```
 
 ①
@@ -267,7 +282,16 @@ Successful conversion from DOM to a 372,500,3 tensor
 完美！但是如果我们的图像不在页面的元素中怎么办？只要服务器允许跨域加载 (`Access-Control-Allow-Origin "*"`)，您就可以动态加载和处理外部图像。这就是 [JavaScript 图像对象示例](https://oreil.ly/dSjiI) 的用武之地。我们可以这样将图像转换为张量：
 
 ```py
-// Now load an image object in JavaScript constcake=newImage()①cake.crossOrigin='anonymous'②cake.src='/cake.jpg'③cake.onload=()=>{④constcakeTensor=tf.browser.fromPixels(cake)⑤console.log(⑥`Successful conversion from Image() to a ${cakeTensor.shape} tensor`)}
+// Now load an image object in JavaScript
+const cake = new Image() // ①
+cake.crossOrigin = 'anonymous' // ②
+cake.src = '/cake.jpg' // ③
+cake.onload = () => { // ④
+  const cakeTensor = tf.browser.fromPixels(cake) // ⑤
+  console.log( // ⑥
+    `Successful conversion from Image() to a ${cakeTensor.shape} tensor`
+  )
+}
 ```
 
 ①
@@ -321,7 +345,11 @@ Successful conversion from DOM to a 372,500,3 tensor
 从张量中写入 JPG，就像在[*GitHub 的第四章节中的 *chapter4/node/node-encode*](https://oreil.ly/Nn9nX)中发现的那样，可以简单地这样做：
 
 ```py
-constbigMess=tf.randomUniform([400,400,3],0,255);①tf.node.encodeJpeg(bigMess).then((f)=>{②fs.writeFileSync("simple.jpg",f);③console.log("Basic JPG 'simple.jpg' written");});
+  const bigMess = tf.randomUniform([400, 400, 3], 0, 255); // ①
+  tf.node.encodeJpeg(bigMess).then((f) => { // ②
+    fs.writeFileSync("simple.jpg", f); // ③
+    console.log("Basic JPG 'simple.jpg' written");
+  });
 ```
 
 ①
