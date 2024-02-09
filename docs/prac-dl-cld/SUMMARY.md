@@ -14,7 +14,6 @@
 +   [第十二章：在 iOS 上使用 Core ML 和 Create ML 的 Not Hotdog](prac-dl-cld_12.md)
 +   [第十三章：食物的 Shazam：使用 TensorFlow Lite 和 ML Kit 开发 Android 应用程序](prac-dl-cld_13.md)
 +   [第十四章：使用 TensorFlow Object Detection API 构建完美的猫定位器应用](prac-dl-cld_14.md)
-+   [交并比](prac-dl-cld_15.md)
 +   [第十五章：成为创客：探索边缘嵌入式 AI](prac-dl-cld_16.md)
 +   [第十六章：使用 Keras 进行端到端深度学习模拟自动驾驶汽车](prac-dl-cld_17.md)
 +   [第十七章：在不到一个小时内构建自动驾驶汽车：使用 AWS DeepRacer 进行强化学习](prac-dl-cld_18.md)
