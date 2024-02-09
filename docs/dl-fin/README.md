@@ -1,6 +1,6 @@
-# 深度学习秘籍书
+# 面向金融的深度学习（提前发布）
 
-> 原文：[Deep Learning Cookbook](https://annas-archive.org/md5/d44117c120ed4ebe0ce274a38936c885)
+> 原文：[Deep Learning for Finance (Early Release)](https://annas-archive.org/md5/06ce7e4e9c77b7923248b81ab038983c)
 >
 > 译者：[飞龙](https://github.com/wizardforcel)
 >
