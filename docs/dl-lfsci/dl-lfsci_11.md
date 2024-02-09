@@ -219,7 +219,7 @@ in revised_decoy_df["SMILES"]]
 现在我们已经处理了格式，我们可以使用这些数据来训练一个图卷积模型。首先，我们需要导入必要的库。其中一些库在第一节中已经导入，但让我们假设我们从上一节创建的 CSV 文件开始：
 
 ```py
-`import` `deepchem` `as` `dc`                      `# DeepChem libraries`
+`import` `deepchem` `as` `dc`                      # DeepChem libraries
 `from` `deepchem.models` `import` `GraphConvModel` `# Graph convolutions` 
 `import` `numpy` `as` `np`                         `# NumPy for numeric operations` 
 `import` `sys`                                 `# Error handling` 
@@ -575,13 +575,13 @@ Draw.MolsToGridImage(mol_list,
 我们首先导入必要的库：
 
 ```py
-`import` `deepchem` `as` `dc`                           `# DeepChem libraries`
-`import` `pandas` `as` `pd`                             `# Pandas for tables`
-`from` `rdkit.Chem` `import` `PandasTools``,` `Draw`        `# Chemistry in Pandas`
-`from` `rdkit` `import` `DataStructs`                   `# For fingerprint handling`
-`from` `rdkit.ML.Cluster` `import` `Butina`             `# Cluster molecules`
-`from` `rdkit.Chem` `import` `rdMolDescriptors` `as` `rdmd` `# Descriptors`
-`import` `seaborn` `as` `sns`                           `# Plotting`
+`import` `deepchem` `as` `dc`                           # DeepChem libraries
+`import` `pandas` `as` `pd`                             # Pandas for tables
+`from` `rdkit.Chem` `import` `PandasTools``,` `Draw`        # Chemistry in Pandas
+`from` `rdkit` `import` `DataStructs`                   # For fingerprint handling
+`from` `rdkit.ML.Cluster` `import` `Butina`             # Cluster molecules
+`from` `rdkit.Chem` `import` `rdMolDescriptors` `as` `rdmd` # Descriptors
+`import` `seaborn` `as` `sns`                           # Plotting
 ```
 
 并加载我们之前生成的模型：

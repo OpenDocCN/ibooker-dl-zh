@@ -49,11 +49,11 @@ Python 文件的扩展名为*name.py*，它们允许您保存代码并在以后�
 理解代码伴随着一个有用的操作，称为注释。*注释*是用于解释紧随其后的可执行代码的非可执行代码。这是为了让其他程序员理解代码。注释前面有一个井号**#**：
 
 ```py
-`# This is a comment. Comments are ignored by the interpreter`
+# This is a comment. Comments are ignored by the interpreter
 
-`# Comments explain the code or give more details about its use`
+# Comments explain the code or give more details about its use
 
-`# Comments are written in one line, otherwise, you have to re-write '#'`
+# Comments are written in one line, otherwise, you have to re-write '#'
 ```
 
 ###### 注意
@@ -78,11 +78,11 @@ The name "Python" was inspired by the comedy group Monty Python.
 让我们讨论变量和常量。*常量*是一个固定值，不会改变，而*变量*在事件发生时会取不同的值。常量可以是数字 6，而变量可以是字母*x*，根据一组条件或状态取任何数字。使用'='运算符定义变量：
 
 ```py
-`# Defining a variable`
+# Defining a variable
 x = 10
 y = 5
 
-`# Writing a constant`
+# Writing a constant
 6
 
 ```
@@ -90,25 +90,25 @@ y = 5
 运行上述代码将在变量资源管理器中存储变量*x*和*y*及其相应的值。同时，代码的输出将是 6。变量是区分大小写的，因此：
 
 ```py
-`# Declaring my_variable`
+# Declaring my_variable
 my_variable = 1
 
-`# Declaring My_variable`
+# Declaring My_variable
 My_variable = 2
 
-`# The variable my_variable is different from My_variable`
+# The variable my_variable is different from My_variable
 ```
 
 变量声明不能以数字开头，但可以在名称中间或结尾包含一个数字：
 
 ```py
-`# Returns a SyntaxError`
+# Returns a SyntaxError
 1x = 5
 
-`# Valid declaration`
+# Valid declaration
 x1 = 5
 
-`# Valid declaration`
+# Valid declaration
 x1x = 5
 
 ```
@@ -116,10 +116,10 @@ x1x = 5
 变量也可以包含下划线，但不能包含其他内容：
 
 ```py
-`# Returns a SyntaxError`
+# Returns a SyntaxError
 x-y = 5
 
-`# Valid declaration`
+# Valid declaration
 x_y = 5
 
 ```
@@ -127,10 +127,10 @@ x_y = 5
 强烈建议变量简短而直接。例如，考虑创建一个保存某个移动平均值的回溯期的变量（在第五章中介绍的概念）：
 
 ```py
-`# Recommended name`
+# Recommended name
 ma_lookback = 10
 
-`# Not recommended name`
+# Not recommended name
 the_lookback_on_that_moving_average = 10
 
 ```
@@ -156,13 +156,13 @@ the_lookback_on_that_moving_average = 10
 以下代码片段显示了一些关于数值数据类型的示例：
 
 ```py
-`# Creating a variable that holds an integer`
+# Creating a variable that holds an integer
 my_integer = 1
 
-`# Creating a variable that holds a float number`
+# Creating a variable that holds a float number
 my_float_number = 1.2
 
-`# Using the built-in Python function type() to verify the variables`
+# Using the built-in Python function type() to verify the variables
 type(my_integer)
 type(my_float_number)
 
@@ -171,16 +171,16 @@ type(my_float_number)
 输出应该如下所示（请记住井号符号后的任何内容都是注释，不会被执行）：
 
 ```py
-int `# The output of type(my_integer)`
+int # The output of type(my_integer)
 
-float `# The output of type(my_float_number)`
+float # The output of type(my_float_number)
 
 ```
 
 字符串只是文本。解释字符串的最著名例子是"*Hello World*"短语，如下面的代码片段所解释的：
 
 ```py
-`# Outputting the phrase "Hello World"`
+# Outputting the phrase "Hello World"
 print('Hello World')
 ```
 
@@ -195,13 +195,13 @@ Hello World
 如前面列表中提到的，布尔值要么为真，要么为假。以下代码片段显示了使用它们的示例：
 
 ```py
-`# Make a statement that the type of my_integer is integer`
+# Make a statement that the type of my_integer is integer
 type(my_integer) is int
 
-`# Make a statement that the type of my_float_number is float`
+# Make a statement that the type of my_float_number is float
 type(my_float_number) is float
 
-`# Make a statement that the type of my_integer is float`
+# Make a statement that the type of my_integer is float
 type(my_integer) is float
 
 '''
@@ -225,74 +225,74 @@ False
 让我们讨论运算符的工作原理。您实际上已经看到了一个运算符的示例，即用于定义变量的赋值运算符'='。*运算符*在变量、常量甚至数据结构之间执行特殊的数学和其他任务。有不同类型的运算符。让我们从*算术运算符*开始，如下面的代码片段所示：
 
 ```py
-`# Arithmetic operator - Addition`
-1 + 1 `# The line outputs 2`
+# Arithmetic operator - Addition
+1 + 1 # The line outputs 2
 
-`# Arithmetic operator - Subtraction`
-1 - 1 `# The line outputs 0`
+# Arithmetic operator - Subtraction
+1 - 1 # The line outputs 0
 
-`# Arithmetic operator - Multiplication`
-2 * 2 `# The line outputs 4`
+# Arithmetic operator - Multiplication
+2 * 2 # The line outputs 4
 
-`# Arithmetic operator - Division`
-4 / 2 `# The line outputs 2.0 as a float number`
+# Arithmetic operator - Division
+4 / 2 # The line outputs 2.0 as a float number
 
-`# Arithmetic operator - Exponents`
-2 ** 4 `# The line outputs 16`
+# Arithmetic operator - Exponents
+2 ** 4 # The line outputs 16
 
 ```
 
 比较运算符是下一种运算符，用于比较不同的元素。它们主要用于控制流事件，如本章的下一部分所解释的那样。以下代码片段显示了一些比较运算符：
 
 ```py
-`# Comparison operator - Equality`
-2 == 2 `# The line outputs True`
+# Comparison operator - Equality
+2 == 2 # The line outputs True
 
-`# Comparison operator - Non equality`
-2 != 3 `# The line outputs True`
+# Comparison operator - Non equality
+2 != 3 # The line outputs True
 
-`# Comparison operator - Greater than`
-2 > 3 `# The line outputs False`
+# Comparison operator - Greater than
+2 > 3 # The line outputs False
 
-`# Comparison operator - Greater than or equal to`
-2 >= 2 `# The line outputs True`
+# Comparison operator - Greater than or equal to
+2 >= 2 # The line outputs True
 
-`# Comparison operator - Less than`
-2 < 3 `# The line outputs True`
+# Comparison operator - Less than
+2 < 3 # The line outputs True
 
-`# Comparison operator - Less than or equal to`
-2 <= 2 `# The line outputs True`
+# Comparison operator - Less than or equal to
+2 <= 2 # The line outputs True
 
 ```
 
 *逻辑运算符*结合两个或多个稍后进行评估的条件。有三个逻辑运算符：`and`、`or`和`not`。以下代码块显示了逻辑运算符的示例：
 
 ```py
-`# Logical operator - and`
-2 and 1 < 4 `# The line outputs True`
-2 and 5 < 4 `# The line outputs False`
+# Logical operator - and
+2 and 1 < 4 # The line outputs True
+2 and 5 < 4 # The line outputs False
 
-`# Logical operator - or`
-2 or 5 < 4 `# The line outputs 2 which is the integer less than 4`
+# Logical operator - or
+2 or 5 < 4 # The line outputs 2 which is the integer less than 4
 
 ```
 
 数据收集结构（数组和数据框）将在后面的部分中讨论，因为它们由于其复杂性和独特工具而需要深入介绍。让我们用一个代码来结束这一部分，总结到目前为止讨论的内容：
 
 ```py
-`# Declaring two variables x and y and assigning them values`
+# Declaring two variables x and y and assigning them values
 x = 10
 y = 2.5
 
-`# Checking the types of the variables`
-type(x) `# Returns int`
-type(y) `# Returns float`
+# Checking the types of the variables
+type(x) # Returns int
+type(y) # Returns float
 
-`# Taking x to the power of y and storing it in a variable z`
-z = x ** y `# Returns 316.22`
+# Taking x to the power of y and storing it in a variable z
+z = x ** y # Returns 316.22
 
-`# Checking if the result is greater than or equal to 100`
-z >= 100 `# Returns True as 316.22 >= 100`
+# Checking if the result is greater than or equal to 100
+z >= 100 # Returns True as 316.22 >= 100
 ```
 
 # 控制流
@@ -302,11 +302,11 @@ z >= 100 `# Returns True as 316.22 >= 100`
 条件语句使用`if`、`elif`和`else`进行管理。以以下代码片段为例来澄清事情：
 
 ```py
-`# Declaring the variables`
+# Declaring the variables
 a = 9
 b = 2
 
-`# First condition (specific)`
+# First condition (specific)
 if a > b:
 
     print('a is greater than b')
@@ -330,12 +330,12 @@ else:
 循环使用`for`（用于迭代有限和定义的序列或一系列元素）和`while`（用于在满足条件之前继续迭代）语句进行管理。以打印值{1, 2, 3, 4}的循环为例：
 
 ```py
-`# Using a for loop`
+# Using a for loop
 for i in range(1, 5):
 
     print(i)
 
-`# Using a while loop  `
+# Using a while loop  
 i = 1    
 while i < 5:
 
@@ -361,22 +361,22 @@ while i < 5:
 这可以在以下代码块中完成：
 
 ```py
-`# Creating the time series`
+# Creating the time series
 time_series = [1, 3, 5, 2, 4, 1, 6, 4, 2, 4, 4, 4]
 
 for i in range(len(time_series)):
 
-    `# The condition where the current price rose`
+    # The condition where the current price rose
     if time_series[i] > time_series[i - 1]:
 
         print(1)
 
-    `# The condition where the current price fell`
+    # The condition where the current price fell
     elif time_series[i] < time_series[i - 1]:
 
         print(-1) 
 
-    `# The condition where the current price hasn't changed`
+    # The condition where the current price hasn't changed
     else:
 
         print(0)
@@ -396,10 +396,10 @@ for i in range(len(time_series)):
 在使用之前，必须先将库导入到 Python 解释器中。这样做的语法如下：
 
 ```py
-`# The import statement must be followed by the name of the library`
+# The import statement must be followed by the name of the library
 import numpy
 
-`# Optionally, you can give the library a shortcut for easier references`
+# Optionally, you can give the library a shortcut for easier references
 import numpy as np
 
 ```
@@ -407,7 +407,7 @@ import numpy as np
 有时，你需要从库中导入一个函数或模块。为此，你不需要导入整个库：
 
 ```py
-`# Importing one function from a library`
+# Importing one function from a library
 from math import sqrt
 
 ```
@@ -415,14 +415,14 @@ from math import sqrt
 因此，已经确定`math`是一个 Python 库，其中包含许多数学函数，即`sqrt`函数，用于找到给定数字的平方根。让我们看看如何定义一个函数。函数使用`def`后跟函数的名称和任何可选参数来定义。考虑以下示例，创建一个对任意两个给定变量求和的函数：
 
 ```py
-`# Defining the function sum_operation and giving it two arguments`
+# Defining the function sum_operation and giving it two arguments
 def sum_operation(first_variable, second_variable):
 
-    `# Outputing the sum of the two variables`
+    # Outputing the sum of the two variables
     print(first_variable + second_variable)
 
-`# Calling the function with 1 and 3 as arguments`
-sum_operation(1, 3) `# The output of this line is 4`
+# Calling the function with 1 and 3 as arguments
+sum_operation(1, 3) # The output of this line is 4
 
 ```
 
@@ -436,13 +436,13 @@ sum_operation(1, 3) `# The output of this line is 4`
 `# Importing the library`   
 import math
 
-`# Using the natural logarithm function`
+# Using the natural logarithm function
 math.log(10)
 
-`# Using the exponential function (e)`
+# Using the exponential function (e)
 math.exp(3)
 
-`# Using the factorial function`
+# Using the factorial function
 math.factorial(50)
 
 ```
@@ -458,10 +458,10 @@ pip install library_name
 让我们回到第三章讨论过的 MIC。在 MIC 的以下已经看到的代码之前：
 
 ```py
-`# Importing the library`
+# Importing the library
 from minepy import MINE
 
-`# Calculating the MIC`
+# Calculating the MIC
 mine = MINE(alpha = 0.6, c = 15)
 mine.compute_score(sine,cosine)
 MIC = mine.mic()
@@ -479,16 +479,16 @@ pip install minepy
 函数可以有一个`return`语句，允许将结果存储在一个变量中，以便在代码的其他部分中使用。让我们举两个简单的例子，然后逐步讨论它们：
 
 ```py
-`# Defining a function to sum two variables and return the result`
+# Defining a function to sum two variables and return the result
 def sum_operation(first_variable, second_variable):
 
-  `# The summing operation is stored in a variable called final_sum`
+  # The summing operation is stored in a variable called final_sum
     final_sum = first_variable + second_variable
 
-    `# The result is returned`
+    # The result is returned
     return final_sum
 
-`# Create a new variable that holds the result of the function    `
+# Create a new variable that holds the result of the function    
 summed_value = sum_operation(1, 2)
 
 `# Use the new variable in a new mathematical operation and store the result` double_summed_value = summed_value * 2
@@ -498,13 +498,13 @@ summed_value = sum_operation(1, 2)
 前面的代码定义了`sum_operation`函数，带有两个参数，然后将操作存储在一个名为`final_sum`的变量中，然后返回它，以便可以将其存储在外部。然后，定义一个名为`summed_value`的新变量，作为函数的输出。最后，另一个名为`double_summed_value`的变量被创建，其结果是`summed_value`乘以 2。这是一个关于如何在外部操作中使用函数结果作为变量的示例。现在，让我们考虑另一个示例（同时记住先前定义的`sum_operation`函数）：
 
 ```py
-`# Defining a function to square the result gotten from the sum_operation function`
+# Defining a function to square the result gotten from the sum_operation function
 def square_summed_value(first_variable, second_variable):
 
-  `# Calling the nested sum_operation function and storing its result`
+  # Calling the nested sum_operation function and storing its result
     final_sum = sum_operation(first_variable, second_variable)
 
-  `# Creating a variable that stores the square of final_sum`
+  # Creating a variable that stores the square of final_sum
     squared_sum = final_sum ** 2
 
     `# The result is returned   ` 
@@ -520,13 +520,13 @@ squared_summed_value = square_summed_value(1, 2)
 让我们以 Python 和机器学习中常见的库结束本节（除了`numpy`和`pandas`）：
 
 ```py
-matplotlib `# For plotting and visualizing data`
-sklearn    `# For machine learning models`
-scipy      `# For scientific computing and optimization`
-keras      `# For neural networks`
-math       `# For using mathematical tools such as square roots`
-random     `# For generating random variables`
-requests   `# For making HTTP requests used in web scraping`
+matplotlib # For plotting and visualizing data
+sklearn    # For machine learning models
+scipy      # For scientific computing and optimization
+keras      # For neural networks
+math       # For using mathematical tools such as square roots
+random     # For generating random variables
+requests   # For making HTTP requests used in web scraping
 
 ```
 
@@ -535,10 +535,10 @@ requests   `# For making HTTP requests used in web scraping`
 经常会因为代码在执行过程中出现问题而遇到错误。换句话说，当代码执行时，解释器发现阻止其继续进行的障碍时，就会发生错误。最基本的错误是*SyntaxError*，当有拼写错误或缺少元素使代码无法理解时会发生：
 
 ```py
-`# Will not output a SyntaxError if executed`
+# Will not output a SyntaxError if executed
 my_range = range(1, 10)
 
-`# Will output a SyntaxError is executed`
+# Will output a SyntaxError is executed
 my_range = range(1, 10
 
 ```
@@ -562,13 +562,13 @@ x + y
 另一种常见错误类型是*TypeError*，当你在不兼容的元素上应用某种操作时会发生，比如将整数与字符串相加。以下操作会引发*TypeError*：
 
 ```py
-`# Defining variable x`
+# Defining variable x
 x = 1
 
-`# Defining variable y`
+# Defining variable y
 y = 'Hello
 
-`# Summing the two variables which will raise a TypeError`
+# Summing the two variables which will raise a TypeError
 x + y
 
 ```
@@ -594,10 +594,10 @@ x + y
 为了忽略某些异常，使用`try`和`except`关键字。当你确信处理异常不会改变代码的输出时，这是很有用的。让我们举一个例子，创建一个函数，将时间序列的第一列除以第二列的下一个值。第一步是将时间序列定义为数据框或数组（或任何其他数据集合结构）：
 
 ```py
-`# Importing the required library to create an array`
+# Importing the required library to create an array
 import numpy as np
 
-`# Creating a two-column list with 8 rows`
+# Creating a two-column list with 8 rows
 my_time_series = [(1, 3), 
                   (1, 4), 
                   (1, 4), 
@@ -607,7 +607,7 @@ my_time_series = [(1, 3), 
                   (1, 1), 
                   (0, 6)]
 
-`# Transforming the list into an array`
+# Transforming the list into an array
 my_time_series = np.array(my_time_series)
 
 ```
@@ -615,19 +615,19 @@ my_time_series = np.array(my_time_series)
 现在，让我们编写一个除以第二列中的下一个值的除法函数，该函数将接受第一列中的任何值：
 
 ```py
-`# Defining the function`
+# Defining the function
 def division(first_column, second_column):
 
- `# Looping through the length of the created array`
+ # Looping through the length of the created array
     for i in range(len(my_time_series)):
 
-        `# Division operation and storing it in the variable x`
+        # Division operation and storing it in the variable x
         x = my_time_series[i, first_column] / my_time_series[i + 1, second_column]
 
-        `# Outputting the result`
+        # Outputting the result
         print(x)
 
-`# Calling the function`
+# Calling the function
 division(0, 1)
 
 ```
@@ -641,16 +641,16 @@ IndexError: index 8 is out of bounds for axis 0 with size 8
 通过`try`和`except`来修复这个问题将忽略导致问题的最后一个计算，并返回预期的结果：
 
 ```py
-`# Defining the function`
+# Defining the function
 def division(first_column, second_column):
 
     `# Looping through the length of the created array`   
     for i in range(len(my_time_series)):
 
- `# First part of the exception handling`
+ # First part of the exception handling
         try:
 
-            `# Division operation and storing it in the variable x`
+            # Division operation and storing it in the variable x
             x = my_time_series[i, first_column] / my_time_series[i + 1, second_column]
 
   `# Outputting the result`         
@@ -659,10 +659,10 @@ def division(first_column, second_column):
         `# Exception handling of a specific error  `   
         except IndexError:
 
-            `# Ignoring (passing) the error`
+            # Ignoring (passing) the error
             pass
 
-`# Calling the function`
+# Calling the function
 division(0, 1)
 
 ```
@@ -710,11 +710,11 @@ import pandas as pd
 以下代码创建了两个具有两列和三行的时间序列。第一个时间序列称为`my_data_frame`，使用`pandas`的`pd.DataFrame`函数创建。第二个时间序列称为`my_array`，使用`numpy`的`np.array`函数创建：
 
 ```py
-`# Creating a data frame`
+# Creating a data frame
 my_data_frame = pd.DataFrame({'first_column' : [1, 2, 3], 
                               'second_column' : [4, 5, 6]})
 
-`# Creating an array`
+# Creating an array
 my_array = np.array([[1, 4], [2, 5], [3, 6]])
 
 ```
@@ -728,10 +728,10 @@ my_array = np.array([[1, 4], [2, 5], [3, 6]])
 在两种数据类型之间切换是非常直观的，因为您将使用前一个代码块中使用的相同两个函数：
 
 ```py
-`# To transform my_data_frame into my_new_array`
+# To transform my_data_frame into my_new_array
 my_new_array = np.array(my_data_frame)
 
-`# To transform my_array into my_new_data_frame`
+# To transform my_array into my_new_data_frame
 my_new_data_frame = pd.DataFrame(my_array)
 
 ```
@@ -754,10 +754,10 @@ second_array = np.array([21, 34, 55, 89, 144, 233])
 `# Reshaping the arrays so they become compatible in multidimensional manipulation` first_array  = np.reshape(first_array, (-1, 1))
 second_array = np.reshape(second_array, (-1, 1))
 
-`# Concatenating both arrays by columns`
+# Concatenating both arrays by columns
 combined_array = np.concatenate((first_array, second_array), axis = 1)
 
-`# Concatenating both arrays by rows`
+# Concatenating both arrays by rows
 combined_array = np.concatenate((first_array, second_array), axis = 0)
 
 ```
@@ -774,10 +774,10 @@ second_data_frame = pd.DataFrame({'first_column'  : [ 7,  8,  9],
 当您想要将数据合并到一个结构中时，连接是很有用的。这是如何在数据框中完成的（注意它只是一种语法和函数来源的变化）：
 
 ```py
-`# Concatenating both data frames by columns`
+# Concatenating both data frames by columns
 combined_data_frame = pd.concat([first_data_frame, second_data_frame], axis = 1)
 
-`# Concatenating both data frames by rows`
+# Concatenating both data frames by rows
 combined_data_frame = pd.concat([first_data_frame, second_data_frame], axis = 0)
 
 ```
@@ -785,52 +785,52 @@ combined_data_frame = pd.concat([first_data_frame, second_data_frame], axis = 0)
 请记住，对于时间序列，*行*（水平单元格）代表一个时间步长（例如，每小时），其中包含所有数据，而*列*代表不同类型的数据（例如，金融工具的开盘价和收盘价）。现在让我们看一下数组的切片技术：
 
 ```py
-`# Defining a one-dimensional array`
+# Defining a one-dimensional array
 my_array = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-`# Referring to the first value of the array`
-my_array[0] `# Outputs 1`
+# Referring to the first value of the array
+my_array[0] # Outputs 1
 
-`# Referring to the last value of the array`
-my_array[-1] `# Outputs 1​0`
+# Referring to the last value of the array
+my_array[-1] # Outputs 1​0
 
-`# Referring to the fifth value of the array`
-my_array[6] `# Outputs 7`
+# Referring to the fifth value of the array
+my_array[6] # Outputs 7
 
-`# Referring to the first three values of the array`
-my_array[0:3] `# Outputs array([1, 2, 3])`
-my_array[:3]  `# Outputs array([1, 2, 3])`
+# Referring to the first three values of the array
+my_array[0:3] # Outputs array([1, 2, 3])
+my_array[:3]  # Outputs array([1, 2, 3])
 
-`# Referring to the last three values of the array`
-my_array[-3:] `# Outputs array([8, 9, 10])`
+# Referring to the last three values of the array
+my_array[-3:] # Outputs array([8, 9, 10])
 
-`# Referring to all the values as of the second value`
-my_array[1:] `# Outputs array([2, 3, 4, 5, 6, 7, 8, 9, 10])`
+# Referring to all the values as of the second value
+my_array[1:] # Outputs array([2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-`# Defining a multi-dimensional array`
+# Defining a multi-dimensional array
 my_array = np.array([[ 1,  2,  3,  4,  5], 
                      [ 6,  7,  8,  9, 10], 
                      [11, 12, 13, 14, 15]])
 
-`# Referring to the first value and second column of the array`
-my_array[0, 1] `# Outputs 2`
+# Referring to the first value and second column of the array
+my_array[0, 1] # Outputs 2
 
-`# Referring to the last value and last column of the array`
+# Referring to the last value and last column of the array
 my_array[-1, -1] `# Outputs 15` 
-`# Referring to the third value and second to last column of the array`
-my_array[2, -2] `# Outputs 14`
+# Referring to the third value and second to last column of the array
+my_array[2, -2] # Outputs 14
 
-`# Referring to the first three and fourth column values of the array`
-my_array[:, 2:4] `# Outputs array([[3, 4], [8, 9], [13, 14]])`
+# Referring to the first three and fourth column values of the array
+my_array[:, 2:4] # Outputs array([[3, 4], [8, 9], [13, 14]])
 
-`# Referring to the last two values and fifth column of the array`
-my_array[-2:, 4] `# Outputs array([10, 15])`
+# Referring to the last two values and fifth column of the array
+my_array[-2:, 4] # Outputs array([10, 15])
 
-`# Referring to all the values and all the columns up until the second row`
-my_array[:2, ] `# Outputs array([[ 1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])`
+# Referring to all the values and all the columns up until the second row
+my_array[:2, ] # Outputs array([[ 1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
 
 # `Referring to the last row with all the columns`
-my_array[-1:, :] `# Outputs array([[11, 12, 13, 14, 15]])`
+my_array[-1:, :] # Outputs array([[11, 12, 13, 14, 15]])
 
 ```
 
@@ -841,54 +841,54 @@ my_array[-1:, :] `# Outputs array([[11, 12, 13, 14, 15]])`
 让我们看看数据框的情况，以便在您想要操作数据结构时，本节成为一种小百科全书：
 
 ```py
-`# Defining a one-dimensional data frame`
+# Defining a one-dimensional data frame
 my_df= pd.DataFrame({'first_column': [1, 2, 3, 4, 5, 
                                       6, 7, 8, 9, 10]})
 
-`# Referring to the first value of the data frame`
-my_df.iloc[0]['first_column'] `# Outputs 1`
+# Referring to the first value of the data frame
+my_df.iloc[0]['first_column'] # Outputs 1
 
-`# Referring to the last value of the data frame`
-my_df.iloc[-1]['first_column'] `# Outputs 10`
+# Referring to the last value of the data frame
+my_df.iloc[-1]['first_column'] # Outputs 10
 
-`# Referring to the fifth value of the data frame`
-my_df.iloc[6]['first_column'] `# Outputs 7`
+# Referring to the fifth value of the data frame
+my_df.iloc[6]['first_column'] # Outputs 7
 
-`# Referring to the first three values of the data frame`
-my_df.iloc[0:3]['first_column'] `# Outputs ([1, 2, 3])`
+# Referring to the first three values of the data frame
+my_df.iloc[0:3]['first_column'] # Outputs ([1, 2, 3])
 
-`# Referring to the last three values of the data frame`
+# Referring to the last three values of the data frame
 my_df.iloc[-3:]['first_column'] `# Outputs` ([8, 9, 10])
 
-`# Referring to all the values as of the second value`
+# Referring to all the values as of the second value
 my_df.iloc[1:]['first_column'] `# Outputs` ([2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-`# Defining a multi-dimensional data frame`
+# Defining a multi-dimensional data frame
 my_df  = pd.DataFrame({'first_column'  : [ 1,  6,  11], 
                        'second_column' : [ 2,  7,  12],
                        'third_column'  : [ 3,  8,  13],                       
                        'fourth_column' : [ 4,  9,  14],                       
                        'fifth_column'  : [ 5,  10, 15]})
 
-`# Referring to the first value and second column of the data frame`
-my_df.iloc[0]['second_column'] `# Outputs 2`
+# Referring to the first value and second column of the data frame
+my_df.iloc[0]['second_column'] # Outputs 2
 
-`# Referring to the last value and last column of the data frame`
-my_df.iloc[-1]['fifth_column'] `# Outputs 15`
+# Referring to the last value and last column of the data frame
+my_df.iloc[-1]['fifth_column'] # Outputs 15
 
-`# Referring to the third value and second to last column of the data frame`
+# Referring to the third value and second to last column of the data frame
 my_df.iloc[2]['fourth_column']​ `# Outputs 14` 
-`# Referring to the first three and fourth column values of the data frame`
+# Referring to the first three and fourth column values of the data frame
 my_df.iloc[:][['third_column', 'fourth_column']]
 
-`# Referring to the last two values and fifth column of the data frame`
-my_df.iloc[-2:]['fifth_column']​ `# Outputs` `([10, 15])`
+# Referring to the last two values and fifth column of the data frame
+my_df.iloc[-2:]['fifth_column']​ # Outputs` `([10, 15])
 
-`# Referring to all the values and all the columns up until the second row`
-my_df.iloc[:2,] `# Outputs ([[ 1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])`
+# Referring to all the values and all the columns up until the second row
+my_df.iloc[:2,] # Outputs ([[ 1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
 
-`# Referring to the last row with all the columns`
-my_df.iloc[-1:,]  `# Outputs ([[11, 12, 13, 14, 15]])`
+# Referring to the last row with all the columns
+my_df.iloc[-1:,]  # Outputs ([[11, 12, 13, 14, 15]])
 
 ```
 
@@ -935,8 +935,8 @@ pip install MetaTrader5
 以下代码块使用了`import`内置语句，该语句调用内部（自己创建的）或外部（由第三方创建的）库。库是函数的存储库，因此，您需要导入与您要做的事情相关的库。为了演示目的，导入以下模块、包和库：
 
 ```py
-import datetime `# Gives tools for manipulating dates and time`
-import pytz `# Offers cross-platform time zone calculations`
+import datetime # Gives tools for manipulating dates and time
+import pytz # Offers cross-platform time zone calculations
 import MetaTrader5 as mt5 `# Importing the software's library` import pandas as pd
 import numpy as np 
 
@@ -945,13 +945,13 @@ import numpy as np 
 下一步是创建您可以导入的时间框架的范围。即使我将向您展示如何分析和回测每小时数据，您也可以定义一个更广泛的时间框架，如下面的代码片段所示：
 
 ```py
-frame_M15 = mt5.TIMEFRAME_M15      `# 15-minute time`
-frameframe_M30 = mt5.TIMEFRAME_M30 `# 30-minute time frame`
-frame_H1 = mt5.TIMEFRAME_H1        `# Hourly time frame`
-frame_H4 = mt5.TIMEFRAME_H4 `# 4-hour time frame`
-frame_D1 = mt5.TIMEFRAME_D1        `# Daily time frame`
-frame_W1 = mt5.TIMEFRAME_W1        `# Weekly time frame`
-frame_M1 = mt5.TIMEFRAME_MN1       `# Monthly time frame`
+frame_M15 = mt5.TIMEFRAME_M15      # 15-minute time
+frameframe_M30 = mt5.TIMEFRAME_M30 # 30-minute time frame
+frame_H1 = mt5.TIMEFRAME_H1        # Hourly time frame
+frame_H4 = mt5.TIMEFRAME_H4 # 4-hour time frame
+frame_D1 = mt5.TIMEFRAME_D1        # Daily time frame
+frame_W1 = mt5.TIMEFRAME_W1        # Weekly time frame
+frame_M1 = mt5.TIMEFRAME_MN1       # Monthly time frame
 
 ```
 
@@ -1039,10 +1039,10 @@ def mass_import(asset, time_frame):
 要导入自 2014 年初以来的历史每小时 EURUSD 数据，您可以输入以下内容（假设`get_quotes()`、`now`、数据框和库已经定义）：
 
 ```py
-`# Defining the universe of currency pairs`
+# Defining the universe of currency pairs
 assets = ['EURUSD', 'USDCHF', 'GBPUSD', 'USDCAD']
 
-`# Re-defining the mass_import function to switch to a default 2014`
+# Re-defining the mass_import function to switch to a default 2014
 def mass_import(asset, time_frame):
 
     if time_frame == 'H1':
@@ -1050,7 +1050,7 @@ def mass_import(asset, time_frame):
         data = data.iloc[:, 1:5].values
         data = data.round(decimals = 5)  
 
-`# Calling the mass_import function and storing it into a variable`
+# Calling the mass_import function and storing it into a variable
 eurusd_data = mass_import(0, 'H1')
 ```
 
@@ -1079,7 +1079,7 @@ eurusd_data = mass_import(0, 'H1')
 您必须使用`read_excel()`函数（在导入后可访问的`pandas`内置函数）来获取 Excel 文件中的值。按照以下语法：
 
 ```py
-`# Importing the excel file into the Python interpreter`
+# Importing the excel file into the Python interpreter
 my_data = pd.read_excel('eurusd_data.xlsx')
 
 ```

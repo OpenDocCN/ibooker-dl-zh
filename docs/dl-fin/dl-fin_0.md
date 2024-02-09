@@ -141,17 +141,17 @@
 请注意，第三章完全致力于介绍 Python 并利用其功能。目前，您不必理解代码，因为这还不是学习成果：
 
 ```py
-`# Importing the required library`
+# Importing the required library
 import pandas_datareader as pdr
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1990-01-01'
 end_date   = '2023-01-23'
 
-`# Creating a dataframe and downloading the VIX data using its code name and its source`
+# Creating a dataframe and downloading the VIX data using its code name and its source
 vix = pdr.DataReader('VIXCLS', 'fred', start_date, end_date)
 
-`# Printing the latest five observations of the dataframe`
+# Printing the latest five observations of the dataframe
 print(vix.tail())
 
 ```
@@ -177,13 +177,13 @@ print(vix.tail())
 您可以以许多方式处理 NaN 值。为了本例，让我们看看处理这些无效值的最简单方法，即消除它们。但首先，让我们编写一个简单的代码，输出数据框中 NaN 值的数量，以便您了解要删除多少值：
 
 ```py
-`# Importing the required library`
+# Importing the required library
 import pandas as pd
 
-`# Checking if there are NaN values in the VIX dataframe previously imported`
+# Checking if there are NaN values in the VIX dataframe previously imported
 count_nan = vix['VIXCLS'].isnull().sum()
 
-`# Printing the result`
+# Printing the result
 print('Number of NaN values in the VIX dataframe: ' + str(count_nan))
 
 ```
@@ -212,10 +212,10 @@ vix = vix.dropna()
 要将 VIX 数据转换为平稳数据，您可以简单地取相对于前一个值的差异。这类似于将价格数据转换为收益数据。以下代码片段将之前定义的 VIX 数据框转换为理论上暗示的平稳数据：
 
 ```py
-`# Taking the differences in an attempt to make the data stationary`
+# Taking the differences in an attempt to make the data stationary
 vix = vix.diff(periods = 1, axis = 0)
 
-`# Dropping the first value of the data frame`
+# Dropping the first value of the data frame
 vix = vix.iloc[1: , :]
 
 ```
@@ -229,10 +229,10 @@ vix = vix.iloc[1: , :]
 使用`pandas`，您可以轻松计算数据集的均值如下：
 
 ```py
-`# Calculating the mean of the dataset`
+# Calculating the mean of the dataset
 mean = vix["VIXCLS"].mean()
 
-`# Printing the result`
+# Printing the result
 print('The mean of the dataset = ' + str(mean))
 
 ```
@@ -246,22 +246,22 @@ The mean of the dataset = 0.0003
 下一步是数据可视化，这在大多数情况下被认为是有趣的步骤。让我们通过时间绘制 VIX 的差异值。以下代码片段绘制了图 1-1 中显示的 VIX 数据：
 
 ```py
-`# Importing the required library`
+# Importing the required library
 import matplotlib.pyplot as plt
 
-`# Plotting the latest 250 observations in black with a label`
+# Plotting the latest 250 observations in black with a label
 plt.plot(vix[-250:], color = 'black', linewidth = 1.5, label = 'Change in VIX')
 
-`# Plotting a red dashed horizontal line that is equal to the calculated mean`
+# Plotting a red dashed horizontal line that is equal to the calculated mean
 plt.axhline(y = mean, color = 'red', linestyle = 'dashed')
 
-`# Calling a grid to facilitate the visual component`
+# Calling a grid to facilitate the visual component
 plt.grid()
 
-`# Calling the legend function so it appears with the chart`
+# Calling the legend function so it appears with the chart
 plt.legend()
 
-`# If you are using a terminal or a script, you might want to add plt.show()`
+# If you are using a terminal or a script, you might want to add plt.show()
 ```
 
 ![](img/dlf_0101.png)

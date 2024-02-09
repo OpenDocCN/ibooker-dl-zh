@@ -9,29 +9,29 @@
 您可以使用的获取 CPI 数据的代码类似于您在第一章中用来获取 VIX 数据的代码。
 
 ```py
-`# Importing the required library`
+# Importing the required library
 import pandas_datareader as pdr
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2023-01-23'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source`
+# Creating a dataframe and downloading the CPI data using its code name and its source
 cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Printing the latest five observations of the dataframe`
+# Printing the latest five observations of the dataframe
 print(cpi.tail())
 
-`# Importing the required library`
+# Importing the required library
 import pandas as pd
 
-`# Checking if there are NaN values in the CPI dataframe previously defined`
+# Checking if there are NaN values in the CPI dataframe previously defined
 count_nan = cpi['CPIAUCSL'].isnull().sum()
 
-`# Printing the result`
+# Printing the result
 print('Number of NaN values in the CPI dataframe: ' + str(count_nan))
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
 `# Transforming the CPI into a year-on-year measure` cpi = cpi.pct_change(periods = 12, axis = 0) * 100
@@ -70,27 +70,27 @@ cpi = cpi.dropna()
 您可以使用以下代码创建图 3-1：
 
 ```py
-`# Calculating the mean of the CPI over the last 10 years`
+# Calculating the mean of the CPI over the last 10 years
 cpi_last_ten_years = cpi.iloc[-240:]
 mean = cpi_last_ten_years["CPIAUCSL"].mean()
 
-`# Printing the result`
+# Printing the result
 print('The mean of the dataset: ' + str(mean), '%')
 
-`# Importing the required library`
+# Importing the required library
 import matplotlib.pyplot as plt
 
-`# Plotting the latest observations in black with a label`
+# Plotting the latest observations in black with a label
 plt.plot(cpi_last_ten_years[:], color = 'black', linewidth = 1.5, label = 'Change in CPI Year-on-Year')
 
-`# Plotting horizontal lines that represent the mean and the zero threshold`
+# Plotting horizontal lines that represent the mean and the zero threshold
 plt.axhline(y = mean, color = 'red', linestyle = 'dashed', label = '10-Year Mean')
 plt.axhline(y = 0, color = 'blue', linestyle = 'dashed', linewidth = 1)
 
-`# Calling a grid to facilitate the visual component`
+# Calling a grid to facilitate the visual component
 plt.grid()
 
-`# Calling the legend function so it appears with the chart`
+# Calling the legend function so it appears with the chart
 plt.legend()
 
 ```
@@ -134,22 +134,22 @@ The mean of the dataset: 2.4794 %
 您可以使用以下代码创建图 3-2：
 
 ```py
-`# Calculating the median of the dataset`
+# Calculating the median of the dataset
 median = cpi_last_ten_years["CPIAUCSL"].median() 
 
-`# Printing the result`
+# Printing the result
 print('The median of the dataset: ' + str(median), '%')
 
-`# Plotting the latest observations in black with a label`
+# Plotting the latest observations in black with a label
 plt.plot(cpi_last_ten_years[:], color = 'black', linewidth = 1.5, label = 'Change in CPI Year-on-Year')
 
 plt.axhline(y = median, color = 'red', linestyle = 'dashed', label = '10-Year Median')
 plt.axhline(y = 0, color = 'blue', linestyle = 'dashed', linewidth = 1)
 
-`# Calling a grid to facilitate the visual component`
+# Calling a grid to facilitate the visual component
 plt.grid()
 
-`# Calling the legend function so it appears with the chart`
+# Calling the legend function so it appears with the chart
 plt.legend()
 
 ```
@@ -257,10 +257,10 @@ The median of the dataset: 2.1143 %
 您可以使用以下代码在 Python 中计算方差：
 
 ```py
-`# Calculating the variance of the dataset`
+# Calculating the variance of the dataset
 variance = cpi_last_ten_years["CPIAUCSL"].var() 
 
-`# Printing the result`
+# Printing the result
 print('The variance of the dataset: ' + str(variance), '%')
 ```
 
@@ -293,10 +293,10 @@ The variance of the dataset: 3.6248 %
 您可以使用以下代码在 Python 中计算标准差：
 
 ```py
-`# Calculating the standard deviation of the dataset`
+# Calculating the standard deviation of the dataset
 standard_deviation = cpi_last_ten_years["CPIAUCSL"].std() 
 
-`# Printing the result`
+# Printing the result
 print('The standard deviation of the dataset: ' + str(standard_deviation), '%')
 ```
 
@@ -315,10 +315,10 @@ The standard deviation of the dataset: 1.9039 %
 让我们以相同的例子计算范围。在 Python 中，您可以轻松地做到这一点，因为有内置函数可以显示给定数据集的最大值和最小值：
 
 ```py
-`# Calculating the range of the dataset`
+# Calculating the range of the dataset
 range_metric = max(cpi["CPIAUCSL"]) - min(cpi["CPIAUCSL"])
 
-`# Printing the result`
+# Printing the result
 print('The range of the dataset: ' + str(range_metric), '%')
 
 ```
@@ -368,29 +368,29 @@ CPI 的范围显示了通货膨胀测量值在 30 年内从一个时期到另一
 您可以使用以下代码块生成图 3-4：
 
 ```py
-`# Importing libraries`
+# Importing libraries
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
 
-`# Generate data for the plot`
+# Generate data for the plot
 data = np.linspace(-3, 3, num = 1000)
 
-`# Define the mean and standard deviation of the normal distribution`
+# Define the mean and standard deviation of the normal distribution
 mean = 0
 std = 1
 
-`# Generate the function of the normal distribution`
+# Generate the function of the normal distribution
 pdf = stats.norm.pdf(data, mean, std)
 
-`# Plot the normal distribution plot`
+# Plot the normal distribution plot
 plt.plot(data, pdf, '-', color = 'black', lw = 2)
 plt.axvline(mean, color = 'black', linestyle = '--')
 
-`# Calling a grid to facilitate the visual component`
+# Calling a grid to facilitate the visual component
 plt.grid()
 
-`# Show the plot`
+# Show the plot
 plt.show()
 ```
 
@@ -437,10 +437,10 @@ plt.show()
 该公式将第三中心矩除以标准差的三次方。让我们检查美国 CPI 年度数据的偏斜度：
 
 ```py
-`# Calculating the skew of the dataset`
+# Calculating the skew of the dataset
 skew = cpi["CPIAUCSL"].skew() 
 
-`# Printing the result`
+# Printing the result
 print('The skew of the dataset: ' + str(skew))
 
 ```
@@ -454,21 +454,21 @@ The skew of the dataset: 1.4639
 数据的偏斜度为 1.46，但这意味着什么？让我们绘制数据的分布，以便解释变得更容易。您可以使用以下代码片段来做到这一点：
 
 ```py
-`# Plotting the histogram of the data`
+# Plotting the histogram of the data
 fig, ax = plt.subplots()
 ax.hist(cpi['CPIAUCSL'], bins = 30, edgecolor = 'black', color = 'white')
 
-`# Add vertical lines for better interpretation`
+# Add vertical lines for better interpretation
 ax.axvline(mean, color='black', linestyle='--', label='Mean', linewidth = 2)
 ax.axvline(median, color='grey', linestyle='-.', label='Median', linewidth = 2)
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -504,10 +504,10 @@ plt.show()
 有时，峰度被测量为超额峰度，以使其起始值为零（对于正态分布）。这意味着将峰度测量值减去 3，以计算超额峰度。让我们计算美国 CPI 年度数据的超额峰度：
 
 ```py
-`# Calculating the excess kurtosis of the dataset`
+# Calculating the excess kurtosis of the dataset
 excess_kurtosis = cpi["CPIAUCSL"].kurtosis() 
 
-`# Printing the result`
+# Printing the result
 print('The excess kurtosis of the dataset: ' + str(excess_kurtosis))
 
 ```
@@ -603,38 +603,38 @@ IQR 是一个有价值的指标，可以用作许多不同模型中的输入或�
 第一种数据可视化方法是*散点图*，用于通过对应于变量交点的点来绘制两个变量之间的关系。让我们使用以下代码创建和可视化一个散点图：
 
 ```py
-`# Importing the required library`
+# Importing the required library
 import pandas_datareader as pdr
 import pandas as pd
 import matplotlib.pyplot as plt
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source`
+# Creating a dataframe and downloading the CPI data using its code name and its source
 cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Transforming the CPI into a year-on-year measure`
+# Transforming the CPI into a year-on-year measure
 cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 
-`# Dropping the NaN values`
+# Dropping the NaN values
 cpi = cpi.dropna()
 
-`# Resetting the index`
+# Resetting the index
 cpi = cpi.reset_index()
 
-`# Creating the chart`
+# Creating the chart
 fig, ax = plt.subplots()
 ax.scatter(cpi['DATE'], cpi['CPIAUCSL'], color = 'black', s = 8,  label = 'Change in CPI Year-on-Year')
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -648,43 +648,43 @@ plt.show()
 如果您拿英国 CPI 年同比变化与美国 CPI 年同比变化进行比较，您将得到图 3-9。请注意两者之间的正相关性，因为一个变量的较高值与另一个变量的较高值相关联。相关性是一个关键指标，您将在下一节中详细了解。绘制图 3-9 的代码如下：
 
 ```py
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1995-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source`
+# Creating a dataframe and downloading the CPI data using its code name and its source
 cpi_us = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 cpi_uk = pdr.DataReader('GBRCPIALLMINMEI', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi_us = cpi_us.dropna()
 cpi_uk = cpi_uk.dropna()
 
-`# Transforming the CPI into a year-on-year measure`
+# Transforming the CPI into a year-on-year measure
 cpi_us = cpi_us.pct_change(periods = 12, axis = 0) * 100
 cpi_us = cpi_us.dropna()
 
 cpi_uk = cpi_uk.pct_change(periods = 12, axis = 0) * 100
 cpi_uk = cpi_uk.dropna()
 
-`# Creating the chart`
+# Creating the chart
 fig, ax = plt.subplots()
 ax.scatter(cpi_us['CPIAUCSL'], cpi_uk['GBRCPIALLMINMEI'], color = 'black', s = 8, label = 'Change in CPI Year-on-Year')
 
-`# Adding a few aesthetic elements to the chart`
+# Adding a few aesthetic elements to the chart
 ax.set_xlabel('US CPI')
 ax.set_ylabel('UK CPI')
 ax.axvline(x = 0, color='black', linestyle = 'dashed', linewidth = 1)  # vertical line
 ax.axhline(y = 0, color='black', linestyle = 'dashed', linewidth = 1)  # horizontal line
 ax.set_ylim(-2,)
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -712,32 +712,32 @@ plt.show()
 要创建图 3-11，您可以使用以下代码片段：
 
 ```py
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source`
+# Creating a dataframe and downloading the CPI data using its code name and its source
 cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Transforming the CPI into a year-on-year measure`
+# Transforming the CPI into a year-on-year measure
 cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 
-`# Dropping the NaN values`
+# Dropping the NaN values
 cpi = cpi.dropna()
 
-`# Resetting the index`
+# Resetting the index
 cpi = cpi.reset_index()
 
-`# Creating the chart`
+# Creating the chart
 plt.plot(cpi['DATE'], cpi['CPIAUCSL'], color = 'black', label = 'Change in CPI Year-on-Year')
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -751,19 +751,19 @@ plt.show()
 要创建图 3-12，您可以使用以下代码片段：
 
 ```py
-`# Taking the values of the previous twelve months`
+# Taking the values of the previous twelve months
 cpi_one_year = cpi.iloc[-12:]
 
-`# Creating the chart`
+# Creating the chart
 plt.bar(cpi_one_year['DATE'], cpi_one_year['CPIAUCSL'], color = 'black', label = 'Change in CPI Year-on-Year', width = 7)
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -818,20 +818,20 @@ plt.show()
 您还可以绘制没有异常值的图（任何值距离箱子的任一端超过箱子长度的一倍半）。要创建图 3-14，您可以使用以下代码片段：
 
 ```py
-`# Taking the values of the last twenty years`
+# Taking the values of the last twenty years
 cpi_last_ten_years = cpi.iloc[-240:]
 
-`# Creating the chart`
+# Creating the chart
 fig, ax = plt.subplots()
 ax.boxplot(cpi_last_ten_years['CPIAUCSL'])
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -839,7 +839,7 @@ plt.show()
 要从图中去除异常值，您只需使用以下调整：
 
 ```py
-`# Replace the corresponding code line with the following`
+# Replace the corresponding code line with the following
 ax.boxplot(cpi_last_ten_years['CPIAUCSL'], showfliers = False)
 ```
 
@@ -902,34 +902,34 @@ ax.boxplot(cpi_last_ten_years['CPIAUCSL'], showfliers = False)
 因此，皮尔逊相关系数简单地是两个变量之间的协方差除以它们标准差的乘积。让我们计算美国 CPI 年度变化和英国 CPI 年度变化之间的相关性。直觉告诉我们，由于经济上，英国和美国有关联，所以相关性大于零。以下代码块计算了这两个时间序列的皮尔逊相关系数：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 import pandas_datareader as pdr
 import pandas as pd
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1995-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source`
+# Creating a dataframe and downloading the CPI data using its code name and its source
 cpi_us = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 cpi_uk = pdr.DataReader('GBRCPIALLMINMEI', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi_us = cpi_us.dropna()
 cpi_uk = cpi_uk.dropna()
 
-`# Transforming the US CPI into a year-on-year measure`
+# Transforming the US CPI into a year-on-year measure
 cpi_us = cpi_us.pct_change(periods = 12, axis = 0) * 100
 cpi_us = cpi_us.dropna()
 
-`# Transforming the UK CPI into a year-on-year measure`
+# Transforming the UK CPI into a year-on-year measure
 cpi_uk = cpi_uk.pct_change(periods = 12, axis = 0) * 100
 cpi_uk = cpi_uk.dropna()
 
-`# Joining both CPI data into one dataframe`
+# Joining both CPI data into one dataframe
 combined_cpi_data = pd.concat([cpi_us['CPIAUCSL'], cpi_uk['GBRCPIALLMINMEI']], axis = 1)
 
-`# Using pandas' correlation function to calculate the measure`
+# Using pandas' correlation function to calculate the measure
 combined_cpi_data.corr(method = 'pearson')
 
 ```
@@ -971,33 +971,33 @@ GBRCPIALLMINMEI  0.732164         1.000000
 以下代码块计算了这两个时间序列的 Spearman 秩相关系数：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 import pandas_datareader as pdr
 import pandas as pd
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1995-01-01'
 end_date   = '2022-12-01'
 
 `# Creating a dataframe and downloading the CPI data using its code name and its source` cpi_us = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 cpi_uk = pdr.DataReader('GBRCPIALLMINMEI', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi_us = cpi_us.dropna()
 cpi_uk = cpi_uk.dropna()
 
-`# Transforming the US CPI into a year-on-year measure`
+# Transforming the US CPI into a year-on-year measure
 cpi_us = cpi_us.pct_change(periods = 12, axis = 0) * 100
 cpi_us = cpi_us.dropna()
 
-`# Transforming the UK CPI into a year-on-year measure`
+# Transforming the UK CPI into a year-on-year measure
 cpi_uk = cpi_uk.pct_change(periods = 12, axis = 0) * 100
 cpi_uk = cpi_uk.dropna()
 
-`# Joining both CPI data into one dataframe`
+# Joining both CPI data into one dataframe
 combined_cpi_data = pd.concat([cpi_us['CPIAUCSL'], cpi_uk['GBRCPIALLMINMEI']], axis = 1)
 
-`# Using pandas' correlation function to calculate the measure`
+# Using pandas' correlation function to calculate the measure
 combined_cpi_data.corr(method = 'spearman')
 
 ```
@@ -1037,33 +1037,33 @@ GBRCPIALLMINMEI  0.472526         1.000000
 以下代码块计算了美国 CPI 年同比的自相关性：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 import pandas_datareader as pdr
 import pandas as pd
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
 `# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
-`# Transforming the US CPI into a year-on-year measure`
+# Transforming the US CPI into a year-on-year measure
 cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 cpi = cpi.dropna()
 
-`# Transforming the data frame to a series structure`
+# Transforming the data frame to a series structure
 cpi = cpi.iloc[:,0]
 
-`# Calculating autocorrelation with a lag of 1`
+# Calculating autocorrelation with a lag of 1
 print('Correlation with a lag of 1 = ', round(cpi.autocorr(lag = 1), 2))
 
-`# Calculating autocorrelation with a lag of 6`
+# Calculating autocorrelation with a lag of 6
 print('Correlation with a lag of 6 = ', round(cpi.autocorr(lag = 6), 2))
 
-`# Calculating autocorrelation with a lag of 12`
+# Calculating autocorrelation with a lag of 12
 print('Correlation with a lag of 12 = ', round(cpi.autocorr(lag = 12), 2))
 
 ```
@@ -1097,18 +1097,18 @@ MIC 通过计算列联表中的单元格数量来衡量两个变量之间的关�
 以下 Python 代码片段创建了两个时间序列并绘制了图 3-17：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 import numpy as np
 import matplotlib.pyplot as plt
 
-`# Setting the range of the data`
+# Setting the range of the data
 data_range = np.arange(0, 30, 0.1)
 
-`# Creating the sine and the cosine waves`
+# Creating the sine and the cosine waves
 sine = np.sin(data_range)
 cosine = np.cos(data_range)
 
-`# Plotting`
+# Plotting
 plt.plot(sine, color = 'black', label = 'Sine Function')
 plt.plot(cosine, color = 'grey', linestyle = 'dashed', label = 'Cosine Function')
 plt.grid()
@@ -1119,16 +1119,16 @@ plt.legend()
 现在，任务是计算三个相关性度量并分析它们的结果。可以使用以下代码完成这项工作：
 
 ```py
-`# Importing the libraries`
+# Importing the libraries
 from scipy.stats import pearsonr
 from scipy.stats import spearmanr
 from minepy import MINE
 
-`# Calculating the linear correlation measures`
+# Calculating the linear correlation measures
 print('Correlation | Pearson: ', round(pearsonr(sine, cosine)[0], 3))
 print('Correlation | Spearman: ', round(spearmanr(sine, cosine)[0], 3))
 
-`# Calculating the MIC`
+# Calculating the MIC
 mine = MINE(alpha = 0.6, c = 15)
 mine.compute_score(sine,cosine)
 MIC = mine.mic()
@@ -1217,24 +1217,24 @@ ADF 测试在数据中寻找单位根。*单位根*是非平稳数据的一个�
 让我们拿美国 CPI 的年度数据进行平稳性测试。以下代码片段使用 ADF 测试检查平稳性：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 from statsmodels.tsa.stattools import adfuller
 import pandas_datareader as pdr
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
 `# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
-`# Transforming the US CPI into a year-on-year measure`
+# Transforming the US CPI into a year-on-year measure
 cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 cpi = cpi.dropna()
 
-`# Applying the ADF test on the CPI data`
+# Applying the ADF test on the CPI data
 adfuller(cpi) 
 print('p-value: %f' % adfuller(cpi)[1])
 
@@ -1251,20 +1251,20 @@ p-value: 0.0152
 现在，让我们做同样的事情，但省略年度变化。换句话说，对美国 CPI 原始数据应用代码，不考虑年度变化。以下是代码：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 from statsmodels.tsa.stattools import adfuller
 import pandas_datareader as pdr
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
 `# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
-`# Dropping the NaN values from the rows`
+# Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
-`# Applying the ADF test on the CPI data`
+# Applying the ADF test on the CPI data
 adfuller(cpi) 
 print('p-value: %f' % adfuller(cpi)[1])
 
@@ -1300,21 +1300,21 @@ ADF 测试有一个假设检验，主张非平稳性，另一个假设主张平�
 在分析通货膨胀数据之前，让我们看看趋势时间序列如何可以是平稳的。记住，平稳性指的是稳定的均值和标准差，所以如果你有一个逐渐上升或下降的时间序列，具有稳定的统计特性，它可能是平稳的。下一个代码片段模拟了一个正弦波，然后加入了一丝趋势性：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 import numpy as np
 import matplotlib.pyplot as plt
 
-`# Creating the first time series using sine waves`
+# Creating the first time series using sine waves
 length = np.pi * 2 * 5
 sinewave = np.sin(np.arange(0, length, length / 1000))
 
-`# Creating the second time series using trending sine waves`
+# Creating the second time series using trending sine waves
 sinewave_ascending = np.sin(np.arange(0, length, length / 1000))
 
-`# Defining the trend variable`
+# Defining the trend variable
 a = 0.01
 
-`# Looping to add a trend factor`
+# Looping to add a trend factor
 for i in range(len(sinewave_ascending)):
 
     sinewave_ascending[i] = a + sinewave_ascending[i]
@@ -1332,17 +1332,17 @@ for i in range(len(sinewave_ascending)):
 图 3-21 是使用以下代码生成的（确保您已经使用前面的代码块定义了系列）：
 
 ```py
-`# Plotting the series`
+# Plotting the series
 plt.plot(sinewave, label = 'Sine Wave', color = 'black')
 plt.plot(sinewave_ascending, label = 'Ascending Sine Wave', color = 'grey')
 
-`# Calling the grid function for better interpretability`
+# Calling the grid function for better interpretability
 plt.grid()
 
-`# Calling the legend function to show the labels`
+# Calling the legend function to show the labels
 plt.legend()
 
-`# Showing the plot`
+# Showing the plot
 plt.show()
 
 ```
@@ -1350,11 +1350,11 @@ plt.show()
 让我们对两个系列进行 ADF 测试，看看结果如何：
 
 ```py
-`# ADF testing | Normal sine wave`
+# ADF testing | Normal sine wave
 adfuller(sinewave) 
 print('p-value: %f' % adfuller(sinewave)[1])
 
-`# ADF testing | Ascending sine wave`
+# ADF testing | Ascending sine wave
 adfuller(sinewave_ascending) 
 print('p-value: %f' % adfuller(sinewave_ascending)[1])
 
@@ -1363,26 +1363,26 @@ print('p-value: %f' % adfuller(sinewave_ascending)[1])
 输出如下：
 
 ```py
-p-value: 0.000000 `# For the sine wave`
-p-value: 0.898635 `# For the ascending sine wave`
+p-value: 0.000000 # For the sine wave
+p-value: 0.898635 # For the ascending sine wave
 
 ```
 
 显然，ADF 测试与趋势市场不能是平稳的观念一致。但 KPSS 测试呢？以下代码使用 KPSS 在相同数据上检查平稳性：
 
 ```py
-`# Importing the KPSS library`
+# Importing the KPSS library
 from statsmodels.tsa.stattools import kpss
 
-`# KPSS testing | Normal sine wave`
+# KPSS testing | Normal sine wave
 kpss(sinewave) 
 print('p-value: %f' % kpss(sinewave)[1])
 
-`# KPSS testing | Ascending sine wave`
+# KPSS testing | Ascending sine wave
 kpss(sinewave_ascending) 
 print('p-value: %f' % kpss(sinewave_ascending)[1])
 
-`# KPSS testing while taking into account the trend | Ascending sine wave`
+# KPSS testing while taking into account the trend | Ascending sine wave
 kpss(sinewave_ascending, regression = 'ct') 
 print('p-value: %f' % kpss(sinewave_ascending, regression = 'ct')[1])
 
@@ -1397,9 +1397,9 @@ to check if the data is stationary around a constant.
 输出如下：
 
 ```py
-p-value: 0.10 `# For the sine wave`
-p-value: 0.01 `# For the ascending sine wave without trend consideration`
-p-value: 0.10 `# For the ascending sine wave with trend consideration`
+p-value: 0.10 # For the sine wave
+p-value: 0.01 # For the ascending sine wave without trend consideration
+p-value: 0.10 # For the ascending sine wave with trend consideration
 
 ```
 
@@ -1410,11 +1410,11 @@ p-value: 0.10 `# For the ascending sine wave with trend consideration`
 让我们拿美国 CPI 年度数据来检验其平稳性。以下代码片段使用 KPSS 测试检查平稳性：
 
 ```py
-`# Importing the required libraries`
+# Importing the required libraries
 from statsmodels.tsa.stattools import kpss
 import pandas_datareader as pdr
 
-`# Setting the beginning and end of the historical data`
+# Setting the beginning and end of the historical data
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
@@ -1423,15 +1423,15 @@ end_date   = '2022-12-01'
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
-`# Transforming the US CPI into a year-on-year measure`
+# Transforming the US CPI into a year-on-year measure
 cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 cpi = cpi.dropna()
 
-`# Applying the KPSS (no trend consideration) test on the CPI data`
+# Applying the KPSS (no trend consideration) test on the CPI data
 kpss(cpi) 
 print('p-value: %f' % kpss(cpi)[1])
 
-`# Applying the KPSS (with trend consideration) test on the CPI data`
+# Applying the KPSS (with trend consideration) test on the CPI data
 kpss(cpi, regression = 'ct') 
 print('p-value: %f' % kpss(cpi, regression = 'ct')[1])
 
@@ -1440,8 +1440,8 @@ print('p-value: %f' % kpss(cpi, regression = 'ct')[1])
 代码的输出如下：
 
 ```py
-p-value: 0.036323 `# without trend consideration`
-p-value: 0.010000 `# with trend consideration`
+p-value: 0.036323 # without trend consideration
+p-value: 0.010000 # with trend consideration
 
 ```
 

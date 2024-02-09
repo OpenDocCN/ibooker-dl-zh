@@ -554,7 +554,7 @@ $ pip install annoy
 
 ```py
 from annoy import AnnoyIndex
-annoy_index = AnnoyIndex(num_dimensions) *`# Length of item vector that will be`
+annoy_index = AnnoyIndex(num_dimensions) *# Length of item vector that will be
 `indexed`*
 for i in range(num_items):
     annoy_index.add_item(i, dataset[i])
