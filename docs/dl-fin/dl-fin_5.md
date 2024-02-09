@@ -311,12 +311,12 @@ if a > b:
 
     print('a is greater than b')
 
-`# Second condition (specific) `   
+# Second condition (specific)    
 elif a < b:
 
     print('a is lower than b')
 
-`# Third condition (general)`   
+# Third condition (general)   
 else:
 
     print('a is equal to b')
@@ -433,7 +433,7 @@ sum_operation(1, 3) # The output of this line is 4
 让我们看看如何从库中导入函数并使用它的函数：
 
 ```py
-`# Importing the library`   
+# Importing the library   
 import math
 
 # Using the natural logarithm function
@@ -491,7 +491,8 @@ def sum_operation(first_variable, second_variable):
 # Create a new variable that holds the result of the function    
 summed_value = sum_operation(1, 2)
 
-`# Use the new variable in a new mathematical operation and store the result` double_summed_value = summed_value * 2
+# Use the new variable in a new mathematical operation and store the result 
+double_summed_value = summed_value * 2
 
 ```
 
@@ -507,10 +508,10 @@ def square_summed_value(first_variable, second_variable):
   # Creating a variable that stores the square of final_sum
     squared_sum = final_sum ** 2
 
-    `# The result is returned   ` 
+    # The result is returned    
     return squared_sum
 
-`# Create a new variable that holds the result of the function`  
+# Create a new variable that holds the result of the function  
 squared_summed_value = square_summed_value(1, 2)
 
 ```
@@ -644,7 +645,7 @@ IndexError: index 8 is out of bounds for axis 0 with size 8
 # Defining the function
 def division(first_column, second_column):
 
-    `# Looping through the length of the created array`   
+    # Looping through the length of the created array   
     for i in range(len(my_time_series)):
 
  # First part of the exception handling
@@ -653,10 +654,10 @@ def division(first_column, second_column):
             # Division operation and storing it in the variable x
             x = my_time_series[i, first_column] / my_time_series[i + 1, second_column]
 
-  `# Outputting the result`         
+  # Outputting the result         
             print(x)
 
-        `# Exception handling of a specific error  `   
+        # Exception handling of a specific error     
         except IndexError:
 
             # Ignoring (passing) the error
@@ -751,7 +752,8 @@ second_array = np.array([21, 34, 55, 89, 144, 233])
 *连接*是将两个数据集通过行（axis = 0）或列（axis = 1）融合在一起的行为。让我们都做一遍：
 
 ```py
-`# Reshaping the arrays so they become compatible in multidimensional manipulation` first_array  = np.reshape(first_array, (-1, 1))
+# Reshaping the arrays so they become compatible in multidimensional manipulation 
+first_array  = np.reshape(first_array, (-1, 1))
 second_array = np.reshape(second_array, (-1, 1))
 
 # Concatenating both arrays by columns
@@ -816,7 +818,7 @@ my_array = np.array([[ 1,  2,  3,  4,  5],
 my_array[0, 1] # Outputs 2
 
 # Referring to the last value and last column of the array
-my_array[-1, -1] `# Outputs 15` 
+my_array[-1, -1] # Outputs 15 
 # Referring to the third value and second to last column of the array
 my_array[2, -2] # Outputs 14
 
@@ -858,10 +860,10 @@ my_df.iloc[6]['first_column'] # Outputs 7
 my_df.iloc[0:3]['first_column'] # Outputs ([1, 2, 3])
 
 # Referring to the last three values of the data frame
-my_df.iloc[-3:]['first_column'] `# Outputs` ([8, 9, 10])
+my_df.iloc[-3:]['first_column'] # Outputs ([8, 9, 10])
 
 # Referring to all the values as of the second value
-my_df.iloc[1:]['first_column'] `# Outputs` ([2, 3, 4, 5, 6, 7, 8, 9, 10])
+my_df.iloc[1:]['first_column'] # Outputs ([2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 # Defining a multi-dimensional data frame
 my_df  = pd.DataFrame({'first_column'  : [ 1,  6,  11], 
@@ -877,7 +879,7 @@ my_df.iloc[0]['second_column'] # Outputs 2
 my_df.iloc[-1]['fifth_column'] # Outputs 15
 
 # Referring to the third value and second to last column of the data frame
-my_df.iloc[2]['fourth_column']​ `# Outputs 14` 
+my_df.iloc[2]['fourth_column']​ # Outputs 14 
 # Referring to the first three and fourth column values of the data frame
 my_df.iloc[:][['third_column', 'fourth_column']]
 
@@ -937,7 +939,8 @@ pip install MetaTrader5
 ```py
 import datetime # Gives tools for manipulating dates and time
 import pytz # Offers cross-platform time zone calculations
-import MetaTrader5 as mt5 `# Importing the software's library` import pandas as pd
+import MetaTrader5 as mt5 # Importing the software's library 
+import pandas as pd
 import numpy as np 
 
 ```

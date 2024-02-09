@@ -34,7 +34,8 @@ print('Number of NaN values in the CPI dataframe: ' + str(count_nan))
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()
 
-`# Transforming the CPI into a year-on-year measure` cpi = cpi.pct_change(periods = 12, axis = 0) * 100
+# Transforming the CPI into a year-on-year measure 
+cpi = cpi.pct_change(periods = 12, axis = 0) * 100
 cpi = cpi.dropna()
 
 ```
@@ -979,7 +980,8 @@ import pandas as pd
 start_date = '1995-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source` cpi_us = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
+# Creating a dataframe and downloading the CPI data using its code name and its source 
+cpi_us = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 cpi_uk = pdr.DataReader('GBRCPIALLMINMEI', 'fred', start_date, end_date)
 
 # Dropping the NaN values from the rows
@@ -1045,7 +1047,8 @@ import pandas as pd
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
+# Creating a dataframe and downloading the CPI data using its code name and its source 
+cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()
@@ -1225,7 +1228,8 @@ import pandas_datareader as pdr
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
+# Creating a dataframe and downloading the CPI data using its code name and its source 
+cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()
@@ -1259,7 +1263,8 @@ import pandas_datareader as pdr
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
+# Creating a dataframe and downloading the CPI data using its code name and its source 
+cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()
@@ -1418,7 +1423,8 @@ import pandas_datareader as pdr
 start_date = '1950-01-01'
 end_date   = '2022-12-01'
 
-`# Creating a dataframe and downloading the CPI data using its code name and its source` cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
+# Creating a dataframe and downloading the CPI data using its code name and its source 
+cpi = pdr.DataReader('CPIAUCSL', 'fred', start_date, end_date)
 
 # Dropping the NaN values from the rows
 cpi = cpi.dropna()

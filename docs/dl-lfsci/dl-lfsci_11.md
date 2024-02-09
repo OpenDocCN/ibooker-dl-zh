@@ -19,23 +19,23 @@
 首先，让我们导入必要的库：
 
 ```py
-`from` `rdkit` `import` `Chem`             `# RDKit libraries for chemistry functions` 
-`from` `rdkit.Chem` `import` `Draw`        `# Drawing chemical structures` 
-`import` `pandas` `as` `pd`                `# Dealing with data in tables` 
-`from` `rdkit.Chem` `import` `PandasTools` `# Manipulating chemical data` 
-`from` `rdkit.Chem` `import` `Descriptors` `# Calculating molecular descriptors` 
-`from` `rdkit.Chem` `import` `rdmolops`    `# Additional molecular properties` 
-`import` `seaborn` `as` `sns`              `# Making graphs` 
+from rdkit import Chem             # RDKit libraries for chemistry functions 
+from rdkit.Chem import Draw        # Drawing chemical structures 
+import pandas as pd                # Dealing with data in tables 
+from rdkit.Chem import PandasTools # Manipulating chemical data 
+from rdkit.Chem import Descriptors # Calculating molecular descriptors 
+from rdkit.Chem import rdmolops    # Additional molecular properties 
+import seaborn as sns              # Making graphs 
 ```
 
 在这个练习中，分子使用 SMILES 字符串表示。有关 SMILES 的更多信息，请参阅第四章。现在我们可以将一个 SMILES 文件读入 Pandas 数据框，并将一个 RDKit 分子添加到数据框中。虽然输入的 SMILES 文件在技术上不是 CSV 文件，但只要我们指定分隔符，Pandas 的`read_CSV()`函数就可以读取它，这种情况下分隔符是空格：
 
 ```py
-`active_df` `=` `pd``.``read_CSV``(`"mk01/actives_final.ism"`,``header``=``None``,``sep``=`" "`)`
-`active_rows``,``active_cols` `=` `active_df``.``shape`
-`active_df``.``columns` `=` `[`"SMILES"`,`"ID"`,`"ChEMBL_ID"`]`
-`active_df``[`"label"`]` `=` `[`"Active"`]``*``active_rows`
-`PandasTools``.``AddMoleculeColumnToFrame``(``active_df``,`"SMILES"`,`"Mol"`)`
+active_df = pd.read_CSV("mk01/actives_final.ism",header=None,sep=" ")
+active_rows,active_cols = active_df.shape
+active_df.columns = ["SMILES","ID","ChEMBL_ID"]
+active_df["label"] = ["Active"]*active_rows
+PandasTools.AddMoleculeColumnToFrame(active_df,"SMILES","Mol")
 ```
 
 让我们定义一个函数，将计算的属性添加到数据框中：
@@ -60,7 +60,7 @@ in df_in.Mol]
 让我们查看数据框的前几行，以确保数据框的内容与输入文件匹配（见表 11-1）：
 
 ```py
-`active_df``.``head``(``)`
+active_df.head()
 ```
 
 表 11-1。active_df 数据框的前几行。
@@ -76,24 +76,24 @@ in df_in.Mol]
 现在让我们对诱饵分子做同样的事情：
 
 ```py
-`decoy_df` `=` `pd``.``read_CSV``(`"mk01/decoys_final.ism"`,``header``=``None``,``sep``=`" "`)`
-`decoy_df``.``columns` `=` `[`"SMILES"`,`"ID"`]`
-`decoy_rows``,` `decoy_cols` `=` `decoy_df``.``shape`
-`decoy_df``[`"label"`]` `=` `[`"Decoy"`]``*``decoy_rows`
-`PandasTools``.``AddMoleculeColumnToFrame``(``decoy_df``,`"SMILES"`,`"Mol"`)`
-`add_property_columns_to_df``(``decoy_df``)`
+decoy_df = pd.read_CSV("mk01/decoys_final.ism",header=None,sep=" ")
+decoy_df.columns = ["SMILES","ID"]
+decoy_rows, decoy_cols = decoy_df.shape
+decoy_df["label"] = ["Decoy"]*decoy_rows
+PandasTools.AddMoleculeColumnToFrame(decoy_df,"SMILES","Mol")
+add_property_columns_to_df(decoy_df)
 ```
 
 为了构建模型，我们需要一个包含活性和诱饵分子的单个数据框。我们可以使用 Pandas 的`append`函数将两个数据框添加到一起，创建一个名为`tmp_df`的新数据框：
 
 ```py
-`tmp_df` `=` `active_df``.``append``(``decoy_df``)`
+tmp_df = active_df.append(decoy_df)
 ```
 
 计算了活性和诱饵集的属性后，我们可以比较两组分子的属性。为了进行比较，我们将使用小提琴图。小提琴图类似于箱线图。小提琴图提供了频率分布的镜像、水平视图。理想情况下，我们希望看到活性和诱饵集的分布相似。结果显示在图 11-1 中：
 
 ```py
-`sns``.``violinplot``(``tmp_df``[`"label"`]``,``tmp_df``[`"mw"`]``)`
+sns.violinplot(tmp_df["label"],tmp_df["mw"])
 ```
 
 ![](img/dlls_1101.png)
@@ -105,7 +105,7 @@ in df_in.Mol]
 我们可以使用小提琴图对 LogP 分布进行类似的比较（图 11-2）。同样，我们可以看到分布是相似的，诱饵分子中有更多分布在分布的低端：
 
 ```py
-`sns``.``violinplot``(``tmp_df``[`"label"`]``,``tmp_df``[`"logP"`]``)`
+sns.violinplot(tmp_df["label"],tmp_df["logP"])
 ```
 
 ![活性和诱饵集的 LogP 小提琴图。](img/dlls_1102.png)
@@ -115,7 +115,7 @@ in df_in.Mol]
 最后，我们对分子的形式电荷进行相同的比较（图 11-3）：
 
 ```py
-`sns``.``violinplot``(``new_tmp_df``[`"label"`]``,``new_tmp_df``[`"charge"`]``)`
+sns.violinplot(new_tmp_df["label"],new_tmp_df["charge"])
 ```
 
 ![活性和诱饵集的形式电荷小提琴图。](img/dlls_1103.png)
@@ -125,25 +125,25 @@ in df_in.Mol]
 在这种情况下，我们看到了显著的差异。所有活性分子都是中性的，电荷为 0，而一些诱饵是带电的，电荷为+1 或-1。让我们看看多少比例的诱饵分子是带电的。我们可以通过创建一个只包含带电分子的新数据框来做到这一点：
 
 ```py
-`charged` `=` `decoy_df``[``decoy_df``[`"charge"`]` `!=` `0``]`
+charged = decoy_df[decoy_df["charge"] != 0]
 ```
 
 Pandas 数据框有一个名为`shape`的属性，返回数据框中的行数和列数。因此，`shape`属性中的元素`[0]`将是行数。让我们将带电分子的数据框中的行数除以假分子数据框中的总行数：
 
 ```py
-`charged``.``shape``[``0``]``/``decoy_df``.``shape``[``0``]`
+charged.shape[0]/decoy_df.shape[0]
 ```
 
 这返回 0.162。正如我们在小提琴图中看到的，大约 16%的假分子是带电的。这似乎是因为活性和假分子集合没有以一致的方式准备。我们可以通过修改假分子的化学结构来中和它们的电荷来解决这个问题。幸运的是，我们可以很容易地使用[RDKit Cookbook](https://www.rdkit.org/docs/Cookbook.html)中的`NeutraliseCharges()`函数来做到这一点：
 
 ```py
-`from` `neutralize` `import` `NeutraliseCharges`
+from neutralize import NeutraliseCharges
 ```
 
 为了避免混淆，我们创建一个新的数据框，其中包含假分子的 SMILES 字符串、ID 和标签：
 
 ```py
-`revised_decoy_df` `=` `decoy_df``[``[`"SMILES"`,`"ID"`,`"label"`]``]``.``copy``(``)`
+revised_decoy_df = decoy_df[["SMILES","ID","label"]].copy()
 ```
 
 有了这个新的数据框，我们可以用分子的中性形式的字符串替换原始的 SMILES 字符串。`NeutraliseCharges`函数返回两个值。第一个是分子中性形式的 SMILES 字符串，第二个是一个布尔变量，指示分子是否发生了变化。在下面的代码中，我们只需要 SMILES 字符串，所以我们使用`NeutraliseCharges`返回的元组的第一个元素。
@@ -157,20 +157,20 @@ in revised_decoy_df["SMILES"]]
 一旦我们替换了 SMILES 字符串，我们就可以向我们的新数据框添加一个分子列，并再次计算属性：
 
 ```py
-`PandasTools``.``AddMoleculeColumnToFrame``(``revised_decoy_df``,`"SMILES"`,`"Mol"`)`
-`add_property_columns_to_df``(``revised_decoy_df``)`
+PandasTools.AddMoleculeColumnToFrame(revised_decoy_df,"SMILES","Mol")
+add_property_columns_to_df(revised_decoy_df)
 ```
 
 然后我们可以将带活性分子的数据框追加到修订后的中性假分子的数据框中：
 
 ```py
-`new_tmp_df` `=` `active_df``.``append``(``revised_decoy_df``)`
+new_tmp_df = active_df.append(revised_decoy_df)
 ```
 
 接下来，我们可以生成一个新的箱线图，比较活性分子的电荷分布与我们中和的假分子的电荷分布（图 11-4）：
 
 ```py
-`sns``.``violinplot``(``new_tmp_df``[`"label"`]``,``new_tmp_df``[`"charge"`]``)`
+sns.violinplot(new_tmp_df["label"],new_tmp_df["charge"])
 ```
 
 ![我们修订后的假分子集带电分布的小提琴图。](img/dlls_1104.png)
@@ -180,8 +180,8 @@ in revised_decoy_df["SMILES"]]
 经过对图表的检查，我们发现假分子集中现在几乎没有带电分子。我们可以使用之前使用的相同技术来创建一个仅包含带电分子的数据框。然后我们使用这个数据框来确定集合中剩余的带电分子数量：
 
 ```py
-`charged` `=` `revised_decoy_df``[``revised_decoy_df``[`"charge"`]` `!=` `0``]`
-`charged``.``shape``[``0``]``/``revised_decoy_df``.``shape``[``0``]`
+charged = revised_decoy_df[revised_decoy_df["charge"] != 0]
+charged.shape[0]/revised_decoy_df.shape[0]
 ```
 
 现在的结果是 0.003。我们已将带电分子的比例从 16%降低到 0.3%。现在我们可以确信我们的活性和假分子集合相当平衡。
@@ -189,10 +189,10 @@ in revised_decoy_df["SMILES"]]
 为了将这些数据集与 DeepChem 一起使用，我们需要将分子写出为一个 CSV 文件，其中对于每个分子，包含 SMILES 字符串、ID、名称和一个整数值，指示化合物是活性的（标记为 1）还是非活性的（标记为 0）：
 
 ```py
-`active_df``[`"is_active"`]` `=` `[``1``]` `*` `active_df``.``shape``[``0``]`
-`revised_decoy_df``[`"is_active"`]` `=` `[``0``]` `*` `revised_decoy_df``.``shape``[``0``]`
-`combined_df` `=` `active_df``.``append``(``revised_decoy_df``)``[``[`"SMILES"`,`"ID"`,`"is_active"`]``]`
-`combined_df``.``head``(``)`
+active_df["is_active"] = [1] * active_df.shape[0]
+revised_decoy_df["is_active"] = [0] * revised_decoy_df.shape[0]
+combined_df = active_df.append(revised_decoy_df)[["SMILES","ID","is_active"]]
+combined_df.head()
 ```
 
 前五行显示在表 11-2 中。
@@ -210,7 +210,7 @@ in revised_decoy_df["SMILES"]]
 本节的最后一步是将我们的新`combined_df`保存为 CSV 文件。`index=False`选项使 Pandas 不在第一列中包含行号：
 
 ```py
-`combined_df``.``to_csv``(`"dude_erk1_mk01.CSV",index=False)
+combined_df.to_csv("dude_erk1_mk01.CSV",index=False)
 
 ```
 
@@ -219,13 +219,13 @@ in revised_decoy_df["SMILES"]]
 现在我们已经处理了格式，我们可以使用这些数据来训练一个图卷积模型。首先，我们需要导入必要的库。其中一些库在第一节中已经导入，但让我们假设我们从上一节创建的 CSV 文件开始：
 
 ```py
-`import` `deepchem` `as` `dc`                      # DeepChem libraries
-`from` `deepchem.models` `import` `GraphConvModel` `# Graph convolutions` 
-`import` `numpy` `as` `np`                         `# NumPy for numeric operations` 
-`import` `sys`                                 `# Error handling` 
-`import` `pandas` `as` `pd`                        `# Data table manipulation` 
-`import` `seaborn` `as` `sns`                      `# Seaborn library for plotting` 
-`from` `rdkit.Chem` `import` `PandasTools`         `# Chemical structures in Pandas` 
+import deepchem as dc                      # DeepChem libraries
+from deepchem.models import GraphConvModel # Graph convolutions 
+import numpy as np                         # NumPy for numeric operations 
+import sys                                 # Error handling 
+import pandas as pd                        # Data table manipulation 
+import seaborn as sns                      # Seaborn library for plotting 
+from rdkit.Chem import PandasTools         # Chemical structures in Pandas 
 ```
 
 现在让我们定义一个函数来创建一个`GraphConvModel`。在这种情况下，我们将创建一个分类模型。由于我们将在以后的不同数据集上应用该模型，因此最好创建一个目录来存储模型。您需要将目录更改为您的文件系统上可访问的内容：
@@ -255,7 +255,7 @@ dataset = loader.featurize(dataset_file, shard_size=8192)
 现在我们已经加载了数据集，让我们构建一个模型。我们将创建训练集和测试集来评估模型的性能。在这种情况下，我们将使用`RandomSplitter`（DeepChem 还提供许多其他分割器，如`ScaffoldSplitter`，它通过化学支架划分数据集，以及`ButinaSplitter`，它首先对数据进行聚类，然后将数据集分割，使不同的聚类最终出现在训练集和测试集中）：
 
 ```py
-`splitter` `=` `dc``.``splits``.``RandomSplitter``(``)`
+splitter = dc.splits.RandomSplitter()
 ```
 
 随着数据集的拆分，我们可以在训练集上训练模型，然后在验证集上测试该模型。在这一点上，我们需要定义一些指标并评估我们模型的性能。在这种情况下，我们的数据集是不平衡的：我们有少量活性化合物和大量非活性化合物。鉴于这种差异，我们需要使用一个反映不平衡数据集性能的指标。适合这种数据集的一个指标是马修斯相关系数（MCC）：
@@ -311,20 +311,20 @@ training_score_list + validation_score_list)
 可视化我们模型的结果也是有用的。为了做到这一点，我们将为验证集生成一组预测：
 
 ```py
-`pred` `=` `[``x``.``flatten``(``)` `for` `x` `in` `model``.``predict``(``valid_dataset``)``]`
+pred = [x.flatten() for x in model.predict(valid_dataset)]
 ```
 
 为了使处理更容易，我们将使用预测创建一个 Pandas 数据框架：
 
 ```py
-`pred_df` `=` `pd``.``DataFrame``(``pred``,``columns``=``[`"neg"`,`"pos"`]``)`
+pred_df = pd.DataFrame(pred,columns=["neg","pos"])
 ```
 
 我们可以轻松地将活动类别（1 = 活性，0 = 非活性）和我们预测的分子的 SMILES 字符串添加到数据框架中：
 
 ```py
-`pred_df``[`"active"`]` `=` `[``int``(``x``)` `for` `x` `in` `valid_dataset``.``y``]`
-`pred_df``[`"SMILES"`]` `=` `valid_dataset``.``ids`
+pred_df["active"] = [int(x) for x in valid_dataset.y]
+pred_df["SMILES"] = valid_dataset.ids
 ```
 
 查看数据框架的前几行总是一个好主意，以确保数据是合理的。表 11-3 显示了结果。
@@ -342,7 +342,7 @@ training_score_list + validation_score_list)
 创建箱线图使我们能够比较活性和非活性分子的预测值（请参见图 11-6）。
 
 ```py
-`sns``.``boxplot``(``pred_df``.``active``,``pred_df``.``pos``)`
+sns.boxplot(pred_df.active,pred_df.pos)
 ```
 
 ![预测分子的正分数。](img/dlls_1106.png)
@@ -352,7 +352,7 @@ training_score_list + validation_score_list)
 我们的模型表现非常好：我们可以看到活性和非活性分子之间有明显的区分。在构建预测模型时，通常重要的是检查被预测为活性的非活性分子（假阳性）以及被预测为非活性的活性分子（假阴性）。看起来只有一个我们的活性分子得到了低正分数。为了更仔细地观察，我们将创建一个新的数据框架，其中包含所有得分<0.5 的活性分子：
 
 ```py
-`false_negative_df` `=` `pred_df``.``query``(`"active == 1 & pos < 0.5"`)``.``copy``(``)`
+false_negative_df = pred_df.query("active == 1 & pos < 0.5").copy()
 ```
 
 为了检查数据框架中分子的化学结构，我们使用 RDKit 中的 PandasTools 模块：
@@ -392,14 +392,14 @@ false_positive_df
 在模型训练阶段，我们的目标是评估模型的性能。因此，我们在部分数据上训练模型，并在其余数据上验证模型。现在我们已经评估了性能，我们希望生成最有效的模型。为了做到这一点，我们将在所有数据上训练模型：
 
 ```py
-`model``.``fit``(``dataset``)`
+model.fit(dataset)
 
 ```
 
 这给我们一个准确度得分为 91%。最后，我们将模型保存到磁盘上，以便将来进行预测使用：
 
 ```py
-`model``.``save``(``)`
+model.save()
 
 ```
 
@@ -434,7 +434,7 @@ Options:
 要在我们的输入文件上调用脚本，该文件名为*zinc_100k.smi*，我们可以指定输入文件和输出文件名的前缀。`filter`参数调用脚本处于`filter`模式，其中它识别可能有问题的分子。`--prefix`参数指示输出文件名将以前缀*zinc*开头。
 
 ```py
-`rd_filters``.``py` `filter` `-``-``in` `zinc_100k``.``smi` `-``-``prefix` `zinc`
+rd_filters.py filter --in zinc_100k.smi --prefix zinc
 ```
 
 ```py
@@ -505,11 +505,11 @@ HBD
 我们可以使用 Python 的`collections`库中的`Counter`类来识别哪些过滤器负责移除最多的分子（参见[表 11-5）：
 
 ```py
-`from` `collections` `import` `Counter`
-`count_list` `=` `list``(``Counter``(``df``.``FILTER``)``.``items``(``)``)`
-`count_df` `=` `pd``.``DataFrame``(``count_list``,``columns``=``[`"Rule"`,`"Count"`]``)`
-`count_df``.``sort_values``(`"Count"`,``inplace``=``True``,``ascending``=``False``)`
-`count_df``.``head``(``)`
+from collections import Counter
+count_list = list(Counter(df.FILTER).items())
+count_df = pd.DataFrame(count_list,columns=["Rule","Count"])
+count_df.sort_values("Count",inplace=True,ascending=False)
+count_df.head()
 ```
 
 表 11-5。前 5 个过滤器选择的分子数量统计
@@ -575,25 +575,25 @@ Draw.MolsToGridImage(mol_list,
 我们首先导入必要的库：
 
 ```py
-`import` `deepchem` `as` `dc`                           # DeepChem libraries
-`import` `pandas` `as` `pd`                             # Pandas for tables
-`from` `rdkit.Chem` `import` `PandasTools``,` `Draw`        # Chemistry in Pandas
-`from` `rdkit` `import` `DataStructs`                   # For fingerprint handling
-`from` `rdkit.ML.Cluster` `import` `Butina`             # Cluster molecules
-`from` `rdkit.Chem` `import` `rdMolDescriptors` `as` `rdmd` # Descriptors
-`import` `seaborn` `as` `sns`                           # Plotting
+import deepchem as dc                           # DeepChem libraries
+import pandas as pd                             # Pandas for tables
+from rdkit.Chem import PandasTools, Draw        # Chemistry in Pandas
+from rdkit import DataStructs                   # For fingerprint handling
+from rdkit.ML.Cluster import Butina             # Cluster molecules
+from rdkit.Chem import rdMolDescriptors as rdmd # Descriptors
+import seaborn as sns                           # Plotting
 ```
 
 并加载我们之前生成的模型：
 
 ```py
-`model` `=` `dc``.``models``.``TensorGraph``.``load_from_dir``(`""/tmp/mk01/model_dir""`)`
+model = dc.models.TensorGraph.load_from_dir(""/tmp/mk01/model_dir"")
 ```
 
 要从我们的模型生成预测，我们首先需要对我们计划用来生成预测的分子进行特征化。我们通过实例化一个 DeepChem `ConvMolFeaturizer` 来实现这一点：
 
 ```py
-`featurizer` `=` `dc``.``feat``.``ConvMolFeaturizer``(``)`
+featurizer = dc.feat.ConvMolFeaturizer()
 ```
 
 为了对分子进行特征化，我们需要将我们的 SMILES 文件转换为 CSV 文件。为了创建一个 DeepChem 特征化器，我们还需要一个活动列，因此我们添加一个，然后将文件写入 CSV：
@@ -609,7 +609,7 @@ df["Val"] = [0] * rows
 与以前一样，我们应该查看文件的前几行（在表 11-6 中显示）以确保一切如我们所期望的那样：
 
 ```py
-`df``.``head``(``)`
+df.head()
 ```
 
 表 11-6。输入文件的前几行
@@ -625,8 +625,8 @@ df["Val"] = [0] * rows
 请注意，Val 列只是一个占位符，以使 DeepChem 特征化器保持正常。文件看起来不错，因此我们将其写为 CSV 文件以用作 DeepChem 的输入。我们使用`index=False`参数来防止 Pandas 将行号写为第一列：
 
 ```py
-`infile_name` `=` "zinc_filtered.CSV"
-`df``.``to_CSV``(``infile_name``,``index``=``False``)`
+infile_name = "zinc_filtered.CSV"
+df.to_CSV(infile_name,index=False)
 ```
 
 我们可以使用 DeepChem 读取此 CSV 文件并对我们计划预测的分子进行特征化：
@@ -642,7 +642,7 @@ dataset = loader.featurize(infile_name, shard_size=8192)
 特征化的分子可以用来生成模型的预测：
 
 ```py
-`pred` `=` `model``.``predict``(``dataset``)`
+pred = model.predict(dataset)
 ```
 
 为了方便起见，我们将预测放入 Pandas 数据框中：
@@ -719,7 +719,7 @@ def butina_cluster(mol_list, cutoff=0.35):
 在进行聚类之前，我们将创建一个只包含前 100 个得分最高的分子的新数据框。由于`combo_df`已经排序，我们只需使用`head`函数选择数据框中的前 100 行：
 
 ```py
-`best_100_df` `=` `combo_df``.``head``(``100``)``.``copy``(``)`
+best_100_df = combo_df.head(100).copy()
 ```
 
 然后，我们可以创建一个新列，为每个化合物包含聚类标识符：
@@ -738,7 +738,7 @@ best_100_df.head()
 我们可以使用 Pandas 的`unique`函数确定我们有 55 个唯一的聚类：
 
 ```py
-`len``(``best_100_df``.``Cluster``.``unique``(``)``)`
+len(best_100_df.Cluster.unique())
 ```
 
 最终，我们希望购买这些化合物并进行实验筛选。为了做到这一点，我们需要保存一个 CSV 文件，列出我们计划购买的分子。`drop_duplicates`函数可用于选择每个聚类中的一个分子。默认情况下，该函数从表的顶部开始，并删除已经看到的值的行：

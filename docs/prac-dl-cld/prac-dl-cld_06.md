@@ -768,10 +768,10 @@ flush_l1d
 使用适当的指令集指定构建标志从源代码构建 TensorFlow 应该会显著提高速度。这里的缺点是从源代码构建可能需要相当长的时间，至少几个小时。或者，我们可以使用 Anaconda 下载和安装由英特尔在他们的深度神经网络数学核心库（MKL-DNN）之上构建的高度优化的 TensorFlow 变体。安装过程非常简单。首先，我们安装[Anaconda](https://anaconda.com)包管理器。然后，我们运行以下命令：
 
 ```py
-*# For Linux and Mac*
+# For Linux and Mac
 $ conda install tensorflow
 
-*# For Windows*
+# For Windows
 $ conda install tensorflow-mkl
 ```
 

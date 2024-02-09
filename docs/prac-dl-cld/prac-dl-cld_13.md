@@ -143,12 +143,12 @@ TensorFlow Lite 包含量化和浮点核心操作符，其中许多已经针对�
 让我们看看如何使用 TensorFlow Lite Converter 工具转换模型，这个`tflite_convert`命令与我们的 TensorFlow 安装捆绑在一起：
 
 ```py
-*# Keras to TensorFlow Lite*
+# Keras to TensorFlow Lite
 $ tflite_convert \
   --output_file=my_model.tflite \
   --keras_model_file=my_model.h5
 
-*# TensorFlow to TensorFlow Lite*
+# TensorFlow to TensorFlow Lite
 $ tflite_convert \
   --output_file=my_model.tflite \
   --graph_def_file=my_model/frozen_graph.pb
