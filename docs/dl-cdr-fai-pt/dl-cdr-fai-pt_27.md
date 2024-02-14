@@ -1,5 +1,7 @@
 # 附录 B. 数据项目清单
 
+> 原文：<https://www.bookstack.cn/read/th-fastai-book/b8ffc03c29b9fdcd.md>
+
 创建有用的数据项目远不止培训准确的模型！当 Jeremy 做咨询时，他总是试图了解组织开发数据项目的背景，基于以下考虑，总结在图 B-1 中：
 
 战略
