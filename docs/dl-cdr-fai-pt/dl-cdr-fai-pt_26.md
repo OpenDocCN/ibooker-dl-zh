@@ -1,6 +1,11 @@
 # 附录 A. 创建博客
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/a54eca534010f193.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/a54eca534010f193.md`](https://www.bookstack.cn/read/th-fastai-book/a54eca534010f193.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在第二章中，我们建议您可能希望尝试博客作为帮助消化您正在阅读和练习的信息的一种方式。但是如果您还没有博客呢？应该使用哪个平台呢？
 

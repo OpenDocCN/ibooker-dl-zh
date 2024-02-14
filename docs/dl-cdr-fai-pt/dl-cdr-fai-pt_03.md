@@ -1,6 +1,11 @@
 # 第一章：你的深度学习之旅
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/85a70c895d8d75be.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/85a70c895d8d75be.md`](https://www.bookstack.cn/read/th-fastai-book/85a70c895d8d75be.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 你好，感谢你让我们加入你的深度学习之旅，无论你已经走了多远！在本章中，我们将告诉你更多关于本书的内容，介绍深度学习背后的关键概念，并在不同任务上训练我们的第一个模型。无论你是否有技术或数学背景（尽管如果你有也没关系！），我们写这本书是为了让尽可能多的人能够接触到深度学习。
 

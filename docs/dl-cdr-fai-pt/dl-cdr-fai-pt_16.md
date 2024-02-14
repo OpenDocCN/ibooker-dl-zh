@@ -1,6 +1,11 @@
 # 第十二章：从头开始的语言模型
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/3279cd1df4e892dc.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/3279cd1df4e892dc.md`](https://www.bookstack.cn/read/th-fastai-book/3279cd1df4e892dc.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 我们现在准备深入…深入深度学习！您已经学会了如何训练基本的神经网络，但是如何从那里创建最先进的模型呢？在本书的这一部分，我们将揭开所有的神秘，从语言模型开始。
 

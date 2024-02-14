@@ -1,6 +1,11 @@
 # 第三章：数据伦理
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/9bc6d15b4440b85d.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/9bc6d15b4440b85d.md`](https://www.bookstack.cn/read/th-fastai-book/9bc6d15b4440b85d.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 正如我们在第一章和第二章中讨论的，有时机器学习模型可能出错。它们可能有错误。它们可能被呈现出以前没有见过的数据，并以我们意料之外的方式行事。或者它们可能完全按设计工作，但被用于我们非常希望它们永远不要被用于的事情。
 

@@ -1,6 +1,11 @@
 # 第十三章：卷积神经网络
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/44d8848dfac0c1b0.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/44d8848dfac0c1b0.md`](https://www.bookstack.cn/read/th-fastai-book/44d8848dfac0c1b0.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在第四章中，我们学习了如何创建一个识别图像的神经网络。我们能够在区分 3 和 7 方面达到 98%以上的准确率，但我们也看到 fastai 内置的类能够接近 100%。让我们开始尝试缩小这个差距。
 

@@ -1,6 +1,11 @@
 # 第十章：NLP 深入探讨：RNNs
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/38414c136aca063a.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/38414c136aca063a.md`](https://www.bookstack.cn/read/th-fastai-book/38414c136aca063a.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在第一章中，我们看到深度学习可以用于处理自然语言数据集并取得出色的结果。我们的示例依赖于使用预训练的语言模型，并对其进行微调以对评论进行分类。该示例突出了 NLP 和计算机视觉中迁移学习的区别：通常情况下，在 NLP 中，预训练模型是在不同任务上训练的。
 

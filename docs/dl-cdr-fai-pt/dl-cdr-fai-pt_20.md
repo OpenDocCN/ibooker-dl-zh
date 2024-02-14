@@ -1,6 +1,11 @@
 # 第十六章：训练过程
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/76501b0f60767008.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/76501b0f60767008.md`](https://www.bookstack.cn/read/th-fastai-book/76501b0f60767008.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 现在你知道如何为计算机视觉、自然图像处理、表格分析和协同过滤创建最先进的架构，也知道如何快速训练它们。所以我们完成了，对吧？还没有。我们仍然需要探索一下训练过程的更多内容。
 

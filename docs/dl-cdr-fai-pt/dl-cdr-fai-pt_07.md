@@ -1,6 +1,11 @@
 # 第四章：底层：训练数字分类器
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/026b6e039c998ba1.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/026b6e039c998ba1.md`](https://www.bookstack.cn/read/th-fastai-book/026b6e039c998ba1.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在第二章中看到训练各种模型的样子后，现在让我们深入了解并看看究竟发生了什么。我们将使用计算机视觉来介绍深度学习的基本工具和概念。
 

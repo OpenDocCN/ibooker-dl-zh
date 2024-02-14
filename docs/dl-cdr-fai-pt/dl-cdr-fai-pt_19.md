@@ -1,6 +1,11 @@
 # 第十五章：应用架构深入探讨
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/fc209e8bb92c8c12.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/fc209e8bb92c8c12.md`](https://www.bookstack.cn/read/th-fastai-book/fc209e8bb92c8c12.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 我们现在处于一个令人兴奋的位置，我们可以完全理解我们为计算机视觉、自然语言处理和表格分析使用的最先进模型的架构。在本章中，我们将填补有关 fastai 应用模型如何工作的所有缺失细节，并向您展示如何构建它们。
 

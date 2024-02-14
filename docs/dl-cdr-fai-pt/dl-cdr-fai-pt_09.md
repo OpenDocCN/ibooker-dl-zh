@@ -1,6 +1,11 @@
 # 第六章：其他计算机视觉问题
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/f1ed7978537dabc2.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/f1ed7978537dabc2.md`](https://www.bookstack.cn/read/th-fastai-book/f1ed7978537dabc2.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在上一章中，你学习了一些在实践中训练模型的重要技术。选择学习率和周期数等考虑因素对于获得良好结果非常重要。
 

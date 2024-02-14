@@ -1,6 +1,11 @@
 # 第七章：训练一个最先进的模型
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/798d5ac22392691a.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/798d5ac22392691a.md`](https://www.bookstack.cn/read/th-fastai-book/798d5ac22392691a.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 本章介绍了更高级的技术，用于训练图像分类模型并获得最先进的结果。如果您想了解更多关于深度学习的其他应用，并稍后回来，您可以跳过它——后续章节不会假设您已掌握这些材料。
 

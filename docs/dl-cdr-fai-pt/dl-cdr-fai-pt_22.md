@@ -1,6 +1,11 @@
 # 第十七章：基础神经网络
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/f6eef03cb69f6500.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/f6eef03cb69f6500.md`](https://www.bookstack.cn/read/th-fastai-book/f6eef03cb69f6500.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 本章开始了一段旅程，我们将深入研究我们在前几章中使用的模型的内部。我们将涵盖许多我们以前见过的相同内容，但这一次我们将更加密切地关注实现细节，而不那么密切地关注事物为什么是这样的实际问题。
 

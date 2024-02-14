@@ -1,6 +1,11 @@
 # 第八章：协同过滤深入探讨
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/d4afd9df315bb076.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/d4afd9df315bb076.md`](https://www.bookstack.cn/read/th-fastai-book/d4afd9df315bb076.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 解决的一个常见问题是有一定数量的用户和产品，您想推荐哪些产品最有可能对哪些用户有用。存在许多变体：例如，推荐电影（如 Netflix 上），确定在主页上为用户突出显示什么，决定在社交媒体动态中显示什么故事等。解决这个问题的一般方法称为*协同过滤*，工作原理如下：查看当前用户使用或喜欢的产品，找到其他使用或喜欢类似产品的用户，然后推荐那些用户使用或喜欢的其他产品。
 

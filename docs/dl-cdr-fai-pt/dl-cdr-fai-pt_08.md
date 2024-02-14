@@ -1,6 +1,11 @@
 # 第五章：图像分类
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/0661b9d7375f45ab.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/0661b9d7375f45ab.md`](https://www.bookstack.cn/read/th-fastai-book/0661b9d7375f45ab.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 现在您了解了深度学习是什么、它的用途以及如何创建和部署模型，现在是时候深入了！在理想的世界中，深度学习从业者不必了解每个细节是如何在底层工作的。但事实上，我们还没有生活在理想的世界中。事实是，要使您的模型真正起作用并可靠地工作，您必须正确处理很多细节，并检查很多细节。这个过程需要能够在训练神经网络时查看内部情况，找到可能的问题，并知道如何解决它们。
 

@@ -1,6 +1,11 @@
 # 第十四章：ResNets
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/482a7208820b3d90.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/482a7208820b3d90.md`](https://www.bookstack.cn/read/th-fastai-book/482a7208820b3d90.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在本章中，我们将在上一章介绍的 CNN 基础上构建，并向您解释 ResNet（残差网络）架构。它是由 Kaiming He 等人于 2015 年在文章[“Deep Residual Learning for Image Recognition”](https://oreil.ly/b68K8)中引入的，到目前为止是最常用的模型架构。最近在图像模型中的发展几乎总是使用残差连接的相同技巧，大多数时候，它们只是原始 ResNet 的调整。
 

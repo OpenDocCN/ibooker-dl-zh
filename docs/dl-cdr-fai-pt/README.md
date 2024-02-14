@@ -1,6 +1,6 @@
 # 面向程序员的 FastAI 和 PyTorch 深度学习
 
-> 原文：[Deep Learning for Coders With Fastai and Pytorch](https://annas-archive.org/md5/a3a0d9462f2a296b853f2febedc62b3f)
+> 原文：[`www.bookstack.cn/read/th-fastai-book/b8ffc03c29b9fdcd.md`](https://www.bookstack.cn/read/th-fastai-book/b8ffc03c29b9fdcd.md)
 >
 > 译者：[飞龙](https://github.com/wizardforcel)
 >

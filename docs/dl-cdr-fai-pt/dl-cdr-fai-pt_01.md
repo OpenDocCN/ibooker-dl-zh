@@ -1,6 +1,11 @@
 # 序言
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/README.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/README.md`](https://www.bookstack.cn/read/th-fastai-book/README.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 在很短的时间内，深度学习已经成为一种广泛应用的技术，解决和自动化计算机视觉、机器人技术、医疗保健、物理学、生物学等领域的问题。深度学习的一大乐趣在于其相对简单性。强大的深度学习软件已经构建起来，使得快速入门变得快速简单。在几周内，你就可以理解基础知识并熟悉技术。
 

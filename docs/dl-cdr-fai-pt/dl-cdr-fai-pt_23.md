@@ -1,6 +1,11 @@
 # 第十八章：使用 CAM 解释 CNN
 
-> 原文：<https://www.bookstack.cn/read/th-fastai-book/20b17a5a56ea9b6f.md>
+> 原文：[`www.bookstack.cn/read/th-fastai-book/20b17a5a56ea9b6f.md`](https://www.bookstack.cn/read/th-fastai-book/20b17a5a56ea9b6f.md)
+>
+> 译者：[飞龙](https://github.com/wizardforcel)
+>
+> 协议：[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
 
 现在我们知道如何从头开始构建几乎任何东西，让我们利用这些知识来创建全新（并非常有用！）的功能：*类激活图*。它让我们对 CNN 为何做出预测有一些见解。
 
