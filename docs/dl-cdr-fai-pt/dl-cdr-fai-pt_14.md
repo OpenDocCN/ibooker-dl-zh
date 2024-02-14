@@ -1,6 +1,6 @@
 # 第十一章：使用 fastai 的中级 API 进行数据整理
 
-> 原文：[`www.bookstack.cn/read/th-fastai-book`](https://www.bookstack.cn/read/th-fastai-book/)
+> 原文：[`www.bookstack.cn/read/th-fastai-book/cedbd4fb150718e5.md`](https://www.bookstack.cn/read/th-fastai-book/cedbd4fb150718e5.md)
 >
 > 译者：[飞龙](https://github.com/wizardforcel)
 >
