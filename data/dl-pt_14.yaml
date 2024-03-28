@@ -1,0 +1,3323 @@
+- en: 13 Using segmentationto find suspected nodules
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 13 使用分割找到可疑结节
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖
+- en: Segmenting data with a pixel-to-pixel model
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用像素到像素模型对数据进行分割
+- en: Performing segmentation with U-Net
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用 U-Net 进行分割
+- en: Understanding mask prediction using Dice loss
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用 Dice 损失理解掩模预测
+- en: Evaluating a segmentation model’s performance
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 评估分割模型的性能
+- en: In the last four chapters, we have accomplished a lot. We’ve learned about CT
+    scans and lung tumors, datasets and data loaders, and metrics and monitoring.
+    We have also *applied* many of the things we learned in part 1, and we have a
+    working classifier. We are still operating in a somewhat artificial environment,
+    however, since we require hand-annotated nodule candidate information to load
+    into our classifier. We don’t have a good way to create that input automatically.
+    Just feeding the entire CT into our model--that is, plugging in overlapping 32
+    × 32 × 32 patches of data--would result in 31 × 31 × 7 = 6,727 patches per CT,
+    or about 10 times the number of annotated samples we have. We’d need to overlap
+    the edges; our classifier expects the nodule candidate to be centered, and even
+    then the inconsistent positioning would probably present issues.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在过去的四章中，我们取得了很大的进展。我们了解了 CT 扫描和肺部肿瘤，数据集和数据加载器，以及指标和监控。我们还*应用*了我们在第一部分学到的许多东西，并且我们有一个可用的分类器。��而，我们仍然在一个有些人为的环境中操作，因为我们需要手动注释的结节候选信息加载到我们的分类器中。我们没有一个很好的方法可以自动创建这个输入。仅仅将整个
+    CT 输入到我们的模型中——也就是说，插入重叠的32×32×32数据块——会导致每个 CT 有31×31×7=6,727个数据块，大约是我们拥有的注释样本数量的10倍。我们需要重叠边缘；我们的分类器期望结节候选位于中心，即使如此，不一致的定位可能会带来问题。
+- en: As we explained in chapter 9, our project uses multiple steps to solve the problem
+    of locating possible nodules, identifying them, with an indication of their possible
+    malignancy. This is a common approach among practitioners, while in deep learning
+    research there is a tendency to demonstrate the ability of individual models to
+    solve complex problems in an end-to-end fashion. The multistage project design
+    we use in this book gives us a good excuse to introduce new concepts step by step.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在第9章中解释的，我们的项目使用多个步骤来解决定位可能结节、识别它们，并指示可能恶性的问题。这是从业者中常见的方法，而在深度学习研究中，有一种倾向是展示单个模型解决复杂问题的能力。我们在本书中使用的多阶段项目设计给了我们一个很好的借口，逐步介绍新概念。
+- en: 13.1 Adding a second model to our project
+  id: totrans-8
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.1 向我们的项目添加第二个模型
+- en: 'In the previous two chapters, we worked on step 4 of our plan shown in figure
+    13.1: classification. In this chapter, we’ll go back not just one but two steps.
+    We need to find a way to tell our classifier where to look. To do this, we are
+    going to take raw CT scans and find everything that might be a nodule.[¹](#pgfId-1011841)
+    This is the highlighted step 2 in the figure. To find these possible nodules,
+    we have to flag voxels that look like they might be part of a nodule, a process
+    known as *segmentation*. Then, in chapter 14, we will deal with step 3 and provide
+    the bridge by transforming the segmentation masks from this image into location
+    annotations.'
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在前两章中，我们完成了图13.1中显示的计划的第4步：分类。在本章中，我们不仅要回到上一步，而是回到上两步。我们需要找到一种方法告诉我们的分类器在哪里查找。为此，我们将对原始
+    CT 扫描进行处理，找出可能是结节的所有内容。这是图中突出显示的第2步。为了找到这些可能的结节，我们必须标记看起来可能是结节的体素，这个过程被称为*分割*。然后，在第14章中，我们将处理第3步，并通过将这幅图像的分割掩模转换为位置注释来提供桥梁。
+- en: '![](../Images/CH13_F01_Stevens2_GS.png)'
+  id: totrans-10
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F01_Stevens2_GS.png)'
+- en: 'Figure 13.1 Our end-to-end lung cancer detection project, with a focus on this
+    chapter’s topic: step 2, segmentation'
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.1 我们的端到端肺癌检测项目，重点关注本章主题：第2步，分割
+- en: By the time we’re finished with this chapter, we’ll have created a new model
+    with an architecture that can perform per-pixel labeling, or segmentation. The
+    code that will accomplish this will be very similar to the code from the last
+    chapter, especially if we focus on the larger structure. All of the changes we’re
+    going to make will be smaller and targeted. As we see in figure 13.2, we need
+    to make updates to our model (step 2A in the figure), dataset (2B), and training
+    loop (2C) to account for the new model’s inputs, outputs, and other requirements.
+    (Don’t worry if you don’t recognize each component in each of these steps in step
+    2 on the right side of the diagram. We’ll go through the details when we get to
+    each step.) Finally, we’ll examine the results we get when running our new model
+    (step 3 in the figure).
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到本章结束时，我们将创建一个新模型，其架构可以执行像素级标记，或分割。完成这项任务的代码将与上一章的代码非常相似，特别是如果我们专注于更大的结构。我们将要做出的所有更改都将更小且有针对性。正如我们在图13.2中看到的，我们需要更新我们的模型（图中的第2A步），数据集（2B），以及训练循环（2C），以适应新模型的输入、输出和其他要求。（如果你在图中右侧的步骤2中不认识每个组件，不要担心。我们在到达每个步骤时会详细讨论。）最后，我们将检查运行新模型时得到的结果（图中的第3步）。
+- en: '![](../Images/CH13_F02_Stevens2_GS.png)'
+  id: totrans-13
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F02_Stevens2_GS.png)'
+- en: Figure 13.2 The new model architecture for segmentation, along with the model,
+    dataset, and training loop updates we will implement
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.2 用于分割的新模型架构，以及我们将实施的模型、数据集和训练循环更新
+- en: 'Breaking down figure 13.2 into steps, our plan for this chapter is as follows:'
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将图13.2分解为步骤，我们本章的计划如下：
+- en: Segmentation. First we will learn how segmentation works with a U-Net model,
+    including what the new model components are and what happens to them as we go
+    through the segmentation process. This is step 1 in figure 13.2.
+  id: totrans-16
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 分割。首先，我们将学习使用 U-Net 模型进行分割的工作原理，包括新模型组件是什么，以及在我们进行分割过程中会发生什么。这是图13.2中的第1步。
+- en: 'Update. To implement segmentation, we need to change our existing code base
+    in three main places, shown in the substeps on the right side of figure 13.2.The
+    code will be structurally very similar to what we developed for classification,
+    but will differ in detail:'
+  id: totrans-17
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 更新。为了实现分割，我们需要在三个主���位置更改我们现有的代码库，如图13.2右侧的子步骤所示。代码在结构上与我们为分类开发的代码非常相似，但在细节上有所不同：
+- en: Update the model (step 2A). We will integrate a preexisting U-Net into our segmentation
+    model. Our model in chapter 12 output a simple true/false classification; our
+    model in this chapter will instead output an entire image.
+  id: totrans-18
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 更新模型（步骤2A）。我们将把一个现有的 U-Net 集成到我们的分割模型中。我们在第12章的模型输出一个简单的真/假分类；而在本章中的模型将输出整个图像。
+- en: Change the dataset (step 2B). We need to change our dataset to not only deliver
+    bits of the CT but also provide masks for the nodules. The classification dataset
+    consisted of 3D crops around nodule candidates, but we’ll need to collect both
+    full CT slices and 2D crops for segmentation training and validation.
+  id: totrans-19
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 更改数据集（步骤2B）。我们需要更改我们的数据集，不仅提供 CT 的片段，还要为结节提供掩模。分类数据集由围绕结节候选的3D裁剪组成，但我们需要收集完整的
+    CT 切片和用于分割训练和验证的2D裁剪。
+- en: Adapt the training loop (step 2C). We need to adapt the training loop so we
+    bring in a new loss to optimize. Because we want to display images of our segmentation
+    results in TensorBoard, we’ll also do things like saving our model weights to
+    disk.
+  id: totrans-20
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调整训练循环（步骤2C）。我们需要调整训练循环，以引入新的损失进行优化。因为我们想在 TensorBoard 中显示我们的分割结果的图像，我们还会做一些事情，比如将我们的模型权重保存到磁盘上。
+- en: Results. Finally, we’ll see the fruits of our efforts when we look at the quantitative
+    segmentation results.
+  id: totrans-21
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 结果。最后，当我们查看定量分割结果时，我们将看到我们努力的成果。
+- en: 13.2 Various types of segmentation
+  id: totrans-22
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.2 各种类型的分割
+- en: 'To get started, we need to talk about different flavors of segmentation. For
+    this project, we will be using *semantic* segmentation, which is the act of classifying
+    individual pixels in an image using labels just like those we’ve seen for our
+    classification tasks, for example, “bear,” “cat,” “dog,” and so on. If done properly,
+    this will result in distinct chunks or regions that signify things like “all of
+    these pixels are part of a cat.” This takes the form of a label mask or heatmap
+    that identifies areas of interest. We will have a simple binary label: true values
+    will correspond to nodule candidates, and false values mean uninteresting healthy
+    tissue. This partially meets our need to find nodule candidates that we will later
+    feed into our classification network.'
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要开始，我们需要讨论不同类型的分割。对于这个项目，我们将使用*语义*分割，这是使用标签对图像中的每个像素进行分类的行为，就像我们在分类任务中看到的那样，例如，“熊”，“猫”，“狗”等。如果做得正确，这将导致明显的块或区域，表示诸如“所有这些像素都是猫的一部分”之类的事物。这采用标签掩模或热图的形式，用于识别感兴趣的区域。我们将有一个简单的二进制标签：真值将对应结节候选，假值表示无趣的健康组织。这部分满足了我们找到结节候选的需求，稍后我们将把它们馈送到我们的分类网络中。
+- en: Before we get into the details, we should briefly discuss other approaches we
+    could take to finding our nodule candidates. For example, *instance segmentation*
+    labels individual objects of interest with distinct labels. So whereas semantic
+    segmentation would label a picture of two people shaking hands with two labels
+    (“person” and “background”), instance segmentation would have three labels (“person1,”
+    “person2,” and “background”) with a boundary somewhere around the clasped hands.
+    While this could be useful for us to distinguish “nodule1” from “nodule2,” we
+    will instead use grouping to identify individual nodules. That approach will work
+    well for us since nodules are unlikely to touch or overlap.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在深入细节之前，我们应该简要讨论我们可以采取的其他方法来找到结节候选。例如，*实例分割*使用不同的标签标记感兴趣的单个对象。因此，语义分割会为两个人握手的图片使用两个标签（“人”和“背景”），而实例分割会有三个标签（“人1”，“人2”和“背景”），其中边界大约在握手处。虽然这对我们区分“结节1”和“结节2”可能有用，但我们将使用分组来识别单个结节。这种方法对我们很有效，因为结节不太可能接触或重叠。
+- en: Another approach to these kinds of tasks is *object detection*, which locates
+    an item of interest in an image and puts a bounding box around the item. While
+    both instance segmentation and object detection could be great for our uses, their
+    implementations are somewhat complex, and we don’t feel they are the best things
+    for you to learn next. Also, training object-detection models typically requires
+    much more computational resources than our approach requires. If you’re feeling
+    up to the challenge, the YOLOv3 paper is a more entertaining read than most deep
+    learning research papers.[²](#pgfId-1012113) For us, though, semantic segmentation
+    it is.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一种处理这类任务的方法是*目标检测*，它在图像中定位感兴趣的物品并在该物品周围放置一个边界框。虽然实例分割和目标检测对我们来说可能很好，但它们的实现有些复杂，我们认为它们不是你接下来学习的最好内容。此外，训练目标检测模型通常需要比我们的方法更多的计算资源。如果你感到挑战，YOLOv3
+    论文比大多数深度学习研究论文更有趣。[²](#pgfId-1012113) 对我们来说，语义分割就是最好的选择。
+- en: '*Note* As we go through the code examples in this chapter, we’re going to rely
+    on you checking the code from GitHub for much of the larger context. We’ll be
+    omitting code that’s uninteresting or similar to what’s come before in earlier
+    chapters, so that we can focus on the crux of the issue at hand.'
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 当我们在本章的代码示例中进行操作时，我们将依赖您从 GitHub 检查大部分更大上下文的代码。我们将省略那些无趣或与之前章节类似的代码，以便我们可以专注于手头问题的关键。'
+- en: '13.3 Semantic segmentation: Per-pixel classification'
+  id: totrans-27
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.3 语义分割：逐像素分类
+- en: Often, segmentation is used to answer questions of the form “Where is a cat
+    in this picture?” Obviously, most pictures of a cat, like figure 13.3, have a
+    lot of non-cat in them; there’s the table or wall in the background, the keyboard
+    the cat is sitting on, that kind of thing. Being able to say “This pixel is part
+    of the cat, and this other pixel is part of the wall” requires fundamentally different
+    model output and a different internal structure from the classification models
+    we’ve worked with thus far. Classification can tell us whether a cat is present,
+    while segmentation will tell us where we can find it.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常，分割用于回答“这张图片中的猫在哪里？”这种问题。显然，大多数猫的图片，如图13.3，其中有很多非猫的部分；背景中的桌子或墙壁，猫坐在上面的键盘，这种情况。能够说“这个像素是猫的一部分，这个像素是墙壁的一部分”需要基本不同的模型输出和不同的内部结构，与我们迄今为止使用的分类模型完全不同。分类可以告诉我们猫是否存在，而分割将告诉我们在哪里可以找到它。
+- en: '![](../Images/CH13_F03_Stevens2_GS.png)'
+  id: totrans-29
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F03_Stevens2_GS.png)'
+- en: Figure 13.3 Classification results in one or more binary flags, while segmentation
+    produces a mask or heatmap.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.3 分类结果产生一个或多个二进制标志，而分割产生一个掩码或热图。
+- en: If your project requires differentiating between a near cat and a far cat, or
+    a cat on the left versus a cat on the right, then segmentation is probably the
+    right approach. The image-consuming classification models that we’ve implemented
+    so far can be thought of as funnels or magnifying glasses that take a large bunch
+    of pixels and focus them down into a single “point” (or, more accurately, a single
+    set of class predictions), as shown in figure 13.4\. Classification models provide
+    answers of the form “Yes, this huge pile of pixels has a cat in it, somewhere,”
+    or “No, no cats here.” This is great when you don’t care where the cat is, just
+    that there is (or isn’t) one in the image.
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您的项目需要区分近处猫和远处猫，或者左边的猫和右边的猫，那么分割可能是正确的方法。迄今为止我们实现的图像消费分类模型可以被看作是漏斗或放大镜，将大量像素聚焦到一个“点”（或者更准确地说，一组类别预测）中，如图13.4所示。分类模型提供的答案形式为“是的，这一大堆像素中有一只猫”，或者“不，这里没有猫”。当您不关心猫在哪里，只关心图像中是否有猫时，这是很好的。
+- en: '![](../Images/CH13_F04_Stevens2_GS.png)'
+  id: totrans-32
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F04_Stevens2_GS.png)'
+- en: Figure 13.4 The magnifying glass model structure for classification
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.4 用于分类的放大镜模型结构
+- en: Repeated layers of convolution and downsampling mean the model starts by consuming
+    raw pixels to produce specific, detailed detectors for things like texture and
+    color, and then builds up higher-level conceptual feature detectors for parts
+    like eyes and ears and mouth and nose[³](#pgfId-1012259) that finally result in
+    “cat” versus “dog.” Due to the increasing receptive field of the convolutions
+    after each downsampling layer, those higher-level detectors can use information
+    from an increasingly large area of the input image.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重复的卷积和下采样层意味着模型从消耗原始像素开始，产生特定的、详细的检测器，用于识别纹理和颜色等内容，然后构建出更高级的概念特征检测器，用于眼睛、耳朵、嘴巴和鼻子等部位[³](#pgfId-1012259)，最终得出“猫”与“狗”的结论。由于每个下采样层后卷积的接受域不断增加，这些更高级的检测器可以利用来自输入图像越来越大区域的信息。
+- en: Unfortunately, since segmentation needs to produce an image-like output, ending
+    up at a single classification-like list of binary-ish flags won’t work. As we
+    recall from section 11.4, downsampling is key to increasing the receptive fields
+    of the convolutional layers, and is what helps reduce the array of pixels that
+    make up an image to a single list of classes. Notice figure 13.5, which repeats
+    figure 11.6.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不幸的是，由于分割需要产生类似图像的输出，最终得到一个类似于单一分类列表的二进制标志是行不通的。正如我们从第11.4节回忆的那样，下采样是增加卷积层接受域的关键，也是帮助将构成图像的像素数组减少到单一类别列表的关键。请注意图13.5，它重复了图11.6。
+- en: '![](../Images/CH13_F05_Stevens2_GS.png)'
+  id: totrans-36
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F05_Stevens2_GS.png)'
+- en: Figure 13.5 The convolutional architecture of a `LunaModel` block, consisting
+    of two 3 × 3 convolutions followed by a max pool. The final pixel has a 6 × 6
+    receptive field.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.5 `LunaModel`块的卷积架构，由两个3×3卷积和一个最大池组成。最终像素具有6×6的接受域。
+- en: In the figure, our inputs flow from the left to right in the top row and are
+    continued in the bottom row. In order to work out the receptive field--the area
+    influencing the single pixel at bottom right--we can go backward. The max-pool
+    operation has 2 × 2 inputs producing each final output pixel. The 3 × 3 conv in
+    the middle of the bottom row looks at one adjacent pixel (including diagonally)
+    in each direction, so the total receptive field of the convolutions that result
+    in the 2 x 2 output is 4 x 4 (with the right “x” characters). The 3 × 3 convolution
+    in the top row then adds an additional pixel of context in each direction, so
+    the receptive field of the single output pixel at bottom right is a 6 × 6 field
+    in the input at top left. With the downsampling from the max pool, the receptive
+    field of the next block of convolutions will have double the width, and each additional
+    downsampling will double it again, while shrinking the size of the output.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图中，我们的输入从左到右在顶部行中流动，并在底部行中继续。为了计算出影响右下角单个像素的接受域--我们可以向后推导。最大池操作有2×2的输入，产生每个最终输出像素。底部行中的3×3卷积在每个方向（包括对角线）查看一个相邻像素，因此导致2×2输出的卷积的总接受域为4×4（带有右侧的“x”字符）。顶部行中的3×3卷积然后在每个方向添加一个额外的像素上下文，因此右下角单个输出像素的接受域是顶部左侧输入的6×6区域。通过来自最大池的下采样，下一个卷积块的接受域将具有双倍宽度，每次额外的下采样将再次使其加倍，同时缩小输出的大小。
+- en: We’ll need a different model architecture if we want our output to be the same
+    size as our input. One simple model to use for segmentation would have repeated
+    convolutional layers without any downsampling. Given appropriate padding, that
+    would result in output the same size as the input (good), but a very limited receptive
+    field (bad) due to the limited reach based on how much overlap multiple layers
+    of small convolutions will have. The classification model uses each downsampling
+    layer to double the effective reach of the following convolutions; and without
+    that increase in effective field size, each segmented pixel will only be able
+    to consider a very local neighborhood.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们希望输出与输入大小相同，我们将需要不同的模型架构。一个用于分割的简单模型可以使用重复的卷积层而没有任何下采样。在适当的填充下，这将导致输出与输入大小相同（好），但由于基于多层小卷积的有限重叠，会导致非常有限的感受野（坏）。分类模型使用每个下采样层来使后续卷积的有效范围加倍；没有这种有效领域大小的增加，每个分割像素只能考虑一个非常局部的邻域。
+- en: '*Note* Assuming 3 × 3 convolutions, the receptive field size for a simple model
+    of stacked convolutions is 2 * *L* + 1, with *L* being the number of convolutional
+    layers.'
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 假设3×3卷积，堆叠卷积的简单模型的感受野大小为2 * *L* + 1，其中*L*是卷积层数。'
+- en: Four layers of 3 × 3 convolutions will have a receptive field of 9 × 9 per output
+    pixel. By inserting a 2 × 2 max pool between the second and third convolutions,
+    and another at the end, we increase the receptive field to ...
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 四层3×3卷积将每个输出像素的感受野大小为9×9。通过在第二个和第三个卷积之间插入一个2×2最大池，并在最后插入另一个，我们将感受野增加到...
+- en: '*Note* See if you can figure out the math yourself; when you’re done, check
+    back here.'
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 看看你是否能自己算出数学问题；完成后，回到这里查看。'
+- en: '... 16 × 16\. The final series of conv-conv-pool has a receptive field of 6
+    × 6, but that happens *after* the first max pool, which makes the final effective
+    receptive field 12 × 12 in the original input resolution. The first two conv layers
+    add a total border of 2 pixels around the 12 × 12, for a total of 16 × 16.'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '... 16×16。最终的一系列conv-conv-pool具有6×6的感受野，但这发生在第一个最大池之后，这使得原始输入分辨率中的最终有效感受野为12×12。前两个卷积层在12×12周围添加了总共2个像素的边框，总共为16×16。'
+- en: 'So the question remains: how can we improve the receptive field of an output
+    pixel while maintaining a 1:1 ratio of input pixels to output pixels? One common
+    answer is to use a technique called *upsampling*, which takes an image of a given
+    resolution and produces an image of a higher resolution. Upsampling at its simplest
+    just means replacing each pixel with an *N* × *N* block of pixels, each with the
+    same value as the original input pixel. The possibilities only get more complex
+    from there, with options like linear interpolation and learned deconvolution.'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此问题仍然是：如何在保持输入像素与输出像素1:1比率的同时改善输出像素的感受野？一个常见的答案是使用一种称为*上采样*的技术，它将以给定分辨率的图像生成更高分辨率的图像。最简单的上采样只是用一个*N*×*N*像素块替换每个像素，每个像素的值与原始输入像素相同。从那里开始，可能性变得更加复杂，选项包括线性插值和学习反卷积。
+- en: 13.3.1 The U-Net architecture
+  id: totrans-45
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.3.1 U-Net架构
+- en: Before we end up diving down a rabbit hole of possible upsampling algorithms,
+    let’s get back to our goal for the chapter. Per figure 13.6, step 1 is to get
+    familiar with a foundational segmentation algorithm called U-Net.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们陷入可能的上采样算法的兔子洞之前，让我们回到本章的目标。根据图13.6，第一步是熟悉一个名为U-Net的基础分割算法。
+- en: '![](../Images/CH13_F06_Stevens2_GS.png)'
+  id: totrans-47
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F06_Stevens2_GS.png)'
+- en: Figure 13.6 The new model architecture for segmentation, that we will be working
+    with
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.6 我们将使用的分割新模型架构
+- en: The U-Net architecture is a design for a neural network that can produce pixel-wise
+    output and that was invented for segmentation. As you can see from the highlight
+    in figure 13.6, a diagram of the U-Net architecture looks a bit like the letter
+    *U*, which explains the origins of the name. We also immediately see that it is
+    quite a bit more complicated than the mostly sequential structure of the classifiers
+    we are familiar with. We’ll see a more detailed version of the U-Net architecture
+    shortly, in figure 13.7, and learn exactly what each of those components is doing.
+    Once we understand the model architecture, we can work on training one to solve
+    our segmentation task.
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: U-Net架构是一种可以产生像素级输出的神经网络设计，专为分割而发明。从图13.6的突出部分可以看出，U-Net架构的图表看起来有点像字母*U*，这解释了名称的起源。我们还立即看到，它比我们熟悉的大多数顺序结构的分类器要复杂得多。不久我们将在图13.7中看到U-Net架构的更详细版本，并了解每个组件的具体作用。一旦我们了解了模型架构，我们就可以开始训练一个来解决我们的分割任务。
+- en: '![](../Images/CH13_F07_Stevens2_GS.png)'
+  id: totrans-50
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F07_Stevens2_GS.png)'
+- en: 'Figure 13.7 From the U-Net paper, with annotations. Source: The base of this
+    figure is courtesy Olaf Ronneberger et al., from the paper “U-Net: Convolutional
+    Networks for Biomedical Image Segmentation,” which can be found at [https://arxiv.org/abs/1505.04597](https://arxiv.org/abs/1505.04597)
+    and [https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net](https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net).'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.7 来自U-Net论文的架构，带有注释。来源：本图的基础由Olaf Ronneberger等人提供，来源于论文“U-Net:用于生物医学图像分割的卷积网络”，可在[https://arxiv.org/abs/1505.04597](https://arxiv.org/abs/1505.04597)和[https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net](https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net)找到。
+- en: The U-Net architecture shown in figure 13.7 was an early breakthrough for image
+    segmentation. Let’s take a look and then walk through the architecture.
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.7中显示的U-Net架构是图像分割的一个早期突破。让我们看一看，然后逐步了解架构。
+- en: In this diagram, the boxes represent intermediate results and the arrows represent
+    operations between them. The U-shape of the architecture comes from the multiple
+    resolutions at which the network operates. In the top row is the full resolution
+    (512 × 512 for us), the row below has half that, and so on. The data flows from
+    top left to bottom center through a series of convolutions and downscaling, as
+    we saw in the classifiers and looked at in detail in chapter 8\. Then we go up
+    again, using upscaling convolutions to get back to the full resolution. Unlike
+    the original U-Net, we will be padding things so we don’t lose pixels off the
+    edges, so our resolution is the same on the left and on the right.
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个图表中，方框代表中间结果，箭头代表它们之间的操作。架构的 U 形状来自网络操作的多个分辨率。顶部一行是完整分辨率（对我们来说是 512×512），下面一行是其一半，依此类推。数据从左上流向底部中心，通过一系列卷积和下采样，正如我们在分类器中看到的并在第
+    8 章中详细讨论的那样。然后我们再次上升，使用上采样卷积回到完整分辨率。与原始 U-Net 不同，我们将填充物，以便不会在边缘丢失像素，因此我们左右两侧的分辨率相同。
+- en: Earlier network designs already had this U-shape, which people attempted to
+    use to address the limited receptive field size of fully convolutional networks.
+    To address this limited field size, they used a design that copied, inverted,
+    and appended the focusing portions of an image-classification network to create
+    a symmetrical model that goes from fine detail to wide receptive field and back
+    to fine detail.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 早期的网络设计已经具有这种 U 形状，人们试图利用它来解决完全卷积网络的有限感受野大小问题。为了解决这个有限的感受野大小问题，他们使用了一种设计，复制、反转并附加图像分类网络的聚焦部分，以创建一个从精细详细到宽感受野再到精细详细的对称模型。
+- en: Those earlier network designs had problems converging, however, most likely
+    due to the loss of spatial information during downsampling. Once information reaches
+    a large number of very downscaled images, the exact location of object boundaries
+    gets harder to encode and therefore reconstruct. To address this, the U-Net authors
+    added the skip connections we see at the center of the figure. We first touched
+    on skip connections in chapter 8, although they are employed differently here
+    than in the ResNet architecture. In U-Net, skip connections short-circuit inputs
+    along the downsampling path into the corresponding layers in the upsampling path.
+    These layers receive as input both the upsampled results of the wide receptive
+    field layers from lower in the U as well as the output of the earlier fine detail
+    layers via the “copy and crop” bridge connections. This is the key innovation
+    behind U-Net (which, interestingly, predated ResNet).
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，早期的网络设计存在收敛问题，这很可能是由于在下采样过程中丢失了空间信息。一旦信息到达大量非常缩小的图像，对象边界的确切位置变得更难编码，因此更难重建。为了解决这个问题，U-Net
+    的作者在图中心添加了我们看到的跳跃连接。我们在第 8 章首次接触到跳跃连接，尽管它们在这里的应用方式与 ResNet 架构中的不同。在 U-Net 中，跳跃连接将输入沿着下采样路径短路到上采样路径中的相应层。这些层接收来自
+    U 较低位置的宽感受野层的上采样结果以及通过“复制和裁剪”桥接连接的早期精细详细层的输出作为输入。这是 U-Net 的关键创新（有趣的是，这比 ResNet
+    更早）。
+- en: All of this means those final detail layers are operating with the best of both
+    worlds. They’ve got both information about the larger context surrounding the
+    immediate area and fine detail data from the first set of full-resolution layers.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有这些意味着这些最终的细节层在最佳状态下运作。它们既具有关于周围环境的更大背景信息，又具有来自第一组全分辨率层的精细详细数据。
+- en: 'The “conv 1x1” layer at far right, in the head of the network, changes the
+    number of channels from 64 to 2 (the original paper had 2 output channels; we
+    have 1 in our case). This is somewhat akin to the fully connected layer we used
+    in our classification network, but per-pixel, channel-wise: it’s a way to convert
+    from the number of filters used in the last upsampling step to the number of output
+    classes needed.'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最右侧的“conv 1x1”层位于网络头部，将通道数从 64 改变为 2（原始论文有 2 个输出通道；我们的情况下有 1 个）。这在某种程度上类似于我们在分类网络中使用的全连接层，但是逐像素、逐通道：这是一种将最后一次上采样步骤中使用的滤波器数量转换为所需的输出类别数量的方法。
+- en: 13.4 Updating the model for segmentation
+  id: totrans-58
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.4 更新用于分割的模型
+- en: 'It’s time to move through step 2A in figure 13.8\. We’ve had enough theory
+    about segmentation and history about U-Net; now we want to update our code, starting
+    with the model. Instead of just outputting a binary classification that gives
+    us a single output of true or false, we integrate a U-Net to get to a model that’s
+    capable of outputting a probability for every pixel: that is, performing segmentation.
+    Rather than imple-menting a custom U-Net segmentation model from scratch, we’re
+    going to appropriate an existing implementation from an open source repository
+    on GitHub.'
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在是按照图 13.8 中的步骤 2A 进行操作的时候了。我们已经对分割理论和 U-Net 的历史有了足够的了解；现在我们想要更新我们的代码，从模型开始。我们不再只输出一个给出真或假的二进制分类，而是集成一个
+    U-Net，以获得一个能够为每个像素输出概率的模型：也就是执行分割。我们不打算从头开始实现自定义 U-Net 分割模型，而是打算从 GitHub 上的一个开源存储库中适用一个现有的实现。
+- en: The U-Net implementation at [https://github.com/jvanvugt/pytorch-unet](https://github.com/jvanvugt/pytorch-unet)
+    seems to meet our needs well.[⁴](#pgfId-1013865) It’s MIT licensed (copyright
+    2018 Joris), it’s contained in a single file, and it has a number of parameter
+    options for us to tweak. The file is included in our code repository at util/unet.py,
+    along with a link to the original repository and the full text of the license
+    used.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '[https://github.com/jvanvugt/pytorch-unet](https://github.com/jvanvugt/pytorch-unet)
+    上的 U-Net 实现似乎很好地满足我们的需求。它是 MIT 许可的（版权 2018 Joris），包含在一个单独的文件中，并且有许多参数选项供我们调整。该文件包含在我们的代码存储库中的
+    util/unet.py 中，同时附有原始存储库的链接和使用的完整许可证文本。'
+- en: '*Note* While it’s less of an issue for personal projects, it’s important to
+    be aware of the license terms attached to open source software you use for a project.
+    The MIT license is one of the most permissive open source licenses, and it still
+    places requirements on users of MIT licensed code! Also be aware that authors
+    retain copyright even if they publish their work in a public forum (yes, even
+    on GitHub), and if they do not include a license, that does *not* mean the work
+    is in the public domain. Quite the opposite! It means you don’t have *any* license
+    to use the code, any more than you’d have the right to wholesale copy a book you
+    borrowed from the library.'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 虽然对于个人项目来说这不是太大问题，但重要的是要注意你为项目使用的开源软件附带的许可条款。MIT 许可证是最宽松的开源许可证之一，但它仍对使用
+    MIT 许可的代码的用户有要求！还要注意，即使作者在公共论坛上发布他们的作品，他们仍保留版权（是的，即使在 GitHub 上也是如此），如果他们没有包含许可证，这并*不*意味着该作品属于公共领域。恰恰相反！这意味着你没有*任何*使用代码的许可，就像你没有权利从图书馆借来的书中全文复制一样。'
+- en: We suggest taking some time to inspect the code and, based on the knowledge
+    you have built up until this point, identify the building blocks of the architecture
+    as they are reflected in the code. Can you spot skip connections? A particularly
+    worthy exercise for you is to draw a diagram that shows how the model is laid
+    out, just by looking at the code.
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们建议花一些时间检查代码，并根据你到目前为止建立的知识，识别体系结构中反映在代码中的构建模块。你能发现跳跃连接吗？对你来说一个特别有价值的练习是通过查看代码绘制显示模型布局的图表。
+- en: Now that we have found a U-Net implementation that fits the bill, we need to
+    adapt it so that it works well for our needs. In general, it’s a good idea to
+    keep an eye out for situations where we can use something off the shelf. It’s
+    important to have a sense of what models exist, how they’re implemented and trained,
+    and whether any parts can be scavenged and applied to the project we’re working
+    on at any given moment. While that broader knowledge is something that comes with
+    time and experience, it’s a good idea to start building that toolbox now.
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们找到了一个符合要求的 U-Net 实现，我们需要调整它以使其适用于我们的需求。一般来说，留意可以使用现成解决方案的情况是一个好主意。重要的是要了解存在哪些模型，它们是如何实现和训练的，以及是否可以拆解和应用到我们当前正在进行的项目中。虽然这种更广泛的知识是随着时间和经验而来的，但现在开始建立这个工具箱是一个好主意。
+- en: 13.4.1 Adapting an off-the-shelf model to our project
+  id: totrans-64
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.4.1 将现成模型调整为我们的项目
+- en: We will now make some changes to the classic U-Net, justifying them along the
+    way. A useful exercise for you will be to compare results between the *vanilla*
+    model and the one after the tweaks, preferably removing one at a time to see the
+    effect of each change (this is also called an *ablation study* in research circles).
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们将对经典 U-Net 进行一些更改，并在此过程中加以证明。对你来说一个有用的练习是比较*原始*模型和经过调整后的模型的结果，最好一次删除一个以查看每个更改的影响（这在研究领域也称为*消融研究*）。
+- en: '![](../Images/CH13_F08_Stevens2_GS.png)'
+  id: totrans-66
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F08_Stevens2_GS.png)'
+- en: Figure 13.8 The outline of this chapter, with a focus on the changes needed
+    for our segmentation model
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.8 本章大纲，重点关注我们分割模型所需的更改
+- en: First, we’re going to pass the input through batch normalization. This way,
+    we won’t have to normalize the data ourselves in the dataset; and, more importantly,
+    we will get normalization statistics (read mean and standard deviation) estimated
+    over individual batches. This means when a batch is *dull* for some reason--that
+    is, when there is nothing to see in all the CT crops fed into the network--it
+    will be scaled more strongly. The fact that samples in batches are picked randomly
+    at every epoch will minimize the chances of a dull sample ending up in an all-dull
+    batch, and hence those dull samples getting overemphasized.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们将通过批量归一化将输入传递。这样，我们就不必在数据集中自己归一化数据；更重要的是，我们将获得在单个批次上估计的归一化统计数据（读取均值和标准差）。这意味着当某个批次由于某种原因变得*单调*时--也就是说，当所有馈送到网络中的
+    CT 裁剪中没有什么可见时--它将被更强烈地缩放。每个时期随机选择批次中的样本将最大程度地减少单调样本最终进入全单调批次的机会，从而过度强调这些单调样本。
+- en: Second, since the output values are unconstrained, we are going to pass the
+    output through an `nn.Sigmoid` layer to restrict the output to the range [0, 1].
+    Third, we will reduce the total depth and number of filters we allow our model
+    to use. While this is jumping ahead of ourselves a bit, the capacity of the model
+    using the standard parameters far outstrips our dataset size. This means we’re
+    unlikely to find a pretrained model that matches our exact needs. Finally, although
+    this is not a modification, it’s important to note that our output is a single
+    channel, with each pixel of output representing the model’s estimate of the probability
+    that the pixel in question is part of a nodule.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其次，由于输出值是不受限制的，我们将通过一个 `nn.Sigmoid` 层将输出传递以将输出限制在 [0, 1] 范围内。第三，我们将减少模型允许使用的总深度和滤波器数量。虽然这有点超前，但使用标准参数的模型容量远远超过我们的数据集大小。这意味着我们不太可能找到一个与我们确切需求匹配的预训练模型。最后，尽管这不是一种修改，但重要的是要注意我们的输出是单通道，输出的每个像素表示模型估计该像素是否属于结节的概率。
+- en: 'This wrapping of U-Net can be done rather simply by implementing a model with
+    three attributes: one each for the two features we want to add, and one for the
+    U-Net itself--which we can treat just like any prebuilt module here. We will also
+    pass any keyword arguments we receive into the U-Net constructor.'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过实现一个具有三个属性的模型来简单地包装 U-Net：分别是我们想要添加的两个特征和 U-Net 本身--我们可以像在这里处理任何预构建模块一样对待。我们还将把收到的任何关键字参数传递给
+    U-Net 构造函数。
+- en: Listing 13.1 model.py:17, `class` `UNetWrapper`
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.1 model.py:17，`class` `UNetWrapper`
+- en: '[PRE0]'
+  id: totrans-72
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ kwarg is a dictionary containing all keyword arguments passed to the constructor.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ kwarg 是一个包含传递给构造函数的所有关键字参数的字典。
+- en: ❷ BatchNorm2d wants us to specify the number of input channels, which we take
+    from the keyword argument.
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ BatchNorm2d 要求我们指定输入通道的数量，我们从关键字参数中获取。
+- en: '❸ The U-Net: a small thing to include here, but it’s really doing all the work.'
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ U-Net：这里包含的是一个小细节，但它确实在发挥作用。
+- en: ❹ Just as for the classifier in chapter 11, we use our custom weight initialization.
+    The function is copied over, so we will not show the code again.
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 就像第11章中的分类器一样，我们使用我们自定义的权重初始化。该函数已复制，因此我们不会再次显示代码。
+- en: The `forward` method is a similarly straightforward sequence. We could use an
+    instance of `nn.Sequential` as we saw in chapter 8, but we’ll be explicit here
+    for both clarity of code and clarity of stack traces.[⁵](#pgfId-1014312)
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`forward`方法是一个同样简单的序列。我们可以使用`nn.Sequential`的实例，就像我们在第8章中看到的那样，但为了代码的清晰度和堆栈跟踪的清晰度，我们在这里明确说明。'
+- en: Listing 13.2 model.py:50, `UNetWrapper.forward`
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第13.2节 model.py:50, `UNetWrapper.forward`
+- en: '[PRE1]'
+  id: totrans-79
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'Note that we’re using `nn.BatchNorm2d` here. This is because U-Net is fundamentally
+    a two-dimensional segmentation model. We could adapt the implementation to use
+    3D convolutions, in order to use information across slices. The memory usage of
+    a straightforward implementation would be considerably greater: that is, we would
+    have to chop up the CT scan. Also, the fact that pixel spacing in the Z direction
+    is much larger than in-plane makes a nodule less likely to be present across many
+    slices. These considerations make a fully 3D approach less attractive for our
+    purposes. Instead, we’ll adapt our 3D data to be segmented a slice at a time,
+    providing adjacent slices for context (for example, detecting that a bright lump
+    is indeed a blood vessel gets much easier alongside neighboring slices). Since
+    we’re sticking with presenting the data in 2D, we’ll use channels to represent
+    the adjacent slices. Our treatment of the third dimension is similar to how we
+    applied a fully connected model to images in chapter 7: the model will have to
+    relearn the adjacency relationships we’re throwing away along the axial direction,
+    but that’s not difficult for the model to accomplish, especially with the limited
+    number of slices given for context owing to the small size of the target structures.'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，我们在这里使用`nn.BatchNorm2d`。这是因为U-Net基本上是一个二维分割模型。我们可以调整实现以使用3D卷积，以便跨切片使用信息。直接实现的内存使用量将大大增加：也就是说，我们将不得不分割CT扫描。此外，Z方向的像素间距比平面方向大得多，这使得结节不太可能跨越多个切片存在。这些考虑因素使得我们的目的不太吸引人的完全3D方法。相反，我们将调整我们的3D数据，一次对一个切片进行分割，提供相邻切片的上下文（例如，随着相邻切片的出现，检测到明亮的块确实是血管变得更容易）。由于我们仍然坚持以2D形式呈现数据，我们将使用通道来表示相邻切片。我们对第三维的处理类似于我们在第7章中将全连接模型应用于图像的方式：模型将不得不重新学习我们沿轴向丢弃的邻接关系，但对于模型来说这并不困难，尤其是考虑到由于目标结构的小尺寸而给出的上下文切片数量有限。
+- en: 13.5 Updating the dataset for segmentation
+  id: totrans-81
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.5 更新用于分割的数据集
+- en: 'Our source data for this chapter remains unchanged: we’re consuming CT scans
+    and annotation data about them. But our model expects input and will produce output
+    of a different form than we had previously. As we hint at in step 2B of figure
+    13.9, our previous dataset produced 3D data, but we need to produce 2D data now.'
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章的源数据保持不变：我们正在使用CT扫描和有关它们的注释数据。但是我们的模型期望输入和输出的形式与以前不同。正如我们在图13.9的第2B步骤中所暗示的，我们以前的数据集生成了3D数据，但现在我们需要生成2D数据。
+- en: '![](../Images/CH13_F09_Stevens2_GS.png)'
+  id: totrans-83
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F09_Stevens2_GS.png)'
+- en: Figure 13.9 The outline of this chapter, with a focus on the changes needed
+    for our segmentation dataset
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.9 本章概述，重点关注我们分割数据集所需的变化
+- en: The original U-Net implementation did not use padded convolutions, which means
+    while the output segmentation map was smaller than the input, every pixel of that
+    output had a fully populated receptive field. None of the input pixels that fed
+    into the determination of that output pixel were padded, fabricated, or otherwise
+    incomplete. Thus the output of the original U-Net will tile perfectly, so it can
+    be used with images of any size (except at the edges of the input image, where
+    some context will be missing by definition).
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 原始U-Net实现没有使用填充卷积，这意味着虽然输出分割地图比输入小，但输出的每个像素都具有完全填充的感受野。用于确定该输出像素的所有输入像素都没有填充、虚构或不完整。因此，���始U-Net的输出将完全平铺，因此它可以与任何大小的图像一起使用（除了输入图像的边缘，那里将缺少一些上下文）。
+- en: There are two problems with us taking the same pixel-perfect approach for our
+    problem. The first is related to the interaction between convolution and downsampling,
+    and the second is related to the nature of our data being three-dimensional.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于我们的问题采用相同的像素完美方法存在两个问题。第一个与卷积和下采样之间的交互有关，第二个与我们的数据性质是三维的有关。
+- en: 13.5.1 U-Net has very specific input size requirements
+  id: totrans-87
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.1 U-Net具有非常具体的输入尺寸要求
+- en: The first issue is that the sizes of the input and output patches for U-Net
+    are very specific. In order to have the two-pixel loss per convolution line up
+    evenly before and after downsampling (especially when considering the further
+    convolutional shrinkage at that lower resolution), only certain input sizes will
+    work. The U-Net paper used 572 × 572 image patches, which resulted in 388 × 388
+    output maps. The input images are bigger than our 512 × 512 CT slices, and the
+    output is quite a bit smaller! That would mean any nodules near the edge of the
+    CT scan slice wouldn’t be segmented at all. Although this setup works well when
+    dealing with very large images, it’s not ideal for our use case.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个问题是U-Net的输入和输出补丁的大小非常具体。为了使每个卷积线的两个像素损失在下采样之前和之后对齐（特别是考虑到在较低分辨率处进一步卷积收缩），只有某些输入尺寸才能起作用。U-Net论文使用了572×572的图像补丁，导致了388×388的输出地图。输入图像比我们的512×512
+    CT切片大，输出则小得多！这意味着靠近CT扫描切片边缘的任何结节都不会被分割。尽管在处理非常大的图像时这种设置效果很好，但对于我们的用例来说并不理想。
+- en: We will address this issue by setting the `padding` flag of the U-Net constructor
+    to `True`. This will mean we can use input images of any size, and we will get
+    output of the same size. We may lose some fidelity near the edges of the image,
+    since the receptive field of pixels located there will include regions that have
+    been artificially padded, but that’s a compromise we decide to live with.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将通过将U-Net构造函数的`padding`标志设置为`True`来解决这个问题。这意味着我们可以使用任何大小的输入图像，并且我们将得到相同大小的输出。我们可能会在图像边缘附近失去一些保真度，因为位于那里的像素的感受野将包括已被人为填充的区域，但这是我们决定接受的妥协。
+- en: 13.5.2 U-Net trade-offs for 3D vs. 2D data
+  id: totrans-90
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.2 3D与2D数据的U-Net权衡
+- en: The second issue is that our 3D data doesn’t line up exactly with U-Net’s 2D
+    expected input. Simply taking our 512 × 512 × 128 image and feeding it into a
+    converted-to-3D U-Net class won’t work, because we’ll exhaust our GPU memory.
+    Each image is 29 by 29 by 27, with 22 bytes per voxel. The first layer of U-Net
+    is 64 channels, or 26\. That’s an exponent of 9 + 9 + 7 + 2 + 6 = 33, or 8 GB
+    *just for the first convolutional layer*. There are two convolutional layers (16
+    GB); and then each downsampling halves the resolution but doubles the channels,
+    which is another 2 GB for each layer after the first downsample (remember, halving
+    the resolution results in one-eighth the data, since we’re working with 3D data).
+    So we’ve hit 20 GB before we even get to the second downsample, much less anything
+    on the upsample side of the model or anything dealing with autograd.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个问题是我们的3D数据与U-Net的2D预期输入不完全对齐。简单地将我们的512×512×128图像输入到转换为3D的U-Net类中是行不通的，因为我们会耗尽GPU内存。每个图像是29×29×27，每个体素22字节。U-Net的第一层是64个通道，或26。这是9
+    + 9 + 7 + 2 + 6的指数= 33，或8 GB *仅用于第一个卷积层*。有两个卷积层（16 GB）；然后每次下采样都会减半分辨率但加倍通道，这是第一个下采样后每层另外2
+    GB（记住，减半分辨率会导致数据减少八分之一，因为我们处理的是3D数据）。因此，甚至在我们到达第二次下采样之前，我们就已经达到了20 GB，更不用说模型上采样端或处理自动梯度的任何内容了。
+- en: '*Note* There are a number of clever and innovative ways to get around these
+    problems, and we in no way suggest that this is the only approach that will ever
+    work.[⁶](#pgfId-1014681) We do feel that this approach is one of the simplest
+    that gets the job done to the level we need for our project in this book. We’d
+    rather keep things simple so that we can focus on the fundamental concepts; the
+    clever stuff can come later, once you’ve mastered the basics.'
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 有许多巧妙和创新的方法可以解决这些问题，我们绝不认为这是唯一可行的方法。[⁶](#pgfId-1014681) 我们认为这种方法是在这本书中我们项目所需的水平上完成工作的最简单方法之一。我们宁愿保持简单，这样我们就可以专注于基本概念；聪明的东西可以在你掌握基础知识后再来。'
+- en: As anticipated, instead of trying to do things in 3D, we’re going to treat each
+    slice as a 2D segmentation problem and cheat our way around the issue of context
+    in the third dimension by providing neighboring slices as separate channels. Instead
+    of the traditional “red,” “green,” and “blue” channels that we’re familiar with
+    from photographic images, our main channels will be “two slices above,” “one slice
+    above,” “the slice we’re actually segmenting,” “one slice below,” and so on.
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如预期的那样，我们不会尝试在3D中进行操作，而是将每个切片视为一个2D分割问题，并通过提供相邻切片作为单独的通道来绕过第三维中的上下文问题。我们的主要通道不再是我们从照片图像中熟悉的“红色”，“绿色”和“蓝色”通道，而是“上面两个切片”，“上面一个切片”，“我们实际分割的切片”，“下面一个切片”等。
+- en: This approach isn’t without trade-offs, however. We lose the direct spatial
+    relationship between slices when represented as channels, as all channels will
+    be linearly combined by the convolution kernels with no notion of them being one
+    or two slices away, above or below. We also lose the wider receptive field in
+    the depth dimension that would come from a true 3D segmentation with downsampling.
+    Since CT slices are often thicker than the resolution in rows and columns, we
+    do get a somewhat wider view than it seems at first, and this should be enough,
+    considering that nodules typically span a limited number of slices.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，这种方法并非没有权衡。当表示为通道时，我们失去了切片之间的直接空间关系，因为所有通道将被卷积核线性组合，没有它们相隔一两个切片，上下的概念。我们还失去了来自真正的3D分割的深度维度中更广泛的感受野。由于CT切片通常比行和列的分辨率厚，我们获得的视野比起初看起来要宽一些，这应该足够了，考虑到结节通常跨越有限数量的切片。
+- en: Another aspect to consider, that is relevant for both the current and fully
+    3D approaches, is that we are now ignoring the exact slice thickness. This is
+    something our model will eventually have to learn to be robust against, by being
+    presented with data with different slice spacings.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要考虑的另一个方面，对于当前和完全3D方法都相关的是，我们现在忽略了确切的切片厚度。这是我们的模型最终将不得不学会对抗的东西，通过呈现具有不同切片间距的数据。
+- en: In general, there isn’t an easy flowchart or rule of thumb that can give canned
+    answers to questions about which trade-offs to make, or whether a given set of
+    compromises compromise too much. Careful experimentation is key, however, and
+    systematically testing hypothesis after hypothesis can help narrow down which
+    changes and approaches are working well for the problem at hand. Although it’s
+    tempting to make a flurry of changes while waiting for the last set of results
+    to compute, *resist that impulse*.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一般来说，没有一个简单的流程图或经验法则可以提供关于做出哪些权衡或给定一组妥协是否太多的标准答案。然而，仔细的实验至关重要，系统地测试假设之后的假设可以帮助缩小哪些变化和方法对手头问题有效的范围。虽然在等待最后一组结果计算时进行一连串的更改很诱人，*但要抵制这种冲动*。
+- en: 'That’s important enough to repeat: *do not test multiple modifications at the
+    same time*. There is far too high a chance that one of the changes will interact
+    poorly with the other, and you’ll be left without solid evidence that either one
+    is worth investigating further. With that said, let’s start building out our segmentation
+    dataset.'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这一点非常重要：*不要同时测试多个修改*。有很高的机会其中一个改变会与另一个产生不良互动，你将没有坚实的证据表明任何一个值得进一步调查。说了这么多，让我们开始构建我们的分割数据集。
+- en: 13.5.3 Building the ground truth data
+  id: totrans-98
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.3 构建地面真实数据
+- en: The first thing we need to address is that we have a mismatch between our human-labeled
+    training data and the actual output we want to get from our model. We have annotated
+    points, but we want a per-voxel mask that indicates whether any given voxel is
+    part of a nodule. We’ll have to build that mask ourselves from the data we have
+    and then do some manual checking to make sure the routine that builds the mask
+    is performing well.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要解决的第一件事是我们的人工标记的训练数据与我们希望从模型中获得的实际输出之间存在不匹配。我们有注释点，但我们想要一个逐体素掩模，指示任何给定的体素是否属于结节。我们将不得不根据我们拥有的数据构建该掩模，然后进行一些手动检查，以确保构建掩模的例程表现良好。
+- en: Validating these manually constructed heuristics at scale can be difficult.
+    We aren’t going to attempt to do anything comprehensive when it comes to making
+    sure each and every nodule is properly handled by our heuristics. If we had more
+    resources, approaches like “collaborate with (or pay) someone to create and/or
+    verify everything by hand” might be an option, but since this isn’t a well-funded
+    endeavor, we’ll rely on checking a handful of samples and using a very simple
+    “does the output look reasonable?” approach.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在规模上验证这些手动构建的启发式方法可能会很困难。当涉及确保每个结节都得到适当处理时，我们不会尝试做任何全面的工作。如果我们有更多资源，像“与（或支付）某人合作创建和/或手动验证所有内容”这样的方法可能是一个选择，但由于这不是一个资金充足的努力，我们将依靠检查少量样本并使用非常简单的“输出看起来合理吗？”方法。
+- en: To that end, we’ll design our approaches and our APIs to make it easy to investigate
+    the intermediate steps that our algorithms are going through. While this might
+    result in slightly clunky function calls returning huge tuples of intermediate
+    values, being able to easily grab results and plot them in a notebook makes the
+    clunk worth it.
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为此，我们将设计我们的方法和我们的API，以便轻松调查我们的算法正���经历的中间步骤。虽然这可能导致稍微笨重的函数调用返回大量中间值的元组，但能够轻松获取结果并在笔记本中绘制它们使得这种笨重值得。
+- en: Bounding boxes
+  id: totrans-102
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 边界框
+- en: We are going to begin by converting the nodule locations that we have into bounding
+    boxes that cover the entire nodule (note that we’ll only do this for *actual nodules*).
+    If we assume that the nodule locations are roughly centered in the mass, we can
+    trace outward from that point in all three dimensions until we hit low-density
+    voxels, indicating that we’ve reached normal lung tissue (which is mostly filled
+    with air). Let’s follow this algorithm in figure 13.10.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将从将我们拥有的结节位置转换为覆盖整个结节的边界框开始（请注意，我们只会为*实际结节*这样做）。如果我们假设结节位置大致位于肿块中心，我们可以沿着所有三个维度从该点向外追踪，直到遇到低密度的体素，表明我们已经到达了主要充满空气的正常肺组织。让我们在图13.10中遵循这个算法。
+- en: '![](../Images/CH13_F10_Stevens2_GS.png)'
+  id: totrans-104
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F10_Stevens2_GS.png)'
+- en: Figure 13.10 An algorithm for finding a bounding box around a lung nodule
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.10 围绕肺结节找到边界框的算法
+- en: We start the origin of our search (O in the figure) at the voxel at the annotated
+    center of our nodule. We then examine the density of the voxels adjacent to our
+    origin on the column axis, marked with a question mark (?). Since both of the
+    examined voxels contain dense tissue, shown here in lighter colors, we continue
+    our search. After incrementing our column search distance to 2, we find that the
+    left voxel has a density below our threshold, and so we stop our search at 2.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们从我们的搜索起点（图中的O）开始在注释的结节中心的体素处。然后我们检查沿着列轴的原点相邻体素的密度，用问号（?）标记。由于两个检查的体素都包含密集组织，显示为浅色，我们继续我们的搜索。在将列搜索距离增加到2后，我们发现左侧的体素密度低于我们的阈值，因此我们在2处停止搜索。
+- en: Next, we perform the same search in the row direction. Again, we start at the
+    origin, and this time we search up and down. After our search distance becomes
+    3, we encounter a low-density voxel in both the upper and lower search locations.
+    We only need one to stop our search!
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，我们在行方向上执行相同的搜索。同样，我们从原点开始，这次我们向上下搜索。当我们的搜索距离变为3时，在上下搜索位置都遇到了低密度的体素。我们只需要一个就可以停止我们的搜索！
+- en: We’ll skip showing the search in the third dimension. Our final bounding box
+    is five voxels wide and seven voxels tall. Here’s what that looks like in code,
+    for the index direction.
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将跳过在第三维度中显示搜索。我们最终的边界框宽度为五个体素，高度为七个体素。这是在代码中的索引方向的样子。
+- en: Listing 13.3 dsets.py:131, `Ct.buildAnnotationMask`
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单13.3 dsets.py:131，`Ct.buildAnnotationMask`
+- en: '[PRE2]'
+  id: totrans-110
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '❶ candidateInfo_tup here is the same as we’ve seen previously: as returned
+    by getCandidateInfoList.'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这里的candidateInfo_tup与我们之前看到的相同：由getCandidateInfoList返回。
+- en: ❷ Gets the center voxel indices, our starting point
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 获取中心体素的索引，这是我们的起点
+- en: ❸ The search described previously
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 先前描述的搜索
+- en: ❹ The safety net for indexing beyond the size of the tensor
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 超出张量大小的索引的安全网
+- en: We first grab the center data and then do the search in a `while` loop. As a
+    slight complication, our search might fall off the boundary of our tensor. We
+    are not terribly concerned about that case and are lazy, so we just catch the
+    index exception.[⁷](#pgfId-1015165)
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们首先获取中心数据，然后在`while`循环中进行搜索。作为一个轻微的复杂性，我们的搜索可能超出张量的边界。我们对这种情况并不太担心，也很懒，所以我们只捕获索引异常。
+- en: Note that we stop incrementing the very approximate `radius` values *after*
+    the density drops below threshold, so our bounding box should contain a one-voxel
+    border of low-density tissue (at least on one side; since nodules can be adjacent
+    to regions like the lung wall, we have to stop searching in both directions when
+    we hit air on either side). Since we check both `center_index + index_radius`
+    and `center_index - index_radius` against that threshold, that one-voxel boundary
+    will only exist on the edge closest to our nodule location. This is why we need
+    those locations to be relatively centered. Since some nodules are adjacent to
+    the boundary between the lung and denser tissue like muscle or bone, we can’t
+    trace each direction independently, as some edges would end up incredibly far
+    away from the actual nodule.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，当密度降低到阈值以下时，我们停止增加非常粗略的`radius`值，因此我们的���界框应包含低密度组织的一个体素边界（至少在一侧；由于结节可能与肺壁等密度较高的组织相邻，当我们在任一侧遇到空气时，我们必须停止搜索）。由于我们将`center_index
+    + index_radius`和`center_index - index_radius`与该阈值进行比较，因此该一个体素边界仅存在于最接近结节位置的边缘。这就是为什么我们需要这些位置相对居中。由于一些结节与肺和肌肉或骨骼等密度较高的组织之间的边界相邻，我们不能独立追踪每个方向，因为一些边缘最终会远离实际结节。
+- en: We then repeat the same radius-expansion process with `row_radius` and `col
+    _radius` (this code is omitted for brevity). Once that’s done, we can set a box
+    in our bounding-box mask array to `True` (we’ll see the definition of `boundingBox_ary`
+    in just a moment; it’s not surprising).
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们使用`row_radius`和`col_radius`重复相同的半径扩展过程（为简洁起见，此代码被省略）。完成后，我们可以将边界框掩码数组中的一个框设置为`True`（我们很快就会看到`boundingBox_ary`的定义；这并不令人惊讶）。
+- en: OK, let’s wrap all this up in a function. We loop over all nodules. For each
+    nodule, we perform the search shown earlier (which we elide from listing 13.4).
+    Then, in a Boolean tensor `boundingBox_a`, we mark the bounding box we found.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 好的，让我们将所有这些封装在一个函数中。我们遍历所有结节。对于每个结节，我们执行之前显示的搜索（我们在代码清单13.4中省略了）。然后，在一个布尔张量`boundingBox_a`中，我们标记我们找到的边界框。
+- en: After the loop, we do a bit of cleanup by taking the intersection between the
+    bounding-box mask and the tissue that’s denser than our threshold of -700 HU (or
+    0.3 g/cc). That’s going to clip off the corners of our boxes (at least, the ones
+    not embedded in the lung wall), and make it conform to the contours of the nodule
+    a bit better.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 循环结束后，我们通过取边界框掩码和密度高于-700 HU（或0.3 g/cc）的组织之间的交集来进行一些清理。这将剪裁掉我们的盒子的角（至少是那些不嵌入在肺壁中的盒子），使其更符合结节的轮廓。
+- en: Listing 13.4 dsets.py:127, `Ct.buildAnnotationMask`
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单13.4 dsets.py:127，`Ct.buildAnnotationMask`
+- en: '[PRE3]'
+  id: totrans-121
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: ❶ Starts with an all-False tensor of the same size as the CT
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 从与CT相同大小的全False张量开始
+- en: ❷ Loops over the nodules. As a reminder that we are only looking at nodules,
+    we call the variable positiveInfo_list.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 遍历结节。作为我们只查看结节的提醒，我们称之为positiveInfo_list。
+- en: ❸ After we get the nodule radius (the search itself is left out), we mark the
+    bounding box.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 在获取结节半径后（搜索本身被省略了），我们标记边界框。
+- en: ❹ Restricts the mask to voxels above our density threshold
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 将掩码限制为高于我们密度阈值的体素
+- en: Let’s take a look at figure 13.11 to see what these masks look like in practice.
+    Additional images in full color can be found in the p2ch13_explore_data.ipynb
+    notebook.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们看一下图13.11，看看这些掩码在实践中是什么样子。完整彩色图像可以在p2ch13_explore_data.ipynb笔记本中找到。
+- en: '![](../Images/CH13_F11_Stevens2_GS.png)'
+  id: totrans-127
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F11_Stevens2_GS.png)'
+- en: Figure 13.11 Three nodules from `ct.positive_mask`, highlighted in white
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.11 `ct.positive_mask`中突出显示的三个结节，白色标记
+- en: The bottom-right nodule mask demonstrates a limitation of our rectangular bounding-box
+    approach by including a portion of the lung wall. It’s certainly something we
+    could fix, but since we’re not yet convinced that’s the best use of our time and
+    attention, we’ll let it remain as is for now.[⁸](#pgfId-1015622) Next, we’ll go
+    about adding this mask to our CT class.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 右下角的结节掩码展示了我们矩形边界框方法的局限性，包括部分肺壁。这当然是我们可以修复的问题，但由于我们还没有确信这是我们时间和注意力的最佳利用方式，所以我们暂时让它保持原样。接下来，我们将继续将此掩码添加到我们的CT类中。
+- en: Calling mask creation during CT initialization
+  id: totrans-130
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 在CT初始化期间调用掩码创建
+- en: Now that we can take a list of nodule information tuples and turn them into
+    at CT-shaped binary “Is this a nodule?” mask, let’s embed those masks into our
+    CT object. First, we’ll filter our candidates into a list containing only nodules,
+    and then we’ll use that list to build the annotation mask. Finally, we’ll collect
+    the set of unique array indexes that have at least one voxel of the nodule mask.
+    We’ll use this to shape the data we use for validation.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以将结节信息元组列表转换为与CT形状相同的二进制“这是一个结节吗？”掩码，让我们将这些掩码嵌入到我们的CT对象中。首先，我们将我们的候选人筛选为仅包含结节的列表，然后我们将使用该列表构建注释掩码。最后，我们将收集具有至少一个结节掩码体素的唯一数组索引集。我们将使用这些数据来塑造我们用于验证的数据。
+- en: Listing 13.5 dsets.py:99, `Ct.__init__`
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单13.5 dsets.py:99，`Ct.__init__`
+- en: '[PRE4]'
+  id: totrans-133
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Filters for nodules
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 用于结节的过滤器
+- en: ❷ Gives us a 1D vector (over the slices) with the number of voxels flagged in
+    the mask in each slice
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 给出一个1D向量（在切片上）中每个切片中标记的掩码体素数量
+- en: ❸ Takes indices of the mask slices that have a nonzero count, which we make
+    into a list
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 获取具有非零计数的掩码切片的索引，我们将其转换为列表
+- en: Keen eyes might have noticed the `getCandidateInfoDict` function. The definition
+    isn’t surprising; it’s just a reformulation of the same information as in the
+    `getCandidateInfoList` function, but pregrouped by `series_uid`.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 敏锐的眼睛可能已经注意到了`getCandidateInfoDict`函数。定义并不令人惊讶；它只是`getCandidateInfoList`函数中相同信息的重新表述，但是预先按`series_uid`分组。
+- en: Listing 13.6 dsets.py:87
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单13.6 dsets.py:87
+- en: '[PRE5]'
+  id: totrans-139
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: ❶ This can be useful to keep Ct init from being a performance bottleneck.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这对于避免Ct init成为性能瓶颈很有用。
+- en: ❷ Takes the list of candidates for the series UID from the dict, defaulting
+    to a fresh, empty list if we cannot find it. Then appends the present candidateInfo_tup
+    to it.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 获取字典中系列UID的候选人列表，如果找不到，则默认为一个新的空列表。然后将当前的candidateInfo_tup附加到其中。
+- en: Caching chunks of the mask in addition to the CT
+  id: totrans-142
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 缓存掩模的块以及 CT
+- en: In earlier chapters, we cached chunks of CT centered around nodule candidates,
+    since we didn’t want to have to read and parse all of a CT’s data every time we
+    wanted a small chunk of the CT. We’ll want to do the same thing with our new `positive
+    _mask`, so we need to also return it from our `Ct.getRawCandidate` function. This
+    works out to an additional line of code and an edit to the `return` statement.
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在早期章节中，我们缓存了围绕结节候选项中心的 CT 块，因为我们不想每次想要 CT 的小块时都读取和解析整个 CT 的数据。我们希望对我们的新的 `positive
+    _mask` 也做同样的处理，因此我们还需要从我们的 `Ct.getRawCandidate` 函数中返回它。这需要额外的一行代码和对 `return` 语句的编辑。
+- en: Listing 13.7 dsets.py:178, `Ct.getRawCandidate`
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.7 dsets.py:178, `Ct.getRawCandidate`
+- en: '[PRE6]'
+  id: totrans-145
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: ❶ Newly added
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 新添加的
+- en: ❷ New value returned here
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 这里返回了新值
+- en: This will, in turn, be cached to disk by the `getCtRawCandidate` function, which
+    opens the CT, gets the specified raw candidate including the nodule mask, and
+    clips the CT values before returning the CT chunk, mask, and center information.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这将通过 `getCtRawCandidate` 函数缓存到磁盘，该函数打开 CT，获取指定的原始候选项，包括结节掩模，并在返回 CT 块、掩模和中心信息之前剪裁
+    CT 值。
+- en: Listing 13.8 dsets.py:212
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.8 dsets.py:212
+- en: '[PRE7]'
+  id: totrans-150
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: The `prepcache` script precomputes and saves all these values for us, helping
+    keep training quick.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`prepcache` 脚本为我们预先计算并保存所有这些值，帮助保持训练速度。'
+- en: Cleaning up our annotation data
+  id: totrans-152
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 清理我们的注释数据
+- en: Another thing we’re going to take care of in this chapter is doing some better
+    screening on our annotation data. It turns out that several of the candidates
+    listed in candidates.csv are present multiple times. To make it even more interesting,
+    those entries are not exact duplicates of one another. Instead, it seems that
+    the original human annotations weren’t sufficiently cleaned before being entered
+    in the file. They might be annotations on the same nodule on different slices,
+    which might even have been beneficial for our classifier.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章还要处理的另一件事是对我们的注释数据进行更好的筛选。事实证明，candidates.csv 中列出的几个候选项出现了多次。更有趣的是，这些条目并不是彼此的完全重复。相反，原始的人类注释在输入文件之前并没有经过充分的清理。它们可能是关于同一结节在不同切片上的注释，这甚至可能对我们的分类器有益。
+- en: We’ll do a bit of a hand wave here and provide a cleaned up annotation.csv file.
+    In order to fully walk through the provenance of this cleaned file, you’ll need
+    to know that the LUNA dataset is derived from another dataset called the Lung
+    Image Database Consortium image collection (LIDC-IDRI)[⁹](#pgfId-1016623) and
+    includes detailed annotation information from multiple radiologists. We’ve already
+    done the legwork to get the original LIDC annotations, pull out the nodules, dedupe
+    them, and save them to the file /data/part2/luna/annotations_with_malignancy.csv.
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里我们将进行一些简化，并提供一个经过清理的 annotation.csv 文件。为了完全了解这个清理文件的来源，您需要知道 LUNA 数据集源自另一个名为肺部图像数据库协会图像集（LIDC-IDRI）的数据集，并包含来自多名放射科医生的详细注释信息。我们已经完成了获取原始
+    LIDC 注释、提取结节、去重并将它们保存到文件 /data/part2/luna/annotations_with_malignancy.csv 的工作。
+- en: With that file, we can update our `getCandidateInfoList` function to pull our
+    nodules from our new annotations file. First, we loop over the new annotations
+    for the actual nodules. Using the CSV reader,[^(10)](#pgfId-1016656) we need to
+    convert the data to the appropriate types before we stick them into our `CandidateInfoTuple`
+    data structure.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了那个文件，我们可以更新我们的 `getCandidateInfoList` 函数，从我们的新注释文件中提取结节。首先，我们遍历实际结节的新注释。使用
+    CSV 读取器，[^(10)](#pgfId-1016656)我们需要将数据转换为适当的类型，然后将它们放入我们的 `CandidateInfoTuple`
+    数据结构中。
+- en: Listing 13.9 dsets.py:43, `def` `getCandidateInfoList`
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.9 dsets.py:43, `def` `getCandidateInfoList`
+- en: '[PRE8]'
+  id: totrans-157
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: ❶ For each line in the annotations file that represents one nodule, ...
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 对于注释文件中表示一个结节的每一行，...
+- en: ❷ ... we add a record to our list.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ ... 我们向我们的列表添加一条记录。
+- en: ❸ isNodule_bool
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ isNodule_bool
+- en: ❹ hasAnnotation_bool
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ hasAnnotation_bool
+- en: Similarly, we loop over candidates from candidates.csv as before, but this time
+    we only use the non-nodules. As these are not nodules, the nodule-specific information
+    will just be filled with `False` and `0`.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类似地，我们像以前一样遍历 candidates.csv 中的候选项，但这次我们只使用非结节。由于这些不是结节，结节特定信息将只填充为 `False`
+    和 `0`。
+- en: Listing 13.10 dsets.py:62, `def` `getCandidateInfoList`
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.10 dsets.py:62, `def` `getCandidateInfoList`
+- en: '[PRE9]'
+  id: totrans-164
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: ❶ For each line in the candidates file ...
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 对于候选文件中的每一行...
+- en: ❷ ... but only the non-nodules (we have the others from earlier) ...
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ ... 但只有非结节（我们之前有其他的）...
+- en: ❸ ... we add a candidate record.
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ ... 我们添加一个候选记录。
+- en: ❹ isNodule_bool
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ isNodule_bool
+- en: ❺ hasAnnotation_bool
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ hasAnnotation_bool
+- en: ❻ isMal_bool
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❻ isMal_bool
+- en: Other than the addition of the `hasAnnotation_bool` and `isMal_bool` flags (which
+    we won’t use in this chapter), the new annotations will slot in and be usable
+    just like the old ones.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了添加`hasAnnotation_bool`和`isMal_bool`标志（我们在本章不会使用），新的注释将插入并可像旧的一样使用。
+- en: '*Note* You might be wondering why we haven’t discussed the LIDC before now.
+    As it turns out, the LIDC has a large amount of tooling that’s already been constructed
+    around the underlying dataset, which is specific to the LIDC. You could even get
+    ready-made masks from PyLIDC. That tooling presents a somewhat unrealistic picture
+    of what sort of support a given dataset might have, since the LIDC is anomalously
+    well supported. What we’ve done with the LUNA data is much more typical and provides
+    for better learning, since we’re spending our time manipulating the raw data rather
+    than learning an API that someone else cooked up.'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 您可���会想知道为什么我们到现在才讨论 LIDC。事实证明，LIDC 已经围绕基础数据集构建了大量工具，这些工具是特定于 LIDC 的。您甚至可以从
+    PyLIDC 获取现成的掩模。这些工具呈现了一个有些不切实际的图像，说明了给定数据集可能具有的支持类型，因为 LIDC 的支持异常充分。我们对 LUNA 数据所做的工作更具典型性，并提供更好的学习，因为我们花时间操纵原始数据，而不是学习别人设计的
+    API。'
+- en: 13.5.4 Implementing Luna2dSegmentationDataset
+  id: totrans-173
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.4 实现 Luna2dSegmentationDataset
+- en: 'Compared to previous chapters, we are going to take a different approach to
+    the training and validation split in this chapter. We will have two classes: one
+    acting as a general base class suitable for validation data, and one subclassing
+    the base for the training set, with randomization and a cropped sample.'
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与之前的章节相比，我们在本章将采用不同的方法来进行训练和验证集的划分。我们将有两个类：一个作为适用于验证数据的通用基类，另一个作为基类的子类，用于训练集，具有随机化和裁剪样本。
+- en: While this approach is somewhat more complicated in some ways (the classes aren’t
+    perfectly encapsulated, for example), it actually simplifies the logic of selecting
+    randomized training samples and the like. It also becomes extremely clear which
+    code paths impact both training and validation, and which are isolated to training
+    only. Without this, we found that some of the logic can become nested or intertwined
+    in ways that make it hard to follow. This is important because our training data
+    will look significantly different from our validation data!
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管这种方法在某些方面有些复杂（例如，类并不完全封装），但实际上简化了选择随机训练样本等逻辑。它还非常清楚地显示了哪些代码路径影响训练和验证，哪些是仅与训练相关的。如果没有这一点，我们发现一些逻辑可能会以难以跟踪的方式嵌套或交织在一起。这很重要，因为我们的训练数据与验证数据看起来会有很大不同！
+- en: '*Note* Other class arrangements are also viable; we considered having two entirely
+    separate `Dataset` subclasses, for example. Standard software engineering design
+    principles apply, so try to keep your structure relatively simple, and try to
+    not copy and paste code, but don’t invent complicated frameworks to prevent having
+    to duplicate three lines of code.'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 其他类别的安排也是可行的；例如，我们考虑过完全分开两个独立的`Dataset`子类。标准软件工程设计原则适用，因此尽量保持结构相对简单，尽量不要复制粘贴代码，但不要发明复杂的框架来防止重复三行代码。'
+- en: The data that we produce will be two-dimensional CT slices with multiple channels.
+    The extra channels will hold adjacent slices of CT. Recall figure 4.2, shown here
+    as figure 13.12; we can see that each slice of CT scan can be thought of as a
+    2D grayscale image.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们生成的数据将是具有多个通道的二维CT切片。额外的通道将保存相邻的CT切片。回想图 4.2，这里显示为图 13.12；我们可以看到每个CT扫描切片都可以被视为二维灰度图像。
+- en: '![](../Images/CH13_F12_Stevens2_GS.png)'
+  id: totrans-178
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F12_Stevens2_GS.png)'
+- en: Figure 13.12 Each slice of a CT scan represents a different position in space.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.12 CT扫描的每个切片代表空间中的不同位置。
+- en: How we combine those slices is up to us. For the input to our classification
+    model, we treated those slices as a 3D array of data and used 3D convolutions
+    to process each sample. For our segmentation model, we are going to instead treat
+    each slice as a single channel, and produce a multichannel 2D image. Doing so
+    will mean that we are treating each slice of CT scan as if it was a color channel
+    of an RGB image, like we saw in figure 4.1, repeated here as figure 13.13\. Each
+    input slice of the CT will get stacked together and consumed just like any other
+    2D image. The channels of our stacked CT image won’t correspond to colors, but
+    nothing about 2D convolutions requires the input channels to be colors, so it
+    works out fine.
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们如何组合这些切片取决于我们。对于我们分类模型的输入，我们将这些切片视为数据的三维数组，并使用三维卷积来处理每个样本。对于我们的分割模型，我们将把每个切片视为单个通道，生成一个多通道的二维图像。这样做意味着我们将每个CT扫描切片都视为RGB图像的颜色通道，就像我们在图
+    4.1 中看到的那样，这里重复显示为图 13.13。CT的每个输入切片将被堆叠在一起，并像任何其他二维图像一样被消耗。我们堆叠的CT图像的通道不会对应颜色，但是二维卷积并不要求输入通道是颜色，所以这样做没问题。
+- en: '![](../Images/CH13_F13_Stevens2_GS.png)'
+  id: totrans-181
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F13_Stevens2_GS.png)'
+- en: Figure 13.13 Each channel of a photographic image represents a different color.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.13 摄影图像的每个通道代表不同的颜色。
+- en: For validation, we’ll need to produce one sample per slice of CT that has an
+    entry in the positive mask, for each validation CT we have. Since different CT
+    scans can have different slice counts,[^(11)](#pgfId-1017513) we’re going to introduce
+    a new function that caches the size of each CT scan and its positive mask to disk.
+    We need this to be able to quickly construct the full size of a validation set
+    without having to load each CT at `Dataset` initialization. We’ll continue to
+    use the same caching decorator as before. Populating this data will also take
+    place during the prepcache.py script, which we must run once before we start any
+    model training.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于验证，我们需要为每个具有正面掩模条目的CT切片生成一个样本，对于我们拥有的每个验证CT。由于不同的CT扫描可能具有不同的切片计数，我们将引入一个新函数，将每个CT扫描及其正面掩模的大小缓存到磁盘上。我们需要这样做才能快速构建完整的验证集大小，而无需在`Dataset`初始化时加载每个CT。我们将继续使用与之前相同的缓存装饰器。填充这些数据也将在prepcache.py脚本中进行，我们必须在开始任何模型训练之前运行一次。
+- en: Listing 13.11 dsets.py:220
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.11 dsets.py:220
+- en: '[PRE10]'
+  id: totrans-185
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: The majority of the `Luna2dSegmentationDataset.__init__` method is similar to
+    what we’ve seen before. We have a new `contextSlices_count` parameter, as well
+    as an `augmentation_dict` similar to what we introduced in chapter 12.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Luna2dSegmentationDataset.__init__`方法的大部分处理与我们之前看到的类似。我们有一个新的`contextSlices_count`参数，以及类似于我们在第12章介绍的`augmentation_dict`。'
+- en: The handling for the flag indicating whether this is meant to be a training
+    or validation set needs to change somewhat. Since we’re no longer training on
+    individual nodules, we will have to partition the list of series, taken as a whole,
+    into training and validation sets. This means an entire CT scan, along with all
+    nodule candidates it contains, will be in either the training set or the validation
+    set.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 指示这是否应该是训练集还是验证集的标志处理需要有所改变。由于我们不再对单个结节进行训练，我们将不得不将整个系列列表作为一个整体划分为训练集和验证集。这意味着整个CT扫描以及其中包含的所有结节候选者将分别位于训练集或验证集中。
+- en: Listing 13.12 dsets.py:242, `.__init__`
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.12 dsets.py:242, `.__init__`
+- en: '[PRE11]'
+  id: totrans-189
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: ❶ Starting with a series list containing all our series, we keep only every
+    val_stride-th element, starting with 0.
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 从包含所有系列的系列列表开始，我们仅保留每个`val_stride`元素，从0开始。
+- en: ❷ If we are training, we delete every val_stride-th element instead.
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 如果我们在训练中，我们会删除每个`val_stride`元素。
+- en: Speaking of validation, we’re going to have two different modes we can validate
+    our training with. First, when `fullCt_bool` is `True`, we will use every slice
+    in the CT for our dataset. This will be useful when we’re evaluating end-to-end
+    performance, since we need to pretend that we’re starting off with no prior information
+    about the CT. We’ll use the second mode for validation during training, which
+    is when we’re limiting ourselves to only the CT slices that have a positive mask
+    present.
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 谈到验证，我们将有两种不同的模式可以验证我们的训练。首先，当`fullCt_bool`为`True`时，我们将使用CT中的每个切片作为我们的数据集。当我们评估端到端性能时，这将非常有用，因为我们需要假装我们对CT没有任何先前信息。我们将在训练期间使用第二种模式进行验证，即当我们限制自己只使用具有阳性掩模的CT切片时。
+- en: As we now only want certain CT series to be considered, we loop over the series
+    UIDs we want and get the total number of slices and the list of interesting ones.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们现在只想考虑特定的CT序列，我们循环遍历我们想要的序列UID，并获取总切片数和有趣切片的列表。
+- en: Listing 13.13 dsets.py:250, `.__init__`
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.13 dsets.py:250, `.__init__`
+- en: '[PRE12]'
+  id: totrans-195
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: ❶ Here we extend sample_list with every slice of the CT by using range ...
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 在这里，我们通过使用范围扩展样本列表中的每个CT切片...
+- en: ❷ ... while here we take only the interesting slices.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ ... 而在这里我们只取有趣的切片。
+- en: Doing it this way will keep our validation relatively quick and ensure that
+    we’re getting complete stats for true positives and false negatives, but we’re
+    making the assumption that other slices will have false positive and true negative
+    stats relatively similar to the ones we evaluate during validation.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以这种方式进行将保持我们的验证相对快速，并确保我们获得真阳性和假阴性的完整统计数据，但我们假设其他切片的假阳性和真阴性统计数据与我们在验证期间评估的统计数据相对类似。
+- en: Once we have the set of `series_uid` values we’ll be using, we can filter our
+    `candidateInfo_list` to contain only nodule candidates with a `series_uid` that
+    is included in that set of series. Additionally, we’ll create another list that
+    has only the positive candidates so that during training, we can use those as
+    our training samples.
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦我们有了要使用的`series_uid`值集合，我们可以将我们的`candidateInfo_list`过滤为仅包含`series_uid`包含在该系列集合中的结节候选者。此外，我们将创建另一个仅包含阳性候选者的列表，以便在训练期间，我们可以将它们用作我们的训练样本。
+- en: Listing 13.14 dsets.py:261, `.__init__`
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.14 dsets.py:261, `.__init__`
+- en: '[PRE13]'
+  id: totrans-201
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ This is cached.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这是缓存的。
+- en: ❷ Makes a set for faster lookup
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 创建一个集合以加快查找速度。
+- en: ❸ Filters out the candidates from series not in our set
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 过滤掉不在我们集合中的系列的候选者
+- en: ❹ For the data balancing yet to come, we want a list of actual nodules.
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 对于即将到来的数据平衡，我们需要一个实际结节的列表。
+- en: Our `__getitem__` implementation will also be a bit fancier by delegating a
+    lot of the logic to a function that makes it easier to retrieve a specific sample.
+    At the core of it, we’d like to retrieve our data in three different forms. First,
+    we have the full slice of the CT, as specified by a `series_uid` and `ct_ndx`.
+    Second, we have a cropped area around a nodule, which we’ll use for training data
+    (we’ll explain in a bit why we’re not using full slices). Finally, the `DataLoader`
+    is going to ask for samples via an integer `ndx`, and the dataset will need to
+    return the appropriate type based on whether it’s training or validation.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的`__getitem__`实现也会更加复杂，通过将大部分逻辑委托给一个函数，使得检索特定样本变得更容易。在其核心，我们希望以三种不同形式检索我们的数据。首先，我们有CT的完整切片，由`series_uid`和`ct_ndx`指定。其次，我们有围绕结节的裁剪区域，这将用于训练数据（我们稍后会解释为什么我们不使用完整切片）。最后，`DataLoader`将通过整数`ndx`请求样本，数据集将根据是训练还是验证来返回适当的类型。
+- en: The base class or subclass `__getitem__` functions will convert from the integer
+    `ndx` to either the full slice or training crop, as appropriate. As mentioned,
+    our validation set’s `__getitem__` just calls another function to do the real
+    work. Before that, it wraps the index around into the sample list in order to
+    decouple the epoch size (given by the length of the dataset) from the actual number
+    of samples.
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 基类或子类`__getitem__`函数将根据需要从整数`ndx`转换为完整切片或训练裁剪。如前所述，我们的验证集的`__getitem__`只是调用另一个函数来执行真正的工作。在此之前，它将索引包装到样本列表中，以便将epoch大小（由数据集长度给出）与实际样本数量分离。
+- en: Listing 13.15 dsets.py:281, `.__getitem__`
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.15 dsets.py:281, `.__getitem__`
+- en: '[PRE14]'
+  id: totrans-209
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: ❶ The modulo operation does the wrapping.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 模运算进行包装。
+- en: That was easy, but we still need to implement the interesting functionality
+    from the `getItem_fullSlice` method.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这很容易，但我们仍然需要实现`getItem_fullSlice`方法中的有趣功能。
+- en: Listing 13.16 dsets.py:285, `.getitem_fullSlice`
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.16 dsets.py:285, `.getitem_fullSlice`
+- en: '[PRE15]'
+  id: totrans-213
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: ❶ Preallocates the output
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 预先分配输出
+- en: ❷ When we reach beyond the bounds of the ct_a, we duplicate the first or last
+    slice.
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 当我们超出ct_a的边界时，我们复制第一个或最后一个切片。
+- en: Splitting the functions like this means we can always ask a dataset for a specific
+    slice (or cropped training chunk, which we’ll see in the next section) indexed
+    by series UID and position. Only for the integer indexing do we go through `__getitem__`,
+    which then gets a sample from the (shuffled) list.
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将函数分割成这样可以让我们始终向数据集询问特定切片（或裁剪的训练块，我们将在下一节中看到）通过序列UID和位置索引。仅对于整数索引，我们通过`__getitem__`进行，然后从（打乱的）列表中获取样本。
+- en: Aside from `ct_t` and `pos_t`, the rest of the tuple we return is all information
+    that we include for debugging and display. We don’t need any of it for training.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了`ct_t`和`pos_t`之外，我们返回的元组的其余部分都是我们包含用于调试和显示的信息。我们在训练中不需要任何这些信息。
+- en: 13.5.5 Designing our training and validation data
+  id: totrans-218
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.5 设计我们的训练和验证数据
+- en: Before we get into the implementation for our training dataset, we need to explain
+    why our training data will look different from our validation data. Instead of
+    the full CT slices, we’re going to train on 64 × 64 crops around our positive
+    candidates (the actually-a-nodule candidates). These 64 × 64 patches will be taken
+    randomly from a 96 × 96 crop centered on the nodule. We will also include three
+    slices of context in both directions as additional “channels” to our 2D segmentation.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们开始实现训练数据集之前，我们需要解释为什么我们的训练数据看起来与验证数据不同。我们将不再使用完整的CT切片，而是将在我们的正候选项周围（实际上是结节候选项）训练64×64的裁剪。这些64×64的补丁将随机从以结节为中心的96×96裁剪中取出。我们还将在两个方向上包括三个切片的上下文作为我们2D分割的附加“通道”。
+- en: We’re doing this to make training more stable, and to converge more quickly.
+    The only reason we know to do this is because we tried to train on whole CT slices,
+    but we found the results unsatisfactory. After some experimentation, we found
+    that the 64 × 64 semirandom crop approach worked well, so we decided to use that
+    for the book. When you work on your own projects, you’ll need to do that kind
+    of experimentation for yourself!
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们这样做是为了使训练更加稳定，收敛更快。我们之所以知道这样做是因为我们尝试在整个CT切片上进行训练，但我们发现结果令人不满意。经过一些实验，我们发现64×64的半随机裁剪方法效果不错，所以我们决定在书中使用这种方法。当你在自己的项目上工作时，你需要为自己做这种实验！
+- en: We believe the whole-slice training was unstable essentially due to a class-balancing
+    issue. Since each nodule is so small compared to the whole CT slice, we were right
+    back in a needle-in-a-haystack situation similar to the one we got out of in the
+    last chapter, where our positive samples were swamped by the negatives. In this
+    case, we’re talking about pixels rather than nodules, but the concept is the same.
+    By training on crops, we’re keeping the number of positive pixels the same and
+    reducing the negative pixel count by several orders of magnitude.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们认为整个切片训练不稳定主要是由于类平衡问题。由于每个结节与整个CT切片相比非常小，我们又回到了上一章中摆脱的类似于大海捞针的情况，其中我们的正样本被负样本淹没。在这种情况下，我们谈论的是像素而不是结节，但概念是相同的。通过在裁剪上进行训练，我们保持了正像素数量不变，并将负像素数量减少了几个数量级。
+- en: Because our segmentation model is pixel-to-pixel and takes images of arbitrary
+    size, we can get away with training and validating on samples with different dimensions.
+    Validation uses the same convolutions with the same weights, just applied to a
+    larger set of pixels (and so with fewer border pixels to fill in with edge data).
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为我们的分割模型是像素到像素的，并且接受任意大小的图像，所以我们可以在具有不同尺寸的样本上进行训练和验证。验证使用相同的卷积和相同的权重，只是应用于更大的像素集（因此需要填充边缘数据的像素较少）。
+- en: One caveat to this approach is that since our validation set contains orders
+    of magnitude more negative pixels, our model will have a huge false positive rate
+    during validation. There are many more opportunities for our segmentation model
+    to get tricked! It doesn’t help that we’re going to be pushing for high recall
+    as well. We’ll discuss that more in section 13.6.3\.
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种方法的一个缺点是，由于我们的验证集包含数量级更多的负像素，我们的模型在验证期间将有很高的假阳性率。我们的分割模型有很多机会被欺骗！并且我们还将追求高召回率。我们将在第13.6.3节中更详细地讨论这一点。
+- en: 13.5.6 Implementing TrainingLuna2dSegmentationDataset
+  id: totrans-224
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.6 实现TrainingLuna2dSegmentationDataset
+- en: With that out of the way, let’s get back to the code. Here’s the training set’s
+    `__getitem__`. It looks just like the one for the validation set, except that
+    we now sample from `pos_list` and call `getItem_trainingCrop` with the candidate
+    info tuple, since we need the series and the exact center location, not just the
+    slice.
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这个，让我们回到代码。这是训练集的`__getitem__`。它看起来就像验证集的一个，只是现在我们从`pos_list`中采样，并使用候选信息元组调用`getItem_trainingCrop`，因为我们需要系列和确切的中心位置，而不仅仅是切片。
+- en: Listing 13.17 dsets.py:320, `.__getitem__`
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 13.17 dsets.py:320，`.__getitem__`
+- en: '[PRE16]'
+  id: totrans-227
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: To implement `getItem_trainingCrop`, we will use a `getCtRawCandidate` function
+    similar to the one we used during classification training. Here, we’re passing
+    in a different size crop, but the function is unchanged except for now returning
+    an additional array with a crop of the `ct.positive_mask` as well.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要实现`getItem_trainingCrop`，我们将使用一个类似于分类训练中使用的`getCtRawCandidate`函数。在这里，我们传入一个不同尺寸的裁剪，但该函数除了现在返回一个包含`ct.positive_mask`裁剪的额外数组外，没有改变。
+- en: We limit our `pos_a` to the center slice that we’re actually segmenting, and
+    then construct our 64 × 64 random crops of the 96 × 96 we were given by `getCtRawCandidate`.
+    Once we have those, we return a tuple with the same items as our validation dataset.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将我们的`pos_a`限制在我们实际分割的中心切片上，然后构建我们的96×96给定的裁剪的64×64随机裁剪。一旦我们有了这些，我们返回一个与我们的验证数据集相同项目的元组。
+- en: Listing 13.18 dsets.py:324, `.getitem_trainingCrop`
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 13.18 dsets.py:324，`.getitem_trainingCrop`
+- en: '[PRE17]'
+  id: totrans-231
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: ❶ Gets the candidate with a bit of extra surrounding
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 获取带有一点额外周围的候选项
+- en: ❷ Taking a one-element slice keeps the third dimension, which will be the (single)
+    output channel.
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 保留第三维度的一个元素切片，这将是（单一的）输出通道。
+- en: ❸ With two random numbers between 0 and 31, we crop both CT and mask.
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 使用0到31之间的两个随机数，我们裁剪CT和掩模。
+- en: 'You might have noticed that data augmentation is missing from our dataset implementation.
+    We’re going to handle that a little differently this time around: we’ll augment
+    our data on the GPU.'
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能已经注意到我们的数据集实现中缺少数据增强。这一次我们将以稍有不同的方式处理：我们将在GPU上增强我们的数据。
+- en: 13.5.7 Augmenting on the GPU
+  id: totrans-236
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.5.7 在GPU上进行数据增强
+- en: One of the key concerns when it comes to training a deep learning model is avoiding
+    bottlenecks in your training pipeline. Well, that’s not quite true--there will
+    *always* be a bottleneck.[^(12)](#pgfId-1019542) The trick is to make sure the
+    bottleneck is at the resource that’s the most expensive or difficult to upgrade,
+    and that your usage of that resource isn’t wasteful.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在训练深度学习模型时的一个关键问题是避免训练管道中的瓶颈。嗯，这并不完全正确--总会有一个瓶颈。[^12]
+- en: 'Some common places to see bottlenecks are as follows:'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一些常见的瓶颈出现在以下情况：
+- en: In the data-loading pipeline, either in raw I/O or in decompressing data once
+    it’s in RAM. We addressed this with our `diskcache` library usage.
+  id: totrans-239
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在数据加载管道中，无论是在原始I/O中还是在将数据解压缩后。我们使用`diskcache`库来解决这个问题。
+- en: In CPU preprocessing of the loaded data. This is often data normalization or
+    augmentation.
+  id: totrans-240
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在加载数据的CPU预处理中。这通常是数据归一化或增强。
+- en: In the training loop on the GPU. This is typically where we want our bottleneck
+    to be, since total deep learning system costs for GPUs are usually higher than
+    for storage or CPU.
+  id: totrans-241
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在GPU上的训练循环中。这通常是我们希望瓶颈出现的地方，因为GPU的总体深度学习系统成本通常高于存储或CPU。
+- en: Less commonly, the bottleneck can sometimes be the *memory bandwidth* between
+    CPU and GPU. This implies that the GPU isn’t doing much work compared to the data
+    size that’s being sent in.
+  id: totrans-242
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 瓶颈通常不太常见，有时可能是CPU和GPU之间的*内存带宽*。这意味着与发送的数据大小相比，GPU的工作量并不大。
+- en: Since GPUs can be 50 times faster than CPUs when working on tasks that fit GPUs
+    well, it often makes sense to move those tasks to the GPU from the CPU in cases
+    where CPU usage is becoming high. This is especially true if the data gets expanded
+    during this processing; by moving the smaller input to the GPU first, the expanded
+    data is kept local to the GPU, and less memory bandwidth is used.
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于GPU在处理适合GPU的任务时可以比CPU快50倍，因此在CPU使用率变高时，通常有意义将这些任务从CPU移动到GPU。特别是如果数据在此处理过程中被扩展；通过首先将较小的输入移动到GPU，扩展的数据保持在GPU本地，使用的内存带宽较少。
+- en: In our case, we’re going to move data augmentation to the GPU. This will keep
+    our CPU usage light, and the GPU will easily be able to accommodate the additional
+    workload. Far better to have the GPU busy with a small bit of extra work than
+    idle waiting for the CPU to struggle through the augmentation process.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的情况下，我们将数据增强移到GPU上。这将使我们的CPU使用率较低，GPU将轻松地承担额外的工作量。与其让GPU空闲等待CPU努力完成增强过程，不如让GPU忙于少量额外工作。
+- en: We’ll accomplish this by using a second model, similar to all the other subclasses
+    of `nn.Module` we’ve seen so far in this book. The main difference is that we’re
+    not interested in backpropagating gradients through the model, and the `forward`
+    method will be doing decidedly different things. There will be some slight modifications
+    to the actual augmentation routines since we’re working with 2D data for this
+    chapter, but otherwise, the augmentation will be very similar to what we saw in
+    chapter 12\. The model will consume tensors and produce different tensors, just
+    like the other models we’ve implemented.
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将通过使用第二个模型来实现这一点，这个模型与本书中迄今为止看到的所有`nn.Module`的子类类似。主要区别在于我们不感兴趣通过模型反向传播梯度，并且`forward`方法将执行完全不同的操作。由于我们在本章中处理的是2D数据，因此实际增强例程将进行一些轻微修改，但除此之外，增强将与我们在第12章中看到的非常相似。该模型将消耗张量并产生不同的张量，就像我们实现的其他模型一样。
+- en: Our model’s `__init__` takes the same data augmentation arguments--`flip`, `offset`,
+    and so on--that we used in the last chapter, and assigns them to `self`.
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们模型的`__init__`接受相同的数据增强参数--`flip`，`offset`等--这些参数在上一章中使用过，并将它们分配给`self`。
+- en: Listing 13.19 model.py:56, `class` `SegmentationAugmentation`
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表13.19 model.py:56，`class` `SegmentationAugmentation`
+- en: '[PRE18]'
+  id: totrans-248
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: Our augmentation `forward` method takes the input and the label, and calls out
+    to build the `transform_t` tensor that will then drive our `affine_grid` and `grid_sample`
+    calls. Those calls should feel very familiar from chapter 12.
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的增强`forward`方法接受输入和标签，并调用构建`transform_t`张量，然后驱动我们的`affine_grid`和`grid_sample`调用。这些调用应该在第12章中感到非常熟悉。
+- en: Listing 13.20 model.py:68, `SegmentationAugmentation.forward`
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表13.20 model.py:68，`SegmentationAugmentation.forward`
+- en: '[PRE19]'
+  id: totrans-251
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: ❶ Note that we’re augmenting 2D data.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 请注意，我们正在增强2D数据。
+- en: ❷ The first dimension of the transformation is the batch, but we only want the
+    first two rows of the 3 × 3 matrices per batch item.
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 变换的第一个维度是批处理，但我们只想要每个批处理项的3×3矩阵的前两行。
+- en: ❸ We need the same transformation applied to CT and mask, so we use the same
+    grid. Because grid_sample only works with floats, we convert here.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 我们需要将相同的变换应用于CT和掩码，因此我们使用相同的网格。因为grid_sample仅适用于浮点数，所以我们在这里进行转换。
+- en: ❹ Just before returning, we convert the mask back to Booleans by comparing to
+    0.5\. The interpolation that grid_sample results in fractional values.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 在返回之前，我们通过与0.5比较将掩码转换回布尔值。grid_sample导致插值产生分数值。
+- en: Now that we know what we need to do with `transform_t` to get our data out,
+    let’s take a look at the `_build2dTransformMatrix` function that actually creates
+    the transformation matrix we use.
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们知道了如何处理`transform_t`以获取我们的数据，让我们来看看实际创建我们使用的变换矩阵的`_build2dTransformMatrix`函数。
+- en: Listing 13.21 model.py:90, `._build2dTransformMatrix`
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表13.21 model.py:90，`._build2dTransformMatrix`
+- en: '[PRE20]'
+  id: totrans-258
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: ❶ Creates a 3 × 3 matrix, but we will drop the last row later.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 创建一个3×3矩阵，但我们稍后会删除最后一行。
+- en: ❷ Again, we’re augmenting 2D data here.
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 再次，我们在这里增强2D数据。
+- en: ❸ Takes a random angle in radians, so in the range 0 .. 2{pi}
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 以弧度形式取一个随机角度，范围为0 .. 2{pi}
+- en: ❹ Rotation matrix for the 2D rotation by the random angle in the first two dimensions
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 2D旋转的旋转矩阵，由第一个两个维度中的随机角度确定
+- en: ❺ Applies the rotation to the transformation matrix using the Python matrix
+    multiplication operator
+  id: totrans-263
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 使用Python矩阵乘法运算符将旋转应用于变换矩阵
+- en: 'Other than the slight differences to deal with 2D data, our GPU augmentation
+    code looks very similar to our CPU augmentation code. That’s great, because it
+    means we’re able to write code that doesn’t have to care very much about where
+    it runs. The primary difference isn’t in the core implementation: it’s how we
+    wrapped that implementation into a `nn.Module` subclass. While we’ve been thinking
+    about models as exclusively a deep learning tool, this shows us that with PyTorch,
+    tensors can be used quite a bit more generally. Keep this in mind when you start
+    your next project--the range of things you can accomplish with a GPU-accelerated
+    tensor is pretty large!'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了处理2D数据的轻微差异外，我们的GPU数据增强代码看起来与我们的CPU数据增强代码非常相似。这很好，因为这意味着我们能够编写不太关心运行位置的代码。主要区别不在核心实现中：而是我们如何将该实现封装到`nn.Module`子类中。虽然我们一直认为模型是一种专门用于深度学习的工具，但这向我们展示了在PyTorch中，张量可以被用得更加普遍。在开始下一个项目时请记住这一点--使用GPU加速张量可以实现的事情范围相当广泛！
+- en: 13.6 Updating the training script for segmentation
+  id: totrans-265
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.6 更新用于分割的训练脚本
+- en: We have a model. We have data. We need to use them, and you won’t be surprised
+    when step 2C of figure 13.14 suggests we should train our new model with the new
+    data.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们有一个模型。我们有数据。我们需要使用它们，当图13.14的步骤2C建议我们应该用新数据训练我们的新模型时，你不会感到惊讶。
+- en: '![](../Images/CH13_F14_Stevens2_GS.png)'
+  id: totrans-267
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F14_Stevens2_GS.png)'
+- en: Figure 13.14 The outline of this chapter, with a focus on the changes needed
+    for our training loop
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.14 本章概述，重点关注我们训练循环所需的更改
+- en: 'To be more precise about the process of training our model, we will update
+    three things affecting the outcome from the training code we got in chapter 12:'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了更准确地描述训练模型的过程，我们将更新影响我们在第12章获得的训练代码结果的三个方面：
+- en: We need to instantiate the new model (unsurprisingly).
+  id: totrans-270
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们需要实例化新模型（不足为奇）。
+- en: 'We will introduce a new loss: the Dice loss.'
+  id: totrans-271
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们将引入一种新的损失函数：Dice损失。
+- en: We will also look at an optimizer other than the venerable SGD we’ve used so
+    far. We’ll stick with a popular one and use Adam.
+  id: totrans-272
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们还将研究除了我们迄今使用的可敬的SGD之外的另一种优化器。我们将坚持使用一种流行的优化器，即Adam。
+- en: But we will also step up our bookkeeping, by
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但我们还将加强我们的记录工作，通过
+- en: Logging images for visual inspection of the segmentation to TensorBoard
+  id: totrans-274
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将图像记录到TensorBoard以进行分割的可视检查
+- en: Performing more metrics logging in TensorBoard
+  id: totrans-275
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在TensorBoard中执行更多指标记录
+- en: Saving our best model based on the validation
+  id: totrans-276
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 根据验证结果保存我们最佳的模型
+- en: Overall, the training script p2ch13/training.py is even more similar to what
+    we used for classification training in chapter 12 than the adapted code we’ve
+    seen so far. Any significant changes will be covered here in the text, but be
+    aware that some of the minor tweaks are skipped. For the full story, check the
+    source.
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总的来说，训练脚本p2ch13/training.py与我们在第12章用于分类训练的代码非常相似，比我们迄今为止看到的调整后的代码更相似。任何重大变化将在文本中介绍，但请注意一些细微调整被省略。要了解完整的故事，请查看源代码。
+- en: 13.6.1 Initializing our segmentation and augmentation models
+  id: totrans-278
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.1 初始化我们的分割和数据增强模型
+- en: Our `initModel` method is very unsurprising. We are using the `UNetWrapper`
+    class and giving it our configuration parameters--which we will look at in detail
+    shortly. Also, we now have a second model for augmentation. Just like before,
+    we can move the model to the GPU if desired and possibly set up multi-GPU training
+    using `DataParallel`. We skip these administrative tasks here.
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的`initModel`方法非常不足为奇。我们正在使用`UNetWrapper`类并为其提供我们的配置参数--我们很快将详细查看这些参数。此外，我们现在有了第二个用于数据增强的模型。就像以前一样，如果需要，我们可以将模型移动到GPU，并可能使用`DataParallel`设置多GPU训练。我们在这里跳过这些管理任务。
+- en: Listing 13.22 training.py:133, `.initModel`
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.22 training.py:133, `.initModel`
+- en: '[PRE21]'
+  id: totrans-281
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: 'For input into `UNet`, we’ve got seven input channels: 3 + 3 context slices,
+    and 1 slice that is the focus for what we’re actually segmenting. We have one
+    output class indicating whether this voxel is part of a nodule. The `depth` parameter
+    controls how deep the U goes; each downsampling operation adds 1 to the depth.
+    Using `wf=5` means the first layer will have `2**wf == 32` filters, which doubles
+    with each downsampling. We want the convolutions to be padded so that we get an
+    output image the same size as our input. We also want batch normalization inside
+    the network after each activation function, and our upsampling function should
+    be an upconvolution layer, as implemented by `nn.ConvTranspose2d` (see util/unet.py,
+    line 123).'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于输入到`UNet`，我们有七个输入通道：3 + 3上下文切片，以及一个是我们实际进行分割的焦点切片。我们有一个输出类指示这个体素是否是结节的一部分。`depth`参数控制U的深度；每个下采样操作将深度增加1。使用`wf=5`意味着第一层将有`2**wf
+    == 32`个滤波器，每个下采样都会翻倍。我们希望卷积进行填充，以便我们得到与输入相同大小的输出图像。我们还希望批量归一化在每个激活函数后面，我们的上采样函数应该是一个上卷积层，由`nn.ConvTranspose2d`实现（参见util/unet.py，第123行）。
+- en: 13.6.2 Using the Adam optimizer
+  id: totrans-283
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.2 使用Adam优化器
+- en: The Adam optimizer ([https://arxiv.org/abs/1412.6980](https://arxiv.org/abs/1412.6980))
+    is an alternative to using SGD when training our models. Adam maintains a separate
+    learning rate for each parameter and automatically updates that learning rate
+    as training progresses. Due to these automatic updates, we typically won’t need
+    to specify a non-default learning rate when using Adam, since it will quickly
+    determine a reasonable learning rate by itself.
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Adam优化器（[https://arxiv.org/abs/1412.6980](https://arxiv.org/abs/1412.6980)）是在训练模型时使用SGD的替代方案。Adam为每个参数维护单独的学习率，并随着训练的进行自动更新该学习率。由于这些自动更新，通常在使用Adam时我们不需要指定非默认学习率，因为它会快速自行确定一个合理的学习率。
+- en: Here’s how we instantiate `Adam` in code.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是我们在代码中实例化`Adam`的方式。
+- en: Listing 13.23 training.py:156, `.initOptimizer`
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.23 training.py:156, `.initOptimizer`
+- en: '[PRE22]'
+  id: totrans-287
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: It’s generally accepted that Adam is a reasonable optimizer to start most projects
+    with.[^(13)](#pgfId-1021173) There is often a configuration of stochastic gradient
+    descent with Nesterov momentum that will outperform Adam, but finding the correct
+    hyperparameters to use when initializing SGD for a given project can be difficult
+    and time consuming.
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一般认为Adam是开始大多数项目的合理优化器。通常有一种配置的随机梯度下降与Nesterov动量，可以胜过Adam，但在为给定项目初始化SGD时找到正确的超参数可能会很困难且耗时。
+- en: There have been a large number of variations on Adam--AdaMax, RAdam, Ranger,
+    and so on--that each have strengths and weaknesses. Delving into the details of
+    those is outside the scope of this book, but we think that it’s important to know
+    that those alternatives exist. We’ll use Adam in chapter 13\.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有许多关于Adam的变体--AdaMax、RAdam、Ranger等等--每种都有优点和缺点。深入研究这些细节超出了本书的范围，但我们认为了解这些替代方案的存在是重要的。我们将在第13章中使用Adam。
+- en: 13.6.3 Dice loss
+  id: totrans-290
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.3 Dice损失
+- en: The Sørensen-Dice coefficient ([https://en.wikipedia.org/wiki/S%C3%B8rensen%E2
+    %80%93Dice_coefficient](https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient)),
+    also known as the *Dice loss*, is a common loss metric for segmentation tasks.
+    One advantage of using Dice loss over a per-pixel cross-entropy loss is that Dice
+    handles the case where only a small portion of the overall image is flagged as
+    positive. As we recall from chapter 11 in section 11.10, unbalanced training data
+    can be problematic when using cross-entropy loss. That’s exactly the situation
+    we have here--most of a CT scan isn’t a nodule. Luckily, with Dice, that won’t
+    pose as much of a problem.
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sørensen-Dice系数（[https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient](https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient)），也称为*Dice损失*，是分割任务常见的损失度量。使用Dice损失而不是每像素交叉熵损失的一个优点是，Dice处理了只有整体图像的一小部分被标记为正的情况。正如我们在第11章第10节中回忆的那样，当使用交叉熵损失时，不平衡的训练数据可能会有问题。这正是我们在这里的情况--大部分CT扫描不是结节。幸运的是，使用Dice，这不会构成太大问题。
+- en: The Sørensen-Dice coefficient is based on the ratio of correctly segmented pixels
+    to the sum of the predicted and actual pixels. Those ratios are laid out in figure
+    13.15\. On the left, we see an illustration of the Dice score. It is twice the
+    joint area (*true positives*, striped) divided by the sum of the entire predicted
+    area and the entire ground-truth marked area (the overlap being counted twice).
+    On the right are two prototypical examples of high agreement/high Dice score and
+    low agreement/low Dice score.
+  id: totrans-292
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sørensen-Dice系数基于正确分割像素与预测像素和实际像素之和的比率。这些比率在图13.15中列出。在左侧，我们看到Dice分数的插图。它是两倍的联合区域（*真正正例*，有条纹）除以整个预测区域和整个地面实况标记区域的总和（重叠部分被计算两次）。右侧是高一致性/高Dice分数和低一致性/低Dice分数的两个典型示例。
+- en: '![](../Images/CH13_F15_Stevens2_GS.png)'
+  id: totrans-293
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F15_Stevens2_GS.png)'
+- en: Figure 13.15 The ratios that make up the Dice score
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图13.15 组成Dice分数的比率
+- en: That might sound familiar; it’s the same ratio that we saw in chapter 12\. We’re
+    basically going to be using a per-pixel F1 score!
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这可能听起来很熟悉；这是我们在第12章中看到的相同比率。我们基本上将使用每像素的F1分数！
+- en: '*Note* This is a per-pixel F1 score *where the “population” is one image’s
+    pixels*. Since the population is entirely contained within one training sample,
+    we can use it for training directly. In the classification case, the F1 score
+    is not calculable over a single minibatch, and, hence, we cannot use it for training
+    directly.'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 这是一个每像素的F1分��，*其中“总体”是一个图像的像素*。由于总体完全包含在一个训练样本中，我们可以直接用它进行训练。在分类情况下，F1分数无法在单个小批量上计算，因此我们不能直接用它进行训练。'
+- en: Since our `label_g` is effectively a Boolean mask, we can multiply it with our
+    predictions to get our true positives. Note that we aren’t treating `prediction_devtensor`
+    as a Boolean here. A loss defined with it wouldn’t be differentiable. Instead,
+    we’re replacing the number of true positives with the sum of the predicted values
+    for the pixels where the ground truth is 1\. This converges to the same thing
+    as the predicted values approach 1, but sometimes the predicted values will be
+    uncertain predictions in the 0.4 to 0.6 range. Those undecided values will contribute
+    roughly the same amount to our gradient updates, no matter which side of 0.5 they
+    happen to fall on. A Dice coefficient utilizing continuous predictions is sometimes
+    referred to as *soft Dice*.
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们的`label_g`实际上是一个布尔掩码，我们可以将其与我们的预测相乘以获得我们的真正正例。请注意，我们在这里没有将`prediction_devtensor`视为布尔值。使用它定义的损失将不可微分。相反，我们将真正正例的数量替换为地面实况为1的像素的预测值之和。这收敛到与预测值接近1的相同结果，但有时预测值将是在0.4到0.6范围内的不确定预测。这些未决定的值将大致对我们的梯度更新产生相同的贡献，无论它们落在0.5的哪一侧。利用连续预测的Dice系数有时被称为*软Dice*。
+- en: There’s one tiny complication. Since we’re wanting a loss to minimize, we’re
+    going to take our ratio and subtract it from 1\. Doing so will invert the slope
+    of our loss function so that in the high-overlap case, our loss is low; and in
+    the low-overlap case, it’s high. Here’s what that looks like in code.
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里有一个小小的复杂性。由于我们希望最小化损失，我们将取我们的比率并从1中减去。这样做将反转我们损失函数的斜率，使得在高重叠情况下，我们的损失较低；而在低重叠情况下，它较高。以下是代码中的样子。
+- en: Listing 13.24 training.py:315, `.diceLoss`
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表13.24 training.py:315，`.diceLoss`
+- en: '[PRE23]'
+  id: totrans-300
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: ❶ Sums over everything except the batch dimension to get the positively labeled,
+    (softly) positively detected, and (softly) correct positives per batch item
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 对除批处理维度以外的所有内容求和，以获取每个批处理项的正标记、（软）正检测和（软）正确正例
+- en: ❷ The Dice ratio. To avoid problems when we accidentally have neither predictions
+    nor labels, we add 1 to both numerator and denominator.
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ Dice比率。为了避免当我们意外地既没有预测也没有标签时出现问题，我们在分子和分母上都加1。
+- en: ❸ To make it a loss, we take 1 - Dice ratio, so lower loss is better.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 为了将其转化为损失，我们取1 - Dice比率，因此较低的损失更好。
+- en: We’re going to update our `computeBatchLoss` function to call `self.diceLoss`.
+    Twice. We’ll compute the normal Dice loss for the training sample, as well as
+    for only the pixels included in `label_g`. By multiplying our predictions (which,
+    remember, are floating-point values) times the label (which are effectively Booleans),
+    we’ll get pseudo-predictions that got every negative pixel “exactly right” (since
+    all the values for those pixels are multiplied by the false-is-zero values from
+    `label_g`). The only pixels that will generate loss are the false negative pixels
+    (everything that should have been predicted true, but wasn’t). This will be helpful,
+    since recall is incredibly important for our overall project; after all, we can’t
+    classify tumors properly if we don’t detect them in the first place!
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将更新我们的`computeBatchLoss`函数来调用`self.diceLoss`。两次。我们将为训练样本计算正常的 Dice 损失，以及仅计算`label_g`中包含的像素的
+    Dice 损失。通过将我们的预测（请记住，这些是浮点值）乘以标签（实际上是布尔值），我们将得到伪预测，这些预测使每个负像素“完全正确”（因为所有这些像素的值都乘以`label_g`中的假为零值）。唯一会产生损失的像素是假阴性像素（应该被预测为真，但实际上没有）。这将非常��帮助，因为召回率对我们的整体项目非常重要；毕竟，如果我们一开始就无法检测到肿瘤，我们就无法正确分类肿瘤！
+- en: Listing 13.25 training.py:282, `.computeBatchLoss`
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.25 training.py:282，`.computeBatchLoss`
+- en: '[PRE24]'
+  id: totrans-306
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: ❶ Transfers to GPU
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 转移到 GPU
+- en: ❷ Augments as needed if we are training. In validation, we would skip this.
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 根据需要进行数据增强，如果我们正在训练。在验证中，我们会跳过这一步。
+- en: ❸ Runs the segmentation model ...
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 运行分割模型...
+- en: ❹ ... and applies our fine Dice loss
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ ... 并应用我们精细的 Dice 损失
+- en: ❺ Oops. What is this?
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 哎呀。这是什么？
+- en: Let’s talk a bit about what we’re doing with our return statement of `diceLoss_g
+    .mean() + fnLoss_g.mean() * 8`.
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们稍微谈谈我们在`diceLoss_g .mean() + fnLoss_g.mean() * 8`返回语句中所做的事情。
+- en: Loss weighting
+  id: totrans-313
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 损失加权
+- en: In chapter 12, we discussed shaping our dataset so that our classes were not
+    wildly imbalanced. That helped training converge, since the positive and negative
+    samples present in each batch were able to counteract the general pull of the
+    other, and the model had to learn to discriminate between them to improve. We’re
+    approximating that same balance here by cropping down our training samples to
+    include fewer non-positive pixels; but it’s incredibly important to have high
+    recall, and we need to make sure that as we train, we’re providing a loss that
+    reflects that fact.
+  id: totrans-314
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 12 章中，我们讨论了塑造我们的数据集，使得我们的类别不会严重失衡。这有助于训练收敛，因为每个批次中出现的正负样本能够相互抵消，模型必须学会区分它们以改进。我们通过将训练样本裁剪到包含较少非正像素的方式来近似相同的平衡；但是高召回率非常重要，我们需要确保在训练过程中提供反映这一事实的损失。
+- en: We are going to have a *weighted loss* that favors one class over the other.
+    What we’re saying by multiplying `fnLoss_g` by 8 is that getting the entire population
+    of our positive pixels right is eight times more important than getting the entire
+    population of negative pixels right (nine, if you count the one in `diceLoss_g`).
+    Since the area covered by the positive mask is much, much smaller than the whole
+    64 × 64 crop, that also means each individual positive pixel wields that much
+    more influence when it comes to backpropagation.
+  id: totrans-315
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将使用*加权损失*，偏向于一类而不是另一类。通过将`fnLoss_g`乘以 8，我们的意思是正确预测我们的正像素总体比正确预测负像素总体重要八倍（九倍，如果计算`diceLoss_g`中的一个）。由于正掩模覆盖的区域远远小于整个
+    64 × 64 裁剪，这也意味着每个单独的正像素在反向传播时具有更大的影响力。
+- en: We’re willing to trade away many correctly predicted negative pixels in the
+    general Dice loss to gain one correct pixel in the false negative loss. Since
+    the general Dice loss is a strict superset of the false negative loss, the only
+    correct pixels available to make that trade are ones that start as true negatives
+    (all of the true positive pixels are already included in the false negative loss,
+    so there’s no trade to be made).
+  id: totrans-316
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们愿意在一般的 Dice 损失中放弃许多正确预测的负像素，以获得一个在假阴性损失中的正确像素。由于一般的 Dice 损失是假阴性损失的严格超集，可以进行交易的唯一正确像素是起初为真负的像素（所有真正的正像素已经包含在假阴性损失中，因此没有交易可进行）。
+- en: Since we’re willing to sacrifice huge swaths of true negative pixels in the
+    pursuit of having better recall, we should expect a large number of false positives
+    in general.[^(14)](#pgfId-1023286) We’re doing this because recall is very, very
+    important to our use case, and we’d much rather have some false positives than
+    even a single false negative.
+  id: totrans-317
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们愿意牺牲大片真负像素以追求更好的召回率，我们通常会预期大量的假阳性。[^14](#pgfId-1023286) 我们这样做是因为召回率对我们的用例非常重要，我们宁愿有一些假阳性，也不愿有一个假阴性。
+- en: We should note that this approach only works when using the Adam optimizer.
+    When using SGD, the push to overpredict would lead to every pixel coming back
+    as positive. Adam’s ability to fine-tune the learning rate means stressing the
+    false negative loss doesn’t become overpowering.
+  id: totrans-318
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们应该注意，这种方法仅在使用 Adam 优化器时有效。使用 SGD 时，过度预测会导致每个像素都返回为正。Adam 优化器微调学习率的能力意味着强调假阴性损失不会变得过于强大。
+- en: Collecting metrics
+  id: totrans-319
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 收集指标
+- en: Since we’re going to purposefully skew our numbers for better recall, let’s
+    see just how tilted things will be. In our classification `computeBatchLoss`,
+    we compute various per-sample values that we used for metrics and the like. We
+    also compute similar values for the overall segmentation results. These true positive
+    and other metrics were previously computed in `logMetrics`, but due to the size
+    of the result data (recall that each single CT slice from the validation set is
+    a quarter-million pixels!), we need to compute these summary stats live in the
+    `computeBatchLoss` function.
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们将故意扭曲我们的数字以获得更好的召回率，让我们看看事情会变得多么倾斜。在我们的分类`computeBatchLoss`中，我们计算各种每个样本的值，用于度量等。我们还为整体分割结果计算类似的值。这些真正的正样本和其他指标以前是在`logMetrics`中计算的，但由于结果数据的大小（请记住，验证集中的每个单个
+    CT 切片是 25 万像素！），我们需要在`computeBatchLoss`函数中实时计算这些摘要统计信息。
+- en: Listing 13.26 training.py:297, `.computeBatchLoss`
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.26 training.py:297, `.computeBatchLoss`
+- en: '[PRE25]'
+  id: totrans-322
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: ❶ We threshold the prediction to get “hard” Dice but convert to float for the
+    later multiplication.
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们对预测进行阈值处理以获得“硬” Dice 但为后续乘法转换为浮点数。
+- en: ❷ Computing true positives, false positives, and false negatives is similar
+    to what we did when computing the Dice loss.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 计算真阳性、假阳性和假阴性与我们计算Dice损失时类似。
+- en: ❸ We store our metrics to a large tensor for future reference. This is per batch
+    item rather than averaged over the batch.
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 我们将我们的指标存储到一个大张量中以供将来参考。这是每个批次项目而不是批次平均值。
+- en: As we discussed at the beginning of this section, we can compute our true positives
+    and so on by multiplying our prediction (or its negation) and our label (or its
+    negation) together. Since we’re not as worried about the exact values of our predictions
+    here (it doesn’t really matter if we flag a pixel as 0.6 or 0.9--as long as it’s
+    over the threshold, we’ll call it part of a nodule candidate), we are going to
+    create `predictionBool_g` by comparing it to our threshold of 0.5\.
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在本节开头讨论的，我们可以通过将我们的预测（或其否定）与我们的标签（或其否定）相乘来计算我们的真正阳性等。由于我们在这里并不太担���我们的预测的确切值（如果我们将像素标记为0.6或0.9并不重要--只要超过阈值，我们将其称为结节候选的一部分），我们将通过将其与我们的阈值0.5进行比较来创建`predictionBool_g`。
+- en: 13.6.4 Getting images into TensorBoard
+  id: totrans-327
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.4 将图像导入TensorBoard
+- en: One of the nice things about working on segmentation tasks is that the output
+    is easily represented visually. Being able to eyeball our results can be a huge
+    help for determining whether a model is progressing well (but perhaps needs more
+    training), or if it has gone off the rails (so we need to stop wasting our time
+    with further training). There are many ways we could package up our results as
+    images, and many ways we could display them. TensorBoard has great support for
+    this kind of data, and we already have TensorBoard `SummaryWriter` instances integrated
+    with our training runs, so we’re going to use TensorBoard. Let’s see what it takes
+    to get everything hooked up.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在处理分割任务时的一个好处是输出可以很容易地以视觉方式表示。能够直观地看到我们的结果对于确定模型是否进展顺利（但可能需要更多训练）或者是否偏离轨道（因此我们需要停止继续浪费时间进行进一步训练）非常有帮助。我们可以将结果打包成图像的方式有很多种，也可以有很多种展示方式。TensorBoard对这种数据有很好的支持，而且我们已经将TensorBoard
+    `SummaryWriter` 实例集成到我们的训练中，所以我们将使用TensorBoard。让我们看看如何将所有内容连接起来。
+- en: 'We’ll add a `logImages` function to our main application class and call it
+    with both our training and validation data loaders. While we are at it, we will
+    make another change to our training loop: we’re only going to perform validation
+    and image logging on the first and then every fifth epoch. We do this by checking
+    the epoch number against a new constant, `validation_cadence`.'
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在我们的主应用程序类中添加一个`logImages`函数，并使用我们的训练和验证数据加载器调用它。在此过程中，我们将对我们的训练循环进行另一个更改：我们只会在第一个周期以及每第五个周期执行验证和图像记录。我们通过将周期数与一个新的常量`validation_cadence`进行比较来实现这一点。
+- en: 'When training, we’re trying to balance a few things:'
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在训练时，我们试图平衡几件事：
+- en: Getting a rough idea of how our model is training without having to wait very
+    long
+  id: totrans-331
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在不必等待太久的情况下大致了解我们的模型训练情况
+- en: Spending the bulk of our GPU cycles training, rather than validating
+  id: totrans-332
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 大部分GPU周期用于训练，而不是验证
+- en: Making sure we are still performing well on the validation set
+  id: totrans-333
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 确保我们在验证集上表现良好
+- en: The first point means we need to have relatively short epochs so that we get
+    to call `logMetrics` more often. The second, however, means we want to train for
+    a relatively long time before calling `doValidation`. The third means we need
+    to call `doValidation` regularly, rather than once at the end of training or something
+    unworkable like that. By only doing validation on the first and then every fifth
+    epoch, we can meet all of those goals. We get an early signal of training progress,
+    spend the bulk of our time training, and have periodic check-ins with the validation
+    set as we go along.
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个意味着我们需要相对较短的周期，以便更频繁地调用`logMetrics`。然而，第二个意味着我们希望在调用`doValidation`之前训练相对较长的时间。第三个意味着我们需要定期调用`doValidation`，而不是在训练结束时或其他不可行的情况下只调用一次。通过仅在第一个周期以及每第五个周期执行验证，我们可以实现所有这些目标。我们可以及早获得训练进展的信号，大部分时间用于训练，并在进行过程中定期检查验证集。
+- en: Listing 13.27 training.py:210, `SegmentationTrainingApp.main`
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.27 training.py:210, `SegmentationTrainingApp.main`
+- en: '[PRE26]'
+  id: totrans-336
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: ❶ Our outermost loop, over the epochs
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们最外层的循环，跨越各个周期
+- en: ❷ Trains for one epoch
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 训练一个周期
+- en: ❸ Logs the (scalar) metrics from training after each epoch
+  id: totrans-339
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 在每个周期后记录来自训练的（标量）指标
+- en: ❹ Only every validation cadence-th interval ...
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 仅在每个验证间隔的倍数时...
+- en: ❺ ... we validate the model and log images.
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ ...我们验证模型并记录图像。
+- en: There isn’t a single right way to structure our image logging. We are going
+    to grab a handful of CTs from both the training and validation sets. For each
+    CT, we will select 6 evenly spaced slices, end to end, and show both the ground
+    truth and our model’s output. We chose 6 slices only because TensorBoard will
+    show 12 images at a time, and we can arrange the browser window to have a row
+    of label images over the model output. Arranging things this way makes it easy
+    to visually compare the two, as we can see in figure 13.16.
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们没有一种单一正确的方式来构建我们的图像记录。我们将从训练集和验证集中各选取几个CT图像。对于每个CT图像，我们将选择6个均匀间隔的切片，端到端显示地面真实和我们模型的输出。我们之所以选择6个切片，仅仅是因为TensorBoard每次会显示12张图像，我们可以将浏览器窗口排列成一行标签图像在模型输出上方。以这种方式排列事物使得我们可以轻松地进行视觉比较，正如我们在图
+    13.16 中所看到的。
+- en: '![](../Images/CH13_F16_Stevens2_GS.png)'
+  id: totrans-343
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F16_Stevens2_GS.png)'
+- en: 'Figure 13.16 Top row: label data for training. Bottom row: output from the
+    segmentation model.'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.16 顶部行：训练的标签数据。底部行：分割模型的输出。
+- en: Also note the small slider-dot on the `prediction` images. That slider will
+    allow us to view previous versions of the images with the same label (such as
+    val/0_prediction_3, but at an earlier epoch). Being able to see how our segmentation
+    output changes over time can be useful when we’re trying to debug something or
+    make tweaks to achieve a specific result. As training progresses, TensorBoard
+    will limit the number of images viewable from the slider to 10, probably to avoid
+    overwhelming the browser with a huge number of images.
+  id: totrans-345
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 还请注意`prediction`图像上的小滑块点。该滑块将允许我们查看具有相同标签的先前版本的图像（例如val/0_prediction_3，但在较早的时期）。当我们尝试调试某些内容或进行调整以实现特定结果时，能够查看我们的分割输出随时间变化的情况是有用的。随着训练的进行，TensorBoard将限制从滑块中可查看的图像数量为10，可能是为了避免用大量图像淹没浏览器。
+- en: The code that produces this output starts by getting 12 series from the pertinent
+    data loader and 6 images from each series.
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 生成此输出的代码首先从相关数据加载器中获取12个系列和每个系列的6个图像。
+- en: Listing 13.28 training.py:326, `.logImages`
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.28 training.py:326, `.logImages`
+- en: '[PRE27]'
+  id: totrans-348
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: ❶ Sets the model to eval
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将模型设置为评估模式
+- en: ❷ Takes (the same) 12 CTs by bypassing the data loader and using the dataset
+    directly. The series list might be shuffled, so we sort.
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 通过绕过数据加载器并直接使用数据集，获取（相同的）12个CT。系列列表可能已经被洗牌，所以我们进行排序。
+- en: ❸ Selects six equidistant slices throughout the CT
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 选择CT中的六个等距切片
+- en: After that, we feed `ct_t` it into the model. This looks very much like what
+    we see in `computeBatchLoss`; see p2ch13/training.py for details if desired.
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们将`ct_t`输入模型。这看起来非常像我们在`computeBatchLoss`中看到的；如果需要详情，请参阅p2ch13/training.py。
+- en: Once we have `prediction_a`, we need to build an `image_a` that will hold RGB
+    values to display. We’re using `np.float32` values, which need to be in a range
+    from 0 to 1\. Our approach will cheat a little by adding together various images
+    and masks to get data in the range 0 to 2, and then multiplying the entire array
+    by 0.5 to get it back into the right range.
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦我们有了`prediction_a`，我们需要构建一个`image_a`来保存RGB值以供显示。我们使用`np.float32`值，需要在0到1的范围内。我们的方法会通过将各种图像和掩模相加，使数据在0到2的范围内，然后将整个数组乘以0.5将其恢复到正确的范围内。
+- en: Listing 13.29 training.py:346, `.logImages`
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.29 training.py:346, `.logImages`
+- en: '[PRE28]'
+  id: totrans-355
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: ❶ CT intensity is assigned to all RGB channels to provide a grayscale base image.
+  id: totrans-356
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将CT强度分配给所有RGB通道，以提供灰度基础图像。
+- en: ❷ False positives are flagged as red and overlaid on the image.
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 假阳性标记为红色，并叠加在图像上。
+- en: ❸ False negatives are orange.
+  id: totrans-358
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 假阴性标记为橙色。
+- en: ❹ True positives are green.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 真阳性标记为绿色。
+- en: Our goal is to have a grayscale CT at half intensity, overlaid with predicted-nodule
+    (or, more correctly, nodule-candidate) pixels in various colors. We’re going to
+    use red for all pixels that are incorrect (false positives *and* false negatives).
+    This will mostly be false positives, which we don’t care about too much (since
+    we’re focused on recall). `1 - label_a` inverts the label, and that multiplied
+    by the `prediction_a` gives us only the predicted pixels that aren’t in a candidate
+    nodule. False negatives get a half-strength mask added to green, which means they
+    will show up as orange (1.0 red and 0.5 green renders as orange in RGB). Every
+    correctly predicted pixel inside a nodule is set to green; since we got those
+    pixels right, no red will be added, and so they will render as pure green.
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的目标是在半强度的灰度CT上叠加预测的结节（或更正确地说，结节候选）像素以各种颜色显示。我们将使用红色表示所有不正确的像素（假阳性和假阴性）。这主要是假阳性，我们不太关心（因为我们专注于召回率）。`1
+    - label_a`反转标签，乘以`prediction_a`给出我们只有预测像素不在候选结节中的像素。假阴性得到添加到绿色的半强度掩模，这意味着它们将显示为橙色（1.0红和0.5绿在RGB中呈橙色）。每个正确预测的结节内像素都设置为绿色；因为我们正确预测了这些像素，不会添加红色，因此它们将呈现为纯绿色。
+- en: After that, we renormalize our data to the `0...1` range and clamp it (in case
+    we start displaying augmented data here, which would cause speckles when the noise
+    was outside our expected CT range). All that remains is to save the data to TensorBoard.
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们将数据重新归一化到`0...1`范围并夹紧它（以防我们在这里开始显示增强数据，当噪声超出我们预期的CT范围时会导致斑点）。最后一步是将数据保存到TensorBoard。
+- en: Listing 13.30 training.py:361, `.logImages`
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.30 training.py:361, `.logImages`
+- en: '[PRE29]'
+  id: totrans-363
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: This looks very similar to the `writer.add_scalar` calls we’ve seen before.
+    The `dataformats='HWC'` argument tells TensorBoard that the order of axes in our
+    image has our RGB channels as the third axis. Recall that our network layers often
+    specify outputs that are *B* × *C* × *H* × *W*, and we could put that data directly
+    into TensorBoard as well if we specified `'CHW'`.
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这看起来与我们之前看到的`writer.add_scalar`调用非常相似。`dataformats='HWC'`参数告诉TensorBoard我们的图像轴的顺序将RGB通道作为第三个轴。请记住，我们的网络层经常指定输出为*B*
+    × *C* × *H* × *W*，如果我们指定`'CHW'`，我们也可以直接将数据放入TensorBoard。
+- en: We also want to save the ground truth that we’re using to train, which will
+    form the top row of our TensorBoard CT slices we saw earlier in figure 13.16\.
+    The code for that is similar enough to what we just saw that we’ll skip it. Again,
+    check p2ch13/training.py if you want the details.
+  id: totrans-365
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还想保存用于训练的地面真相，这将形成我们之前在图13.16中看到的TensorBoard CT切片的顶行。代码与我们刚刚看到的类似，我们将跳过它。如果您想了解详情，请查看p2ch13/training.py。
+- en: 13.6.5 Updating our metrics logging
+  id: totrans-366
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.5 更新我们的指标记录
+- en: 'To give us an idea how we are doing, we compute per-epoch metrics: in particular,
+    true positives, false negatives, and false positives. This is what the following
+    listing does. Nothing here will be particularly surprising.'
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了让我们了解我们的表现如何，我们计算每个时期的指标：特别是真阳性、假阴性和假阳性。以下列表所做的事情不会特别令人惊���。
+- en: Listing 13.31 training.py:400, `.logMetrics`
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.31 training.py:400, `.logMetrics`
+- en: '[PRE30]'
+  id: totrans-369
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: ❶ Can be larger than 100% since we’re comparing to the total number of pixels
+    labeled as candidate nodules, which is a tiny fraction of each image
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 可能大于100%，因为我们正在与标记为候选结节的像素总数进行比较，这是每个图像的一个微小部分
+- en: We are going to start scoring our models as a way to determine whether a particular
+    training run is the best we’ve seen so far. In chapter 12, we said we’d be using
+    the F1 score for our model ranking, but our goals are different here. We need
+    to make sure our recall is as high as possible, since we can’t classify a potential
+    nodule if we don’t find it in the first place!
+  id: totrans-371
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将开始对我们的模型进行评分，以确定特定训练运行是否是迄今为止我们见过的最佳模型。在第12章中，我们说我们将使用F1得分来对我们的模型进行排名，但我们在这里的目标不同。我们需要确保我们的召回率尽可能高，因为如果我们一开始就找不到潜在的结节，我们就无法对其进行分类！
+- en: We will use our recall to determine the “best” model. As long as the F1 score
+    is reasonable for that epoch,[^(15)](#pgfId-1025168) we just want to get recall
+    as high as possible. Screening out any false positives will be the responsibility
+    of the classification model.
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将使用我们的召回率来确定“最佳”模型。只要该时代的F1得分合理，我们只想尽可能提高召回率。筛选出任何误报阳性将是分类模型的责任。
+- en: Listing 13.32 training.py:393, `.logMetrics`
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.32 training.py:393, `.logMetrics`
+- en: '[PRE31]'
+  id: totrans-374
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: When we add similar code to our classification training loop in the next chapter,
+    we’ll use the F1 score.
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们在下一章的分类训练循环中添加类似的代码时，我们将使用F1得分。
+- en: Back in the main training loop, we’ll keep track of the `best_score` we’ve seen
+    so far in this training run. When we save our model, we’ll include a flag that
+    indicates whether this is the best score we’ve seen so far. Recall from section
+    13.6.4 that we’re only calling the `doValidation` function for the first and then
+    every fifth epochs. That means we’re only going to check for a best score on those
+    epochs. That shouldn’t be a problem, but it’s something to keep in mind if you
+    need to debug something happening on epoch 7\. We do this checking just before
+    we save the images.
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回到主训练循环中，我们将跟踪到目前为止在这次训练运行中见过的`best_score`。当我们保存我们��模型时，我们将包含一个指示这是否是迄今为止我们见过的最佳得分的标志。回想一下第13.6.4节，我们只对第一个和每隔五个时代调用`doValidation`函数。这意味着我们只会在这些时代检查最佳得分。这不应该是问题，但如果您需要调试发生在第7个时代的事情时，请记住这一点。我们在保存图像之前进行这个检查。
+- en: Listing 13.33 training.py:210, `SegmentationTrainingApp.main`
+  id: totrans-377
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.33 training.py:210, `SegmentationTrainingApp.main`
+- en: '[PRE32]'
+  id: totrans-378
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: ❶ The epoch-loop we already saw
+  id: totrans-379
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们已经看到的时代循环
+- en: ❷ Computes the score. As we saw earlier, we take the recall.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 计算得分。正如我们之前看到的，我们采用召回率。
+- en: ❸ Now we only need to write saveModel. The third parameter is whether we want
+    to save it as best model, too.
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 现在我们只需要编写`saveModel`。第三个参数是我们是否也要将其保存为最佳模型。
+- en: Let’s take a look at how we persist our model to disk.
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们看看如何将我们的模型持久化到磁盘。
+- en: 13.6.6 Saving our model
+  id: totrans-383
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 13.6.6 保存我们的模型
+- en: PyTorch makes it pretty easy to save our model to disk. Under the hood, `torch.save`
+    uses the standard Python `pickle` library, which means we could pass our model
+    instance in directly, and it would save properly. That’s not considered the ideal
+    way to persist our model, however, since we lose some flexibility.
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch使将模型保存到磁盘变得非常容易。在幕后，`torch.save`使用标准的Python `pickle`库，这意味着我们可以直接传递我们的模型实例，并且它会正确保存。然而，这并不被认为是持久化我们模型的理想方式，因为我们会失去一些灵活性。
+- en: Instead, we will save only the *parameters* of our model. Doing this allows
+    us to load those parameters into any model that expects parameters of the same
+    shape, even if the class doesn’t match the model those parameters were saved under.
+    The save-parameters-only approach allows us to reuse and remix our models in more
+    ways than saving the entire model.
+  id: totrans-385
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相反，我们只会保存我们模型的*参数*。这样做可以让我们将这些参数加载到任何期望具有相同形状参数的模型中，即使该类别与保存这些参数的模型不匹配。仅保存参数的方法使我们可以以比保存整个模型更多的方式重复使用和混合我们的模型。
+- en: We can get at our model’s parameters using the `model.state_dict()` function.
+  id: totrans-386
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以使用`model.state_dict()`函数获取我们模型的参数。
+- en: Listing 13.34 training.py:480, `.saveModel`
+  id: totrans-387
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.34 training.py:480, `.saveModel`
+- en: '[PRE33]'
+  id: totrans-388
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: ❶ Gets rid of the DataParallel wrapper, if it exists
+  id: totrans-389
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 摆脱DataParallel包装器，如果存在的话
+- en: ❷ The important part
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 重要部分
+- en: ❸ Preserves momentum, and so on
+  id: totrans-391
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 保留动量等
+- en: We set `file_path` to something like `data-unversioned/part2/models/p2ch13/
+    seg_2019-07-10_02.17.22_ch12.50000.state`. The `.50000.` part is the number of
+    training samples we’ve presented to the model so far, while the other parts of
+    the path are obvious.
+  id: totrans-392
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将`file_path`设置为类似于`data-unversioned/part2/models/p2ch13/ seg_2019-07-10_02.17.22_ch12.50000.state`。`.50000.`部分是迄今为止我们向模型呈现的训练样本数量，而路径的其他部分是显而易见的。
+- en: '*tip* By saving the optimizer state as well, we could resume training seamlessly.
+    While we don’t provide an implementation of this, it could be useful if your access
+    to computing resources is likely to be interrupted. Details on loading a model
+    and optimizer to restart training can be found in the official documentation ([https://pytorch.org/tutorials/beginner/saving_loading_models.html](https://pytorch.org/tutorials/beginner/saving_loading_models.html)).'
+  id: totrans-393
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*提示* 通过保存优化器状态，我们可以无缝恢复训练。虽然我们没有提供这方面的实现，但如果您的计算资源访问可能会中断，这可能会很有用。有关加载模型和优化器以重新开始训练的详细信息，请参阅官方文档([https://pytorch.org/tutorials/beginner/saving_loading_models.html](https://pytorch.org/tutorials/beginner/saving_loading_models.html))。'
+- en: If the current model has the best score we’ve seen so far, we save a second
+    copy of `state` with a .best.state filename. This might get overwritten later
+    by another, higher-score version of the model. By focusing only on this best file,
+    we can divorce customers of our trained model from the details of how each epoch
+    of training went (assuming, of course, that our score metric is of high quality).
+  id: totrans-394
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果当前模型的得分是迄今为止我们见过的最好的，我们会保存第二份`state`的副本，文件名为`.best.state`。这可能会被另一个得分更高的模型版本覆盖。通过只关注这个最佳文件，我们可以让我们训练模型的客户摆脱每个训练时期的细节（当然，前提是我们的得分指标质量很高）。
+- en: Listing 13.35 training.py:514, `.saveModel`
+  id: totrans-395
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 13.35 training.py:514, `.saveModel`
+- en: '[PRE34]'
+  id: totrans-396
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: We also output the SHA1 of the model we just saved. Similar to `sys.argv` and
+    the timestamp we put into the state dictionary, this can help us debug exactly
+    what model we’re working with if things become confused later (for example, if
+    a file gets renamed incorrectly).
+  id: totrans-397
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还输出了刚保存的模型的 SHA1。类似于 `sys.argv` 和我们放入状态字典中的时间戳，这可以帮助我们在以后出现混淆时准确调试我们正在使用的模型（例如，如果文件被错误重命名）。
+- en: We will update our classification training script in the next chapter with a
+    similar routine for saving the classification model. In order to diagnose a CT,
+    we’ll need to have both models.
+  id: totrans-398
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在下一章更新我们的分类训练脚本，使用类似的例程保存分类模型。为了诊断 CT，我们将需要这两个模型。
+- en: 13.7 Results
+  id: totrans-399
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.7 结果
+- en: Now that we’ve made all of our code changes, we’ve hit the last section in step
+    3 of figure 13.17\. It’s time to run `python -m p2ch13.training --epochs 20 --augmented
+    final_seg`. Let’s see what our results look like!
+  id: totrans-400
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经做出了所有的代码更改，我们已经到达了图 13.17 步骤 3 的最后一部分。是时候运行 `python -m p2ch13.training
+    --epochs 20 --augmented final_seg`。让我们看看我们的结果如何！
+- en: '![](../Images/CH13_F17_Stevens2_GS.png)'
+  id: totrans-401
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F17_Stevens2_GS.png)'
+- en: Figure 13.17 The outline of this chapter, with a focus on the results we see
+    from training
+  id: totrans-402
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.17 本章概述，重点关注我们从训练中看到的结果
+- en: 'Here is what our training metrics look like if we limit ourselves to the epochs
+    we have validation metrics for (we’ll be looking at those metrics next, so this
+    will keep it an apples-to-apples comparison):'
+  id: totrans-403
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们限制自己只看我们有验证指标的时期，那么我们的训练指标看起来是这样的（接下来我们将查看这些指标，这样可以进行苹果对苹果的比较）：
+- en: '[PRE35]'
+  id: totrans-404
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE35]'
+- en: ❶ TPs are trending up, too. Great! And FNs and FPs are trending down.
+  id: totrans-405
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ TPs 也在上升，太好了！而 FNs 和 FPs 在下降。
+- en: ❷ In these rows, we are particularly interested in the F1 score--it is trending
+    up. Good!
+  id: totrans-406
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 在这些行中，我们特别关注 F1 分数--它在上升。很好！
+- en: ❸ In these rows, we are particularly interested in the F1 score--it is trending
+    up. Good!
+  id: totrans-407
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 在这些行中，我们特别关注 F1 分数--它在上升。很好！
+- en: ❹ TPs are trending up, too. Great! And FNs and FPs are trending down.
+  id: totrans-408
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ TPs 也在上升，太好了！而 FNs 和 FPs 在下降。
+- en: 'Overall, it looks pretty good. True positives and the F1 score are trending
+    up, false positives and negatives are trending down. That’s what we want to see!
+    The validation metrics will tell us whether these results are legitimate. Keep
+    in mind that since we’re training on 64 × 64 crops, but validating on whole 512
+    × 512 CT slices, we are almost certainly going to have drastically different TP:FN:FP
+    ratios. Let’s see:'
+  id: totrans-409
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总体来看，情况看起来相当不错。真正的正例和 F1 分数在上升，假正例和假负例在下降。这正是我们想要看到的！验证指标将告诉我们这些结果是否合法。请记住，由于我们是在
+    64 × 64 的裁剪上进行训练，但在整个 512 × 512 的 CT 切片上进行验证，我们几乎肯定会有截然不同的 TP:FN:FP 比例。让我们看看：
+- en: '[PRE36]'
+  id: totrans-410
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE36]'
+- en: ❶ The highest TP rate (great). Note that the TP rate is the same as recall.
+    But FPs are 4495%--that sounds like a lot.
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 最高的 TP 率（太好了）。请注意，TP 率与召回率相同。但 FPs 为 4495%--听起来很多。
+- en: Ouch--false positive rates over 4,000%? Yes, actually, that’s expected. Our
+    validation slice area is 218 pixels (512 is 29), while our training crop is only
+    212\. That means we’re validating on a slice surface that’s 26 = 64 times bigger!
+    Having a false positive count that’s also 64 times bigger makes sense. Remember
+    that our true positive rate won’t have changed meaningfully, since it would all
+    have been included in the 64 × 64 sample we trained on in the first place. This
+    situation also results in very low precision, and, hence, a low F1 score. That’s
+    a natural result of how we’ve structured the training and validation, so it’s
+    not a cause for alarm.
+  id: totrans-412
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 哎呀--超过 4,000% 的假正例率？是的，实际上这是预期的。我们的验证切片面积为 218 像素（512 是 29），而我们的训练裁剪只有 212。这意味着我们在一个表面是
+    26 = 64 倍大的切片上进行验证！假阳性计数也增加了 64 倍是有道理的。请记住，我们的真正正例率不会有实质性变化，因为它们都已经包含在我们首次训练的
+    64 × 64 样本中。这种情况还导致了非常低的精确度，因此 F1 分数也很低。这是我们如何构建训练和验证的自然结果，所以不必担心。
+- en: What’s problematic, however, is our recall (and, hence, our true positive rate).
+    Our recall plateaus between epochs 5 and 10 and then starts to drop. It’s pretty
+    obvious that we begin overfitting very quickly, and we can see further evidence
+    of that in figure 13.18--while the training recall keeps trending upward, the
+    validation recall decreases after 3 million samples. This is how we identified
+    overfitting in chapter 5, in particular figure 5.14.
+  id: totrans-413
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，问题在于我们的召回率（因此也是真正的正例率）。我们的召回率在第 5 到 10 个时期之间趋于平稳，然后开始下降。很明显，我们很快就开始过拟合，我们可以在图
+    13.18 中看到更多证据--虽然训练召回率继续上升，但验证召回率在 300 万个样本后开始下降。这就是我们在第 5 章中识别过拟合的方式，特别是图 5.14。
+- en: '![](../Images/CH13_F18_Stevens2_GS.png)'
+  id: totrans-414
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH13_F18_Stevens2_GS.png)'
+- en: Figure 13.18 The validation set recall, showing signs of overfitting when recall
+    goes down after epoch 10 (3 million samples)
+  id: totrans-415
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 13.18 验证集召回率，在第 10 个时期后显示出过拟合的迹象（300 万个样本）
+- en: '*Note* Always keep in mind that TensorBoard will smooth your data lines by
+    default. The lighter ghost line behind the solid color shows the raw values.'
+  id: totrans-416
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 请始终记住，TensorBoard 默认会平滑您的数据线。实色背后的浅色幽灵线显示了原始值。'
+- en: The U-Net architecture has a lot of capacity, and even with our reduced filter
+    and depth counts, it’s able to memorize our training set pretty quickly. One upside
+    is that we don’t end up needing to train the model for very long!
+  id: totrans-417
+  prefs: []
+  type: TYPE_NORMAL
+  zh: U-Net 架构具有很大的容量，即使我们减少了滤波器和深度计数，它也能够很快地记住我们的训练集。一个好处是我们不需要训练模型很长时间！
+- en: Recall is our top priority for segmentation, since we’ll let issues with precision
+    be handled downstream by the classification models. Reducing those false positives
+    is the entire reason we have those classification models! This skewed situation
+    does mean it is more difficult than we’d like to evaluate our model. We could
+    instead use the F2 score, which weights recall more heavily (or F5, or F10 ...),
+    but we’d have to pick an *N* high enough to almost completely discount precision.
+    We’ll skip the intermediates and just score our model by recall, and use our human
+    judgment to make sure a given training run isn’t being pathological about it.
+    Since we’re training on the Dice loss, rather than directly on recall, it should
+    work out.
+  id: totrans-418
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回忆是我们对分割的首要任务，因为我们将让精度问题由下游的分类模型处理。减少这些假阳性是我们拥有这些分类模型的全部原因！这种倾斜的情况确实意味着我们很难评估我们的模型。我们可以使用更加重视召回率的F2分数（或F5，或F10...），但我们必须选择一个足够高的*N*来几乎完全忽略精度。我们将跳过中间步骤，只通过召回率评分我们的模型，并使用我们的人类判断来确保给定的训练运行不会对此产生病理性影响。由于我们是在Dice损失上进行训练，而不是直接在召回率上���行训练，所以应该会有所作用。
+- en: This is one of the situations where we are cheating a little, because we (the
+    authors) have already done the training and evaluation for chapter 14, and we
+    know how all of this is going to turn out. There isn’t any good way to look at
+    this situation and *know* that the results we’re seeing will work. Educated guesses
+    are helpful, but they are no substitute for actually running experiments until
+    something clicks.
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是我们有点作弊的情况之一，因为我们（作者）已经为第14章进行了训练和评估，我们知道所有这些将会发生什么。没有好的方法来看待这种情况，*知道*我们看到的结果会起作用。有教养的猜测是有帮助的，但它们不能替代实际运行实验直到有所突破。
+- en: As it stands, our results are good enough to use going forward, even if our
+    metrics have some pretty extreme values. We’re one step closer to finishing our
+    end-to-end project!
+  id: totrans-420
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 就目前而言，我们的结果已经足够好，即使我们的度量有一些相当极端的值。我们离完成我们的端到端项目又近了一步！
+- en: 13.8 Conclusion
+  id: totrans-421
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.8 结论
+- en: In this chapter, we’ve discussed a new way of structuring models for pixel-to-pixel
+    segmentation; introduced U-Net, an off-the-shelf, proven model architecture for
+    those kinds of tasks; and adapted an implementation for our own use. We’ve also
+    changed our dataset to provide data for our new model’s training needs, including
+    small crops for training and a limited set of slices for validation. Our training
+    loop now has the ability to save images to TensorBoard, and we have moved augmentation
+    from the dataset into a separate model that can operate on the GPU. Finally, we
+    looked at our training results and discussed how even though the false positive
+    rate (in particular) looks different from what we might hope, our results will
+    be acceptable given our requirements for them from the larger project. In chapter
+    14, we will pull together the various models we’ve written into a cohesive, end-to-end
+    whole.
+  id: totrans-422
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们讨论了一种为像素到像素分割构建模型的新方法；介绍了U-Net，这是一种经过验证的用于这类任务的现成模型架构；并为我们自己的使用调整了一个实现。我们还改变了我们的数据集，以满足我们新模型的训练需求，包括用于训练的小裁剪和用于验证的有限切片集。我们的训练循环现在可以将图像保存到TensorBoard，并且我们已经将增强从数据集移动到可以在GPU上运行的单独模型中。最后，我们查看了我们的训练结果，并讨论了即使假阳性率（特别是）看起来与我们所希望的不同，但考虑到我们对来自更大项目的需求，我们的结果将是可以接受的。在第14章中，我们将把我们写的各种模型整合成一个连贯的端到端整体。
+- en: 13.9 Exercises
+  id: totrans-423
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.9 练习
+- en: Implement the model-wrapper approach to augmentation (like what we used for
+    segmentation training) for the classification model.
+  id: totrans-424
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 为分类模型实现模型包装器方法来增强（就像我们用于分割训练的那样）。
+- en: What compromises did you have to make?
+  id: totrans-425
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你不得不做出什么妥协？
+- en: What impact did the change have on training speed?
+  id: totrans-426
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 这种变化对训练速度有什么影响？
+- en: Change the segmentation `Dataset` implementation to have a three-way split for
+    training, validation, and test sets.
+  id: totrans-427
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 更改分割`Dataset`实现，使其具有用于训练、验证和测试集的三分割。
+- en: What fraction of the data did you use for the test set?
+  id: totrans-428
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你用于测试集的数据占了多少比例？
+- en: Do performance on the test set and the validation set seem consistent with each
+    other?
+  id: totrans-429
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 测试集和验证集上的性能看起来一致吗？
+- en: How badly does training suffer with the smaller training set?
+  id: totrans-430
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 较小的训练集会导致训练受到多大影响？
+- en: Make the model try to segment malignant versus benign in addition to is-nodule
+    status.
+  id: totrans-431
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使模型尝试分割恶性与良性，除了结节状态。
+- en: How does your metrics reporting need to change? Your image generation?
+  id: totrans-432
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你的度量报告需要如何改变？你的图像生成呢？
+- en: What kind of results do you see? Is the segmentation good enough to skip the
+    classification step?
+  id: totrans-433
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你看到了什么样的结果？分割是否足够好以跳过分类步骤？
+- en: Can you train the model on a combination of 64 × 64 crops and whole-CT slices?[^(16)](#pgfId-1028200)
+  id: totrans-434
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你能训练模型同时使用64×64裁剪和整个CT切片的组合吗？[^(16)](#pgfId-1028200)
+- en: Can you find additional sources of data to use beyond just the LUNA (or LIDC)
+    data?
+  id: totrans-435
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 除了仅使用LUNA（或LIDC）数据，你能找到其他数据来源吗？
+- en: 13.10 Summary
+  id: totrans-436
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 13.10 总结
+- en: Segmentation flags individual pixels or voxels for membership in a class. This
+    is in contrast to classification, which operates at the level of the entire image.
+  id: totrans-437
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 分割标记单个像素或体素属于某一类。这与分类相反，分类是在整个图像级别操作的。
+- en: U-Net was a breakthrough model architecture for segmentation tasks.
+  id: totrans-438
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: U-Net是用于分割任务的突破性模型架构。
+- en: Using segmentation followed by classification, we can implement detection with
+    relatively modest data and computation requirements.
+  id: totrans-439
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用分割后跟分类，我们可以用相对较少的数据和计算需求实现检测。
+- en: Naive approaches to 3D segmentation can quickly use too much RAM for current-generation
+    GPUs. Carefully limiting the scope of what is presented to the model can help
+    limit RAM usage.
+  id: totrans-440
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于当前一代GPU来说，对3D分割的天真方法可能会迅速使用过多的RAM。仔细限制呈现给模型的范围可以帮助限制RAM使用。
+- en: It is possible to train a segmentation model on image crops while validating
+    on whole-image slices. This flexibility can be important for class balancing.
+  id: totrans-441
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 可以在图像裁剪上训练分割模型，同时在整个图像切片上进行验证。这种灵活性对于类别平衡可能很重要。
+- en: Loss weighting is an emphasis on the loss computed from certain classes or subsets
+    of the training data, to encourage the model to focus on the desired results.
+    It can complement class balancing and is a useful tool when trying to tweak model
+    training performance.
+  id: totrans-442
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 损失加权是对从训练数据的某些类别或子集计算的损失进行强调，以鼓励模型专注于期望的结果。它可以补充类平衡，并在尝试调整模型训练性能时是一个有用的工具。
+- en: TensorBoard can display 2D images generated during training and will save a
+    history of how those models changed over the training run. This can be used to
+    visually track changes to model output as training progresses.
+  id: totrans-443
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: TensorBoard可以显示在训练过程中生成的2D图像，并将保存这些模型在训练运行中如何变化的历史记录。这可以用来在训练过程中直观地跟踪模型输出的变化。
+- en: Model parameters can be saved to disk and loaded back to reconstitute a model
+    that was saved earlier. The exact model implementation can change as long as there
+    is a 1:1 mapping between old and new parameters.
+  id: totrans-444
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模型参数可以保存到磁盘并重新加载，以重新构建之前保存的模型。只要旧参数和新参数之间有1:1的映射，确切的模型实现可以更改。
+- en: '* * *'
+  id: totrans-445
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '* * *'
+- en: ^(1.)We expect to mark quite a few things that are not nodules; thus, we use
+    the classification step to reduce the number of these.
+  id: totrans-446
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(1.)我们预计会标记很多不是结节的东西；因此，我们使用分类步骤来减少这些数量。
+- en: '^(2.)Joseph Redmon and Ali Farhadi, “YOLOv3: An Incremental Improvement,” [https://pjreddie.com/media/
+    files/papers/YOLOv3.pdf](https://pjreddie.com/media/files/papers/YOLOv3.pdf).
+    Perhaps check it out once you’ve finished the book.'
+  id: totrans-447
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '^(2.)Joseph Redmon和Ali Farhadi，“YOLOv3: An Incremental Improvement”，[https://pjreddie.com/media/files/papers/YOLOv3.pdf](https://pjreddie.com/media/files/papers/YOLOv3.pdf)。也许在你完成这本书后可以看看。'
+- en: ^(3.)... “head, shoulders, knees, and toes, knees and toes,” as my (Eli’s) toddlers
+    would sing.
+  id: totrans-448
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(3.)...“头、肩膀、膝盖和脚趾、膝盖和脚趾”，就像我的（Eli的）幼儿们会唱的那样。
+- en: ^(4.)The implementation included here differs from the official paper by using
+    average pooling instead of max pooling to downsample. The most recent version
+    on GitHub has changed to use max pool.
+  id: totrans-449
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(4.)这里包含的实现与官方论文不同，使用平均池化而不是最大池化进行下采样。GitHub上最新版本已更改为使用最大池化。
+- en: ^(5.)In the unlikely event our code throws any exceptions--which it clearly
+    won’t, will it?
+  id: totrans-450
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(5.)在我们的代码抛出任何异常的不太可能的情况下--显然不会发生，对吧？
+- en: ^(6.)For example, Stanislav Nikolov et al., “Deep Learning to Achieve Clinically
+    Applicable Segmentation of Head and Neck Anatomy for Radiotherapy,” [https://arxiv.org/pdf/1809.04430.pdf](https://arxiv.org/pdf/1809.04430.pdf).
+  id: totrans-451
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(6.)例如，Stanislav Nikolov等人，“Deep Learning to Achieve Clinically Applicable
+    Segmentation of Head and Neck Anatomy for Radiotherapy”，[https://arxiv.org/pdf/1809.04430.pdf](https://arxiv.org/pdf/1809.04430.pdf)。
+- en: ^(7.)The bug here is that the wraparound at 0 will go undetected. It does not
+    matter much to us. As an exercise, implement proper bounds checking.
+  id: totrans-452
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(7.)这里的错误是0处的环绕将不会被检测到。对我们来说并不重要。作为练习，实现适当的边界检查。
+- en: ^(8.)Fixing this issue would not do a great deal to teach you about PyTorch.
+  id: totrans-453
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(8.)修复这个问题对教会你关于PyTorch并没有太大帮助。
+- en: '^(9.)Samuel G. Armato 3rd et al., 2011, “The Lung Image Database Consortium
+    (LIDC) and Image Database Resource Initiative (IDRI): A Completed Reference Database
+    of Lung Nodules on CT Scans,” *Medical Physics* 38, no. 2 (2011): 915-31, [https://pubmed.ncbi.nlm.nih.gov/21452728/](https://pubmed.ncbi.nlm.nih.gov/21452728/).
+    See also Bruce Vendt, LIDC-IDRI, Cancer Imaging Archive, [http://mng.bz/mBO4](http://mng.bz/mBO4).'
+  id: totrans-454
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '^(9.)Samuel G. Armato第三等人，2011，“The Lung Image Database Consortium (LIDC) and
+    Image Database Resource Initiative (IDRI): A Completed Reference Database of Lung
+    Nodules on CT Scans”，*Medical Physics* 38，第2卷（2011年）：915-31，[https://pubmed.ncbi.nlm.nih.gov/21452728/](https://pubmed.ncbi.nlm.nih.gov/21452728/)。另请参阅Bruce
+    Vendt，LIDC-IDRI，Cancer Imaging Archive，[http://mng.bz/mBO4](http://mng.bz/mBO4)。'
+- en: ^(10.)If you do this a lot, the `pandas` library that just released 1.0 in 2020
+    is a great tool to make this faster. We stick with the CSV reader included in
+    the standard Python distribution here.
+  id: totrans-455
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(10.)如果你经常这样做，那么在2020年刚发布的`pandas`库是一个使这个过程更快的好工具。我们在这里使用标准Python发行版中包含的CSV读取器。
+- en: ^(11.)Most CT scanners produce 512 × 512 slices, and we’re not going to worry
+    about the ones that do something different.
+  id: totrans-456
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(11.)大多数CT扫描仪产生512×512的切片，我们不会担心那些做了不同处理的扫描仪。
+- en: ^(12.)Otherwise, your model would train instantly!
+  id: totrans-457
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(12.)否则，你的模型将会立即训练！
+- en: ^(13.)See [http://cs231n.github.io/neural-networks-3](http://cs231n.github.io/neural-networks-3).
+  id: totrans-458
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(13.)参见[http://cs231n.github.io/neural-networks-3](http://cs231n.github.io/neural-networks-3)。
+- en: ^(14.)Roxie would be proud!
+  id: totrans-459
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(14.)Roxie会感到骄傲！
+- en: ^(15.)And yes, “reasonable” is a bit of a dodge. “Nonzero” is a good starting
+    place, if you’d like something more specific.
+  id: totrans-460
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(15.)是的，“合理”有点含糊。如果你想要更具体的东西，那么“非零”是一个很好的起点。
+- en: '^(16.)Hint: Each sample tuple to be batched together must have the same shape
+    for each corresponding tensor, but the next batch could have different samples
+    with different shapes.'
+  id: totrans-461
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(16.)提示：要一起批处理的每个样本元组必须对应张量的形状相同，但下一批可能有不同形状的不同样本。

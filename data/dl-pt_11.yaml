@@ -1,0 +1,1743 @@
+- en: 10 Combining data sources into a unified dataset
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 10 将数据源合并为统一数据集
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖
+- en: Loading and processing raw data files
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 加载和处理原始数据文件
+- en: Implementing a Python class to represent our data
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实现一个表示我们数据的Python类
+- en: Converting our data into a format usable by PyTorch
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将我们的数据转换为PyTorch可用的格式
+- en: Visualizing the training and validation data
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 可视化训练和验证数据
+- en: Now that we’ve discussed the high-level goals for part 2, as well as outlined
+    how the data will flow through our system, let’s get into specifics of what we’re
+    going to do in this chapter. It’s time to implement basic data-loading and data-processing
+    routines for our raw data. Basically, every significant project you work on will
+    need something analogous to what we cover here.[¹](#pgfId-1011807) Figure 10.1
+    shows the high-level map of our project from chapter 9\. We’ll focus on step 1,
+    data loading, for the rest of this chapter.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经讨论了第二部分的高层目标，以及概述了数据将如何在我们的系统中流动，让我们具体了解一下这一章我们将要做什么。现在是时候为我们的原始数据实现基本的数据加载和数据处理例程了。基本上，你在工作中涉及的每个重要项目都需要类似于我们在这里介绍的内容。[¹](#pgfId-1011807)
+    图10.1展示了我们项目的高层地图，来自第9章。我们将在本章的其余部分专注于第1步，数据加载。
+- en: '![](../Images/CH10_F01_Stevens2_GS.png)'
+  id: totrans-7
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F01_Stevens2_GS.png)'
+- en: 'Figure 10.1 Our end-to-end lung cancer detection project, with a focus on this
+    chapter’s topic: step 1, data loading'
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.1 我们端到端的肺癌检测项目，重点关注本章的主题：第1步，数据加载
+- en: Our goal is to be able to produce a training sample given our inputs of raw
+    CT scan data and a list of annotations for those CTs. This might sound simple,
+    but quite a bit needs to happen before we can load, process, and extract the data
+    we’re interested in. Figure 10.2 shows what we’ll need to do to turn our raw data
+    into a training sample. Luckily, we got a head start on *understanding* our data
+    in the last chapter, but we have more work to do on that front as well.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的目标是能够根据我们的原始CT扫描数据和这些CT的注释列表生成一个训练样本。这听起来可能很简单，但在我们加载、处理和提取我们感兴趣的数据之前，需要发生很多事情。图10.2展示了我们需要做的工作，将我们的原始数据转换为���练样本。幸运的是，在上一章中，我们已经对我们的数据有了一些*理解*，但在这方面我们还有更多工作要做。
+- en: '![](../Images/CH10_F02_Stevens2_GS.png)'
+  id: totrans-10
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F02_Stevens2_GS.png)'
+- en: Figure 10.2 The data transforms required to make a sample tuple. These sample
+    tuples will be used as input to our model training routine.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.2 制作样本元组所需的数据转换。这些样本元组将作为我们模型训练例程的输入。
+- en: This is a crucial moment, when we begin to transmute the leaden raw data, if
+    not into gold, then at least into the stuff that our neural network will spin
+    *into* gold. We first discussed the mechanics of this transformation in chapter
+    4.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是一个关键时刻，当我们开始将沉重的原始数据转变，如果不是成为黄金，至少也是我们的神经网络将会将其转变为黄金的材料。我们在第4章中首次讨论了这种转变的机制。
+- en: 10.1 Raw CT data files
+  id: totrans-13
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.1 原始CT数据文件
+- en: 'Our CT data comes in two files: a .mhd file containing metadata header information,
+    and a .raw file containing the raw bytes that make up the 3D array. Each file’s
+    name starts with a unique identifier called the *series UID* (the name comes from
+    the Digital Imaging and Communications in Medicine [DICOM] nomenclature) for the
+    CT scan in question. For example, for series UID 1.2.3, there would be two files:
+    1.2.3.mhd and 1.2.3.raw.'
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的CT数据分为两个文件：一个包含元数据头信息的.mhd文件，以及一个包含组成3D数组的原始字节的.raw文件。每个文件的名称都以称为*系列UID*（名称来自数字影像和通信医学[DICOM]命名法）的唯一标识符开头，用于讨论的CT扫描。例如，对于系列UID
+    1.2.3，将有两个文件：1.2.3.mhd和1.2.3.raw。
+- en: Our `Ct` class will consume those two files and produce the 3D array, as well
+    as the transformation matrix to convert from the patient coordinate system (which
+    we will discuss in more detail in section 10.6) to the index, row, column coordinates
+    needed by the array (these coordinates are shown as (I,R,C) in the figures and
+    are denoted with `_irc` variable suffixes in the code). Don’t sweat the details
+    of all this right now; just remember that we’ve got some coordinate system conversion
+    to do before we can apply these coordinates to our CT data. We’ll explore the
+    details as we need them.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的`Ct`类将消耗这两个文件并生成3D数组，以及转换矩阵，将患者坐标系（我们将在第10.6节中更详细地讨论）转换为数组所需的索引、行、列坐标（这些坐标在图中显示为（I，R，C），在代码中用`_irc`变量后缀表示）。现在不要为所有这些细节担心；只需记住，在我们应用这些坐标到我们的CT数据之前，我们需要进行一些坐标系转换。我们将根据需要探讨细节。
+- en: We will also load the annotation data provided by LUNA, which will give us a
+    list of nodule coordinates, each with a malignancy flag, along with the series
+    UID of the relevant CT scan. By combining the nodule coordinate with coordinate
+    system transformation information, we get the index, row, and column of the voxel
+    at the center of our nodule.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还将加载LUNA提供的注释数据，这将为我们提供一个结节坐标列表，每个坐标都有一个恶性标志，以及相关CT扫描的系列UID。通过将结节坐标与坐标系转换信息结合起来，我们得到了我们结节中心的体素的索引、行和列。
+- en: Using the (I,R,C) coordinates, we can crop a small 3D slice of our CT data to
+    use as the input to our model. Along with this 3D sample array, we must construct
+    the rest of our training sample tuple, which will have the sample array, nodule
+    status flag, series UID, and the index of this sample in the CT list of nodule
+    candidates. This sample tuple is exactly what PyTorch expects from our `Dataset`
+    subclass and represents the last section of our bridge from our original raw data
+    to the standard structure of PyTorch tensors.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用（I，R，C）坐标，我们可以裁剪我们的CT数据的一个小的3D切片作为我们模型的输入。除了这个3D样本数组，我们必须构建我们的训练样本元组的其余部分，其中将包括样本数组、结节状态标志、系列UID以及该样本在结节候选CT列表中的索引。这个样本元组正是PyTorch从我们的`Dataset`子类中期望的，并代表了我们从原始原始数据到PyTorch张量的标准结构的桥梁的最后部分。
+- en: Limiting or cropping our data so as not to drown our model in noise is important,
+    as is making sure we’re not so aggressive that our signal gets cropped out of
+    our input. We want to make sure the range of our data is well behaved, especially
+    after normalization. Clamping our data to remove outliers can be useful, especially
+    if our data is prone to extreme outliers. We can also create handcrafted, algorithmic
+    transformations of our input; this is known as *feature engineering;* and we discussed
+    it briefly in chapter 1\. We’ll usually want to let the model do most of the heavy
+    lifting; feature engineering has its uses, but we won’t use it here in part 2\.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 限制或裁剪我们的数据以避免让模型淹没在噪音中是重要的，同样重要的是确保我们不要过于激进，以至于我们的信号被裁剪掉。我们希望确保我们的数据范围行为良好，尤其是在归一化之后。裁剪数据以去除异常值可能很有用，特别是如果我们的数据容易出现极端异常值。我们还可以创建手工制作的、算法转换的输入；这被称为*特征工程*；我们在第1章中简要讨论过。通常我们会让模型大部分工作；特征工程有其用处，但在第2部分中我们不会使用它。
+- en: 10.2 Parsing LUNA’s annotation data
+  id: totrans-19
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.2 解析LUNA的注释数据
+- en: The first thing we need to do is begin loading our data. When working on a new
+    project, that’s often a good place to start. Making sure we know how to work with
+    the raw input is required no matter what, and knowing how our data will look after
+    it loads can help inform the structure of our early experiments. We could try
+    loading individual CT scans, but we think it makes sense to parse the CSV files
+    that LUNA provides, which contain information about the points of interest in
+    each CT scan. As we can see in figure 10.3, we expect to get some coordinate information,
+    an indication of whether the coordinate is a nodule, and a unique identifier for
+    the CT scan. Since there are fewer types of information in the CSV files, and
+    they’re easier to parse, we’re hoping they will give us some clues about what
+    to look for once we start loading CTs.
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要做的第一件事是开始加载我们的数据。在着手新项目时，这通常是一个很好的起点。确保我们知道如何处理原始输入是必需的，无论如何，知道我们的数据加载后会是什么样子可以帮助我们制定早期实验的结构。我们可以尝试加载单个CT扫描，但我们认为解析LUNA提供的包含每个CT扫描中感兴趣点信息的CSV文件是有意义的。正如我们在图10.3中看到的，我们期望获得一些坐标信息、一个指示坐标是否为结节的标志以及CT扫描的唯一标识符。由于CSV文件中的信息类型较少，而且更容易解析，我们希望它们能给我们一些线索，告诉��们一旦开始加载CT扫描后要寻找什么。
+- en: '![](../Images/CH10_F03_Stevens2_GS.png)'
+  id: totrans-21
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F03_Stevens2_GS.png)'
+- en: Figure 10.3 The LUNA annotations in candidates.csv contain the CT series, the
+    nodule candidate’s position, and a flag indicating if the candidate is actually
+    a nodule or not.
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.3 candidates.csv中的LUNA注释包含CT系列、结节候选位置以及指示候选是否实际为结节的标志。
+- en: 'The candidates.csv file contains information about all lumps that potentially
+    look like nodules, whether those lumps are malignant, benign tumors, or something
+    else altogether. We’ll use this as the basis for building a complete list of candidates
+    that can then be split into our training and validation datasets. The following
+    Bash shell session shows what the file contains:'
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: candidates.csv文件包含有关所有潜在看起来像结节的肿块的信息，无论这些肿块是恶性的、良性肿瘤还是完全不同的东西。我们将以此为基础构建一个完整的候选人列表，然后将其分成训练和验证数据集。以下是Bash
+    shell会话显示文件包含的内容：
+- en: '[PRE0]'
+  id: totrans-24
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ Counts the number of lines in the file
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 统计文件中的行数
+- en: ❷ Prints the first few lines of the file
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 打印文件的前几行
+- en: ❸ The first line of the .csv file defines the column headers.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ .csv文件的第一行定义了列标题。
+- en: ❹ Counts the number of lines that end with 1, which indicates malignancy
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 统计以1结尾的行数，表示恶性
+- en: '*Note* The values in the `seriesuid` column have been elided to better fit
+    the printed page.'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* `seriesuid` 列中的值已被省略以更好地适应打印页面。'
+- en: 'So we have 551,000 lines, each with a `seriesuid` (which we’ll call `series_uid`
+    in the code), some (X,Y,Z) coordinates, and a `class` column that corresponds
+    to the nodule status (it’s a Boolean value: 0 for a candidate that is not an actual
+    nodule, and 1 for a candidate that is a nodule, either malignant or benign). We
+    have 1,351 candidates flagged as actual nodules.'
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，我们有551,000行，每行都有一个`seriesuid`（我们在代码中将其称为`series_uid`）、一些（X,Y,Z）坐标和一个`class`列，对应于结节状态（这是一个布尔值：0表示不是实际结节的候选人，1表示是结节的候选人，无论是恶性还是良性）。我们有1,351个标记为实际结节的候选人。
+- en: 'The annotations.csv file contains information about some of the candidates
+    that have been flagged as nodules. We are interested in the `diameter_mm` information
+    in particular:'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: annotations.csv文件包含有关被标记为结节的一些候选人的信息。我们特别关注`diameter_mm`信息：
+- en: '[PRE1]'
+  id: totrans-32
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: ❶ This is a different number than in the candidates.csv file.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这是与candidates.csv文件中不同的数字。
+- en: ❷ The last column is also different.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 最后一列也不同。
+- en: We have size information for about 1,200 nodules. This is useful, since we can
+    use it to make sure our training and validation data includes a representative
+    spread of nodule sizes. Without this, it’s possible that our validation set could
+    end up with only extreme values, making it seem as though our model is underperforming.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们有大约1,200个结节的大小信息。这很有用，因为我们可以使用它来确保我们的训练和验证数据包含了结节大小的代表性分布。如果没有这个，我们的验证集可能只包含极端值，使得看起来我们的模型表现不佳。
+- en: 10.2.1 Training and validation sets
+  id: totrans-36
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.2.1 训练和验证集
+- en: For any standard supervised learning task (classification is the prototypical
+    example), we’ll split our data into training and validation sets. We want to make
+    sure both sets are *representative* of the range of real-world input data we’re
+    expecting to see and handle normally. If either set is meaningfully different
+    from our real-world use cases, it’s pretty likely that our model will behave differently
+    than we expect--all of the training and statistics we collect won’t be predictive
+    once we transfer over to production use! We’re not trying to make this an exact
+    science, but you should keep an eye out in future projects for hints that you
+    are training and testing on data that doesn’t make sense for your operating environment.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于任何标准的监督学习任务（分类是典型示例），我们将把数据分成训练集和验证集。我们希望确保两个集合都*代表*我们预期看到和正常处理的真实世界输入数据范围。如果任一集合与我们的真实用例有实质性不同，那么我们的模型行为很可能与我们的预期不同--我们收集的所有训练和统计数据在转移到生产使用时将不具有预测性！我们并不试图使这成为一门精确的科学，但您应该在未来的项目中留意，以确保您正在对不适合您操作环境的数据进行训练和测试。
+- en: 'Let’s get back to our nodules. We’re going to sort them by size and take every
+    *N*th one for our validation set. That should give us the representative spread
+    we’re looking for. Unfortunately, the location information provided in annotations.csv
+    doesn’t always precisely line up with the coordinates in candidates.csv:'
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们回到我们的结节。我们将按大小对它们进行排序，并取每第*N*个用于我们的验证集。这应该给我们所期望的代表性分布。不幸的是，annotations.csv
+    中提供的位置信息并不总是与 candidates.csv 中的坐标精确对齐：
+- en: '[PRE2]'
+  id: totrans-39
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ These two coordinates are very close to each other.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这两个坐标非常接近。
+- en: If we truncate the corresponding coordinates from each file, we end up with
+    (-128.70, -175.32,-298.39) versus (-128.94,-175.04,-297.87). Since the nodule
+    in question has a diameter of 5 mm, both of these points are clearly meant to
+    be the “center” of the nodule, but they don’t line up exactly. It would be a perfectly
+    valid response to decide that dealing with this data mismatch isn’t worth it,
+    and to ignore the file. We are going to do the legwork to make things line up,
+    though, since real-world datasets are often imperfect this way, and this is a
+    good example of the kind of work you will need to do to assemble data from disparate
+    data sources.
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们从每个文件中截取相应的坐标，我们得到的是(-128.70, -175.32,-298.39)与(-128.94,-175.04,-297.87)。由于问题中的结节直径为5毫米，这两个点显然都是结节的“中心”，但它们并不完全对齐。决定处理这种数据不匹配是否值得并忽略该文件是完全合理的反应。然而，我们将努力使事情对齐，因为现实世界的数据集通常以这种方式不完美，并且这是您需要做的工作的一个很好的例子，以从不同的数据源中组装数据。
+- en: 10.2.2 Unifying our annotation and candidate data
+  id: totrans-42
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.2.2 统一我们的注释和候选数据
+- en: Now that we know what our raw data files look like, let’s build a `getCandidateInfoList`
+    function that will stitch it all together. We’ll use a named tuple that is defined
+    at the top of the file to hold the information for each nodule.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们知道我们的原始数据文件是什么样子的，让我们构建一个`getCandidateInfoList`函数，将所有内容串联起来。我们将使用文件顶部定义的命名元组来保存每个结节的信息。
+- en: Listing 10.1 dsets.py:7
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.1 dsets.py:7
+- en: '[PRE3]'
+  id: totrans-45
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: These tuples are *not* our training samples, as they’re missing the chunks of
+    CT data we need. Instead, these represent a sanitized, cleaned, unified interface
+    to the human-annotated data we’re using. It’s very important to isolate having
+    to deal with messy data from model training. Otherwise, your training loop can
+    get cluttered quickly, because you have to keep dealing with special cases and
+    other distractions in the middle of code that should be focused on training.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些元组*不是*我们的训练样本，因为它们缺少我们需要的CT数据块。相反，这些代表了我们正在使用的人工注释数据的经过消毒、清洁、统一的接口。将必须处理混乱数据与模型训练隔离开非常重要。否则，你的训练循环会很快变得混乱，因为你必须在本应专注于训练的代码中不断处理特殊情况和其他干扰。
+- en: '*tip* Clearly separate the code that’s responsible for data sanitization from
+    the rest of your project. Don’t be afraid to rewrite your data once and save it
+    to disk if needed.'
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*提示* 明确地将负责数据消毒的代码与项目的其余部分分开。如果需要，不要害怕重写数据一次并将其保存到磁盘。'
+- en: Our list of candidate information will have the nodule status (what we’re going
+    to be training the model to classify), diameter (useful for getting a good spread
+    in training, since large and small nodules will not have the same features), series
+    (to locate the correct CT scan), and candidate center (to find the candidate in
+    the larger CT). The function that will build a list of these `NoduleInfoTuple`
+    instances starts by using an in-memory caching decorator, followed by getting
+    the list of files present on disk.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的候选信息列表将包括结节状态（我们将训练模型对其进行分类）、直径（有助于在训练中获得良好的分布，因为大和小结节不会具有相同的特征）、系列（用于定位正确的CT扫描）、候选中心（用于在较大的CT中找到候选）。构建这些`NoduleInfoTuple`实例列表的函数首先使用内存缓存装饰器，然后获取磁盘上存在的文件列表。
+- en: Listing 10.2 dsets.py:32
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.2 dsets.py:32
+- en: '[PRE4]'
+  id: totrans-50
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Standard library in-memory caching
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 标准库内存缓存
+- en: ❷ requireOnDisk_bool defaults to screening out series from data subsets that
+    aren’t in place yet.
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ requireOnDisk_bool 默认筛选掉尚未就位的数据子集中的系列。
+- en: Since parsing some of the data files can be slow, we’ll cache the results of
+    this function call in memory. This will come in handy later, because we’ll be
+    calling this function more often in future chapters. Speeding up our data pipeline
+    by carefully applying in-memory or on-disk caching can result in some pretty impressive
+    gains in training speed. Keep an eye out for these opportunities as you work on
+    your projects.
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于解析某些数据文件可能很慢，我们将在内存中缓存此函数调用的结果。这将在以后很有用，因为我们将在未来的章节中更频繁地调用此函数。通过仔细应用内存或磁盘缓存来加速我们的数据流水线，可以在训练速度上取得一些令人印象深刻的收益���在您的项目中工作时，请留意这些机会。
+- en: Earlier we said that we’ll support running our training program with less than
+    the full set of training data, due to the long download times and high disk space
+    requirements. The `requireOnDisk_bool` parameter is what makes good on that promise;
+    we’re detecting which LUNA series UIDs are actually present and ready to be loaded
+    from disk, and we’ll use that information to limit which entries we use from the
+    CSV files we’re about to parse. Being able to run a subset of our data through
+    the training loop can be useful to verify that the code is working as intended.
+    Often a model’s training results are bad to useless when doing so, but exercising
+    our logging, metrics, model check-pointing, and similar functionality is beneficial.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 之前我们说过，我们将支持使用不完整的训练数据集运行我们的训练程序，因为下载时间长且磁盘空间要求高。`requireOnDisk_bool` 参数是实现这一承诺的关键；我们正在检测哪些
+    LUNA 系列 UID 实际上存在并准备从磁盘加载，并且我们将使用该信息来限制我们从即将解析的 CSV 文件中使用的条目。能够通过训练循环运行我们数据的子集对于验证代码是否按预期工作很有用。通常情况下，当这样做时，模型的训练结果很差，几乎无用，但是进行日志记录、指标、模型检查点等功能的练习是有益的。
+- en: After we get our candidate information, we want to merge in the diameter information
+    from annotations.csv. First we need to group our annotations by `series_uid`,
+    as that’s the first key we’ll use to cross-reference each row from the two files.
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在获取候选人信息后，我们希望合并注释.csv 中的直径信息。首先，我们需要按 `series_uid` 对我们的注释进行分组，因为这是我们将用来交叉参考两个文件中每一行的第一个关键字。
+- en: Listing 10.3 dsets.py:40, `def` `getCandidateInfoList`
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 10.3 dsets.py:40，`def` `getCandidateInfoList`
+- en: '[PRE5]'
+  id: totrans-57
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: Now we’ll build our full list of candidates using the information in the candidates.csv
+    file.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们将使用 candidates.csv 文件中的信息构建候选人的完整列表。
+- en: Listing 10.4 dsets.py:51, `def` `getCandidateInfoList`
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 10.4 dsets.py:51，`def` `getCandidateInfoList`
+- en: '[PRE6]'
+  id: totrans-60
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: ❶ If a series_uid isn’t present, it’s in a subset we don’t have on disk, so
+    we should skip it.
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 如果系列 UID 不存在，则它在我们没有在磁盘上的子集中，因此我们应该跳过它。
+- en: ❷ Divides the diameter by 2 to get the radius, and divides the radius by 2 to
+    require that the two nodule center points not be too far apart relative to the
+    size of the nodule. (This results in a bounding-box check, not a true distance
+    check.)
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将直径除以 2 得到半径，并将半径除以 2 要求两个结节中心点相对于结节大小不要相距太远。（这导致一个边界框检查，而不是真正的距离检查。）
+- en: For each of the candidate entries for a given `series_uid`, we loop through
+    the annotations we collected earlier for the same `series_uid` and see if the
+    two coordinates are close enough to consider them the same nodule. If they are,
+    great! Now we have diameter information for that nodule. If we don’t find a match,
+    that’s fine; we’ll just treat the nodule as having a 0.0 diameter. Since we’re
+    only using this information to get a good spread of nodule sizes in our training
+    and validation sets, having incorrect diameter sizes for some nodules shouldn’t
+    be a problem, but we should remember we’re doing this in case our assumption here
+    is wrong.
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于给定 `series_uid` 的每个候选人条目，我们循环遍历我们之前收集的相同 `series_uid` 的注释，看看这两个坐标是否足够接近以将它们视为同一个结节。如果是，太好了！现在我们有了该结节的直径信息。如果我们找不到匹配项，那没关系；我们将只将该结节视为直径为
+    0.0。由于我们只是使用这些信息来在我们的训练和验证集中获得结节尺寸的良好分布，对于一些结节的直径尺寸不正确不应该是问题，但我们应该记住我们这样做是为了防止我们这里的假设是错误的情况。
+- en: That’s a lot of somewhat fiddly code just to merge in our nodule diameter. Unfortunately,
+    having to do this kind of manipulation and fuzzy matching can be fairly common,
+    depending on your raw data. Once we get to this point, however, we just need to
+    sort the data and return it.
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是为了合并我们的结节直径而进行的许多有些繁琐的代码。不幸的是，根据您的原始数据，必须进行这种操作和模糊匹配可能是相当常见的。然而，一旦我们到达这一点，我们只需要对数据进行排序并返回即可。
+- en: Listing 10.5 dsets.py:80, `def` `getCandidateInfoList`
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 10.5 dsets.py:80，`def` `getCandidateInfoList`
+- en: '[PRE7]'
+  id: totrans-66
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ This means we have all of the actual nodule samples starting with the largest
+    first, followed by all of the non-nodule samples (which don’t have nodule size
+    information).
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这意味着我们所有实际结节样本都是从最大的开始，然后是所有非结节样本（这些样本没有结节大小信息）。
+- en: The ordering of the tuple members in `noduleInfo_list` is driven by this sort.
+    We’re using this sorting approach to help ensure that when we take a slice of
+    the data, that slice gets a representative chunk of the actual nodules with a
+    good spread of nodule diameters. We’ll discuss this more in section 10.5.3\.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 元组成员在 `noduleInfo_list` 中的排序是由此排序驱动的。我们使用这种排序方法来帮助确保当我们取数据的一个切片时，该切片获得一组具有良好结节直径分布的实际结节。我们将在第
+    10.5.3 节中进一步讨论这一点。
+- en: 10.3 Loading individual CT scans
+  id: totrans-69
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.3 加载单个 CT 扫描
+- en: Next up, we need to be able to take our CT data from a pile of bits on disk
+    and turn it into a Python object from which we can extract 3D nodule density data.
+    We can see this path from the .mhd and .raw files to `Ct` objects in figure 10.4\.
+    Our nodule annotation information acts like a map to the interesting parts of
+    our raw data. Before we can follow that map to our data of interest, we need to
+    get the data into an addressable form.
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，我们需要能够将我们的 CT 数据从磁盘上的一堆位转换为一个 Python 对象，从中我们可以提取 3D 结节密度数据。我们可以从图 10.4 中看到这条路径，从
+    .mhd 和 .raw 文件到 `Ct` 对象。我们的结节注释信息就像是我们原始数据中有趣部分的地图。在我们可以按照这张地图找到我们感兴趣的数据之前，我们需要将数据转换为可寻址的形式。
+- en: '![](../Images/CH10_F04_Stevens2_GS.png)'
+  id: totrans-71
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F04_Stevens2_GS.png)'
+- en: Figure 10.4 Loading a CT scan produces a voxel array and a transformation from
+    patient coordinates to array indices.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 10.4 加载 CT 扫描产生一个体素数组和一个从患者坐标到数组索引的转换。
+- en: '*Tip* Having a large amount of raw data, most of which is uninteresting, is
+    a common situation; look for ways to limit your scope to only the relevant data
+    when working on your own projects.'
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*提示* 拥有大量原始数据，其中大部分是无趣的，是一种常见情况；在处理自己的项目时，寻找方法限制范围仅限于相关数据是很重要的。'
+- en: The native file format for CT scans is DICOM (www.dicomstandard.org). The first
+    version of the DICOM standard was authored in 1984, and as we might expect from
+    anything computing-related that comes from that time period, it’s a bit of a mess
+    (for example, whole sections that are now retired were devoted to the data link
+    layer protocol to use, since Ethernet hadn’t won yet).
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: CT扫描的本机文件格式是DICOM（www.dicomstandard.org）。DICOM标准的第一个版本是在1984年编写的，正如我们可能期望的那样，来自那个时期的任何与计算有关的东西都有点混乱（例如，现在已经废弃的整个部分专门用于选择要使用的数据链路层协议，因为当时以太网还没有胜出）。
+- en: '*Note* We’ve done the legwork of finding the right library to parse these raw
+    data files, but for other formats you’ve never heard of, you’ll have to find a
+    parser yourself. We recommend taking the time to do so! The Python ecosystem has
+    parsers for just about every file format under the sun, and your time is almost
+    certainly better spent working on the novel parts of your project than writing
+    parsers for esoteric data formats.'
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 我们已经找到了正确的库来解析这些原始数据文件，但对于你从未听说过的其他格式，你将不得不自己找到一个解析器。我们建议花时间去做这件事！Python生态系统几乎为太阳下的每种文件格式都提供了解析器，你的时间几乎肯定比写解析器来处理奇特数据格式的工作更值得花费在项目的新颖部分上。'
+- en: Happily, LUNA has converted the data we’re going to be using for this chapter
+    into the MetaIO format, which is quite a bit easier to use ([https://itk.org/Wiki/MetaIO/
+    Documentation#Quick_Start](https://itk.org/Wiki/MetaIO/Documentation#Quick_Start)).
+    Don’t worry if you’ve never heard of the format before! We can treat the format
+    of the data files as a black box and use `SimpleITK` to load them into more familiar
+    NumPy arrays.
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 令人高兴的是，LUNA已经将我们将在本章中使用的数据转换为MetaIO格式，这样使用起来要容易得多（[https://itk.org/Wiki/MetaIO/Documentation#Quick_Start](https://itk.org/Wiki/MetaIO/Documentation#Quick_Start)）。如果你以前从未听说过这种格式，不用担心！我们可以将数据文件的格式视为黑匣子，并使用`SimpleITK`将其加载到更熟悉的NumPy数组中。
+- en: Listing 10.6 dsets.py:9
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 10.6 dsets.py:9
+- en: '[PRE8]'
+  id: totrans-78
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: ❶ We don’t care to track which subset a given series_uid is in, so we wildcard
+    the subset.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们不关心给定series_uid属于哪个子集，因此我们使用通配符来匹配子集。
+- en: ❷ sitk.ReadImage implicitly consumes the .raw file in addition to the passed-in
+    .mhd file.
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ `sitk.ReadImage`隐式消耗了传入的`.mhd`文件以及`.raw`文件。
+- en: ❸ Recreates an np.array since we want to convert the value type to np.float3
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 重新创建一个np.array，因为我们想将值类型转换为np.float3。
+- en: For real projects, you’ll want to understand what types of information are contained
+    in your raw data, but it’s perfectly fine to rely on third-party code like `SimpleITK`
+    to parse the bits on disk. Finding the right balance of knowing everything about
+    your inputs versus blindly accepting whatever your data-loading library hands
+    you will probably take some experience. Just remember that we’re mostly concerned
+    about *data*, not *bits*. It’s the information that matters, not how it’s represented.
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于真实项目，你会想要了解原始数据中包含哪些类型的信息，但依赖像`SimpleITK`这样的第三方代码来解析磁盘上的位是完全可以的。找到了关于你的输入的一切与盲目接受你的数据加载库提供的一切之间的正确平衡可能需要一些经验。只需记住，我们主要关心的是*数据*，而不是*位*。重要的是信息，而不是它的表示方式。
+- en: Being able to uniquely identify a given sample of our data can be useful. For
+    example, clearly communicating which sample is causing a problem or is getting
+    poor classification results can drastically improve our ability to isolate and
+    debug the issue. Depending on the nature of our samples, sometimes that unique
+    identifier is an atom, like a number or a string, and sometimes it’s more complicated,
+    like a tuple.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 能够唯一标识我们数据中的特定样本是很有用的。例如，清楚地传达哪个样本导致问题或得到较差的分类结果可以极大地提高我们隔离和调试问题的能力。根据我们样本的性质，有时这个唯一标识符是一个原子，比如一个数字或一个字符串，有时它更复杂，比如一个元组。
+- en: We identify specific CT scans using the *series instance UID* (`series_uid`)
+    assigned when the CT scan was created. DICOM makes heavy use of unique identifiers
+    (UIDs) for individual DICOM files, groups of files, courses of treatment, and
+    so on. These identifiers are similar in concept to UUIDs ([https://docs.python.org/3.6/library/
+    uuid.html](https://docs.python.org/3.6/library/uuid.html)), but they have a different
+    creation process and are formatted differently. For our purposes, we can treat
+    them as opaque ASCII strings that serve as unique keys to reference the various
+    CT scans. Officially, only the characters 0 through 9 and the period (.) are valid
+    characters in a DICOM UID, but some DICOM files in the wild have been anonymized
+    with routines that replace the UIDs with hexadecimal (0-9 and a-f) or other technically
+    out-of-spec values (these out-of-spec values typically aren’t flagged or cleaned
+    by DICOM parsers; as we said before, it’s a bit of a mess).
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们使用*系列实例UID*（`series_uid`）来唯一标识特定的CT扫描，该UID是在创建CT扫描时分配的。DICOM在个别DICOM文件、文件组、治疗过程等方面大量使用唯一标识符（UID），这些标识符在概念上类似于UUIDs（[https://docs.python.org/3.6/library/uuid.html](https://docs.python.org/3.6/library/uuid.html)），但它们具有不同的创建过程和不同的格式。对于我们的目的，我们可以将它们视为不透明的ASCII字符串，用作引用各种CT扫描的唯一键。官方上，DICOM
+    UID中只有字符0到9和句点（.）是有效字符，但一些野外的DICOM文件已经通过替换UID为十六进制（0-9和a-f）或其他技术上不符合规范的值进行了匿名化（这些不符合规范的值通常不会被DICOM解析器标记或清理；正如我们之前所说，这有点混乱）。
+- en: 'The 10 subsets we discussed earlier have about 90 CT scans each (888 in total),
+    with every CT scan represented as two files: one with a .mhd extension and one
+    with a .raw extension. The data being split between multiple files is hidden behind
+    the `sitk` routines, however, and is not something we need to be directly concerned
+    with.'
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前讨论的10个子集中，每个子集大约有90个CT扫描（总共888个），每个CT扫描表示为两个文件：一个带有`.mhd`扩展名的文件和一个带有`.raw`扩展名的文件。数据被分割到多个文件中是由`sitk`例程隐藏的，因此我们不需要直接关注这一点。
+- en: At this point, `ct_a` is a three-dimensional array. All three dimensions are
+    spatial, and the single intensity channel is implicit. As we saw in chapter 4,
+    in a PyTorch tensor, the channel information is represented as a fourth dimension
+    with size 1.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此时，`ct_a` 是一个三维数组。所有三个维度都是空间维度，单一的强度通道是隐含的。正如我们在第4章中看到的，在 PyTorch 张量中，通道信息被表示为一个大小为1的第四维。
+- en: 10.3.1 Hounsfield Units
+  id: totrans-87
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.3.1 豪斯菲尔德单位
+- en: Recall that earlier, we said that we need to understand our *data*, not the
+    *bits* that store it. Here, we have a perfect example of that in action. Without
+    understanding the nuances of our data’s values and range, we’ll end up feeding
+    values into our model that will hinder its ability to learn what we want it to.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下，我们之前说过我们需要了解我们的*数据*，而不是存储数据的*位*。在这里，我们有一个完美的实例。如果不了解数据值和范围的微妙之处，我们将向模型输入值，这将妨碍其学习我们想要的内容。
+- en: Continuing the `__init__` method, we need to do a bit of cleanup on the `ct_a`
+    values. CT scan voxels are expressed in Hounsfield units (HU; [https://en.wikipedia.org/
+    wiki/Hounsfield_scale](https://en.wikipedia.org/wiki/Hounsfield_scale)), which
+    are odd units; air is -1,000 HU (close enough to 0 g/cc [grams per cubic centimeter]
+    for our purposes), water is 0 HU (1 g/cc), and bone is at least +1,000 HU (2-3
+    g/cc).
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 继续`__init__`方法，我们需要对`ct_a`值进行一些清理。CT扫描体素以豪斯菲尔德单位（HU；[https://en.wikipedia.org/
+    wiki/Hounsfield_scale](https://en.wikipedia.org/wiki/Hounsfield_scale)）表示，这是奇怪的单位；空气为-1,000
+    HU（对于我们的目的足够接近0克/立方厘米），水为0 HU（1克/立方厘米），骨骼至少为+1,000 HU（2-3克/立方厘米）。
+- en: '*Note* HU values are typically stored on disk as signed 12-bit integers (shoved
+    into 16-bit integers), which fits well with the level of precision CT scanners
+    can provide. While this is perhaps interesting, it’s not particularly relevant
+    to the project.'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* HU值通常以有符号的12位整数（塞入16位整数）的形式存储在磁盘上，这与CT扫描仪提供的精度水平相匹配。虽然这可能很有趣，但与项目无关。'
+- en: Some CT scanners use HU values that correspond to negative densities to indicate
+    that those voxels are outside of the CT scanner’s field of view. For our purposes,
+    everything outside of the patient should be air, so we discard that field-of-view
+    information by setting a lower bound of the values to -1,000 HU. Similarly, the
+    exact densities of bones, metal implants, and so on are not relevant to our use
+    case, so we cap density at roughly 2 g/cc (1,000 HU) even though that’s not biologically
+    accurate in most cases.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一些CT扫描仪使用与负密度对应的HU值来指示那些体素位于CT扫描仪视野之外。对于我们的目的，患者之外的一切都应该是空气，因此我们通过将值的下限设置为-1,000
+    HU来丢弃该视野信息。同样，骨骼、金属植入物等的确切密度与我们的用例无关，因此我们将密度限制在大约2克/立方厘米（1,000 HU），即使在大多数情况下这在生物学上并不准确。
+- en: Listing 10.7 dsets.py:96, `Ct.__init__`
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表10.7 dsets.py:96，`Ct.__init__`
+- en: '[PRE9]'
+  id: totrans-93
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: Values above 0 HU don’t scale perfectly with density, but the tumors we’re interested
+    in are typically around 1 g/cc (0 HU), so we’re going to ignore that HU doesn’t
+    map perfectly to common units like g/cc. That’s fine, since our model will be
+    trained to consume HU directly.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 高于0 HU的值与密度并不完全匹配，但我们感兴趣的肿瘤通常在1克/立方厘米（0 HU）左右，因此我们将忽略HU与克/立方厘米等常见单位并不完全对应的事实。这没关系，因为我们的模型将被训练直接使用HU。
+- en: 'We want to remove all of these outlier values from our data: they aren’t directly
+    relevant to our goal, and having those outliers can make the model’s job harder.
+    This can happen in many ways, but a common example is when batch normalization
+    is fed these outlier values and the statistics about how to best normalize the
+    data are skewed. Always be on the lookout for ways to clean your data.'
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们希望从我们的数据中删除所有这些异常值：它们与我们的目标没有直接关联，而且这些异常值可能会使模型的工作变得更加困难。这种情况可能以多种方式发生，但一个常见的例子是当批量归一化被这些异常值输入时，关于如何最佳归一化数据的统计数据会被扭曲。始终注意清理数据的方法。
+- en: All of the values we’ve built are now assigned to `self`.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在已经将所有构建的值分配给`self`。
+- en: Listing 10.8 dsets.py:98, `Ct.__init__`
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表10.8 dsets.py:98，`Ct.__init__`
+- en: '[PRE10]'
+  id: totrans-98
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: It’s important to know that our data uses the range of -1,000 to +1,000, since
+    in chapter 13 we end up adding channels of information to our samples. If we don’t
+    account for the disparity between HU and our additional data, those new channels
+    can easily be overshadowed by the raw HU values. We won’t add more channels of
+    data for the classification step of our project, so we don’t need to implement
+    special handling right now.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重要的是要知道我们的数据使用-1,000到+1,000的范围，因为在第13章中，我们最终会向我们的样本添加信息通道。如果我们不考虑HU和我们额外数据之间的差异，那么这些新通道很容易被原始HU值所掩盖。对于我们项目的分类步骤，我们不会添加更多的数据通道，因此我们现在不需要实施特殊处理。
+- en: 10.4 Locating a nodule using the patient coordinate system
+  id: totrans-100
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.4 使用患者坐标系定位结节
+- en: Deep learning models typically need fixed-size inputs,[²](#pgfId-1015917) due
+    to having a fixed number of input neurons. We need to be able to produce a fixed-size
+    array containing the candidate so that we can use it as input to our classifier.
+    We’d like to train our model using a crop of the CT scan that has a candidate
+    nicely centered, since then our model doesn’t have to learn how to notice nodules
+    tucked away in the corner of the input. By reducing the variation in expected
+    inputs, we make the model’s job easier.
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 深度学习模型通常需要固定大小的输入，[²](#pgfId-1015917)因为有固定数量的输入神经元。我们需要能够生成一个包含候选者的固定大小数组，以便我们可以将其用作分类��的输入。我们希望训练我们的模型时使用一个裁剪的CT扫描，其中候选者被很好地居中，因为这样我们的模型就不必学习如何注意藏在输入角落的结节。通过减少预期输入的变化，我们使模型的工作变得更容易。
+- en: 10.4.1 The patient coordinate system
+  id: totrans-102
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.4.1 患者坐标系
+- en: Unfortunately, all of the candidate center data we loaded in section 10.2 is
+    expressed in millimeters, not voxels! We can’t just plug locations in millimeters
+    into an array index and expect everything to work out the way we want. As we can
+    see in figure 10.5, we need to transform our coordinates from the millimeter-based
+    coordinate system (X,Y,Z) they’re expressed in, to the voxel-address-based coordinate
+    system (I,R,C) used to take array slices from our CT scan data. This is a classic
+    example of how it’s important to handle units consistently!
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不幸的是，我们在第10.2节加载的所有候选中心数据都是以毫米为单位表示的，而不是体素！我们不能简单地将毫米位置插入数组索引中，然后期望一切按我们想要的方式进行。正如我们在图10.5中所看到的，我们需要将我们的坐标从以毫米表示的坐标系（X，Y，Z）转换为用于从CT扫描数据中获取数组切片的基于体素地址的坐标系（I，R，C）。这是一个重要的例子，说明了一致处理单位的重要性！
+- en: '![](../Images/CH10_F05_Stevens2_GS.png)'
+  id: totrans-104
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F05_Stevens2_GS.png)'
+- en: Figure 10.5 Using the transformation information to convert a nodule center
+    coordinate in patient coordinates (X,Y,Z) to an array index (Index,Row,Column).
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.5 使用转换信息将病人坐标中的结节中心坐标（X，Y，Z）转换为数组索引（索引，行，列）。
+- en: As we have mentioned previously, when dealing with CT scans, we refer to the
+    array dimensions as *index, row, and column,* because a separate meaning exists
+    for X, Y, and Z, as illustrated in figure 10.6\. The *patient coordinate system*
+    defines positive X to be patient-left (*left*), positive Y to be patient-behind
+    (*posterior*), and positive Z to be toward-patient-head (*superior*). Left-posterior-superior
+    is sometimes abbreviated *LPS*.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们之前提到的，处理CT扫描时，我们将数组维度称为*索引、行和列*，因为X、Y和Z有不同的含义，如图10.6所示。*病人坐标系*定义正X为病人左侧（*左*），正Y为病人后方（*后方*），正Z为朝向病人头部（*上部*）。左后上有时会缩写为*LPS*。
+- en: '![](../Images/CH10_F06_Stevens2_GS.png)'
+  id: totrans-107
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F06_Stevens2_GS.png)'
+- en: Figure 10.6 Our inappropriately clothed patient demonstrating the axes of the
+    patient coordinate system
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.6 我们穿着不当的病人展示了病人坐标系的轴线
+- en: The patient coordinate system is measured in millimeters and has an arbitrarily
+    positioned origin that does not correspond to the origin of the CT voxel array,
+    as shown in figure 10.7.
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 病人坐标系以毫米为单位测量，并且具有任意位置的原点，不与CT体素数组的原点对应，如图10.7所示。
+- en: '![](../Images/CH10_F07_Stevens2_GS.png)'
+  id: totrans-110
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F07_Stevens2_GS.png)'
+- en: Figure 10.7 Array coordinates and patient coordinates have different origins
+    and scaling.
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.7 数组坐标和病人坐标具有不同的原点和比例。
+- en: The patient coordinate system is often used to specify the locations of interesting
+    anatomy in a way that is independent of any particular scan. The metadata that
+    defines the relationship between the CT array and the patient coordinate system
+    is stored in the header of DICOM files, and that meta-image format preserves the
+    data in its header as well. This metadata allows us to construct the transformation
+    from (X,Y,Z) to (I,R,C) that we saw in figure 10.5\. The raw data contains many
+    other fields of similar metadata, but since we don’t have a use for them right
+    now, those unneeded fields will be ignored.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 病人坐标系通常用于指定有趣解剖的位置，这种方式与任何特定扫描无关。定义CT数组与病人坐标系之间关系的元数据存储在DICOM文件的头部中，而该元图像格式也保留了头部中的数据。这些元数据允许我们构建从（X，Y，Z）到（I，R，C）的转换，如图10.5所示。原始数据包含许多其他类似的元数据字段，但由于我们现在不需要使用它们，这些不需要的字段将被忽略。
+- en: 10.4.2 CT scan shape and voxel sizes
+  id: totrans-113
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.4.2 CT扫描形状和体素大小
+- en: One of the most common variations between CT scans is the size of the voxels;
+    typically, they are not cubes. Instead, they can be 1.125 mm × 1.125 mm × 2.5
+    mm or similar. Usually the row and column dimensions have voxel sizes that are
+    the same, and the index dimension has a larger value, but other ratios can exist.
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: CT扫描之间最常见的变化之一是体素的大小；通常它们不是立方体。相反，它们可以是1.125毫米×1.125毫米×2.5毫米或类似的。通常行和列维度的体素大小相同，而索引维度具有较���的值，但也可以存在其他比例。
+- en: When plotted using square pixels, the non-cubic voxels can end up looking somewhat
+    distorted, similar to the distortion near the north and south poles when using
+    a Mercator projection map. That’s an imperfect analogy, since in this case the
+    distortion is uniform and linear--the patient looks far more squat or barrel-chested
+    in figure 10.8 than they would in reality. We will need to apply a scaling factor
+    if we want the images to depict realistic proportions.
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当使用方形像素绘制时，非立方体体素可能看起来有些扭曲，类似于使用墨卡托投影地图时在北极和南极附近的扭曲。这是一个不完美的类比，因为在这种情况下，扭曲是均匀和线性的--在图10.8中，病人看起来比实际上更矮胖或胸部更宽。如果我们希望图像反映真实比例，我们将需要应用一个缩放因子。
+- en: '![](../Images/CH10_F08_Stevens2_GS.png)'
+  id: totrans-116
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F08_Stevens2_GS.png)'
+- en: Figure 10.8 A CT scan with non-cubic voxels along the index-axis. Note how compressed
+    the lungs are from top to bottom.
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图10.8 沿索引轴具有非立方体体素的CT扫描。请注意从上到下肺部的压缩程度。
+- en: 'Knowing these kinds of details can help when trying to interpret our results
+    visually. Without this information, it would be easy to assume that something
+    was wrong with our data loading: we might think the data looked so squat because
+    we were skipping half of the slices by accident, or something along those lines.
+    It can be easy to waste a lot of time debugging something that’s been working
+    all along, and being familiar with your data can help prevent that.'
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 知道这些细节在试图通过视觉解释我们的结果时会有所帮助。没有这些信息，很容易会认为我们的数据加载出了问题：我们可能会认为数据看起来很矮胖是因为我们不小心跳过了一半的切片，或者类似的情况。很容易会浪费很多时间来调试一直正常运行的东西，熟悉你的数据可以帮助避免这种情况。
+- en: CTs are commonly 512 rows by 512 columns, with the index dimension ranging from
+    around 100 total slices up to perhaps 250 slices (250 slices times 2.5 millimeters
+    is typically enough to contain the anatomical region of interest). This results
+    in a lower bound of approximately 225 voxels, or about 32 million data points.
+    Each CT specifies the voxel size in millimeters as part of the file metadata;
+    for example, we’ll call `ct_mhd .GetSpacing()` in listing 10.10\.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: CT通常是512行×512列，索引维度从大约100个切片到可能达到250个切片（250个切片乘以2.5毫米通常足以包含感兴趣的解剖区域）。这导致下限约为225个体素，或约3200万数据点。每个CT都会在文件元数据中指定体素大小；例如，在列表10.10中我们会调用`ct_mhd
+    .GetSpacing()`。
+- en: 10.4.3 Converting between millimeters and voxel addresses
+  id: totrans-120
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.4.3 毫米和体素地址之间的转换
+- en: We will define some utility code to assist with the conversion between patient
+    coordinates in millimeters (which we will denote in the code with an `_xyz` suffix
+    on variables and the like) and (I,R,C) array coordinates (which we will denote
+    in code with an `_irc` suffix).
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将定义一些实用代码来帮助在病人坐标中的毫米和（I，R，C）数组坐标之间进行转换（我们将在代码中用变量和类似的后缀`_xyz`表示病人坐标中的变量，用`_irc`后缀表示（I，R，C）数组坐标）。
+- en: You might wonder whether the `SimpleITK` library comes with utility functions
+    to convert these. And indeed, an `Image` instance does feature two methods--`TransformIndexToPhysicalPoint`
+    and `TransformPhysicalPointToIndex`--to do just that (except shuffling from CRI
+    [column,row,index] IRC). However, we want to be able to do this computation without
+    keeping the `Image` object around, so we’ll perform the math manually here.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您可能想知道 `SimpleITK` 库是否带有实用函数来进行转换。确实，`Image` 实例具有两种方法--`TransformIndexToPhysicalPoint`
+    和 `TransformPhysicalPointToIndex`--可以做到这一点（除了从 CRI [列，行，索引] IRC 进行洗牌）。但是，我们希望能够在不保留
+    `Image` 对象的情况下进行此计算，因此我们将在这里手动执行数学运算。
+- en: 'Flipping the axes (and potentially a rotation or other transforms) is encoded
+    in a 3 × 3 matrix returned as a tuple from `ct_mhd.GetDirections()`. To go from
+    voxel indices to coordinates, we need to follow these four steps in order:'
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 轴翻转（以及可能的旋转或其他变换）被编码在从`ct_mhd.GetDirections()`返回的 3 × 3 矩阵中，以元组形式返回。为了从体素索引转换为坐标，我们需要按顺序执行以下四个步骤：
+- en: Flip the coordinates from IRC to CRI, to align with XYZ.
+  id: totrans-124
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将坐标从 IRC 翻转到 CRI，以与 XYZ 对齐。
+- en: Scale the indices with the voxel sizes.
+  id: totrans-125
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 用体素大小来缩放指数。
+- en: Matrix-multiply with the directions matrix, using `@` in Python.
+  id: totrans-126
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用 Python 中的 `@` 矩阵乘以方向矩阵。
+- en: Add the offset for the origin.
+  id: totrans-127
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 添加原点的偏移量。
+- en: To go back from XYZ to IRC, we need to perform the inverse of each step in the
+    reverse order.
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要从 XYZ 转换为 IRC，我们需要按相反顺序执行每个步骤的逆操作。
+- en: We keep the voxel sizes in named tuples, so we convert these into arrays.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将体素大小保留在命名元组中，因此我们将其转换为数组。
+- en: Listing 10.9 util.py:16
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.9 util.py:16
+- en: '[PRE11]'
+  id: totrans-131
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: ❶ Swaps the order while we convert to a NumPy array
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 在转换为 NumPy 数组时交换顺���
+- en: ❷ The bottom three steps of our plan, all in one line
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 我们计划的最后三个步骤，一行搞定
+- en: ❸ Inverse of the last three steps
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 最后三个步骤的逆操作
+- en: ❹ Sneaks in proper rounding before converting to integers
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 在转换为整数之前进行适当的四舍五入
+- en: ❺ Shuffles and converts to integers
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 洗牌并转换为整数
+- en: Phew. If that was a bit heavy, don’t worry. Just remember that we need to convert
+    and use the functions as a black box. The metadata we need to convert from patient
+    coordinates (`_xyz`) to array coordinates (`_irc`) is contained in the MetaIO
+    file alongside the CT data itself. We pull the voxel sizing and positioning metadata
+    out of the .mhd file at the same time we get the `ct_a`.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 哦。如果这有点沉重，不要担心。只需记住我们需要将函数转换并使用为黑匣子。我们需要从患者坐标（`_xyz`）转换为数组坐标（`_irc`）的元数据包含在
+    MetaIO 文件中，与 CT 数据本身一起。我们从 .mhd 文件中提取体素大小和定位元数据的同时获取 `ct_a`。
+- en: Listing 10.10 dsets.py:72, `class` `Ct`
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.10 dsets.py:72, `class` `Ct`
+- en: '[PRE12]'
+  id: totrans-139
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: ❶ Converts the directions to an array, and reshapes the nine-element array to
+    its proper 3 × 3 matrix shape
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将方向转换为数组，并将九元素数组重塑为其正确的 3 × 3 矩阵形状
+- en: These are the inputs we need to pass into our `xyz2irc` conversion function,
+    in addition to the individual point to covert. With these attributes, our CT object
+    implementation now has all the data needed to convert a candidate center from
+    patient coordinates to array coordinates.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些是我们需要传递给我们的 `xyz2irc` 转换函数的输入，除了要转换的单个点。有了这些属性，我们的 CT 对象实现现在具有将候选中心从患者坐标转换为数组坐标所需的所有数据。
+- en: 10.4.4 Extracting a nodule from a CT scan
+  id: totrans-142
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.4.4 从 CT 扫描中提取结节
+- en: As we mentioned in chapter 9, up to 99.9999% of the voxels in a CT scan of a
+    patient with a lung nodule won’t be part of the actual nodule (or cancer, for
+    that matter). Again, that ratio is equivalent to a two-pixel blob of incorrectly
+    tinted color somewhere on a high-definition television, or a single misspelled
+    word out of a shelf of novels. Forcing our model to examine such huge swaths of
+    data looking for the hints of the nodules we want it to focus on is going to work
+    about as well as asking you to find a single misspelled word from a set of novels
+    written in a language you don’t know![³](#pgfId-1017071)
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在第 9 章中提到的，对于肺结节患者的 CT 扫描，高达 99.9999% 的体素不会是实际结节的一部分（或者癌症）。再次强调，这个比例相当于高清电视上某处不正确着色的两个像素斑点，或者一本小说书架上一个拼写错误的单词。强迫我们的模型检查如此庞大的数据范围，寻找我们希望其关注的结节的线索，将会像要求您从一堆用您不懂的语言写成的小说中找到一个拼写错误的单词一样有效！[³](#pgfId-1017071)
+- en: 'Instead, as we can see in figure 10.9, we will extract an area around each
+    candidate and let the model focus on one candidate at a time. This is akin to
+    letting you read individual paragraphs in that foreign language: still not an
+    easy task, but far less daunting! Looking for ways to reduce the scope of the
+    problem for our model can help, especially in the early stages of a project when
+    we’re trying to get our first working implementation up and running.'
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相反，正如我们在图 10.9 中所看到的，我们将提取每个候选者周围的区域，并让模型一次关注一个候选者。这类似于让您阅读外语中的单个段落：仍然不是一项容易的任务，但要少得多！寻找方法来减少我们模型的问题范围可以帮助，特别是在项目的早期阶段，当我们试图让我们的第一个工作实现运行起来时。
+- en: '![](../Images/CH10_F09_Stevens2_GS.png)'
+  id: totrans-145
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH10_F09_Stevens2_GS.png)'
+- en: Figure 10.9 Cropping a candidate sample out of the larger CT voxel array using
+    the candidate center’s array coordinate information (Index,Row,Column)
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 10.9 通过使用候选者中心的数组坐标信息（索引，行，列）从较大的 CT 体素数组中裁剪候选样本
+- en: The `getRawNodule` function takes the center expressed in the patient coordinate
+    system (X,Y,Z), just as it’s specified in the LUNA CSV data, as well as a width
+    in voxels. It returns a cubic chunk of CT, as well as the center of the candidate
+    converted to array coordinates.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`getRawNodule`函数接受以患者坐标系（X，Y，Z）表示的中心（正如在LUNA CSV数据中指定的那样），以及以体素为单位的宽度。它返回一个
+    CT 的立方块，以及将候选者中心转换为数组坐标的中心。'
+- en: Listing 10.11 dsets.py:105, `Ct.getRawCandidate`
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.11 dsets.py:105, `Ct.getRawCandidate`
+- en: '[PRE13]'
+  id: totrans-149
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: The actual implementation will need to deal with situations where the combination
+    of center and width puts the edges of the cropped areas outside of the array.
+    But as noted earlier, we will skip complications that obscure the larger intent
+    of the function. The full implementation can be found on the book’s website ([www.manning.com/
+    books/deep-learning-with-pytorch?query=pytorch](https://www.manning.com/books/deep-learning-with-pytorch?query=pytorch))
+    and in the GitHub repository ([https://github.com/deep-learning-with-pytorch/dlwpt-code](https://github.com/deep-learning-with-pytorch/dlwpt-code)).
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实际实现将需要处理中心和宽度的组合将裁剪区域的边缘放在数组外部的情况。但正如前面所述，我们将跳过使函数的更大意图变得模糊的复杂情况。完整的实现可以在书的网站上找到（[www.manning.com/books/deep-learning-with-pytorch?query=pytorch](https://www.manning.com/books/deep-learning-with-pytorch?query=pytorch)）以及
+    GitHub 仓库中（[https://github.com/deep-learning-with-pytorch/dlwpt-code](https://github.com/deep-learning-with-pytorch/dlwpt-code)）。
+- en: 10.5 A straightforward dataset implementation
+  id: totrans-151
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.5 一个直接的数据集实现
+- en: We first saw PyTorch `Dataset` instances in chapter 7, but this will be the
+    first time we’ve implemented one ourselves. By subclassing `Dataset`, we will
+    take our arbitrary data and plug it into the rest of the PyTorch ecosystem. Each
+    `Ct` instance represents hundreds of different samples that we can use to train
+    our model or validate its effectiveness. Our `LunaDataset` class will normalize
+    those samples, flattening each CT’s nodules into a single collection from which
+    samples can be retrieved without regard for which `Ct` instance the sample originates
+    from. This flattening is often how we want to process data, although as we’ll
+    see in chapter 12, in some situations a simple flattening of the data isn’t enough
+    to train a model well.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在第 7 章首次看到了 PyTorch 的`Dataset`实例，但这将是我们第一次自己实现一个。通过子类化`Dataset`，我们将把我们的任意数据插入到
+    PyTorch 生态系统的其余部分中。每个`Ct`实例代表了数百个不同的样本，我们可以用它们来训练我们的模型或验证其有效性。我们的`LunaDataset`类将规范化这些样本，将每个
+    CT 的结节压缩成一个单一集合，可以从中检索样本，而不必考虑样本来自哪个`Ct`实例。这种压缩通常是我们处理数据的方式，尽管正如我们将在第 12 章中看到的，有些情况下简单的数据压缩不足以很好地训练模型。
+- en: 'In terms of implementation, we are going to start with the requirements imposed
+    from subclassing `Dataset` and work backward. This is different from the datasets
+    we’ve worked with earlier; there we were using classes provided by external libraries,
+    whereas here we need to implement and instantiate the class ourselves. Once we
+    have done so, we can use it similarly to those earlier examples. Luckily, the
+    implementation of our custom subclass will not be too difficult, as the PyTorch
+    API only requires that any `Dataset` subclasses we want to implement must provide
+    these two functions:'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在实现方面，我们将从子类化`Dataset`所施加的要求开始，并向后工作。这与我们之前使用的数据集不同；在那里，我们使用的是外部库提供的类，而在这里，我们需要自己实现和实例化类。一旦我们这样做了，我们就可以像之前的例子那样使用它。幸运的是，我们自定义子类的实现不会太困难，因为
+    PyTorch API 只要求我们想要实现的任何`Dataset`子类必须提供这两个函数：
+- en: An implementation of `__len__` that must return a single, constant value after
+    initialization (the value ends up being cached in some use cases)
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个`__len__`的实现，在初始化后必须返回一个单一的常量值（在某些情况下该值会被缓存）
+- en: The `__getitem__` method, which takes an index and returns a tuple with sample
+    data to be used for training (or validation, as the case may be)
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`__getitem__`方法接受一个索引并返回一个元组，其中包含用于训练（或验证，视情况而定）的样本数据'
+- en: First, let’s see what the function signatures and return values of those functions
+    look like.
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，让我们看看这些函数的函数签名和返回值是什么样的。
+- en: Listing 10.12 dsets.py:176, `LunaDataset.__len__`
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.12 dsets.py:176, `LunaDataset.__len__`
+- en: '[PRE14]'
+  id: totrans-158
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: ❶ This is our training sample.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是我们的训练样本。
+- en: 'Our `__len__` implementation is straightforward: we have a list of candidates,
+    each candidate is a sample, and our dataset is as large as the number of samples
+    we have. We don’t have to make the implementation as simple as it is here; in
+    later chapters, we’ll see this change![⁴](#pgfId-1019545) The only rule is that
+    if `__len__` returns a value of *N*, then `__getitem__` needs to return something
+    valid for all inputs 0 to *N* - 1.'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的`__len__`实现很简单：我们有一个候选列表，每个候选是一个样本，我们的数据集大小与我们拥有的样本数量一样大。我们不必使实现像这里这样简单；在后面的章节中，我们会看到这种变化！[⁴](#pgfId-1019545)唯一的规则是，如果`__len__`返回值为*N*，那么`__getitem__`需要对所有输入
+    0 到 *N* - 1 返回有效值。
+- en: For `__getitem__`, we take `ndx` (typically an integer, given the rule about
+    supporting inputs 0 to *N* - 1) and return the four-item sample tuple as depicted
+    in figure 10.2\. Building this tuple is a bit more complicated than getting the
+    length of our dataset, however, so let’s take a look.
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于`__getitem__`，我们取`ndx`（通常是一个整数，根据支持输入 0 到 *N* - 1 的规则）并返回如图 10.2 所示的四项样本元组。构建这个元组比获取数据集长度要复杂一些，因此让我们来看看。
+- en: The first part of this method implies that we need to construct `self.candidateInfo
+    _list` as well as provide the `getCtRawNodule` function.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个方法的第一部分意味着我们需要构建`self.candidateInfo _list`以及提供`getCtRawNodule`函数。
+- en: Listing 10.13 dsets.py:179, `LunaDataset.__getitem__`
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.13 dsets.py:179, `LunaDataset.__getitem__`
+- en: '[PRE15]'
+  id: totrans-164
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: ❶ The return value candidate_a has shape (32,48,48); the axes are depth, height,
+    and width.
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回值 candidate_a 的形状为 (32,48,48)；轴是深度、高度和宽度。
+- en: We will get to those in a moment in sections 10.5.1 and 10.5.2.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在 10.5.1 和 10.5.2 节中马上看到这些。
+- en: The next thing we need to do in the `__getitem__` method is manipulate the data
+    into the proper data types and required array dimensions that will be expected
+    by downstream code.
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`__getitem__`方法中，我们需要将数据转换为下游代码所期望的正确数据类型和所需的数组维度。
+- en: Listing 10.14 dsets.py:189, `LunaDataset.__getitem__`
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.14 dsets.py:189, `LunaDataset.__getitem__`
+- en: '[PRE16]'
+  id: totrans-169
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: ❶ .unsqueeze(0) adds the ‘Channel’ dimension.
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: .unsqueeze(0) 添加了‘Channel’维度。
+- en: Don’t worry too much about exactly why we are manipulating dimensionality for
+    now; the next chapter will contain the code that ends up consuming this output
+    and imposing the constraints we’re proactively meeting here. This *will* be something
+    you should expect for every custom `Dataset` you implement. These conversions
+    are a key part of transforming your Wild West data into nice, orderly tensors.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 目前不要太担心我们为什么要操纵维度；下一章将包含最终使用此输出并施加我们在此主动满足的约束的代码。这*将*是你应该期望为每个自定义`Dataset`实现的内容。这些转换是将您的“荒野数据”转换为整洁有序张量的关键部分。
+- en: Finally, we need to build our classification tensor.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们需要构建我们的分类张量。
+- en: Listing 10.15 dsets.py:193, `LunaDataset.__getitem__`
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.15 dsets.py:193，`LunaDataset.__getitem__`
+- en: '[PRE17]'
+  id: totrans-174
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: This has two elements, one each for our possible candidate classes (nodule or
+    non-nodule; or positive or negative, respectively). We could have a single output
+    for the nodule status, but `nn.CrossEntropyLoss` expects one output value per
+    class, so that’s what we provide here. The exact details of the tensors you construct
+    will change based on the type of project you’re working on.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这有两个元素，分别用于我们可能的候选类别（结节或非结节；或正面或负面）。我们可以为结节状态设置单个输出，但`nn.CrossEntropyLoss`期望每个类别有一个输出值，这就是我们在这里提供的内容。您构建的张量的确切细节将根据您正在处理的项目类型而变化。
+- en: Let’s take a look at our final sample tuple (the larger `nodule_t` output isn’t
+    particularly readable, so we elide most of it in the listing).
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们看看我们最终的样本元组（较大的`nodule_t`输出并不特别可读，所以我们在列表中省略了大部分内容）。
+- en: Listing 10.16 p2ch10_explore_data.ipynb
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.16 p2ch10_explore_data.ipynb
+- en: '[PRE18]'
+  id: totrans-178
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: ❶ candidate_t
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ candidate_t
+- en: ❷ cls_t
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ cls_t
+- en: ❸ candidate_tup.series_uid (elided)
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ candidate_tup.series_uid（省略）
+- en: ❹ center_irc
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ center_irc
+- en: Here we see the four items from our `__getitem__` return statement.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里我们看到了我们`__getitem__`返回语句的四个项目。
+- en: 10.5.1 Caching candidate arrays with the getCtRawCandidate function
+  id: totrans-184
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.5.1 使用`getCtRawCandidate`函数缓存候选数组
+- en: In order to get decent performance out of `LunaDataset`, we’ll need to invest
+    in some on-disk caching. This will allow us to avoid having to read an entire
+    CT scan from disk for every sample. Doing so would be prohibitively slow! Make
+    sure you’re paying attention to bottlenecks in your project and doing what you
+    can to optimize them once they start slowing you down. We’re kind of jumping the
+    gun here since we haven’t demonstrated that we need caching here. Without caching,
+    the `LunaDataset` is easily 50 times slower! We’ll revisit this in the chapter’s
+    exercises.
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了使`LunaDataset`获得良好的性能，我们需要投资一些磁盘缓存。这将使我们避免为每个样本从磁盘中读取整个CT扫描。这样做将速度非常慢！确保您注��项目中的瓶颈，并在开始减慢速度时尽力优化它们。我们有点过早地进行了这一步，因为我们还没有证明我们在这里需要缓存。没有缓存，`LunaDataset`的速度会慢50倍！我们将在本章的练习中重新讨论这个问题。
+- en: The function itself is easy. It’s a file-cache-backed ([https://pypi.python.org/pypi/
+    diskcache](https://pypi.python.org/pypi/diskcache)) wrapper around the `Ct.getRawCandidate`
+    method we saw earlier.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 函数本身很简单。它是我们之前看到的`Ct.getRawCandidate`方法的文件缓存包装器（[https://pypi.python.org/pypi/
+    diskcache](https://pypi.python.org/pypi/diskcache)）。
+- en: Listing 10.17 dsets.py:139
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.17 dsets.py:139
+- en: '[PRE19]'
+  id: totrans-188
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: We use a few different caching methods here. First, we’re caching the `getCt`
+    return value in memory so that we can repeatedly ask for the same `Ct` instance
+    without having to reload all of the data from disk. That’s a huge speed increase
+    in the case of repeated requests, but we’re only keeping one CT in memory, so
+    cache misses will be frequent if we’re not careful about access order.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在这里使用了几种不同的缓存方法。首先，我们将`getCt`返回值缓存在内存中，这样我们就可以重复请求相同的`Ct`实例而不必重新从磁盘加载所有数据。在重复请求的情况下，这将极大地提高速度，但我们只保留一个CT在内存中，所以如果我们不注意访问顺序，缓存未命中会频繁发生。
+- en: The `getCtRawCandidate` function that calls `getCt` *also* has its outputs cached,
+    however; so after our cache is populated, `getCt` won’t ever be called. These
+    values are cached to disk using the Python library `diskcache`. We’ll discuss
+    why we have this specific caching setup in chapter 11\. For now, it’s enough to
+    know that it’s much, much faster to read in 215 `float32` values from disk than
+    it is to read in 225 `int16` values, convert to `float32`, and then select a 215
+    subset. From the second pass through the data forward, I/O times for input should
+    drop to insignificance.
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`getCt`的`getCtRawCandidate`函数*也*具有其输出被缓存，因此在我们的缓存被填充后，`getCt`将不会被调用。这些值使用Python库`diskcache`缓存在磁盘上。我们将在第11章讨论为什么有这种特定的缓存设置。目前，知道从磁盘中读取215个`float32`值要比读取225个`int16`值，转换为`float32`，然后选择215个子集要快得多。从第二次通过数据开始，输入的I/O时间应该降至可以忽略的程度。
+- en: '*Note* If the definitions of these functions ever materially change, we will
+    need to remove the cached values from disk. If we don’t, the cache will continue
+    to return them, even if now the function will not map the given inputs to the
+    old output. The data is stored in the data-unversioned/cache directory.'
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 如果这些函数的定义发生实质性变化，我们将需要从磁盘中删除缓存的数值。如果不这样做，即使现在函数不再将给定的输入映射到旧的输出，缓存仍将继续返回它们。数据存储在data-unversioned/cache目录中。'
+- en: 10.5.2 Constructing our dataset in LunaDataset.__init__
+  id: totrans-192
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.5.2 在LunaDataset.__init__中构建我们的数据集
+- en: Just about every project will need to separate samples into a training set and
+    a validation set. We are going to do that here by designating every tenth sample,
+    specified by the `val_stride` parameter, as a member of the validation set. We
+    will also accept an `isValSet_bool` parameter and use it to determine whether
+    we should keep only the training data, the validation data, or everything.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 几乎每个项目都需要将样本分为训练集和验证集。我们将通过指定的`val_stride`参数将每个第十个样本指定为验证集的成员来实现这一点。我们还将接受一个`isValSet_bool`参数，并使用它来确定我们应该保留仅训练数据、验证数据还是所有数据。
+- en: Listing 10.18 dsets.py:149, `class` `LunaDataset`
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.18 dsets.py:149，`class` `LunaDataset`
+- en: '[PRE20]'
+  id: totrans-195
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: ❶ Copies the return value so the cached copy won’t be impacted by altering self.candidateInfo_list
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 复制返回值，以便通过更改self.candidateInfo_list不会影响缓存副本
+- en: If we pass in a truthy `series_uid`, then the instance will only have nodules
+    from that series. This can be useful for visualization or debugging, by making
+    it easier to look at, for instance, a single problematic CT scan.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们传入一个真值`series_uid`，那么实例将只包含该系列的结节。这对于可视化或调试非常有用，因为这样可以更容易地查看单个有问题的CT扫描。
+- en: 10.5.3 A training/validation split
+  id: totrans-198
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.5.3 训练/验证分割
+- en: We allow for the `Dataset` to partition out 1/*N*th of the data into a subset
+    used for validating the model. How we will handle that subset is based on the
+    value of the `isValSet _bool` argument.
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们允许`Dataset`将数据的1/*N*部分分割成一个用于验证模型的子集。我们将如何处理该子集取决于`isValSet _bool`参数的值。
+- en: Listing 10.19 dsets.py:162, `LunaDataset.__init__`
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 10.19 dsets.py:162, `LunaDataset.__init__`
+- en: '[PRE21]'
+  id: totrans-201
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: ❶ Deletes the validation images (every val_stride-th item in the list) from
+    self.candidateInfo_list. We made a copy earlier so that we don’t alter the original
+    list.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 从`self.candidateInfo_list`中删除验证图像（列表中每个`val_stride`个项目）。我们之前复制了一份，以便不改变原始列表。
+- en: This means we can create two `Dataset` instances and be confident that there
+    is strict segregation between our training data and our validation data. Of course,
+    this depends on there being a consistent sorted order to `self.candidateInfo_list`,
+    which we ensure by having there be a stable sorted order to the candidate info
+    tuples, and by the `getCandidateInfoList` function sorting the list before returning
+    it.
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这意味着我们可以创建两个`Dataset`实例，并确信我们的训练数据和验证数据之间有严格的分离。当然，这取决于`self.candidateInfo_list`具有一致的排序顺序，我们通过确保候选信息元组有一个稳定的排序顺序，并且`getCandidateInfoList`函数在返回列表之前对列表进行排序来实现这一点。
+- en: The other caveat regarding separation of training and validation data is that,
+    depending on the task at hand, we might need to ensure that data from a single
+    patient is only present either in training or in testing but not both. Here this
+    is not a problem; otherwise, we would have needed to split the list of patients
+    and CT scans before going to the level of nodules.
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 关于训练和验证数据的另一个注意事项是，根据手头的任务，我们可能需要确保来自单个患者的数据只出现在训练或测试中，而不是同时出现在两者中。在这里这不是问题；否则，我们需要在到达结节级别之前拆分患者和CT扫描列表。
+- en: 'Let’s take a look at the data using `p2ch10_explore_data.ipynb`:'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们使用`p2ch10_explore_data.ipynb`来查看数据：
+- en: '[PRE22]'
+  id: totrans-206
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: We have a few very large candidates, starting at 32 mm, but they rapidly drop
+    off to half that size. The bulk of the candidates are in the 4 to 10 mm range,
+    and several hundred don’t have size information at all. This looks as expected;
+    you might recall that we had more actual nodules than we had diameter annotations.
+    Quick sanity checks on your data can be very helpful; catching a problem or mistaken
+    assumption early may save hours of effort!
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们有一些非常大的候选项，从32毫米开始，但它们迅速减半。大部分候选项在4到10毫米的范围内，而且有几百个根本没有尺寸信息。这看起来正常；您可能还记得我们实际结节比直径注释多的情况。对数据进行快速的健全性检查非常有帮助；及早发现问题或错误的假设可能节省数小时的工作！
+- en: 'The larger takeaway is that our training and validation splits should have
+    a few properties in order to work well:'
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 更重要的是，我们的训练和验证集应该具有一些属性，以便良好地工作：
+- en: Both sets should include examples of all variations of expected inputs.
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两个集合��该包含所有预期输入变化的示例。
+- en: Neither set should have samples that aren’t representative of expected inputs
+    *unless* they have a specific purpose like training the model to be robust to
+    outliers.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 任何一个集合都不应该包含不代表预期输入的样本，*除非*它们有一个特定的目的，比如训练模型以对异常值具有鲁棒性。
+- en: The training set shouldn’t offer unfair hints about the validation set that
+    wouldn’t be true for real-world data (for example, including the same sample in
+    both sets; this is known as a *leak* in the training set).
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 训练集不应该提供关于验证集的不真实的提示，这些提示在真实世界的数据中不成立（例如，在两个集合中包含相同的样本；这被称为训练集中的*泄漏*）。
+- en: 10.5.4 Rendering the data
+  id: totrans-212
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 10.5.4 渲染数据
+- en: Again, either use p2ch10_explore_data.ipynb directly or start Jupyter Notebook
+    and enter
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，要么直接使用`p2ch10_explore_data.ipynb`，要么启动Jupyter Notebook并输入
+- en: '[PRE23]'
+  id: totrans-214
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: ❶ This magic line sets up the ability for images to be displayed inline via
+    the notebook.
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这个神奇的行设置了通过笔记本内联显示图像的能力。
+- en: '*Tip* For more information about Jupyter’s matplotlib inline magic,[⁵](#pgfId-1021723)
+    please see [http://mng.bz/rrmD](http://mng.bz/rrmD).'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*提示* 有关Jupyter的matplotlib内联魔术的更多信息，请参阅[http://mng.bz/rrmD](http://mng.bz/rrmD)。'
+- en: '[PRE24]'
+  id: totrans-217
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: This produces images akin to those showing CT and nodule slices earlier in this
+    chapter.
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这产生了类似于本章前面显示的CT和结节切片的图像。
+- en: If you’re interested, we invite you to edit the implementation of the rendering
+    code in p2ch10/vis.py to match your needs and tastes. The rendering code makes
+    heavy use of Matplotlib ([https://matplotlib.org](https://matplotlib.org)), which
+    is too complex a library for us to attempt to cover here.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您感兴趣，我们邀请您编辑`p2ch10/vis.py`中渲染代码的实现，以满足您的需求和口味。渲染代码大量使用Matplotlib ([https://matplotlib.org](https://matplotlib.org))，这是一个对我们来说太复杂的库，我们无法在这里覆盖。
+- en: Remember that rendering your data is not just about getting nifty-looking pictures.
+    The point is to get an intuitive sense of what your inputs look like. Being able
+    to tell at a glance “This problematic sample is very noisy compared to the rest
+    of my data” or “That’s odd, this looks pretty normal” can be useful when investigating
+    issues. Effective rendering also helps foster insights like “Perhaps if I modify
+    things like *so*, I can solve the issue I’m having.” That level of familiarity
+    will be necessary as you start tackling harder and harder projects.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 记住，渲染数据不仅仅是为了获得漂亮的图片。重点是直观地了解您的输入是什么样子的。一眼就能看出“这个有问题的样本与我的其他数据相比非常嘈杂”或“奇怪的是，这看起来非常正常”可能在调查问题时很有用。有效的渲染还有助于培养洞察力，比如“也许如果我修改*这样*的东西，我就能解决我遇到的问题。”随着您开始处理越来越困难的项目，这种熟悉程度将是必不可少的。
+- en: '*Note* Due to the way each subset has been partitioned, combined with the sorting
+    used when constructing `LunaDataset.candidateInfo_list`, the ordering of the entries
+    in `noduleSample_list` is highly dependent on which subsets are present at the
+    time the code is executed. Please remember this when trying to find a particular
+    sample a second time, especially after decompressing more subsets.'
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意*由于每个子集的划分方式，以及在构建`LunaDataset.candidateInfo_list`时使用的排序方式，`noduleSample_list`中条目的排序高度依赖于代码执行时存在的子集。请记住这一点，尤其是在解压更多子集后尝试第二次找到特定样本时。'
+- en: 10.6 Conclusion
+  id: totrans-222
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.6 结论
+- en: In chapter 9, we got our heads wrapped around our data. In this chapter, we
+    got *PyTorch’s* head wrapped around our data! By transforming our DICOM-via-meta-image
+    raw data into tensors, we’ve set the stage to start implementing a model and a
+    training loop, which we’ll see in the next chapter.
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第9章中，我们已经对我们的数据有了深入的了解。在这一章中，我们让*PyTorch*对我们的数据有了深入的了解！通过将我们的DICOM-via-meta-image原始数据转换为张量，我们已经为开始实现模型和训练循环做好了准备，这将在下一章中看到。
+- en: 'It’s important not to underestimate the impact of the design decisions we’ve
+    already made: the size of our inputs, the structure of our caching, and how we’re
+    partitioning our training and validation sets will all make a difference to the
+    success or failure of our overall project. Don’t hesitate to revisit these decisions
+    later, especially once you’re working on your own projects.'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不要低估我们已经做出的设计决策的影响：我们的输入大小、缓存结构以及如何划分训练和验证集都会对整个项目的成功或失败产生影响。不要犹豫在以后重新审视这些决策，特别是当你在自己的项目上工作时。
+- en: 10.7 Exercises
+  id: totrans-225
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 10.7 练习
+- en: Implement a program that iterates through a `LunaDataset` instance, and time
+    how long it takes to do so. In the interest of time, it might make sense to have
+    an option to limit the iterations to the first `N=1000` samples.
+  id: totrans-226
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 实现一个程序，遍历`LunaDataset`实例，并计算完成此操作所需的时间。为了节省时间，可能有意义的是有一个选项将迭代限制在前`N=1000`个样本。
+- en: How long does it take to run the first time?
+  id: totrans-227
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 第一次运行需要多长时间？
+- en: How long does it take to run the second time?
+  id: totrans-228
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 第二次运行需要多长时间？
+- en: What does clearing the cache do to the runtime?
+  id: totrans-229
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 清除缓存对运行时间有什么影响？
+- en: What does using the *last* `N=1000` samples do to the first/second runtime?
+  id: totrans-230
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用*最后*的`N=1000`个样本对第一/第二次运行有什么影响？
+- en: Change the `LunaDataset` implementation to randomize the sample list during
+    `__init__`. Clear the cache, and run the modified version. What does that do to
+    the runtime of the first and second runs?
+  id: totrans-231
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将`LunaDataset`的实现更改为在`__init__`期间对样本列表进行随机化。清除缓存，并运行修改后的版本。这对第一次和第二次运行的运行时间有什么影响？
+- en: Revert the randomization, and comment out the `@functools.lru_cache(1, typed=True)`
+    decorator to `getCt`. Clear the cache, and run the modified version. How does
+    the runtime change now?
+  id: totrans-232
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 恢复随机化，并将`@functools.lru_cache(1, typed=True)`装饰器注释掉`getCt`。清除缓存，并运行修改后的版本。现在运行时间如何变化？
+- en: Summary
+  id: totrans-233
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 摘要
+- en: Often, the code required to parse and load raw data is nontrivial. For this
+    project, we implement a `Ct` class that loads data from disk and provides access
+    to cropped regions around points of interest.
+  id: totrans-234
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 通常，解析和加载原始数据所需的代码并不简单。对于这个项目，我们实现了一个`Ct`类，它从磁盘加载数据并提供对感兴趣点周围裁剪区域的访问。
+- en: Caching can be useful if the parsing and loading routines are expensive. Keep
+    in mind that some caching can be done in memory, and some is best performed on
+    disk. Each can have its place in a data-loading pipeline.
+  id: totrans-235
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果解析和加载例程很昂贵，缓存可能会很有用。请记住，一些缓存可以在内存中完成，而一些最好在磁盘上执行。每种缓存方式都有其在数据加载管道中的位置。
+- en: PyTorch `Dataset` subclasses are used to convert data from its native form into
+    tensors suitable to pass in to the model. We can use this functionality to integrate
+    our real-world data with PyTorch APIs.
+  id: totrans-236
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: PyTorch的`Dataset`子类用于将数据从其原生形式转换为适合传递给模型的张量。我们可以使用这个功能将我们的真实世界数据与PyTorch API集成。
+- en: 'Subclasses of `Dataset` need to provide implementations for two methods: `__len__`
+    and `__getitem__`. Other helper methods are allowed but not required.'
+  id: totrans-237
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Dataset`的子类需要为两个方法提供实现：`__len__`和`__getitem__`。其他辅助方法是允许的，但不是必需的。'
+- en: Splitting our data into a sensible training set and a validation set requires
+    that we make sure no sample is in both sets. We accomplish this here by using
+    a consistent sort order and taking every tenth sample for our validation set.
+  id: totrans-238
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将我们的数据分成合理的训练集和验证集需要确保没有样本同时出现在两个集合中。我们通过使用一致的排序顺序，并为验证集取每第十个样本来实现这一点。
+- en: Data visualization is important; being able to investigate data visually can
+    provide important clues about errors or problems. We are using Jupyter Notebooks
+    and Matplotlib to render our data.
+  id: totrans-239
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 数据可视化很重要；能够通过视觉��段调查数据可以提供有关错误或问题的重要线索。我们正在使用Jupyter Notebooks和Matplotlib来呈现我们的数据。
+- en: '* * *'
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '* * *'
+- en: '^(1.)To the rare researcher who has all of their data well prepared for them
+    in advance: lucky you! The rest of us will be busy writing code for loading and
+    parsing.'
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(1.)对于那些事先准备好所有数据的稀有研究人员：你真幸运！我们其他人将忙于编写加载和解析代码。
+- en: ^(2.)There are exceptions, but they’re not relevant right now.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(2.)有例外情况，但现在并不相关。
+- en: ^(3.)Have you found a misspelled word in this book yet? ;)
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(3.)你在这本书中找到拼写错误了吗？ ;)
+- en: ^(4.)To something simpler, actually; but the point is, we have options.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(4.)实际上更简单一些；但重点是，我们有选择。
+- en: ^(5.)Their term, not ours!
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(5.)他们的术语，不是我们的！

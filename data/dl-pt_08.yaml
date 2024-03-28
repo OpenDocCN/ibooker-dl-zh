@@ -1,0 +1,2520 @@
+- en: 8 Using convolutions to generalize
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 使用卷积进行泛化
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖
+- en: Understanding convolution
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 理解卷积
+- en: Building a convolutional neural network
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 构建卷积神经网络
+- en: Creating custom `nn.Module` subclasses
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 创建自定义`nn.Module`子类
+- en: The difference between the module and functional APIs
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模块和功能API之间的区别
+- en: Design choices for neural networks
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 神经网络的设计选择
+- en: In the previous chapter, we built a simple neural network that could fit (or
+    overfit) the data, thanks to the many parameters available for optimization in
+    the linear layers. We had issues with our model, however, in that it was better
+    at memorizing the training set than it was at generalizing properties of birds
+    and airplanes. Based on our model architecture, we’ve got a guess as to why that’s
+    the case. Due to the fully connected setup needed to detect the various possible
+    translations of the bird or airplane in the image, we have both too many parameters
+    (making it easier for the model to memorize the training set) and no position
+    independence (making it harder to generalize). As we discussed in the last chapter,
+    we could augment our training data by using a wide variety of recropped images
+    to try to force generalization, but that won’t address the issue of having too
+    many parameters.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在上一章中，我们构建了一个简单的神经网络，可以拟合（或过拟合）数据，这要归功于线性层中可用于优化的许多参数。然而，我们的模型存在问题，它更擅长记忆训练集，而不是泛化鸟类和飞机的属性。根据我们的模型架构，我们猜测这是为什么。由于需要完全连接的设置来检测图像中鸟或飞机的各种可能的平移，我们有太多的参数（使模型更容易记忆训练集）和没有位置独立性（使泛化更困难）。正如我们在上一章中讨论的，我们可以通过使用各种重新裁剪的图像来增加我们的训练数据，以尝试强制泛化，但这不会解决参数过多的问题。
+- en: 'There is a better way! It consists of replacing the dense, fully connected
+    affine transformation in our neural network unit with a different linear operation:
+    convolution.'
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有一种更好的方法！它包括用不同的线性操作替换我们神经网络单元中的密集、全连接的仿射变换：卷积。
+- en: 8.1 The case for convolutions
+  id: totrans-9
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.1 卷积的理由
+- en: Let’s get to the bottom of what convolutions are and how we can use them in
+    our neural networks. Yes, yes, we were in the middle of our quest to tell birds
+    from airplanes, and our friend is still waiting for our solution, but this diversion
+    is worth the extra time spent. We’ll develop an intuition for this foundational
+    concept in computer vision and then return to our problem equipped with superpowers.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们深入了解卷积是什么以及我们如何在神经网络中使用它们。是的，是的，我们正在努力区分鸟和飞机，我们的朋友仍在等待我们的解决方案，但这个偏离值得额外花费的时间。我们将对计算机视觉中这个基础概念发展直觉，然后带着超能力回到我们的问题。
+- en: In this section, we’ll see how convolutions deliver locality and translation
+    invariance. We’ll do so by taking a close look at the formula defining convolutions
+    and applying it using pen and paper--but don’t worry, the gist will be in pictures,
+    not formulas.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将看到卷积如何提供局部性和平移不变性。我们将通过仔细查看定义卷积的公式并使用纸和笔应用它来做到这一点——但不用担心，要点将在图片中，而不是公式中。
+- en: We said earlier that taking a 1D view of our input image and multiplying it
+    by an `n_output_features` × `n_input_features` weight matrix, as is done in `nn.Linear`,
+    means for each channel in the image, computing a weighted sum of all the pixels
+    multiplied by a set of weights, one per output feature.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前说过，将我们的输入图像以1D视图呈现，并将其乘以一个`n_output_features` × `n_input_features`的权重矩阵，就像在`nn.Linear`中所做的那样，意味着对于图像中的每个通道，计算所有像素的加权和，乘以一组权重，每个输出特征一个。
+- en: We also said that, if we want to recognize patterns corresponding to objects,
+    like an airplane in the sky, we will likely need to look at how nearby pixels
+    are arranged, and we will be less interested in how pixels that are far from each
+    other appear in combination. Essentially, it doesn’t matter if our image of a
+    Spitfire has a tree or cloud or kite in the corner or not.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还说过，如果我们想要识别与对象对应的模式，比如天空中的飞机，我们可能需要查看附近像素的排列方式，而不太关心远离彼此的像素如何组合。基本上，我们的斯皮特火箭的图像是否在角落里有树、云或风筝并不重要。
+- en: 'In order to translate this intuition into mathematical form, we could compute
+    the weighted sum of a pixel with its immediate neighbors, rather than with all
+    other pixels in the image. This would be equivalent to building weight matrices,
+    one per output feature and output pixel location, in which all weights beyond
+    a certain distance from a center pixel are zero. This will still be a weighted
+    sum: that is, a linear operation.'
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了将这种直觉转化为数学形式，我们可以计算像素与其相邻像素的加权和，而不是与图像中的所有其他像素。这相当于构建权重矩阵，每个输出特征和输出像素位置一个，其中距离中心像素一定距离的所有权重都为零。这仍然是一个加权和：即，一个线性操作。
+- en: 8.1.1 What convolutions do
+  id: totrans-15
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.1.1 卷积的作用
+- en: 'We identified one more desired property earlier: we would like these localized
+    patterns to have an effect on the output regardless of their location in the image:
+    that is, to be *translation invariant*. To achieve this goal in a matrix applied
+    to the image-as-a-vector we used in chapter 7 would require implementing a rather
+    complicated pattern of weights (don’t worry if it is *too* complicated; it’ll
+    get better shortly): most of the weight matrix would be zero (for entries corresponding
+    to input pixels too far away from the output pixel to have an influence). For
+    other weights, we would have to find a way to keep entries in sync that correspond
+    to the same relative position of input and output pixels. This means we would
+    need to initialize them to the same values and ensure that all these *tied* weights
+    stayed the same while the network is updated during training. This way, we would
+    ensure that weights operate in neighborhoods to respond to local patterns, and
+    local patterns are identified no matter where they occur in the image.'
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前确定了另一个期望的属性：我们希望这些局部模式对输出产生影响，而不管它们在图像中的位置如何：也就是说，要*平移不变*。为了在应用于我们在第 7 章中使用的图像-作为-向量的矩阵中实现这一目标，需要实现一种相当复杂的权重模式（如果它太复杂，不用担心；很快就会好转）：大多数权重矩阵将为零（对应于距离输出像素太远而不会产生影响的输入像素的条目）。对于其他权重，我们必须找到一种方法来保持与输入和输出像素相同相对位置对应的条目同步。这意味着我们需要将它们初始化为相同的值，并确���所有这些*绑定*权重在训练期间网络更新时保持不变。这样，我们可以确保权重在邻域内运作以响应局部模式，并且无论这些局部模式在图像中的位置如何，都能识别出来。
+- en: 'Of course, this approach is more than impractical. Fortunately, there is a
+    readily available, local, translation-invariant linear operation on the image:
+    a *convolution*. We can come up with a more compact description of a convolution,
+    but what we are going to describe is exactly what we just delineated--only taken
+    from a different angle.'
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当然，这种方法远非实用。幸运的是，图像上有一个现成的、局部的、平移不变的线性操作：*卷积*。我们可以对卷积提出更简洁的描述，但我们将要描述的正是我们刚刚勾勒的内容——只是从不同角度来看。
+- en: Convolution, or more precisely, *discrete convolution*[¹](#pgfId-1011999) (there’s
+    an analogous continuous version that we won’t go into here), is defined for a
+    2D image as the scalar product of a weight matrix, the *kernel*, with every neighborhood
+    in the input. Consider a 3 × 3 kernel (in deep learning, we typically use small
+    kernels; we’ll see why later on) as a 2D tensor
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 卷积，或更准确地说，*离散卷积*[¹](#pgfId-1011999)（这里有一个我们不会深入讨论的连续版本），被定义为 2D 图像的权重矩阵，*卷积核*，与输入中的每个邻域的点积。考虑一个
+    3 × 3 的卷积核（在深度学习中，我们通常使用小卷积核；稍后我们会看到原因）作为一个 2D 张量
+- en: '[PRE0]'
+  id: totrans-19
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'and a 1-channel, MxN image:'
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以及一个 1 通道的 MxN 图像：
+- en: '[PRE1]'
+  id: totrans-21
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'We can compute an element of the output image (without bias) as follows:'
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以计算输出图像的一个元素（不包括偏置）如下：
+- en: '[PRE2]'
+  id: totrans-23
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: Figure 8.1 shows this computation in action.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 8.1 展示了这个计算的过程。
+- en: 'That is, we “translate” the kernel on the `i11` location of the input image,
+    and we multiply each weight by the value of the input image at the corresponding
+    location. Thus, the output image is created by translating the kernel on all input
+    locations and performing the weighted sum. For a multichannel image, like our
+    RGB image, the weight matrix would be a 3 × 3 × 3 matrix: one set of weights for
+    every channel, contributing together to the output values.'
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 也就是说，我们在输入图像的`i11`位置上“平移”卷积核，并将每个权重乘以相应位置的输入图像的值。因此，输出图像是通过在所有输入位置上平移卷积核并执行加权求和来创建的。对于多通道图像，如我们的
+    RGB 图像，权重矩阵将是一个 3 × 3 × 3 矩阵：每个通道的一组权重共同贡献到输出值。
+- en: Note that, just like the elements in the `weight` matrix of `nn.Linear`, the
+    weights in the kernel are not known in advance, but they are initialized randomly
+    and updated through backpropagation. Note also that the same kernel, and thus
+    each weight in the kernel, is reused across the whole image. Thinking back to
+    autograd, this means the use of each weight has a history spanning the entire
+    image. Thus, the derivative of the loss with respect to a convolution weight includes
+    contributions from the entire image.
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，就像`nn.Linear`的`weight`矩阵中的元素一样，卷积核中的权重事先是未知的，但它们是随机初始化并通过反向传播进行更新的。还要注意，相同的卷积核，因此卷积核中的每个权重，在整个图像中都会被重复使用。回想自动求导，这意味着每个权重的使用都有一个跨越整个图像的历史。因此，损失相对于卷积权重的导数包含整个图像的贡献。
+- en: '![](../Images/CH08_F01_Stevens2_GS.png)'
+  id: totrans-27
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F01_Stevens2_GS.png)'
+- en: 'Figure 8.1 Convolution: locality and translation invariance'
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 8.1 卷积：局部性和平移不变性
+- en: 'It’s now possible to see the connection to what we were stating earlier: a
+    convolution is equivalent to having multiple linear operations whose weights are
+    zero almost everywhere except around individual pixels and that receive equal
+    updates during training.'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在可以看到与之前所述的连接：卷积等同于具有多个线性操作，其权重几乎在每个像素周围为零，并且在训练期间接收相等的更新。
+- en: Summarizing, by switching to convolutions, we get
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总结一下，通过转换为卷积，我们得到
+- en: Local operations on neighborhoods
+  id: totrans-31
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对邻域进行局部操作
+- en: Translation invariance
+  id: totrans-32
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 平移不变性
+- en: Models with a lot fewer parameters
+  id: totrans-33
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 具有更少参数的模型
+- en: The key insight underlying the third point is that, with a convolution layer,
+    the number of parameters depends not on the number of pixels in the image, as
+    was the case in our fully connected model, but rather on the size of the convolution
+    kernel (3 × 3, 5 × 5, and so on) and on how many convolution filters (or output
+    channels) we decide to use in our model.
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第三点的关键见解是，使用卷积层，参数的数量不取决于图像中的像素数量，就像在我们的全连接模型中一样，而是取决于卷积核的大小（3 × 3、5 × 5 等）以及我们决定在模型中使用多少卷积滤波器（或输出通道）。
+- en: 8.2 Convolutions in action
+  id: totrans-35
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.2 卷积的实际应用
+- en: 'Well, it looks like we’ve spent enough time down a rabbit hole! Let’s see some
+    PyTorch in action on our birds versus airplanes challenge. The `torch.nn` module
+    provides convolutions for 1, 2, and 3 dimensions: `nn.Conv1d` for time series,
+    `nn.Conv2d` for images, and `nn.Conv3d` for volumes or videos.'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 好吧，看起来我们已经花了足够的时间在一个兔子洞里！让我们看看PyTorch在我们的鸟类对比飞机挑战中的表现。`torch.nn`模块提供了1、2和3维的卷积：`nn.Conv1d`用于时间序列，`nn.Conv2d`用于图像，`nn.Conv3d`用于体积或视频。
+- en: 'For our CIFAR-10 data, we’ll resort to `nn.Conv2d`. At a minimum, the arguments
+    we provide to `nn.Conv2d` are the number of input features (or *channels*, since
+    we’re dealing with *multichannel* images: that is, more than one value per pixel),
+    the number of output features, and the size of the kernel. For instance, for our
+    first convolutional module, we’ll have 3 input features per pixel (the RGB channels)
+    and an arbitrary number of channels in the output--say, 16\. The more channels
+    in the output image, the more the capacity of the network. We need the channels
+    to be able to detect many different types of features. Also, because we are randomly
+    initializing them, some of the features we’ll get, even after training, will turn
+    out to be useless.[²](#pgfId-1012425) Let’s stick to a kernel size of 3 × 3.'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于我们的CIFAR-10数据，我们将使用`nn.Conv2d`。至少，我们提供给`nn.Conv2d`的参数是输入特征的数量（或*通道*，因为我们处理*多通道*图像：也就是，每个像素有多个值），输出特征的数量，以及内核的大小。例如，对于我们的第一个卷积模块，每个像素有3个输入特征（RGB通道），输出中有任意数量的通道--比如，16。输出图像中的通道越多，网络的容量就越大。我们需要通道能够检测许多不同类型的特征。此外，因为我们是随机初始化它们的，所以即使在训练之后，我们得到的一些特征也会被证明是无用的。让我们坚持使用3
+    × 3的内核大小。
+- en: 'It is very common to have kernel sizes that are the same in all directions,
+    so PyTorch has a shortcut for this: whenever `kernel_size=3` is specified for
+    a 2D convolution, it means 3 × 3 (provided as a tuple `(3, 3)` in Python). For
+    a 3D convolution, it means 3 × 3 × 3\. The CT scans we will see in part 2 of the
+    book have a different voxel (volumetric pixel) resolution in one of the three
+    axes. In such a case, it makes sense to consider kernels that have a different
+    size for the exceptional dimension. But for now, we stick with having the same
+    size of convolutions across all dimensions:'
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在所有方向上具有相同大小的内核尺寸是非常常见的，因此PyTorch为此提供了一个快捷方式：每当为2D卷积指定`kernel_size=3`时，它表示3
+    × 3（在Python中提供为元组`(3, 3)`）。对于3D卷积，它表示3 × 3 × 3。我们将在本书第2部分中看到的CT扫描在三个轴中的一个轴上具有不同的体素（体积像素）分辨率。在这种情况下，考虑在特殊维度上具有不同大小的内核是有意义的。但现在，我们将坚持在所有维度上使用相同大小的卷积：
+- en: '[PRE3]'
+  id: totrans-39
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '❶ Instead of the shortcut kernel_size=3, we could equivalently pass in the
+    tuple that we see in the output: kernel_size=(3, 3).'
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 与快捷方式`kernel_size=3`相比，我们可以等效地传递我们在输出中看到的元组：kernel_size=(3, 3)。
+- en: 'What do we expect to be the shape of the `weight` tensor? The kernel is of
+    size 3 × 3, so we want the weight to consist of 3 × 3 parts. For a single output
+    pixel value, our kernel would consider, say, `in_ch` = 3 input channels, so the
+    weight component for a single output pixel value (and by translation the invariance
+    for the entire output channel) is of shape `in_ch` × 3 × 3\. Finally, we have
+    as many of those as we have output channels, here `out_ch` = 16, so the complete
+    weight tensor is `out_ch` × `in_ch` × 3 × 3, in our case 16 × 3 × 3 × 3\. The
+    bias will have size 16 (we haven’t talked about bias for a while for simplicity,
+    but just as in the linear module case, it’s a constant value we add to each channel
+    of the output image). Let’s verify our assumptions:'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们期望`weight`张量的形状是什么？卷积核的大小为3 × 3，因此我们希望权重由3 × 3部分组成。对于单个输出像素值，我们的卷积核会考虑，比如，`in_ch`
+    = 3个输入通道，因此单个输出像素值的权重分量（以及整个输出通道的不变性）的形状为`in_ch` × 3 × 3。最后，我们有与输出通道一样多的权重组件，这里`out_ch`
+    = 16，因此完整的权重张量是`out_ch` × `in_ch` × 3 × 3，在我们的情况下是16 × 3 × 3 × 3。偏置的大小将为16（为了简单起见，我们已经有一段时间没有讨论偏置了，但就像在线性模块的情况下一样，它是一个我们添加到输出图像的每个通道的常数值）。让我们验证我们的假设：
+- en: '[PRE4]'
+  id: totrans-42
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: We can see how convolutions are a convenient choice for learning from images.
+    We have smaller models looking for local patterns whose weights are optimized
+    across the entire image.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以看到卷积是从图像中学习的方便选择。我们有更小的模型寻找局部模式，其权重在整个图像上进行优化。
+- en: 'A 2D convolution pass produces a 2D image as output, whose pixels are a weighted
+    sum over neighborhoods of the input image. In our case, both the kernel weights
+    and the bias `conv.weight` are initialized randomly, so the output image will
+    not be particularly meaningful. As usual, we need to add the zeroth batch dimension
+    with `unsqueeze` if we want to call the `conv` module with one input image, since
+    `nn.Conv2d` expects a *B* × *C* × *H* × *W* shaped tensor as input:'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 2D卷积通过产生一个2D图像作为输出，其像素是输入图像邻域的加权和。在我们的情况下，卷积核权重和偏置`conv.weight`都是随机初始化的，因此输出图像不会特别有意义。通常情况下，如果我们想要使用一个输入图像调用`conv`模块，我们需要使用`unsqueeze`添加零批次维度，因为`nn.Conv2d`期望输入为*B*
+    × *C* × *H* × *W*形状的张量：
+- en: '[PRE5]'
+  id: totrans-45
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: 'We’re curious, so we can display the output, shown in figure 8.2:'
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们很好奇，所以我们可以显示输出，如图8.2所示：
+- en: '[PRE6]'
+  id: totrans-47
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '![](../Images/CH08_F02_Stevens2_GS.png)'
+  id: totrans-48
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F02_Stevens2_GS.png)'
+- en: Figure 8.2 Our bird after a random convolution treatment. (We cheated a little
+    with the code to show you the input, too.)
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ��8.2 我们的鸟经过随机卷积处理后的样子。（我们在代码中作弊一点，以展示给您输入。）
+- en: 'Wait a minute. Let’s take a look a the size of `output`: it’s `torch.Size([1,
+    16, 30, 30])`. Huh; we lost a few pixels in the process. How did that happen?'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 等一下。让我们看看`output`的大小：它是`torch.Size([1, 16, 30, 30])`。嗯；我们在过程中丢失了一些像素。这是怎么发生的？
+- en: 8.2.1 Padding the boundary
+  id: totrans-51
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.2.1 填充边界
+- en: The fact that our output image is smaller than the input is a side effect of
+    deciding what to do at the boundary of the image. Applying a convolution kernel
+    as a weighted sum of pixels in a 3 × 3 neighborhood requires that there are neighbors
+    in all directions. If we are at i00, we only have pixels to the right of and below
+    us. By default, PyTorch will slide the convolution kernel within the input picture,
+    getting `width` - `kernel_width` + 1 horizontal and vertical positions. For odd-sized
+    kernels, this results in images that are one-half the convolution kernel’s width
+    (in our case, 3//2 = 1) smaller on each side. This explains why we’re missing
+    two pixels in each dimension.
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的输出图像比输入图像小的事实是决定在图像边界做什么的副作用。将卷积核应用为3×3邻域像素的加权和要求在所有方向上都有邻居。如果我们在i00处，我们只有右侧和下方的像素。默认情况下，PyTorch将在输入图片内滑动卷积核，获得`width`
+    - `kernel_width` + 1个水平和垂直位置。对于奇数大小的卷积核，这导致图像在每一侧缩小卷积核宽度的一半（在我们的情况下，3//2 = 1）。这解释了为什么每个维度都缺少两个像素。
+- en: '![](../Images/CH08_F03_Stevens2_GS.png)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F03_Stevens2_GS.png)'
+- en: Figure 8.3 Zero padding to preserve the image size in the output
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.3 零填充以保持输出中的图像大小
+- en: However, PyTorch gives us the possibility of *padding* the image by creating
+    *ghost* pixels around the border that have value zero as far as the convolution
+    is concerned. Figure 8.3 shows padding in action.
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，PyTorch给了我们*填充*图像的可能性，通过在边界周围创建*幽灵*像素，这些像素在卷积方面的值为零。图8.3展示了填充的效果。
+- en: 'In our case, specifying `padding=1` when `kernel_size=3` means i00 has an extra
+    set of neighbors above it and to its left, so that an output of the convolution
+    can be computed even in the corner of our original image.[³](#pgfId-1013006) The
+    net result is that the output has now the exact same size as the input:'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的情况下，当`kernel_size=3`时指定`padding=1`意味着i00上方和左侧有额外的邻居，这样原始图像的角落处甚至可以计算卷积的输出。[³](#pgfId-1013006)最终结果是输出现在与输入具有完全相同的大小：
+- en: '[PRE7]'
+  id: totrans-57
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ Now with padding
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 现在有填充了
+- en: Note that the sizes of `weight` and `bias` don’t change, regardless of whether
+    padding is used.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，无论是否使用填充，`weight`和`bias`的大小都不会改变。
+- en: There are two main reasons to pad convolutions. First, doing so helps us separate
+    the matters of convolution and changing image sizes, so we have one less thing
+    to remember. And second, when we have more elaborate structures such as skip connections
+    (discussed in section 8.5.3) or the U-Nets we’ll cover in part 2, we want the
+    tensors before and after a few convolutions to be of compatible size so that we
+    can add them or take differences.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 填充卷积有两个主要原因。首先，这样做有助于我们分离卷积和改变图像大小的问题，这样我们就少了一件事要记住。其次，当我们有更复杂的结构，比如跳跃连接（在第8.5.3节讨论）或我们将在第2部分介绍的U-Net时，我们希望几个卷积之前和之后的张量具有兼容的大小，以便我们可以将它们相加或取差异。
+- en: 8.2.2 Detecting features with convolutions
+  id: totrans-61
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.2.2 用卷积检测特征
+- en: We said earlier that `weight` and `bias` are parameters that are learned through
+    backpropagation, exactly as it happens for `weight` and `bias` in `nn.Linear`.
+    However, we can play with convolution by setting weights by hand and see what
+    happens.
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前说过，`weight`和`bias`是通过反向传播学习的参数，就像`nn.Linear`中的`weight`和`bias`一样。然而，我们可以通过手动设置权重来玩转卷积，看看会发生什么。
+- en: 'Let’s first zero out `bias`, just to remove any confounding factors, and then
+    set `weights` to a constant value so that each pixel in the output gets the mean
+    of its neighbors. For each 3 × 3 neighborhood:'
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先让我们将`bias`归零，以消除任何混淆因素，然后将`weights`设置为一个恒定值，以便输出中的每个像素得到其邻居的平均值。对于每个3×3邻域：
+- en: '[PRE8]'
+  id: totrans-64
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: We could have gone with `conv.weight.one_()`--that would result in each pixel
+    in the output being the *sum* of the pixels in the neighborhood. Not a big difference,
+    except that the values in the output image would have been nine times larger.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们本可以选择`conv.weight.one_()`--这将导致输出中的每个像素是邻域像素的*总和*。除了输出图像中的值会大九倍之外，没有太大的区别。
+- en: 'Anyway, let’s see the effect on our CIFAR image:'
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 无论如何，让我们看看对我们的CIFAR图像的影响：
+- en: '[PRE9]'
+  id: totrans-67
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: As we could have predicted, the filter produces a blurred version of the image,
+    as shown in figure 8.4\. After all, every pixel of the output is the average of
+    a neighborhood of the input, so pixels in the output are correlated and change
+    more smoothly.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们之前所预测的，滤波器产生了图像的模糊版本，如图8.4所示。毕竟，输出的每个像素都是输入邻域的平均值，因此输出中的像素是相关的，并且变化更加平滑。
+- en: '![](../Images/CH08_F04_Stevens2_GS.png)'
+  id: totrans-69
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F04_Stevens2_GS.png)'
+- en: Figure 8.4 Our bird, this time blurred thanks to a constant convolution kernel
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.4 我们的鸟，这次因为一个恒定的卷积核而变模糊
+- en: 'Next, let’s try something different. The following kernel may look a bit mysterious
+    at first:'
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，让我们尝试一些不同的东西。下面的卷积核一开始可能看起来有点神秘：
+- en: '[PRE10]'
+  id: totrans-72
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: Working out the weighted sum for an arbitrary pixel in position 2,2, as we did
+    earlier for the generic convolution kernel, we get
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于位置在2,2的任意像素计算加权和，就像我们之前为通用卷积核所做的那样，我们得到
+- en: '[PRE11]'
+  id: totrans-74
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: 'which performs the difference of all pixels on the right of i22 minus the pixels
+    on the left of i22\. If the kernel is applied on a vertical boundary between two
+    adjacent regions of different intensity, o22 will have a high value. If the kernel
+    is applied on a region of uniform intensity, o22 will be zero. It’s an *edge-detection*
+    kernel: the kernel highlights the vertical edge between two horizontally adjacent
+    regions.'
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 它执行i22右侧所有像素与i22左侧像素的差值。如果卷积核应用于不同强度相邻区域之间的垂直边界，o22将具有较高的值。如果卷积核应用于均匀强度区域，o22将为零。这是一个*边缘检测*卷积核：卷积核突出显示了水平相邻区域之间的垂直边缘。
+- en: '![](../Images/CH08_F05_Stevens2_GS.png)'
+  id: totrans-76
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F05_Stevens2_GS.png)'
+- en: Figure 8.5 Vertical edges throughout our bird, courtesy of a handcrafted convolution
+    kernel
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.5 我们鸟身上的垂直边缘，感谢手工制作的卷积核
+- en: Applying the convolution kernel to our image, we see the result shown in figure
+    8.5\. As expected, the convolution kernel enhances the vertical edges. We could
+    build lots more elaborate filters, such as for detecting horizontal or diagonal
+    edges, or cross-like or checkerboard patterns, where “detecting” means the output
+    has a high magnitude. In fact, the job of a computer vision expert has historically
+    been to come up with the most effective combination of filters so that certain
+    features are highlighted in images and objects can be recognized.
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将卷积核应用于我们的图像，我们看到了图8.5中显示的结果。如预期，卷积核增强了垂直边缘。我们可以构建更多复杂的滤波器，例如用于检测水平或对角边缘，或十字形或棋盘格模式，其中“检测”意味着输出具有很高的幅度。事实上，计算机视觉专家的工作历来是提出最有效的滤波器组合，以便在图像中突出显示某些特征并识别对象。
+- en: 'With deep learning, we let kernels be estimated from data in whatever way the
+    discrimination is most effective: for instance, in terms of minimizing the negative
+    cross-entropy loss between the output and the ground truth that we introduced
+    in section 7.2.5\. From this angle, the job of a convolutional neural network
+    is to estimate the kernel of a set of filter banks in successive layers that will
+    transform a multichannel image into another multichannel image, where different
+    channels correspond to different features (such as one channel for the average,
+    another channel for vertical edges, and so on). Figure 8.6 shows how the training
+    automatically learns the kernels.'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在深度学习中，我们让核根据数据以最有效的方式进行估计：例如，以最小化我们在第7.2.5节中介绍的输出和地面真相之间的负交叉熵损失为目标。从这个角度来看，卷积神经网络的工作是估计一组滤波器组的核，这些核将在连续层中将多通道图像转换为另一个多通道图像，其中不同通道对应不同特征（例如一个通道用于平均值，另一个通道用于垂直边缘等）。图8.6显示了训练如何自动学习核。
+- en: '![](../Images/CH08_F06_Stevens2_GS.png)'
+  id: totrans-80
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F06_Stevens2_GS.png)'
+- en: Figure 8.6 The process of learning with convolutions by estimating the gradient
+    at the kernel weights and updating them individually in order to optimize for
+    the loss
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.6 通过估计核权重的梯度并逐个更新它们以优化损失的卷积学习过程
+- en: 8.2.3 Looking further with depth and pooling
+  id: totrans-82
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.2.3 深入探讨深度和池化
+- en: 'This is all well and good, but conceptually there’s an elephant in the room.
+    We got all excited because by moving from fully connected layers to convolutions,
+    we achieve locality and translation invariance. Then we recommended the use of
+    small kernels, like 3 × 3, or 5 × 5: that’s peak locality, all right. What about
+    the *big picture*? How do we know that all structures in our images are 3 pixels
+    or 5 pixels wide? Well, we don’t, because they aren’t. And if they aren’t, how
+    are our networks going to be equipped to see those patterns with larger scope?
+    This is something we’ll really need if we want to solve our birds versus airplanes
+    problem effectively, since although CIFAR-10 images are small, the objects still
+    have a (wing-)span several pixels across.'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这一切都很好，但在概念上存在一个问题。我们之所以如此兴奋，是因为从全连接层转向卷积，我们实现了局部性和平移不变性。然后我们建议使用小卷积核，如3 x 3或5
+    x 5：这确实是局部性的极致。那么*大局观*呢？我们怎么知道我们图像中的所有结构都是3像素或5像素宽的？好吧，我们不知道，因为它们不是。如果它们不是，我们的网络如何能够看到具有更大范围的这些模式？如果我们想有效解决鸟类与飞机的问题，我们真的需要这个，因为尽管CIFAR-10图像很小，但对象仍然具有跨越几个像素的（翼）跨度。
+- en: One possibility could be to use large convolution kernels. Well, sure, at the
+    limit we could get a 32 × 32 kernel for a 32 × 32 image, but we would converge
+    to the old fully connected, affine transformation and lose all the nice properties
+    of convolution. Another option, which is used in convolutional neural networks,
+    is stacking one convolution after the other and at the same time downsampling
+    the image between successive convolutions.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一种可能性是使用大型卷积核。当然，在极限情况下，我们可以为32 x 32图像使用32 x 32卷积核，但我们将收敛到旧的全连接、仿射变换，并丢失卷积的所有优点。另一种选项是在卷积神经网络中使用一层接一层的卷积，并在连续卷积之间同时对图像进行下采样。
+- en: 'From large to small: Downsampling'
+  id: totrans-85
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 从大到小：下采样
+- en: Downsampling could in principle occur in different ways. Scaling an image by
+    half is the equivalent of taking four neighboring pixels as input and producing
+    one pixel as output. How we compute the value of the output based on the values
+    of the input is up to us. We could
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下采样原则上可以以不同方式发生。将图像缩小一半相当于将四个相邻像素作为输入，并产生一个像素作为输出。如何根据输入值计算输出值取决于我们。我们可以
+- en: Average the four pixels. This *average pooling* was a common approach early
+    on but has fallen out of favor somewhat.
+  id: totrans-87
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对四个像素求平均值。这种*平均池化*曾经是一种常见方法，但现在已经不太受青睐。
+- en: Take the maximum of the four pixels. This approach, called *max pooling,* is
+    currently the most commonly used approach, but it has a downside of discarding
+    the other three-quarters of the data.
+  id: totrans-88
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 取四个像素中的最大值。这种方法称为*最大池化*，目前是最常用的方法，但它的缺点是丢弃了其他四分之三的数据。
+- en: Perform a *strided* convolution, where only every *N*th pixel is calculated.
+    A 3 × 4 convolution with stride 2 still incorporates input from all pixels from
+    the previous layer. The literature shows promise for this approach, but it has
+    not yet supplanted max pooling.
+  id: totrans-89
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 执行*步幅*卷积，只计算每第*N*个像素。具有步幅2的3 x 4卷积仍然包含来自前一层的所有像素的输入。文献显示了这种方法的前景，但它尚未取代最大池化。
+- en: We will be focusing on max pooling, illustrated in figure 8.7, going forward.
+    The figure shows the most common setup of taking non-overlapping 2 x 2 tiles and
+    taking the maximum over each of them as the new pixel at the reduced scale.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将继续关注最大池化，在图8.7中有所说明。该图显示了最常见的设置，即取非重叠的2 x 2瓦片，并将每个瓦片中的最大值作为缩小比例后的新像素。
+- en: '![](../Images/CH08_F07_Stevens2_GS.png)'
+  id: totrans-91
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F07_Stevens2_GS.png)'
+- en: Figure 8.7 Max pooling in detail
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.7 详细介绍了最大池化
+- en: Intuitively, the output images from a convolution layer, especially since they
+    are followed by an activation just like any other linear layer, tend to have a
+    high magnitude where certain features corresponding to the estimated kernel are
+    detected (such as vertical lines). By keeping the highest value in the 2 × 2 neighborhood
+    as the downsampled output, we ensure that the features that are found *survive*
+    the downsampling, at the expense of the weaker responses.
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 直觉上，卷积层的输出图像，特别是因为它们后面跟着一个激活函数，往往在检测到对应于估计内核的某些特征（如垂直线）时具有较高的幅度。通过将2×2邻域中的最高值作为下采样输出，我们确保找到的特征*幸存*下采样，以弱响应为代价。
+- en: 'Max pooling is provided by the `nn.MaxPool2d` module (as with convolution,
+    there are versions for 1D and 3D data). It takes as input the size of the neighborhood
+    over which to operate the pooling operation. If we wish to downsample our image
+    by half, we’ll want to use a size of 2\. Let’s verify that it works as expected
+    directly on our input image:'
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最大池化由`nn.MaxPool2d`模块提供（与卷积一样，也有适用于1D和3D数据的版本）。它的输入是要进行池化操作的邻域大小。如果我们希望将图像下采样一半，我们将使用大小为2。让我们直接在输入图像上验证它是否按预期工作：
+- en: '[PRE12]'
+  id: totrans-95
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: Combining convolutions and downsampling for great good
+  id: totrans-96
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 结合卷积和下采样以获得更好的效果
+- en: Let’s now see how combining convolutions and downsampling can help us recognize
+    larger structures. In figure 8.8, we start by applying a set of 3 × 3 kernels
+    on our 8 × 8 image, obtaining a multichannel output image of the same size. Then
+    we scale down the output image by half, obtaining a 4 × 4 image, and apply another
+    set of 3 × 3 kernels to it. This second set of kernels operates on a 3 × 3 neighborhood
+    of something that has been scaled down by half, so it effectively maps back to
+    8 × 8 neighborhoods of the input. In addition, the second set of kernels takes
+    the output of the first set of kernels (features like averages, edges, and so
+    on) and extracts additional features on top of those.
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们看看如何结合卷积和下采样可以帮助我们识别更大的结构。在图8.8中，我们首先在我们的8×8图像上应用一组3×3内核，获得相同大小的多通道输出图像。然后我们将输出图像缩小一半，得到一个4×4图像，并对其应用另一组3×3内核。这第二组内核在已经缩小一半的东西的3×3邻域上有效地映射回输入的8×8邻域。此外，第二组内核获取第一组内核的输出（如平均值、边缘等特征）并在其上提取额外的特征。
+- en: '![](../Images/CH08_F08_Stevens2_GS.png)'
+  id: totrans-98
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F08_Stevens2_GS.png)'
+- en: 'Figure 8.8 More convolutions by hand, showing the effect of stacking convolutions
+    and downsampling: a large cross is highlighted using two small, cross-shaped kernels
+    and max pooling.'
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.8 通过手动进行更多卷积，展示叠加卷积和最大池化的效果：使用两个小的十字形内核和最大池化突出显示一个大的十字形。
+- en: So, on one hand, the first set of kernels operates on small neighborhoods on
+    first-order, low-level features, while the second set of kernels effectively operates
+    on wider neighborhoods, producing features that are compositions of the previous
+    features. This is a very powerful mechanism that provides convolutional neural
+    networks with the ability to see into very complex scenes--much more complex than
+    our 32 × 32 images from the CIFAR-10 dataset.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，一方面，第一组内核在第一阶低级特征的小邻域上操作，而第二组内核有效地在更宽的邻域上操作，产生由前一特征组成的特征。这是一个非常强大的机制，使卷积神经网络能够看到非常复杂的场景--比我们的CIFAR-10数据集中的32×32图像复杂得多。
+- en: The receptive field of output pixels
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 输出像素的感受野
+- en: When the second 3 × 3 convolution kernel produces 21 in its conv output in figure
+    8.8, this is based on the top-left 3 × 3 pixels of the first max pool output.
+    They, in turn, correspond to the 6 × 6 pixels in the top-left corner in the first
+    conv output, which in turn are computed by the first convolution from the top-left
+    7 × 7 pixels. So the pixel in the second convolution output is influenced by a
+    7 × 7 input square. The first convolution also uses an implicitly “padded” column
+    and row to produce the output in the corner; otherwise, we would have an 8 × 8
+    square of input pixels informing a given pixel (away from the boundary) in the
+    second convolution’s output. In fancy language, we say that a given output neuron
+    of the 3 × 3-conv, 2 × 2-max-pool, 3 × 3-conv construction has a receptive field
+    of 8 × 8.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当第二个3×3卷积内核在图8.8中的卷积输出中产生21时，这是基于第一个最大池输出的左上角3×3像素。它们又对应于第一个卷积输出左上角的6×6像素，而这又是由第一个卷积从左上角的7×7像素计算得出的。因此，第二个卷积输出中的像素受到7×7输入方块的影响。第一个卷积还使用隐式“填充”列和行来在角落产生输出；否则，我们将有一个8×8的输入像素方块通知第二个卷积输出中的给定像素（远离边界）。在花哨的语言中，我们说，3×3卷积，2×2最大池，3×3卷积结构的给定输出神经元具有8×8的感受野。
+- en: 8.2.4 Putting it all together for our network
+  id: totrans-103
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.2.4 将所有内容整合到我们的网络中
+- en: 'With these building blocks in our hands, we can now proceed to build our convolutional
+    neural network for detecting birds and airplanes. Let’s take our previous fully
+    connected model as a starting point and introduce `nn.Conv2d` and `nn.MaxPool2d`
+    as described previously:'
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这些基本模块，我们现在可以继续构建用于检测鸟类和飞机的卷积神经网络。让我们以前的全连接模型作为起点，并像之前描述的那样引入`nn.Conv2d`和`nn.MaxPool2d`：
+- en: '[PRE13]'
+  id: totrans-105
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: The first convolution takes us from 3 RGB channels to 16, thereby giving the
+    network a chance to generate 16 independent features that operate to (hopefully)
+    discriminate low-level features of birds and airplanes. Then we apply the `Tanh`
+    activation function. The resulting 16-channel 32 × 32 image is pooled to a 16-channel
+    16 × 16 image by the first `MaxPool3d`. At this point, the downsampled image undergoes
+    another convolution that generates an 8-channel 16 × 16 output. With any luck,
+    this output will consist of higher-level features. Again, we apply a `Tanh` activation
+    and then pool to an 8-channel 8 × 8 output.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一个卷积将我们从3个RGB通道转换为16个通道，从而使网络有机会生成16个独立特征，这些特征操作（希望）能够区分鸟和飞机的低级特征。然后我们应用`Tanh`激活函数。得到的16通道
+    32 × 32 图像通过第一个`MaxPool3d`池化为一个16通道 16 × 16 图像。此时，经过下采样的图像经历另一个卷积，生成一个8通道 16 ×
+    16 输出。幸运的话，这个输出将由更高级的特征组成。再次，我们应用`Tanh`激活，然后池化为一个8通道 8 × 8 输出。
+- en: Where does this end? After the input image has been reduced to a set of 8 ×
+    8 features, we expect to be able to output some probabilities from the network
+    that we can feed to our negative log likelihood. However, probabilities are a
+    pair of numbers in a 1D vector (one for airplane, one for bird), but here we’re
+    still dealing with multichannel 2D features.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这会在哪里结束？在输入图像被减少为一组 8 × 8 特征之后，我们期望能够从网络中输出一些概率，然后将其馈送到我们的负对数似然函数中。然而，概率是一个一维向量中的一对数字（一个用于飞机，一个用于鸟），但在这里我们仍然处理多通道的二维特征。
+- en: 'Thinking back to the beginning of this chapter, we already know what we need
+    to do: turn the 8-channel 8 × 8 image into a 1D vector and complete our network
+    with a set of fully connected layers:'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下本章的开头，我们已经知道我们需要做什么：将一个8通道 8 × 8 图像转换为一维向量，并用一组全连接层完成我们的网络：
+- en: '[PRE14]'
+  id: totrans-109
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: '❶ Warning: Something important is missing here!'
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 警告：这里缺少重要内容！
+- en: This code gives us a neural network as shown in figure 8.9.
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这段代码给出了图8.9中显示的神经网络。
+- en: '![](../Images/CH08_F09_Stevens2_GS.png)'
+  id: totrans-112
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F09_Stevens2_GS.png)'
+- en: Figure 8.9 Shape of a typical convolutional network, including the one we’re
+    building. An image is fed to a series of convolutions and max pooling modules
+    and then straightened into a 1D vector and fed into fully connected modules.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.9 典型卷积网络的形状，包括我们正在构建的网络。图像被馈送到一系列卷积和最大池化模块，然后被拉直成一个一维向量，然后被馈送到全连接模块。
+- en: 'Ignore the “something missing” comment for a minute. Let’s first notice that
+    the size of the linear layer is dependent on the expected size of the output of
+    `MaxPool2d`: 8 × 8 × 8 = 512\. Let’s count the number of parameters for this small
+    model:'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 先忽略“缺少内容”的评论一分钟。让我们首先注意到线性层的大小取决于`MaxPool2d`的预期输出大小：8 × 8 × 8 = 512。让我们计算一下这个小模型的参数数量：
+- en: '[PRE15]'
+  id: totrans-115
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: That’s very reasonable for a limited dataset of such small images. In order
+    to increase the capacity of the model, we could increase the number of output
+    channels for the convolution layers (that is, the number of features each convolution
+    layer generates), which would lead the linear layer to increase its size as well.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于这样小图像的有限数据集来说，这是非常合理的。为了增加模型的容量，我们可以增加卷积层的输出通道数（即每个卷积层生成的特征数），这将导致线性层的大小也增加。
+- en: 'We put the “Warning” note in the code for a reason. The model has zero chance
+    of running without complaining:'
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在代码中放置“警告”注释是有原因的。模型没有运行的可能性：
+- en: '[PRE16]'
+  id: totrans-118
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: 'Admittedly, the error message is a bit obscure, but not too much so. We find
+    references to `linear` in the traceback: looking back at the model, we see that
+    only module that has to have a 512 × 32 tensor is `nn.Linear(512, 32)`, the first
+    linear module after the last convolution block.'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 诚然，错误消息有点晦涩，但并不是太过复杂。我们在回溯中找到了`linear`的引用：回顾模型，我们发现只有一个模块必须有一个 512 × 32 的张量，即`nn.Linear(512,
+    32)`，也就是最后一个卷积块后的第一个线性模块。
+- en: What’s missing there is the reshaping step from an 8-channel 8 × 8 image to
+    a 512-element, 1D vector (1D if we ignore the batch dimension, that is). This
+    could be achieved by calling `view` on the output of the last `nn.MaxPool2d`,
+    but unfortunately, we don’t have any explicit visibility of the output of each
+    module when we use `nn.Sequential`.[⁴](#pgfId-1256066)
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 缺失的是将一个8通道 8 × 8 图像重塑为一个512元素的一维向量（如果忽略批处理维度，则为一维）。这可以通过在最后一个`nn.MaxPool2d`的输出上调用`view`来实现，但不幸的是，当我们使用`nn.Sequential`时，我们没有任何明确的方式查看每个模块的输出。
+- en: 8.3 Subclassing nn.Module
+  id: totrans-121
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.3 继承 nn.Module
+- en: At some point in developing neural networks, we will find ourselves in a situation
+    where we want to compute something that the premade modules do not cover. Here,
+    it is something very simple like reshaping,[⁵](#pgfId-1018002); but in section
+    8.5.3, we use the same construction to implement residual connections. So in this
+    section, we learn how to make our own `nn.Module` subclasses that we can then
+    use just like the prebuilt ones or `nn.Sequential`.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在开发神经网络的某个阶段，我们会发现自己想要计算一些预制模块不涵盖的内容。在这里，这是一些非常简单的操作，比如重塑；但在第8.5.3节中，我们使用相同的构造来实现残差连接。因此，在本节中，我们学习如何制作自己的`nn.Module`子类，然后我们可以像预构建的模块或`nn.Sequential`一样使用它们。
+- en: When we want to build models that do more complex things than just applying
+    one layer after another, we need to leave `nn.Sequential` for something that gives
+    us added flexibility. PyTorch allows us to use any computation in our model by
+    subclassing `nn.Module`.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们想要构建比仅仅一层接一层应用更复杂功能的模型时，我们需要离开`nn.Sequential`，转而使用能够为我们提供更大灵活性的东西。PyTorch允许我们通过继承`nn.Module`来在模型中使用任何计算。
+- en: In order to subclass `nn.Module`, at a minimum we need to define a `forward`
+    function that takes the inputs to the module and returns the output. This is where
+    we define our module’s computation. The name `forward` here is reminiscent of
+    a distant past, when modules needed to define both the forward and backward passes
+    we met in section 5.5.1\. With PyTorch, if we use standard `torch` operations,
+    autograd will take care of the backward pass automatically; and indeed, an `nn.Module`
+    never comes with a `backward`.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要对 `nn.Module` 进行子类化，至少需要定义一个接受模块输入并返回输出的 `forward` 函数。这是我们定义模块计算的地方。这里的 `forward`
+    名称让人想起了很久以前的一个时期，当模块需要定义我们在第 5.5.1 节中遇到的前向和后向传递时。使用标准的 `torch` 操作，PyTorch 将自动处理后向传递；实际上，`nn.Module`
+    从不带有 `backward`。
+- en: Typically, our computation will use other modules--premade like convolutions
+    or customized. To include these *submodules*, we typically define them in the
+    constructor `__init__` and assign them to `self` for use in the `forward` function.
+    They will, at the same time, hold their parameters throughout the lifetime of
+    our module. Note that you need to call `super().__init__()` before you can do
+    that (or PyTorch will remind you).
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常，我们的计算将使用其他模块--预制的如卷积或自定义的。要包含这些*子模块*，我们通常在构造函数 `__init__` 中定义它们，并将它们分配给 `self`
+    以在 `forward` 函数中使用。它们将同时在我们模块的整个生命周期中保持其参数。请注意，您需要在执行这些操作之前调用 `super().__init__()`（否则
+    PyTorch 会提醒您）。
+- en: 8.3.1 Our network as an nn.Module
+  id: totrans-126
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.3.1 我们的网络作为 nn.Module
+- en: 'Let’s write our network as a submodule. To do so, we instantiate all the `nn.Conv2d`,
+    `nn.Linear`, and so on that we previously passed to `nn.Sequential` in the constructor,
+    and then use their instances one after another in `forward`:'
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们将我们的网络编写为一个子模块。为此，我们在构造函数中实例化了所有之前传递给 `nn.Sequential` 的 `nn.Conv2d`、`nn.Linear`
+    等，然后在 `forward` 中依次使用它们的实例：
+- en: '[PRE17]'
+  id: totrans-128
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: ❶ This reshape is what we were missing earlier
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 这种重塑是我们之前缺少的
+- en: The `Net` class is equivalent to the `nn.Sequential` model we built earlier
+    in terms of submodules; but by writing the `forward` function explicitly, we can
+    manipulate the output of `self.pool3` directly and call `view` on it to turn it
+    into a *B* × *N* vector. Note that we leave the batch dimension as -1 in the call
+    to `view`, since in principle we don’t know how many samples will be in the batch.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Net` 类在子模块方面等效于我们之前构建的 `nn.Sequential` 模型；但通过显式编写 `forward` 函数，我们可以直接操作 `self.pool3`
+    的输出并在其上调用 `view` 将其转换为 *B* × *N* 向量。请注意，在调用 `view` 时，我们将批处理维度保留为 -1，因为原则上我们不知道批处理中会有多少样本。'
+- en: '![](../Images/CH08_F10_Stevens2_GS.png)'
+  id: totrans-131
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F10_Stevens2_GS.png)'
+- en: Figure 8.10 Our baseline convolu-tional network architecture
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 8.10 我们基准的卷积网络架构
+- en: Here we use a subclass of `nn.Module` to contain our entire model. We could
+    also use subclasses to define new building blocks for more complex networks. Picking
+    up on the diagram style in chapter 6, our network looks like the one shown in
+    figure 8.10\. We are making some ad hoc choices about what information to present
+    where.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我们使用 `nn.Module` 的子类来包含我们的整个模型。我们还可以使用子类来定义更复杂网络的新构建块。继续第 6 章中的图表风格，我们的网络看起来像图
+    8.10 所示的那样。我们正在对要在哪里呈现的信息做一些临时选择。
+- en: Recall that the goal of classification networks typically is to compress information
+    in the sense that we start with an image with a sizable number of pixels and compress
+    it into (a vector of probabilities of) classes. Two things about our architecture
+    deserve some comFigure 8.10 mentary with respect to this goal.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，分类网络的目标通常是在某种意���上压缩信息，即我们从具有大量像素的图像开始，将其压缩为（概率向量的）类。关于我们的架构有两件事情值得与这个目标有关的评论。
+- en: First, our goal is reflected by the size of our intermediate values generally
+    shrinking--this is done by reducing the number of channels in the convolutions,
+    by reducing the number of pixels through pooling, and by having an output dimension
+    lower than the input dimension in the linear layers. This is a common trait of
+    classification networks. However, in many popular architectures like the ResNets
+    we saw in chapter 2 and discuss more in section 8.5.3, the reduction is achieved
+    by pooling in the spatial resolution, but the number of channels increases (still
+    resulting in a reduction in size). It seems that our pattern of fast information
+    reduction works well with networks of limited depth and small images; but for
+    deeper networks, the decrease is typically slower.
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们的目标反映在中间值的大小通常会缩小--这是通过在卷积中减少通道数、通过池化减少像素数以及在线性层中使输出维度低于输入维度来实现的。这是分类网络的一个共同特征。然而，在许多流行的架构中，如我们在第
+    2 章中看到的 ResNets 并在第 8.5.3 节中更多讨论的，通过在空间分辨率中进行池化来实现减少，但通道数增加（仍导致尺寸减小）。似乎我们的快速信息减少模式在深度有限且图像较小的网络中效果良好；但对于更深的网络，减少通常较慢。
+- en: 'Second, in one layer, there is not a reduction of output size with regard to
+    input size: the initial convolution. If we consider a single output pixel as a
+    vector of 32 elements (the channels), it is a linear transformation of 27 elements
+    (as a convolution of 3 channels × 3 × 3 kernel size)--only a moderate increase.
+    In ResNet, the initial convolution generates 64 channels from 147 elements (3
+    channels × 7 × 7 kernel size).[⁶](#pgfId-1018574) So the first layer is exceptional
+    in that it greatly increases the overall dimension (as in channels times pixels)
+    of the data flowing through it, but the mapping for each output pixel considered
+    in isolation still has approximately as many outputs as inputs.[⁷](#pgfId-1018587)'
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其次，在一个层中，输出大小与输入大小没有减少：初始卷积。如果我们将单个输出像素视为一个具有 32 个元素的向量（通道），那么它是 27 个元素的线性变换（作为
+    3 个通道 × 3 × 3 核大小的卷积）--仅有轻微增加。在 ResNet 中，初始卷积从 147 个元素（3 个通道 × 7 × 7 核大小）生成 64
+    个通道。[⁶](#pgfId-1018574) 因此，第一层在整体维度（如通道乘以像素）方面大幅增加数据流经过它，但对于独立考虑的每个输出像素，输出仍大致与输入相同。[⁷](#pgfId-1018587)
+- en: 8.3.2 How PyTorch keeps track of parameters and submodules
+  id: totrans-137
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.3.2 PyTorch 如何跟踪参数和子模块
+- en: Interestingly, assigning an instance of `nn.Module` to an attribute in an `nn.Module`,
+    as we did in the earlier constructor, automatically registers the module as a
+    submodule.
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有趣的是，在`nn.Module`中的属性中分配一个`nn.Module`实例，就像我们在早期的构造函数中所做的那样，会自动将模块注册为子模块。
+- en: '*Note* The submodules must be top-level *attributes*, not buried inside `list`
+    or `dict` instances! Otherwise the optimizer will not be able to locate the submodules
+    (and, hence, their parameters). For situations where your model requires a list
+    or dict of submodules, PyTorch provides `nn.ModuleList` and `nn.ModuleDict`.'
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*注意* 子模块必须是顶级*属性*，而不是嵌套在`list`或`dict`实例中！否则优化器将无法定位子模块（因此也无法定位它们的参数）。对于需要子模块列表或字典的模型情况，PyTorch
+    提供了`nn.ModuleList`和`nn.ModuleDict`。'
+- en: We can call arbitrary methods of an `nn.Module` subclass. For example, for a
+    model where training is substantially different than its use, say, for prediction,
+    it may make sense to have a `predict` method. Be aware that calling such methods
+    will be similar to calling `forward` instead of the module itself--they will be
+    ignorant of hooks, and the JIT does not see the module structure when using them
+    because we are missing the equivalent of the `__call__` bits shown in section
+    6.2.1.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以调用`nn.Module`子类的任意方法。例如，对于一个模型，训练与预测等使用方式明显不同的情况下，可能有一个`predict`方法是有意义的。请注意，调用这些方法将类似于调用`forward`而不是模块本身--它们将忽略钩子，并且
+    JIT 在使用它们时不会看到模块结构，因为我们缺少第6.2.1节中显示的`__call__`位的等价物。
+- en: 'This allows `Net` to have access to the parameters of its submodules without
+    further action by the user:'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这使得`Net`可以访问其子模块的参数，而无需用户进一步操作：
+- en: '[PRE18]'
+  id: totrans-142
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: What happens here is that the `parameters()` call delves into all submodules
+    assigned as attributes in the constructor and recursively calls `parameters()`
+    on them. No matter how nested the submodule, any `nn.Module` can access the list
+    of all child parameters. By accessing their `grad` attribute, which has been populated
+    by `autograd`, the optimizer will know how to change parameters to minimize the
+    loss. We know that story from chapter 5.
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里发生的情况是，`parameters()`调用深入到构造函数中分配为属性的所有子模块，并递归调用它们的`parameters()`。无论子模块嵌套多深，任何`nn.Module`都可以访问所有子参数的列表。通过访问它们的`grad`属性，该属性已被`autograd`填充，优化器将知道如何更改参数以最小化损失。我们从第5章中了解到这个故事。
+- en: We now know how to implement our own modules--and we will need this a lot for
+    part 2\. Looking back at the implementation of the `Net` class, and thinking about
+    the utility of registering submodules in the constructor so that we can access
+    their parameters, it appears a bit of a waste that we are also registering submodules
+    that have no parameters, like `nn.Tanh` and `nn.MaxPool2d`. Wouldn’t it be easier
+    to call these directly in the `forward` function, just as we called `view`?
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们知道如何实现我们自己的模块了--这在第2部分中我们将需要很多。回顾`Net`类的实现，并考虑在构造函数中注册子模块的实用性，以便我们可以访问它们的参数，看起来有点浪费，因为我们还注册了没有参数的子模块，如`nn.Tanh`和`nn.MaxPool2d`。直接在`forward`函数中调用这些是否更容易，就像我们调用`view`一样？
+- en: 8.3.3 The functional API
+  id: totrans-145
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.3.3 功能 API
+- en: It sure would! And that’s why PyTorch has *functional* counterparts for every
+    `nn` module. By “functional” here we mean “having no internal state”--in other
+    words, “whose output value is solely and fully determined by the value input arguments.”
+    Indeed, `torch .nn.functional` provides many functions that work like the modules
+    we find in `nn`. But instead of working on the input arguments and stored parameters
+    like the module counterparts, they take inputs and parameters as arguments to
+    the function call. For instance, the functional counterpart of `nn.Linear` is
+    `nn.functional.linear`, which is a function that has signature `linear(input,
+    weight, bias=None)`. The `weight` and `bias` parameters are arguments to the function.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当然会！这就是为什么 PyTorch 为每个`nn`模块都提供了*functional*对应项。这里所说的“functional”是指“没有内部状态”--换句话说，“其输出值完全由输入参数的值决定”。实际上，`torch.nn.functional`提供了许多像我们在`nn`中找到的模块一样工作的函数。但是，与模块对应项不同，它们不会像模块对应项那样在输入参数和存储参数上工作，而是将输入和参数作为函数调用的参数。例如，`nn.Linear`的功能对应项是`nn.functional.linear`，它是一个具有签名`linear(input,
+    weight, bias=None)`的函数。`weight`和`bias`参数是函数调用的参数。
+- en: 'Back to our model, it makes sense to keep using `nn` modules for `nn.Linear`
+    and `nn.Conv2d` so that `Net` will be able to manage their `Parameter`s during
+    training. However, we can safely switch to the functional counterparts of pooling
+    and activation, since they have no parameters:'
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回到我们的模型，继续使用`nn.Linear`和`nn.Conv2d`的`nn`模块是有意义的，这样`Net`在训练期间将能够管理它们的`Parameter`。但是，我们可以安全地切换到池化和激活的功能对应项，因为它们没有参数：
+- en: '[PRE19]'
+  id: totrans-148
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: This is a lot more concise than and fully equivalent to our previous definition
+    of `Net` in section 8.3.1\. Note that it would still make sense to instantiate
+    modules that require several parameters for their initialization in the constructor.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这比我们在第8.3.1节中之前定义的`Net`的定义要简洁得多，完全等效。请注意，在构造函数中实例化需要多个参数进行初始化的模块仍然是有意义的。
+- en: '*Tip* While general-purpose scientific functions like `tanh` still exist in
+    `torch.nn.functional` in version 1.0, those entry points are deprecated in favor
+    of functions in the top-level `torch` namespace. More niche functions like `max_pool2d`
+    will remain in `torch.nn.functional`.'
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*提示* 虽然通用科学函数如`tanh`仍然存在于版本1.0的`torch.nn.functional`中，但这些入口点已被弃用，而是推荐使用顶级`torch`命名空间中的函数。像`max_pool2d`这样的更专业的函数将保留在`torch.nn.functional`中。'
+- en: 'Thus, the functional way also sheds light on what the `nn.Module` API is all
+    about: a `Module` is a container for state in the forms of `Parameter`s and submodules
+    combined with the instructions to do a forward.'
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，功能方式也揭示了`nn.Module` API的含义：`Module`是一个状态的容器，其中包含`Parameter`和子模块，以及执行前向操作的指令。
+- en: Whether to use the functional or the modular API is a decision based on style
+    and taste. When part of a network is so simple that we want to use `nn.Sequential`,
+    we’re in the modular realm. When we are writing our own forwards, it may be more
+    natural to use the functional interface for things that do not need state in the
+    form of parameters.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用功能API还是模块化API是基于风格和品味的决定。当网络的一部分如此简单以至于我们想使用`nn.Sequential`时，我们处于模块化领域。当我们编写自己的前向传播时，对于不需要参数形式状态的事物，使用功能接口可能更自然。
+- en: 'In chapter 15, we will briefly touch on quantization. Then stateless bits like
+    activations suddenly become stateful because information about the quantization
+    needs to be captured. This means if we aim to quantize our model, it might be
+    worthwhile to stick with the modular API if we go for non-JITed quantization.
+    There is one style matter that will help you avoid surprises with (originally
+    unforeseen) uses: if you need several applications of stateless modules (like
+    `nn.HardTanh` or `nn.ReLU`), it is probably a good idea to have a separate instance
+    for each. Reusing the same module appears to be clever and will give correct results
+    with our standard Python usage here, but tools analyzing your model may trip over
+    it.'
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第15章，我们将简要涉及量化。然后像激活这样的无状态位突然变得有状态，因为需要捕获有关量化的信息。这意味着如果我们打算量化我们的模型，如果我们选择非JIT量化，坚持使用模块化API可能是值得的。有一个风格问题将帮助您避免（最初未预料到的）用途带来的意外：如果您需要多个无状态模块的应用（如`nn.HardTanh`或`nn.ReLU`），最好为每个模块实例化一个单独的实例。重用相同的模块似乎很聪明，并且在这里使用标准Python时会给出正确的结果，但是分析您的模型的工具可能会出错。
+- en: So now we can make our own `nn.Module` if we need to, and we also have the functional
+    API for cases when instantiating and then calling an `nn.Module` is overkill.
+    This has been the last bit missing to understand how the code organization works
+    in just about any neural network implemented in PyTorch.
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以自己制作`nn.Module`，并且在需要时还有功能API可用，当实例化然后调用`nn.Module`过于繁琐时。这是了解在PyTorch中实现的几乎任何神经网络的代码组织方式的最后一部分。
+- en: 'Let’s double-check that our model runs, and then we’ll get to the training
+    loop:'
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们再次检查我们的模型是否运行正常，然后我们将进入训练循环：
+- en: '[PRE20]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: We got two numbers! Information flows correctly. We might not realize it right
+    now, but in more complex models, getting the size of the first linear layer right
+    is sometimes a source of frustration. We’ve heard stories of famous practitioners
+    putting in arbitrary numbers and then relying on error messages from PyTorch to
+    backtrack the correct sizes for their linear layers. Lame, eh? Nah, it’s all legit!
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们得到了两个数字！信息正确传递。我们现在可能意识不到，但在更复杂的模型中，正确设置第一个线性层的大小有时会导致挫折。我们听说过一些著名从业者输入任意数字，然后依靠PyTorch的错误消息来回溯线性层的正确大小。很烦人，对吧？不，这都是合法的！
+- en: 8.4 Training our convnet
+  id: totrans-158
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.4 训练我们的卷积网络
+- en: We’re now at the point where we can assemble our complete training loop. We
+    already developed the overall structure in chapter 5, and the training loop looks
+    much like the one from chapter 6, but here we will revisit it to add some details
+    like some tracking for accuracy. After we run our model, we will also have an
+    appetite for a little more speed, so we will learn how to run our models fast
+    on a GPU. But first let’s look at the training loop.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经到了组装完整训练循环的时候。我们在第5章中已经开发了整体结构，训练循环看起来很像第6章的循环，但在这里我们将重新审视它以添加一些细节，如一些用于准确性跟踪的内容。在运行我们的模型之后，我们还会对更快速度有所期待，因此我们将学习如何在GPU上快速运行我们的模型。但首先让我们看看训练循环。
+- en: 'Recall that the core of our convnet is two nested loops: an outer one over
+    the *epochs* and an inner one of the `DataLoader` that produces batches from our
+    `Dataset`. In each loop, we then have to'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，我们的卷积网络的核心是两个嵌套循环：一个是*epochs*上的外部循环，另一个是从我们的`Dataset`生成批次的`DataLoader`上的内部循环。在每个循环中，我们需要
+- en: Feed the inputs through the model (the forward pass).
+  id: totrans-161
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 通过模型传递输入（前向传播）。
+- en: Compute the loss (also part of the forward pass).
+  id: totrans-162
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 计算损失（也是前向传播的一部分）。
+- en: Zero any old gradients.
+  id: totrans-163
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将任何旧的梯度清零。
+- en: Call `loss.backward()` to compute the gradients of the loss with respect to
+    all parameters (the backward pass).
+  id: totrans-164
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 调用`loss.backward()`来计算损失相对于所有参数的梯度（反向传播）。
+- en: Have the optimizer take a step in toward lower loss.
+  id: totrans-165
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使优化器朝着更低的损失方向迈出一步。
+- en: 'Also, we collect and print some information. So here is our training loop,
+    looking almost as it does in the previous chapter--but it is good to remember
+    what each thing is doing:'
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 同时，我们收集并打印一些信息。所以这是我们的训练循环，看起来几乎与上一章相同--但记住每个事物的作用是很重要的：
+- en: '[PRE21]'
+  id: totrans-167
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: ❶ Uses the datetime module included with Python
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 使用Python内置的datetime模块
+- en: ❷ Our loop over the epochs, numbered from 1 to n_epochs rather than starting
+    at 0
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 我们在从1到n_epochs编号的epochs上循环，而不是从0开始
+- en: ❸ Loops over our dataset in the batches the data loader creates for us
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 在数据加载器为我们创建的批次中循环遍历我们的数据集
+- en: ❹ Feeds a batch through our model ...
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 通过我们的模型传递一个批次...
+- en: ❺ ... and computes the loss we wish to minimize
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ ... 并计算我们希望最小化的损失
+- en: ❻ After getting rid of the gradients from the last round ...
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❻ 在摆脱上一轮梯度之后...
+- en: ❼ ... performs the backward step. That is, we compute the gradients of all parameters
+    we want the network to learn.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❼ ... 执行反向步骤。也就是说，我们计算我们希望网络学习的所有参数的梯度。
+- en: ❽ Updates the model
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❽ 更新模型
+- en: ❾ Sums the losses we saw over the epoch. Recall that it is important to transform
+    the loss to a Python number with .item(), to escape the gradients.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❾ 对我们在epoch中看到的损失求和。请记住，将损失转换为Python数字并使用`.item()`是很重��的，以避免梯度。
+- en: ❿ Divides by the length of the training data loader to get the average loss
+    per batch. This is a much more intuitive measure than the sum.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❿ 除以训练数据加载器的长度以获得每批的平均损失。这比总和更直观。
+- en: We use the `Dataset` from chapter 7; wrap it into a `DataLoader`; instantiate
+    our network, an optimizer, and a loss function as before; and call our training
+    loop.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们使用第7章的`Dataset`；将其包装成`DataLoader`；像以前一样实例化我们的网络、优化器和损失函数；然后调用我们的训练循环。
+- en: The substantial changes in our model from the last chapter are that now our
+    model is a custom subclass of `nn.Module` and that we’re using convolutions. Let’s
+    run training for 100 epochs while printing the loss. Depending on your hardware,
+    this may take 20 minutes or more to finish!
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与上一章相比，我们模型的重大变化是现在我们的模型是 `nn.Module` 的自定义子类，并且我们正在使用卷积。让我们在打印损失的同时运行100个周期的训练。根据您的硬件，这可能需要20分钟或更长时间才能完成！
+- en: '[PRE22]'
+  id: totrans-180
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: ❶ The DataLoader batches up the examples of our cifar2 dataset. Shuffling randomizes
+    the order of the examples from the dataset.
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ DataLoader 对我们的 cifar2 数据集的示例进行批处理。Shuffling 使数据集中示例的顺序随机化。
+- en: ❷ Instantiates our network ...
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 实例化我们的网络 ...
+- en: ❸ ... the stochastic gradient descent optimizer we have been working with ...
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ ... 我们一直在使用的随机梯度下降优化器 ...
+- en: ❹ ... and the cross entropy loss we met in 7.10
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ ... 以及我们在第7.10节中遇到的交叉熵损失
+- en: ❺ Calls the training loop we defined earlier
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 调用我们之前定义的训练循环
+- en: So now we can train our network. But again, our friend the bird watcher will
+    likely not be impressed when we tell her that we trained to very low training
+    loss.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们可以训练我们的网络了。但是，我们的鸟类观察者朋友在告诉她我们训练到非常低的训练损失时可能不会感到满意。
+- en: 8.4.1 Measuring accuracy
+  id: totrans-187
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.4.1 测量准确性
+- en: 'In order to have a measure that is more interpretable than the loss, we can
+    take a look at our accuracies on the training and validation datasets. We use
+    the same code as in chapter 7:'
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了得到比损失更具可解释性的度量，我们可以查看训练和验证数据集上的准确率。我们使用了与第7章相同的代码：
+- en: '[PRE23]'
+  id: totrans-189
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: ❶ We do not want gradients here, as we will not want to update the parameters.
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们这里不需要梯度，因为我们不想更新参数。
+- en: ❷ Gives us the index of the highest value as output
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将最高值的索引作为输出给出
+- en: ❸ Counts the number of examples, so total is increased by the batch size
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 计算示例的数量，因此总数增加了批次大小
+- en: ❹ Comparing the predicted class that had the maximum probability and the ground-truth
+    labels, we first get a Boolean array. Taking the sum gives the number of items
+    in the batch where the prediction and ground truth agree.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 比较具有最大概率的预测类和地面真实标签，我们首先得到一个布尔数组。求和得到批次中预测和地面真实一致的项目数。
+- en: We cast to a Python `int`--for integer tensors, this is equivalent to using
+    `.item()`, similar to what we did in the training loop.
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将转换为 Python 的 `int`--对于整数张量，这等同于使用 `.item()`，类似于我们在训练循环中所做的。
+- en: This is quite a lot better than the fully connected model, which achieved only
+    79% accuracy. We about halved the number of errors on the validation set. Also,
+    we used far fewer parameters. This is telling us that the model does a better
+    job of generalizing its task of recognizing the subject of images from a new sample,
+    through locality and translation invariance. We could now let it run for more
+    epochs and see what performance we could squeeze out.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这比全连接模型要好得多，全连接模型只能达到79%的准确率。我们在验证集上的错误数量几乎减半。而且，我们使用的参数要少得多。这告诉我们，模型在通过局部性和平移不变性从新样本中识别图像主题的任务中更好地泛化。现在我们可以让它运行更多周期，看看我们能够挤出什么性能。
+- en: 8.4.2 Saving and loading our model
+  id: totrans-196
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.4.2 保存和加载我们的模型
+- en: 'Since we’re satisfied with our model so far, it would be nice to actually save
+    it, right? It’s easy to do. Let’s save the model to a file:'
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们目前对我们的模型感到满意，所以实际上保存它会很好，对吧？这很容易做到。让我们将模型保存到一个文件中：
+- en: '[PRE24]'
+  id: totrans-198
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: 'The birds_vs_airplanes.pt file now contains all the parameters of `model`:
+    that is, weights and biases for the two convolution modules and the two linear
+    modules. So, no structure--just the weights. This means when we deploy the model
+    in production for our friend, we’ll need to keep the `model` class handy, create
+    an instance, and then load the parameters back into it:'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: birds_vs_airplanes.pt 文件现在包含了 `model` 的所有参数：即两个卷积模块和两个线性模块的权重和偏置。因此，没有结构--只有权重。这意味着当我们为我们的朋友在生产中部署模型时，我们需要保持
+    `model` 类方便，创建一个实例，然后将参数加载回去：
+- en: '[PRE25]'
+  id: totrans-200
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: ❶ We will have to make sure we don’t change the definition of Net between saving
+    and later loading the model state.
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们必须确保在保存和后续加载模型状态之间不更改 Net 的定义。
+- en: We have also included a pretrained model in our code repository, saved to ../data/
+    p1ch7/birds_vs_airplanes.pt.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还在我们的代码库中包含了一个预训练模型，保存在 ../data/ p1ch7/birds_vs_airplanes.pt 中。
+- en: 8.4.3 Training on the GPU
+  id: totrans-203
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.4.3 在 GPU 上训练
+- en: We have a net and can train it! But it would be good to make it a bit faster.
+    It is no surprise by now that we do so by moving our training onto the GPU. Using
+    the `.to` method we saw in chapter 3, we can move the tensors we get from the
+    data loader to the GPU, after which our computation will automatically take place
+    there. But we also need to move our parameters to the GPU. Happily, `nn.Module`
+    implements a `.to` function that moves all of its parameters to the GPU (or casts
+    the type when you pass a `dtype` argument).
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们有一个网络并且可以训练它！但是让它变得更快会很好。到现在为止，我们通过将训练移至 GPU 来实现这一点并不奇怪。使用我们在第3章中看到的 `.to`
+    方法，我们可以将从数据加载器获取的张量移动到 GPU，之后我们的计算将自动在那里进行。但是我们还需要将参数移动到 GPU。令人高兴的是��`nn.Module`
+    实现了一个 `.to` 函数，将其所有参数移动到 GPU（或在传递 `dtype` 参数时转换类型）。
+- en: 'There is a somewhat subtle difference between `Module.to` and `Tensor.to`.
+    `Module.to` is in place: the module instance is modified. But `Tensor.to` is out
+    of place (in some ways computation, just like `Tensor.tanh`), returning a new
+    tensor. One implication is that it is good practice to create the `Optimizer`
+    after moving the parameters to the appropriate device.'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Module.to` 和 `Tensor.to` 之间有一些微妙的区别。`Module.to` 是就地操作：模块实例被修改。但 `Tensor.to`
+    是非就地操作（在某种程度上是计算，就像 `Tensor.tanh` 一样），返回一个新的张量。一个影响是在将参数移动到适当设备后创建 `Optimizer`
+    是一个良好的实践。'
+- en: 'It is considered good style to move things to the GPU if one is available.
+    A good pattern is to set the a variable `device` depending on `torch.cuda.is_available`:'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果有 GPU 可用，将事物移动到 GPU 被认为是一种良好的风格。一个好的模式是根据 `torch.cuda.is_available` 设置一个变量
+    `device`：
+- en: '[PRE26]'
+  id: totrans-207
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: 'Then we can amend the training loop by moving the tensors we get from the data
+    loader to the GPU by using the `Tensor.to` method. Note that the code is exactly
+    like our first version at the beginning of this section except for the two lines
+    moving the inputs to the GPU:'
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后我们可以通过使用`Tensor.to`方法将从数据加载器获取的张量移动到GPU来修改训练循环。请注意，代码与本节开头的第一个版本完全相同，除了将输入移动到GPU的两行代码：
+- en: '[PRE27]'
+  id: totrans-209
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: ❶ These two lines that move imgs and labels to the device we are training on
+    are the only difference from our previous version.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将图像和标签移动到我们正在训练的设备上的这两行是与我们之前版本的唯一区别。
+- en: The same amendment must be made to the `validate` function. We can then instantiate
+    our model, move it to `device`, and run it as before:[⁸](#pgfId-1021225)
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对`validate`函数必须做出相同的修正。然后我们可以实例化我们的模型，将其移动到`device`，并像以前一样运行它：[⁸](#pgfId-1021225)
+- en: '[PRE28]'
+  id: totrans-212
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: ❶ Moves our model (all parameters) to the GPU. If you forget to move either
+    the model or the inputs to the GPU, you will get errors about tensors not being
+    on the same device, because the PyTorch operators do not support mixing GPU and
+    CPU inputs.
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将我们的模型（所有参数）移动到GPU。如果忘记将模型或输入移动到GPU，将会出现关于张量不在同一设备上的错误，因为PyTorch运算符不支持混合GPU和CPU输入。
+- en: Even for our small network here, we do see a sizable increase in speed. The
+    advantage of computing on GPUs is more visible for larger models.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 即使对于我们这里的小型网络，我们也看到了速度的显著增加。在大型模型上，使用GPU进行计算的优势更加明显。
+- en: 'There is a slight complication when loading network weights: PyTorch will attempt
+    to load the weight to the same device it was saved from--that is, weights on the
+    GPU will be restored to the GPU. As we don’t know whether we want the same device,
+    we have two options: we could move the network to the CPU before saving it, or
+    move it back after restoring. It is a bit more concise to instruct PyTorch to
+    override the device information when loading weights. This is done by passing
+    the `map_location` keyword argument to `torch.load`:'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在加载网络权重时存在一个小复杂性：PyTorch将尝试将权重加载到与保存时相同的设备上--也就是说，GPU上的权重将被恢复到GPU上。由于我们不知道是否要相同的设备，我们有两个选择：我们可以在保存之前将网络移动到CPU，或者在恢复后将其移回。通过将`map_location`关键字参数传递给`torch.load`，更简洁地指示PyTorch在加载权重时覆盖设备信息：
+- en: '[PRE29]'
+  id: totrans-216
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: 8.5 Model design
+  id: totrans-217
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.5 模型设计
+- en: 'We built our model as a subclass of `nn.Module`, the de facto standard for
+    all but the simplest models. Then we trained it successfully and saw how to use
+    the GPU to train our models. We’ve reached the point where we can build a feed-forward
+    convolutional neural network and train it successfully to classify images. The
+    natural question is, what now? What if we are presented with a more complicated
+    problem? Admittedly, our birds versus airplanes dataset wasn’t that complicated:
+    the images were very small, and the object under investigation was centered and
+    took up most of the viewport.'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将我们的模型构建为`nn.Module`的子类，这是除了最简单的模型之外的事实标准。然后我们成功地训练了它，并看到了如何使用GPU来训练我们的模型。我们已经达到了可以构建一个前馈卷积神经网络并成功训练它来对图像进行分类的程度。自然的问题是，接下来呢？如果我们面对一个更加复杂的问题会怎么样？诚然，我们的鸟类与飞机数据集并不那么复杂：图像非常小，而且所研究的对象位于中心并占据了大部分视口。
+- en: If we moved to, say, ImageNet, we would find larger, more complex images, where
+    the right answer would depend on multiple visual clues, often hierarchically organized.
+    For instance, when trying to predict whether a dark brick shape is a remote control
+    or a cell phone, the network could be looking for something like a screen.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们转向，比如说，ImageNet，我们会发现更大、更复杂的图像，正确答案将取决于多个视觉线索，通常是按层次组织的。例如，当试图预测一个黑色砖块形状是遥控器还是手机时，网络可能正在寻找类似屏幕的东西。
+- en: Plus images may not be our sole focus in the real world, where we have tabular
+    data, sequences, and text. The promise of neural networks is sufficient flexibility
+    to solve problems on all these kinds of data given the proper architecture (that
+    is, the interconnection of layers or modules) and the proper loss function.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此外，在现实世界中，图像可能不是我们唯一关注的焦点，我们还有表格数据、序列和文本。神经网络的承诺在于提供足够的灵活性，以解决所有这些类型数据的问题，只要有适当的架构（即层或模块的互连）和适当的损失函数。
+- en: PyTorch ships with a very comprehensive collection of modules and loss functions
+    to implement state-of-the-art architectures ranging from feed-forward components
+    to long short-term memory (LSTM) modules and transformer networks (two very popular
+    architectures for sequential data). Several models are available through PyTorch
+    Hub or as part of `torchvision` and other vertical community efforts.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch提供了一个非常全面的模块和损失函数集合，用于实现从前馈组件到长短期记忆（LSTM）模块和变压器网络（这两种非常流行的顺序数据架构）的最新架构。通过PyTorch
+    Hub或作为`torchvision`和其他垂直社区努力的一部分提供了几种模型。
+- en: We’ll see a few more advanced architectures in part 2, where we’ll walk through
+    an end-to-end problem of analyzing CT scans, but in general, it is beyond the
+    scope of this book to explore variations on neural network architectures. However,
+    we can build on the knowledge we’ve accumulated thus far to understand how we
+    can implement almost any architecture thanks to the expressivity of PyTorch. The
+    purpose of this section is precisely to provide conceptual tools that will allow
+    us to read the latest research paper and start implementing it in PyTorch--or,
+    since authors often release PyTorch implementations of their papers, to read the
+    implementations without choking on our coffee.
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将在第2部分看到一些更高级的架构，我们将通过分析CT扫描的端到端问题来介绍，但总的来说，探讨神经网络架构的变化超出了本书的范围。然而，我们可以借助迄今为止积累的知识来理解如何通过PyTorch的表现力实现几乎任何架构。本节的目的正是提供概念工具，使我们能够阅读最新的研究论文并开始在PyTorch中实现它--或者，由于作者经常发布他们论文的PyTorch实现，也可以在不被咖啡呛到的情况下阅读实现。
+- en: '8.5.1 Adding memory capacity: Width'
+  id: totrans-223
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.5.1 添加内存容量：宽度
+- en: 'Given our feed-forward architecture, there are a couple of dimensions we’d
+    likely want to explore before getting into further complications. The first dimension
+    is the *width* of the network: the number of neurons per layer, or channels per
+    convolution. We can make a model wider very easily in PyTorch. We just specify
+    a larger number of output channels in the first convolution and increase the subsequent
+    layers accordingly, taking care to change the `forward` function to reflect the
+    fact that we’ll now have a longer vector once we switch to fully connected layers:'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鉴于我们的前馈架构，在进一步复杂化之前，我们可能想要探索一��维度。第一个维度是网络的*宽度*：每层的神经元数量，或者每个卷积的通道数。在PyTorch中，我们可以很容易地使模型更宽。我们只需在第一个卷积中指定更多的输出通道数，并相应增加后续层，同时要注意更改`forward`函数以反映这样一个事实，即一旦我们转换到全连接层，我们现在将有一个更长的向量：
+- en: '[PRE30]'
+  id: totrans-225
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: 'If we want to avoid hardcoding numbers in the definition of the model, we can
+    easily pass a parameter to *init* and parameterize the width, taking care to also
+    parameterize the call to `view` in the `forward` function:'
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们想避免在模型定义中硬编码数字，我们可以很容易地将一个参数传递给*init*，并将宽度参数化，同时要注意在`forward`函数中也将`view`的调用参数化：
+- en: '[PRE31]'
+  id: totrans-227
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: 'The numbers specifying channels and features for each layer are directly related
+    to the number of parameters in a model; all other things being equal, they increase
+    the *capacity* of the model. As we did previously, we can look at how many parameters
+    our model has now:'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每一层指定通道和特征的数字与模型中的参数数量直接相关；其他条件相同的情况下，它们会增加模型的*容量*。就像之前所做的那样，我们可以看看我们的模型现在有多少参数：
+- en: '[PRE32]'
+  id: totrans-229
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: The greater the capacity, the more variability in the inputs the model will
+    be able to manage; but at the same time, the more likely overfitting will be,
+    since the model can use a greater number of parameters to memorize unessential
+    aspects of the input. We already went into ways to combat overfitting, the best
+    being increasing the sample size or, in the absence of new data, augmenting existing
+    data through artificial modifications of the same data.
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 容量越大，模型将能够处理输入的变化性就越多；但与此同时，过拟合的可能性也越大，因为模型可以使用更多的参数来记忆输入的不重要方面。我们已经探讨了对抗过拟合的方法，最好的方法是增加样本量，或者在没有新数据的情况下，通过对同一数据进行人工修改来增加现有数据。
+- en: There are a few more tricks we can play at the model level (without acting on
+    the data) to control overfitting. Let’s review the most common ones.
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在模型级别（而不是在数据上）我们可以采取一些更多的技巧来控制过拟合。让我们回顾一下最常见的几种。
+- en: '8.5.2 Helping our model to converge and generalize: Regularization'
+  id: totrans-232
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.5.2 帮助我们的模型收敛和泛化：正则化
+- en: 'Training a model involves two critical steps: optimization, when we need the
+    loss to decrease on the training set; and generalization, when the model has to
+    work not only on the training set but also on data it has not seen before, like
+    the validation set. The mathematical tools aimed at easing these two steps are
+    sometimes subsumed under the label *regularization*.'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 训练模型涉及两个关键步骤：优化，当我们需要在训练集上减少损失时；和泛化，当模型不仅需要在训练集上工作，还需要在之前未见过的数据上工作，如验证集。旨在简化这两个步骤的数学工具有时被归纳为*正则化*的标签下。
+- en: 'Keeping the parameters in check: Weight penalties'
+  id: totrans-234
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 控制参数：权重惩罚
+- en: The first way to stabilize generalization is to add a regularization term to
+    the loss. This term is crafted so that the weights of the model tend to be small
+    on their own, limiting how much training makes them grow. In other words, it is
+    a penalty on larger weight values. This makes the loss have a smoother topography,
+    and there’s relatively less to gain from fitting individual samples.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 稳定泛化的第一种方法是向损失中添加正则化项。这个项被设计成使模型的权重自行趋向于较小，限制训练使它们增长的程度。换句话说，这是对较大权重值的惩罚。这使得损失具有更加平滑的拓扑结构，从拟合单个样本中获得的收益相对较少。
+- en: The most popular regularization terms of this kind are L2 regularization, which
+    is the sum of squares of all weights in the model, and L1 regularization, which
+    is the sum of the absolute values of all weights in the model.[⁹](#pgfId-1022070)
+    Both of them are scaled by a (small) factor, which is a hyperparameter we set
+    prior to training.
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种类型的最受欢迎的正则化项是L2正则化，它是模型中所有权重的平方和，以及L1正则化，它是模型中所有权重的绝对值之和。它们都由一个（小）因子缩放，这是我们在训练之前设置的超参数。
+- en: L2 regularization is also referred to as *weight decay*. The reason for this
+    name is that, thinking about SGD and backpropagation, the negative gradient of
+    the L2 regularization term with respect to a parameter `w_i` is `- 2 * lambda
+    * w_i`, where `lambda` is the aforementioned hyperparameter, simply named *weight
+    decay* in PyTorch. So, adding L2 regularization to the loss function is equivalent
+    to decreasing each weight by an amount proportional to its current value during
+    the optimization step (hence, the name *weight decay*). Note that weight decay
+    applies to all parameters of the network, such as biases.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: L2正则化也被称为*权重衰减*。这个名称的原因是，考虑到SGD和反向传播，L2正则化项对参数`w_i`的负梯度为`- 2 * lambda * w_i`，其中`lambda`是前面提到的超参数，在PyTorch中简称为*权重衰减*。因此，将L2正则化添加到损失函数中等同于在优化步骤中减少每个权重的数量与其当前值成比例的量（因此，称为*权重衰减*）。请注意，权重衰减适用于网络的所有参数，如偏置。
+- en: 'In PyTorch, we could implement regularization pretty easily by adding a term
+    to the loss. After computing the loss, whatever the loss function is, we can iterate
+    the parameters of the model, sum their respective square (for L2) or `abs` (for
+    L1), and backpropagate:'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyTorch中，我们可以通过向损失中添加一个项来很容易地实现正则化。在计算损失后，无论损失函数是什么，我们都可以迭代模型的参数，对它们各自的平方（对于L2）或`abs`（对于L1）求和，并进行反向传播：
+- en: '[PRE33]'
+  id: totrans-239
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: ❶ Replaces pow(2.0) with abs() for L1 regularization
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 用abs()替换pow(2.0)以进行L1正则化
+- en: However, the SGD optimizer in PyTorch already has a `weight_decay` parameter
+    that corresponds to `2 * lambda`, and it directly performs weight decay during
+    the update as described previously. It is fully equivalent to adding the L2 norm
+    of weights to the loss, without the need for accumulating terms in the loss and
+    involving autograd.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，PyTorch中的SGD优化器已经有一个`weight_decay`参数，对应于`2 * lambda`，并且在更新过程中直接执行权重衰减，如前所述。这完全等同于将权重的L2范数添加到损失中，而无需在损失中累积项并涉及autograd。
+- en: 'Not relying too much on a single input: Dropout'
+  id: totrans-242
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 不要过分依赖单个输入：Dropout
+- en: 'An effective strategy for combating overfitting was originally proposed in
+    2014 by Nitish Srivastava and coauthors from Geoff Hinton’s group in Toronto,
+    in a paper aptly entitled “Dropout: a Simple Way to Prevent Neural Networks from
+    Overfitting” ([http://mng.bz/nPMa](http://mng.bz/nPMa)). Sounds like pretty much
+    exactly what we’re looking for, right? The idea behind dropout is indeed simple:
+    zero out a random fraction of outputs from neurons across the network, where the
+    randomization happens at each training iteration.'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一种有效的对抗过拟合策略最初是由2014年多伦多Geoff Hinton小组的Nitish Srivastava及其合著者提出的，题为“Dropout：一种简单防止神经网络过拟合的方法”（[http://mng.bz/nPMa](http://mng.bz/nPMa)）。听起来就像是我们正在寻找的东西，对吧？dropout背后的想法确实很简单：在整个网络中随机将一部分神经元的输出置零，其中随机化发生在每个训练迭代中。
+- en: This procedure effectively generates slightly different models with different
+    neuron topologies at each iteration, giving neurons in the model less chance to
+    coordinate in the memorization process that happens during overfitting. An alternative
+    point of view is that dropout perturbs the features being generated by the model,
+    exerting an effect that is close to augmentation, but this time throughout the
+    network.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 该过程有效地在每次迭代中生成具有不同神经元拓扑的略有不同的模型，使模型中的神经元在发生过拟合时的记忆过程中有更少的协调机会。另一个观点是dropout扰乱了模型生成的特征，产生了一种接近增强的效果，但这次是在整个网络中。
+- en: 'In PyTorch, we can implement dropout in a model by adding an `nn.Dropout` module
+    between the nonlinear activation function and the linear or convolutional module
+    of the subsequent layer. As an argument, we need to specify the probability with
+    which inputs will be zeroed out. In case of convolutions, we’ll use the specialized
+    `nn.Dropout2d` or `nn.Dropout3d`, which zero out entire channels of the input:'
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyTorch中，我们可以通过在非线性激活函数和后续层的线性或卷积模块之间添加一个`nn.Dropout`��块来实现模型中的dropout。作为参数，我们需要指定输入被置零的概率。在卷积的情况下，我们将使用专门的`nn.Dropout2d`或`nn.Dropout3d`，它们会将输入的整个通道置零：
+- en: '[PRE34]'
+  id: totrans-246
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: Note that dropout is normally active during training, while during the evaluation
+    of a trained model in production, dropout is bypassed or, equivalently, assigned
+    a probability equal to zero. This is controlled through the `train` property of
+    the `Dropout` module. Recall that PyTorch lets us switch between the two modalities
+    by calling
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，在训练期间通常会激活dropout，而在生产中评估经过训练的模型时，会绕过dropout，或者等效地将概率分配为零。这通过`Dropout`模块的`train`属性来控制。请记住，PyTorch允许我们通过调用在两种模式之间切换
+- en: '[PRE35]'
+  id: totrans-248
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE35]'
+- en: or
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 或
+- en: '[PRE36]'
+  id: totrans-250
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE36]'
+- en: on any `nn.Model` subclass. The call will be automatically replicated on the
+    submodules so that if `Dropout` is among them, it will behave accordingly in subsequent
+    forward and backward passes.
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在任何`nn.Model`子类上。调用将自动复制到子模块，因此如果其中包含`Dropout`，它将在后续的前向和后向传递中相应地行为。
+- en: 'Keeping activations in check: Batch normalization'
+  id: totrans-252
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 保持激活在适当范围内：批量归一化
+- en: 'Dropout was all the rage when, in 2015, another seminal paper was published
+    by Sergey Ioffe and Christian Szegedy from Google, entitled “Batch Normalization:
+    Accelerating Deep Network Training by Reducing Internal Covariate Shift” ([https://arxiv.org/abs/1502.03167](https://arxiv.org/abs/1502.03167)).
+    The paper described a technique that had multiple beneficial effects on training:
+    allowing us to increase the learning rate and make training less dependent on
+    initialization and act as a regularizer, thus representing an alternative to dropout.'
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在2015年，谷歌的Sergey Ioffe和Christian Szegedy发表了另一篇具有开创性意义的论文，名为“批量归一化：通过减少内部协变量转移加速深度网络训练”（[https://arxiv.org/abs/1502.03167](https://arxiv.org/abs/1502.03167)）。该论文描述了一种对训练有多种有益影响的技术：使我们能够增加学习率，使训练不那么依赖初始化并充当正则化器，从而代替了dropout。
+- en: The main idea behind batch normalization is to rescale the inputs to the activations
+    of the network so that minibatches have a certain desirable distribution. Recalling
+    the mechanics of learning and the role of nonlinear activation functions, this
+    helps avoid the inputs to activation functions being too far into the saturated
+    portion of the function, thereby killing gradients and slowing training.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 批量归一化背后的主要思想是重新缩放网络的激活输入，以便小批量具有某种理想的分布。回顾学习的机制和非线性激活函数的作用，这有助于避免输入到激活函数过于饱和部分，从而杀死梯度并减慢训练速度。
+- en: In practical terms, batch normalization shifts and scales an intermediate input
+    using the mean and standard deviation collected at that intermediate location
+    over the samples of the minibatch. The regularization effect is a result of the
+    fact that an individual sample and its downstream activations are always seen
+    by the model as shifted and scaled, depending on the statistics across the randomly
+    extracted minibatch. This is in itself a form of *principled* augmentation. The
+    authors of the paper suggest that using batch normalization eliminates or at least
+    alleviates the need for dropout.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在实际操作中，批量归一化使用小批量样本中在该中间位置收集的均值和标准差来移位和缩放中间输入。正则化效果是因为模型始终将单个样本及其下游激活视为根据随机提取的小批量样本的统计数据而移位和缩放。这本身就是一种*原则性*的增强。论文的作者建议使用批量归一化消除或至少减轻了对dropout的需求。
+- en: 'Batch normalization in PyTorch is provided through the `nn.BatchNorm1D`, `nn.BatchNorm2d`,
+    and `nn.BatchNorm3d` modules, depending on the dimensionality of the input. Since
+    the aim for batch normalization is to rescale the inputs of the activations, the
+    natural location is after the linear transformation (convolution, in this case)
+    and the activation, as shown here:'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyTorch中，批量归一化通过`nn.BatchNorm1D`、`nn.BatchNorm2d`和`nn.BatchNorm3d`模块提供，取决于输入的维度。由于批量归一化的目的是重新缩放激活的输入，自然的位置是在线性变换（在这种情况下是卷积）和激活之后，如下所示：
+- en: '[PRE37]'
+  id: totrans-257
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE37]'
+- en: Just as for dropout, batch normalization needs to behave differently during
+    training and inference. In fact, at inference time, we want to avoid having the
+    output for a specific input depend on the statistics of the other inputs we’re
+    presenting to the model. As such, we need a way to still normalize, but this time
+    fixing the normalization parameters once and for all.
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与dropout一样，批量归一化在训练和推断期间需要有不同的行为。实际上，在推断时，我们希望避免特定输入的输出依赖于我们向模型呈现的其他输入的统计信���。因此，我们需要一种方法来进行归一化，但这次是一次性固定归一化参数。
+- en: As minibatches are processed, in addition to estimating the mean and standard
+    deviation for the current minibatch, PyTorch also updates the running estimates
+    for mean and standard deviation that are representative of the whole dataset,
+    as an approximation. This way, when the user specifies
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当处理小批量时，除了估计当前小批量的均值和标准差之外，PyTorch还更新代表整个数据集的均值和标准差的运行估计，作为近似值。这样，当用户指定时
+- en: '[PRE38]'
+  id: totrans-260
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE38]'
+- en: and the model contains a batch normalization module, the running estimates are
+    frozen and used for normalization. To unfreeze running estimates and return to
+    using the minibatch statistics, we call `model.train()`, just as we did for dropout.
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果模型包含批量归一化模块，则冻结运行估计并用于归一化。要解冻运行估计并返回使用小批量统计信息，我们调用`model.train()`，就像我们对待dropout一样。
+- en: '8.5.3 Going deeper to learn more complex structures: Depth'
+  id: totrans-262
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.5.3 深入学习更复杂的结构：深度
+- en: Earlier, we talked about width as the first dimension to act on in order to
+    make a model larger and, in a way, more capable. The second fundamental dimension
+    is obviously *depth*. Since this is a deep learning book, depth is something we’re
+    supposedly into. After all, deeper models are always better than shallow ones,
+    aren’t they? Well, it depends. With depth, the complexity of the function the
+    network is able to approximate generally increases. In regard to computer vision,
+    a shallower network could identify a person’s shape in a photo, whereas a deeper
+    network could identify the person, the face on their top half, and the mouth within
+    the face. Depth allows a model to deal with hierarchical information when we need
+    to understand the context in order to say something about some input.
+  id: totrans-263
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 早些时候，我们谈到宽度作为第一个要处理的维度，以使模型更大，从某种意义上说，更有能力。第二个基本维度显然是*深度*。由于这是一本深度学习书，深度是我们应该关注的东西。毕竟，深层模型总是比浅层模型更好，不是吗？嗯，这取决于情况。随着深度增加，网络能够逼近的函数的复杂性通常会增加。就计算机视觉而言，一个较浅的网络可以识别照片中的人的形状，而一个更深的网络可以识别人、头部上半部分的脸和脸部内的嘴巴。深度使模型能够处理分层信息，当我们需要理解上下文以便对某些输入进行分析时。
+- en: 'There’s another way to think about depth: increasing depth is related to increasing
+    the length of the sequence of operations that the network will be able to perform
+    when processing input. This view--of a deep network that performs sequential operations
+    to carry out a task--is likely fascinating to software developers who are used
+    to thinking about algorithms as sequences of operations like “find the person’s
+    boundaries, look for the head on top of the boundaries, look for the mouth within
+    the head.”'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 还有另一种思考深度的方式：增加深度与增加网络在处理输入时能够执行的操作序列的长度有关。这种观点--一个执行顺序操作以完成任务的深度网络--对于习惯于将算法视为“找到人的边界，寻找边界上方的头部，寻找头部内的嘴巴”等操作序列的软件开发人员可能是迷人的。
+- en: Skip connections
+  id: totrans-265
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 跳过连接
+- en: Depth comes with some additional challenges, which prevented deep learning models
+    from reaching 20 or more layers until late 2015\. Adding depth to a model generally
+    makes training harder to converge. Let’s recall backpropagation and think about
+    it in the context of a very deep network. The derivatives of the loss function
+    with respect to the parameters, especially those in early layers, need to be multiplied
+    by a lot of other numbers originating from the chain of derivative operations
+    between the loss and the parameter. Those numbers being multiplied could be small,
+    generating ever-smaller numbers, or large, swallowing smaller numbers due to floating-point
+    approximation. The bottom line is that a long chain of multiplications will tend
+    to make the contribution of the parameter to the gradient *vanish*, leading to
+    ineffective training of that layer since that parameter and others like it won’t
+    be properly updated.
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 深度带来了一些额外的挑战，这些挑战阻碍了深度学习模型在2015年之前达到20层或更多层。增加模型的深度通常会使训练更难收敛。让我们回顾反向传播，并在非常深的网络环境中思考一下。损失函数对参数的导数，特别是早期层中的导数，需要乘以许多其他数字，这些数字来自于损失和参数之间的导数操作链。这些被乘以的数字可能很小，生成越来越小的数字，或者很大，由于浮点近似而吞噬较小的数字。归根结底，长链的乘法将使参数对梯度的贡献*消失*，导致该层的训练无效，因为该参数和类似的其他参数将无法得到适当更新。
+- en: 'In December 2015, Kaiming He and coauthors presented *residual networks* (ResNets),
+    an architecture that uses a simple trick to allow very deep networks to be successfully
+    trained ([https:// arxiv.org/abs/1512.03385](https://arxiv.org/abs/1512.03385)).
+    That work opened the door to networks ranging from tens of layers to 100 layers
+    in depth, surpassing the then state of the art in computer vision benchmark problems.
+    We encountered residual networks when we were playing with pretrained models in
+    chapter 2\. The trick we mentioned is the following: using a *skip connection*
+    to short-circuit blocks of layers, as shown in figure 8.11.'
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 2015年12月，Kaiming He和合著者提出了*残差网络*（ResNets），这是一种使用简单技巧的架构，使得非常深的网络能够成功训练（[https://
+    arxiv.org/abs/1512.03385](https://arxiv.org/abs/1512.03385)）。该工作为从几十层到100层深度的网络打开了大门，超越了当时计算机视觉基准问题的最新技术。我们在第2章中使用预训练模型时遇到了残差网络。我们提到的技巧是：使用*跳跃连接*来绕过一组层，如图8.11所示。
+- en: '![](../Images/CH08_F11_Stevens2_GS.png)'
+  id: totrans-268
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F11_Stevens2_GS.png)'
+- en: Figure 8.11 The architecture of our network with three convolutional layers.
+    The skip connection is what differentiates `NetRes` from `NetDepth`.
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.11 我们具有三个卷积层的网络架构。跳跃连接是`NetRes`与`NetDepth`的区别所在。
+- en: 'A skip connection is nothing but the addition of the input to the output of
+    a block of layers. This is exactly how it is done in PyTorch. Let’s add one layer
+    to our simple convolutional model, and let’s use ReLU as the activation for a
+    change. The vanilla module with an extra layer looks like this:'
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 跳跃连接只是将输入添加到一组层的输出中。这正是在PyTorch中所做的。让我们向我们简单的卷积模型添加一层，并让我们使用ReLU作为激活函数。带有额外一层的香草模块如下所示：
+- en: '[PRE39]'
+  id: totrans-271
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE39]'
+- en: 'Adding a skip connection a la ResNet to this model amounts to adding the output
+    of the first layer in the `forward` function to the input of the third layer:'
+  id: totrans-272
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 向这个模型添加一个类ResNet的跳跃连接相当于将第一层的输出添加到第三层的输入中的`forward`函数中：
+- en: '[PRE40]'
+  id: totrans-273
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE40]'
+- en: In other words, we’re using the output of the first activations as inputs to
+    the last, in addition to the standard feed-forward path. This is also referred
+    to as *identity mapping*. So, how does this alleviate the issues with vanishing
+    gradients we were mentioning earlier?
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，我们将第一个激活的输出用作最后一个的输入，除了标准的前馈路径。这也被称为*恒等映射*。那么，这如何缓解我们之前提到的梯度消失问题呢？
+- en: Thinking about backpropagation, we can appreciate that a skip connection, or
+    a sequence of skip connections in a deep network, creates a direct path from the
+    deeper parameters to the loss. This makes their contribution to the gradient of
+    the loss more direct, as partial derivatives of the loss with respect to those
+    parameters have a chance not to be multiplied by a long chain of other operations.
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 想想反向传播，我们可以欣赏到在深度网络中的跳跃连接，或者一系列跳跃连接，为深层参数到损失创建了一条直接路径。这使得它们对损失的梯度贡献更直接，因为对这些参数的损失的偏导数有机会不被一长串其他操作相乘。
+- en: It has been observed that skip connections have a beneficial effect on convergence
+    especially in the initial phases of training. Also, the loss landscape of deep
+    residual networks is a lot smoother than feed-forward networks of the same depth
+    and width.
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 已经观察到跳跃连接对收敛特别是在训练的初始阶段有益。此外，深度残差网络的损失景观比相同深度和宽度的前馈网络要平滑得多。
+- en: It is worth noting that skip connections were not new to the world when ResNets
+    came along. Highway networks and U-Net made use of skip connections of one form
+    or another. However, the way ResNets used skip connections enabled models of depths
+    greater than 100 to be amenable to training.
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 值得注意的是，当ResNets出现时，跳跃连接并不是新鲜事物。Highway网络和U-Net使用了各种形式的跳跃连接。然而，ResNets使用跳跃连接的方式使得深度大于100的模型易于训练。
+- en: 'Since the advent of ResNets, other architectures have taken skip connections
+    to the next level. One in particular, DenseNet, proposed to connect each layer
+    with several other layers downstream through skip connections, achieving state-of-the-art
+    results with fewer parameters. By now, we know how to implement something like
+    DenseNets: just arithmetically add earlier intermediate outputs to downstream
+    intermediate outputs.'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 自ResNets出现以来，其他架构已经将跳跃连接提升到了一个新水平。特别是DenseNet，提出通过跳跃连接将每一层与数个下游层连接起来，以较少的参数实现了最先进的结果。到目前为止，我们知道如何实现类似DenseNets的东西：只需将早期中间输出算术地添加到下游中间输出中。
+- en: Building very deep models in PyTorch
+  id: totrans-279
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 在PyTorch中构建非常深的模型
+- en: We talked about exceeding 100 layers in a convolutional neural network. How
+    can we build that network in PyTorch without losing our minds in the process?
+    The standard strategy is to define a building block, such as a `(Conv2d, ReLU,
+    Conv2d) + skip connection` block, and then build the network dynamically in a
+    `for` loop. Let’s see it done in practice. We will create the network depicted
+    in figure 8.12.
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们谈到了在卷积神经网络中超过100层。我们如何在PyTorch中构建该网络而不至于在过程中迷失方向？标准策略是定义一个构建块，例如`(Conv2d，ReLU，Conv2d)
+    + 跳跃连接`块，然后在`for`循环中动态构建网络。让我们看看实践中是如何完成的。我们将创建图8.12中所示的网络。
+- en: '![](../Images/CH08_F12_Stevens2_GS.png)'
+  id: totrans-281
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F12_Stevens2_GS.png)'
+- en: Figure 8.12 Our deep architecture with residual connections. On the left, we
+    define a simplistic residual block. We use it as a building block in our network,
+    as shown on the right.
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.12 我们带有残差连接的深度架构。在左侧，我们定义了一个简单的残差块。如右侧所示，我们将其用作网络中的构建块。
+- en: 'We first create a module subclass whose sole job is to provide the computation
+    for one *block*--that is, one group of convolutions, activation, and skip connection:'
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们首先创建一个模块子类，其唯一任务是为一个*块*提供计算--也就是说，一组卷积、激活和跳跃连接：
+- en: '[PRE41]'
+  id: totrans-284
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE41]'
+- en: ❶ The BatchNorm layer would cancel the effect of bias, so it is customarily
+    left out.
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ BatchNorm层会抵消偏差的影响，因此通常会被省略。
+- en: ❷ Uses custom initializations. kaiming_normal_ initializes with normal random
+    elements with standard deviation as computed in the ResNet paper. The batch norm
+    is initialized to produce output distributions that initially have 0 mean and
+    0.5 variance.
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 使用自定义初始化。kaiming_normal_使用正态随机元素进行初始化，标准差与ResNet论文中计算的一致。批量归一化被初始化为产生初始具有0均值和0.5方差的输出分布。
+- en: Since we’re planning to generate a deep model, we are including batch normalization
+    in the block, since this will help prevent gradients from vanishing during training.
+    We’d now like to generate a 100-block network. Does this mean we have to prepare
+    for some serious cutting and pasting? Not at all; we already have the ingredients
+    for imagining how this could look like.
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们计划生成一个深度模型，我们在块中包含了批量归一化，因为这将有助于防止训练过程中梯度消失。我们现在想生成一个包含100个块的网络。这意味着我们需要做一些严肃的剪切和粘贴吗？一点也不；我们已经有了想象这个模型可能是什么样子的所有要素。
+- en: 'First, in *init*, we create `nn.Sequential` containing a list of `ResBlock`
+    instances. `nn.Sequential` will ensure that the output of one block is used as
+    input to the next. It will also ensure that all the parameters in the block are
+    visible to `Net`. Then, in `forward`, we just call the sequential to traverse
+    the 100 blocks and generate the output:'
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，在*init*中，我们创建包含一系列`ResBlock`实例的`nn.Sequential`。`nn.Sequential`将确保一个块的输出被用作下一个块的输入。它还将确保块中的所有参数对`Net`可见。然后，在`forward`中，我们只需调用顺序遍历100个块并生成输出：
+- en: '[PRE42]'
+  id: totrans-289
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE42]'
+- en: In the implementation, we parameterize the actual number of layers, which is
+    important for experimentation and reuse. Also, needless to say, backpropagation
+    will work as expected. Unsurprisingly, the network is quite a bit slower to converge.
+    It is also more fragile in convergence. This is why we used more-detailed initializations
+    and trained our `NetRes` with a learning rate of 3e - 3 instead of the 1e - 2
+    we used for the other networks. We trained none of the networks to convergence,
+    but we would not have gotten anywhere without these tweaks.
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在实现中，我们参数化了实际层数，这对实验和重复使用很重要。此外，不用说，反向传播将按预期工作。毫不奇怪，网络收敛速度要慢得多。它在收敛方��也更加脆弱。这就是为什么我们使用更详细的初始化，并将我们的`NetRes`训练学习率设置为3e
+    - 3，而不是我们为其他网络使用的1e - 2。我们没有训练任何网络到收敛，但如果没有这些调整，我们将一事无成。
+- en: All this shouldn’t encourage us to seek depth on a dataset of 32 × 32 images,
+    but it clearly demonstrates how this can be achieved on more challenging datasets
+    like ImageNet. It also provides the key elements for understanding existing implementations
+    for models like ResNet, for instance, in `torchvision`.
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有这些都不应该鼓励我们在一个32×32像素的数据集上寻求深度，但它清楚地展示了如何在更具挑战性的数据集（如ImageNet）上实现这一点。它还为理解像ResNet这样的现有模型实现提供了关键要素，例如在`torchvision`中。
+- en: Initialization
+  id: totrans-292
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 初始化
+- en: Let’s briefly comment about the earlier initialization. Initialization is one
+    of the important tricks in training neural networks. Unfortunately, for historical
+    reasons, PyTorch has default weight initializations that are not ideal. People
+    are looking at fixing the situation; if progress is made, it can be tracked on
+    GitHub ([https:// github.com/pytorch/pytorch/issues/18182](https://github.com/pytorch/pytorch/issues/18182)).
+    In the meantime, we need to fix the weight initialization ourselves. We found
+    that our model did not converge and looked at what people commonly choose as initialization
+    (a smaller variance in weights; and zero mean and unit variance outputs for batch
+    norm), and then we halved the output variance in the batch norm when the network
+    would not converge.
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们简要评论一下早期的初始化。初始化是训练神经网络的重要技巧之一。不幸的是，出于历史原因，PyTorch具有不理想的默认权重初始化。人们正在努力解决这个问题；如果取得进展，可以在GitHub上跟踪（[https://github.com/pytorch/pytorch/issues/18182](https://github.com/pytorch/pytorch/issues/18182)）。与此同时，我们需要自己修复权重初始化。我们发现我们的模型无法收敛，查看了人们通常选择的初始化方式（权重较小的方差；批量归一化的输出为零均值和单位方差），然后在网络无法收敛时，将批量归一化的输出方差减半。
+- en: Weight initialization could fill an entire chapter on its own, but we think
+    that would be excessive. In chapter 11, we’ll bump into initialization again and
+    use what arguably could be PyTorch defaults without much explanation. Once you’ve
+    progressed to the point where the details of weight initialization are of specific
+    interest to you--probably not before finishing this book--you might revisit this
+    topic.[^(10)](#pgfId-1027287)
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 权重初始化可能需要一个完整的章节来讨论，但我们认为那可能有些过分。在第11章中，我们将再次遇到初始化，并使用可能是PyTorch默认值的内容，而不做过多解释。一旦你进步到对权重初始化的细节感兴趣的程度--可能在完成本书之前--你可能会重新访问这个主题。
+- en: 8.5.4 Comparing the designs from this section
+  id: totrans-295
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.5.4 比较本节中的设计
+- en: We summarize the effect of each of our design modifications in isolation in
+    figure 8.13\. We should not overinterpret any of the specific numbers--our problem
+    setup and experiments are simplistic, and repeating the experiment with different
+    random seeds will probably generate variation at least as large as the differences
+    in validation accuracy. For this demonstration, we left all other things equal,
+    from learning rate to number of epochs to train; in practice, we would try to
+    get the best results by varying those. Also, we would likely want to combine some
+    of the additional design elements.
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在图8.13中总结了我们每个设计修改的效果。我们不应该过分解释任何具体的数字--我们的问题设置和实验是简单的，使用不同的随机种子重复实验可能会产生至少与验证准确性差异一样大的变化。在这个演示中，我们保持了所有其他因素不变，从学习率到训练的时代数；在实践中，我们会通过变化这些因素来获得最佳结果。此外，我们可能会想要结合一些额外的设计元素。
+- en: 'But a qualitative observation may be in order: as we saw in section 5.5.3,
+    when discussing validatioin and overfitting, The weight decay and dropout regularizations,
+    which have a more rigorous statistical estimation interpretation as regularization
+    than batch norm, have a much narrower gap between the two accuracies. Batch norm,
+    which serves more as a convergence helper, lets us train the network to nearly
+    100% training accuracy, so we interpret the first two as regularization.'
+  id: totrans-297
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是可能需要进行定性观察：正如我们在第5.5.3节中看到的，在讨论验证和过拟合时，权重衰减和丢弃正则化，比批量归一化更具有更严格的统计估计解释作为正则化，两个准确率之间的差距要小得多。批量归一化更像是一个收敛助手，让我们将网络训练到接近100%的训练准确率，因此我们将前两者解释为正则化。
+- en: '![](../Images/CH08_F13_Stevens2_GS.png)'
+  id: totrans-298
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/CH08_F13_Stevens2_GS.png)'
+- en: Figure 8.13 The modified networks all perform similarly.
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图8.13 修改后的网络表现都相似。
+- en: 8.5.5 It’s already outdated
+  id: totrans-300
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 8.5.5 它已经过时了
+- en: The curse and blessing of a deep learning practitioner is that neural network
+    architectures evolve at a very rapid pace. This is not to say that what we’ve
+    seen in this chapter is necessarily old school, but a thorough illustration of
+    the latest and greatest architectures is a matter for another book (and they would
+    cease to be the latest and the greatest pretty quickly anyway). The take-home
+    message is that we should make every effort to proficiently translate the math
+    behind a paper into actual PyTorch code, or at least understand the code that
+    others have written with the same intention. In the last few chapters, you have
+    hopefully gathered quite a few of the fundamental skills to translate ideas into
+    implemented models in PyTorch.
+  id: totrans-301
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 深度学习从业者的诅咒和祝福是神经网络架构以非常快的速度发展。这并不是说我们在本章中看到的内容一定是老派的，但对最新和最伟大的架构进行全面说明是另一本书的事情（而且它们很快就会不再是最新和最伟大的）。重要的是我们应该尽一切努力将论文背后的数学精通地转化为实际的PyTorch代码，或者至少理解其他人为了相同目的编写的代码。在最近的几章中，您已经希望积累了一些将想法转化为PyTorch中实现模型的基本技能。
+- en: 8.6 Conclusion
+  id: totrans-302
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.6 结论
+- en: After quite a lot of work, we now have a model that our fictional friend Jane
+    can use to filter images for her blog. All we have to do is take an incoming image,
+    crop and resize it to 32 × 32, and see what the model has to say about it. Admittedly,
+    we have solved only part of the problem, but it was a journey in itself.
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 经过相当多的工作，我们现在有一个模型，我们的虚构朋友简可以用来过滤她博客中的图像。我们所要做的就是拿到一张进入的图像，裁剪并调整大小为32 × 32，看看模型对此有何看法。诚然，我们只解决了问题的一部分，但这本身就是一段旅程。
+- en: We have solved just part of the problem because there are a few interesting
+    unknowns we would still have to face. One is picking out a bird or airplane from
+    a larger image. Creating bounding boxes around objects in an image is something
+    a model like ours can’t do.
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们只解决了问题的一部分，因为还有一些有趣的未知问题我们仍然需要面对。其中一个是从较大图像中挑选出鸟或飞机。在图像中创建物体周围的边界框是我们这种模型无法做到的。
+- en: Another hurdle concerns what happens when Fred the cat walks in front of the
+    camera. Our model will not refrain from giving its opinion about how bird-like
+    the cat is! It will happily output “airplane” or “bird,” perhaps with 0.99 probability.
+    This issue of being very confident about samples that are far from the training
+    distribution is called *overgeneralization*. It’s one of the main problems when
+    we take a (presumably good) model to production in those cases where we can’t
+    really trust the input (which, sadly, is the majority of real-world cases).
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个障碍是当猫弗雷德走到摄像头前会发生什么。我们的模型会毫不犹豫地发表关于猫有多像鸟的观点！它会高兴地输出“飞机”或“鸟”，也许概率为0.99。这种对远离训练分布的样本非常自信的问题被称为*过度泛化*。当我们将一个（假设良好的）模型投入生产中时，我们无法真正信任输入的情况下，这是主要问题之一（遗憾的是，这是大多数真实世界案例）。
+- en: In this chapter, we have built reasonable, working models in PyTorch that can
+    learn from images. We did it in a way that helped us build our intuition around
+    convolutional networks. We also explored ways in which we can make our models
+    wider and deeper, while controlling effects like overfitting. Although we still
+    only scratched the surface, we have taken another significant step ahead from
+    the previous chapter. We now have a solid basis for facing the challenges we’ll
+    encounter when working on deep learning projects.
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们已经在PyTorch中构建了合理的、可工作的模型，可以从图像中学习。我们以一种有助于我们建立对卷积网络直觉的方式来做到这一点。我们还探讨了如何使我们的模型更宽更深，同时控制过拟合等影响。虽然我们仍然只是触及了表面，但我们已经比上一章更进一步了。我们现在有了一个坚实的基础，可以面对在深度学习项目��遇到的挑战。
+- en: Now that we’re familiar with PyTorch conventions and common features, we’re
+    ready to tackle something bigger. We’re going to transition from a mode where
+    each chapter or two presents a small problem, to spending multiple chapters breaking
+    down a bigger, real-world problem. Part 2 uses automatic detection of lung cancer
+    as an ongoing example; we will go from being familiar with the PyTorch API to
+    being able to implement entire projects using PyTorch. We’ll start in the next
+    chapter by explaining the problem from a high level, and then we’ll get into the
+    details of the data we’ll be using.
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们熟悉了PyTorch的约定和常见特性，我们准备着手处理更大的问题。我们将从每一章或两章呈现一个小问题的模式转变为花费多章来解决一个更大的、现实世界的问题。第2部分以肺癌的自动检测作为一个持续的例子；我们将从熟悉PyTorch
+    API到能够使用PyTorch实现整个项目。我们将在下一章开始从高层次解释问题，然后深入了解我们将要使用的数据的细节。
+- en: 8.7 Exercises
+  id: totrans-308
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.7 练习
+- en: Change our model to use a 5 × 5 kernel with `kernel_size=5` passed to the `nn.Conv2d`
+    constructor.
+  id: totrans-309
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 更改我们的模型，使用`kernel_size=5`传递给`nn.Conv2d`构造函数的5 × 5内核。
+- en: What impact does this change have on the number of parameters in the model?
+  id: totrans-310
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 这种变化对模型中的参数数量有什么影响？
+- en: Does the change improve or degrade overfitting?
+  id: totrans-311
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 这种变化是改善还是恶化了过拟合？
+- en: Read [https://pytorch.org/docs/stable/nn.html#conv2d](https://pytorch.org/docs/stable/nn.html#conv2d).
+  id: totrans-312
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 阅读[https://pytorch.org/docs/stable/nn.html#conv2d](https://pytorch.org/docs/stable/nn.html#conv2d)。
+- en: Can you describe what `kernel_size=(1,3)` will do?
+  id: totrans-313
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你能描述`kernel_size=(1,3)`会做什么吗？
+- en: How does the model behave with such a kernel?
+  id: totrans-314
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 这种卷积核会如何影响模型的行为？
+- en: Can you find an image that contains neither a bird nor an airplane, but that
+    the model claims has one or the other with more than 95% confidence?
+  id: totrans-315
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你能找到一张既不含鸟也不含飞机的图像，但模型声称其中有一个或另一个的置信度超过95%吗？
+- en: Can you manually edit a neutral image to make it more airplane-like?
+  id: totrans-316
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你能手动编辑一张中性图像，使其更像飞机吗？
+- en: Can you manually edit an airplane image to trick the model into reporting a
+    bird?
+  id: totrans-317
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 你能手动编辑一张飞机图像��以欺骗模型报告有鸟吗？
+- en: Do these tasks get easier with a network with less capacity? More capacity?
+  id: totrans-318
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 这些任务随着容量较小的网络变得更容易吗？容量更大呢？
+- en: 8.8 Summary
+  id: totrans-319
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 8.8 总结
+- en: Convolution can be used as the linear operation of a feed-forward network dealing
+    with images. Using convolution produces networks with fewer parameters, exploiting
+    locality and featuring translation invariance.
+  id: totrans-320
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 卷积可用作处理图像的前馈网络的线性操作。使用卷积可以产生参数更少的网络，利用局部性并具有平移不变性。
+- en: Stacking multiple convolutions with their activations one after the other, and
+    using max pooling in between, has the effect of applying convolutions to increasingly
+    smaller feature images, thereby effectively accounting for spatial relationships
+    across larger portions of the input image as depth increases.
+  id: totrans-321
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将多个卷积层及其激活函数依次堆叠在一起，并在它们之间使用最大池化，可以使卷积应用于越来越小的特征图像，从而在深度增加时有效地考虑输入图像更大部分的空间关系。
+- en: Any `nn.Module` subclass can recursively collect and return its and its children’s
+    parameters. This technique can be used to count them, feed them into the optimizer,
+    or inspect their values.
+  id: totrans-322
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 任何`nn.Module`子类都可以递归收集并返回其自身和其子类的参数。这种技术可用于计数参数、将其馈送到优化器中或检查其值。
+- en: The functional API provides modules that do not depend on storing internal state.
+    It is used for operations that do not hold parameters and, hence, are not trained.
+  id: totrans-323
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 函数式API提供了不依赖于存储内部状态的模块。它用于不持有参数且因此不被训练的操作。
+- en: Once trained, parameters of a model can be saved to disk and loaded back in
+    with one line of code each.
+  id: totrans-324
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 训练后，模型的参数可以保存到磁盘并用一行代码加载回来。
+- en: '* * *'
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '* * *'
+- en: '^(1.)There is a subtle difference between PyTorch’s convolution and mathematics’
+    convolution: one argument’s sign is flipped. If we were in a pedantic mood, we
+    could call PyTorch’s convolutions *discrete cross-correlations*.'
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(1.)PyTorch的卷积与数学的卷积之间存在微妙的差异：一个参数的符号被翻转了。如果我们情绪低落，我们可以称PyTorch的卷积为*离散互相关*。
+- en: '^(2.)This is part of the *lottery ticket hypothesis*: that many kernels will
+    be as useful as losing lottery tickets. See Jonathan Frankle and Michael Carbin,
+    “The Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks,” 2019,
+    [https://arxiv.org/abs/1803.03635](https://arxiv.org/abs/1803.03635).'
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '^(2.)这是*彩票票据假设*的一部分：许多卷积核将像丢失的彩票一样有用。参见Jonathan Frankle和Michael Carbin，“The
+    Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks,” 2019，[https://arxiv.org/abs/1803.03635](https://arxiv.org/abs/1803.03635)。'
+- en: ^(3.)For even-sized kernels, we would need to pad by a different number on the
+    left and right (and top and bottom). PyTorch doesn’t offer to do this in the convolution
+    itself, but the function `torch.nn.functional .pad` can take care of it. But it’s
+    best to stay with odd kernel sizes; even-sized kernels are just odd.
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(3.)对于偶数大小的卷积核，我们需要在左右（和上下）填充不同数量。PyTorch本身不提供在卷积中执行此操作的功能，但函数`torch.nn.functional.pad`可以处理。但最好保持奇数大小的卷积核；偶数大小的卷积核只是奇数大小的。
+- en: ^(4.)Not being able to do this kind of operation inside of `nn.Sequential` was
+    an explicit design choice by the PyTorch authors and was left that way for a long
+    time; see the linked comments from @soumith at [https://github.com/pytorch/pytorch/issues/2486](https://github.com/pytorch/pytorch/issues/2486).
+    Recently, PyTorch gained an `nn.Flatten` layer.
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(4.)无法在`nn.Sequential`内执行此类操作是PyTorch作者明确的设计选择，并且长时间保持不变；请参阅@soumith在[https://github.com/pytorch/pytorch/issues/2486](https://github.com/pytorch/pytorch/issues/2486)中的评论。最近，PyTorch增加了一个`nn.Flatten`层。
+- en: ^(5.)We could have used `nn.Flatten` starting from PyTorch 1.3.
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(5.)我们可以从PyTorch 1.3开始使用`nn.Flatten`。
+- en: ^(6.)The dimensions in the pixel-wise linear mapping defined by the first convolution
+    were emphasized by Jeremy Howard in his fast.ai course ([https://www.fast.ai](https://www.fast.ai)).
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(6.)由第一个卷积定义的像素级线性映射中的维度在Jeremy Howard的fast.ai课程中得到强调（[https://www.fast.ai](https://www.fast.ai)）。
+- en: ^(7.)Outside of and older than deep learning, projecting into high-dimensional
+    space and then doing conceptually simpler (than linear) machine learning is commonly
+    known as the *kernel trick*. The initial increase in the number of channels could
+    be seen as a somewhat similar phenomenon, but striking a different balance between
+    the cleverness of the embedding and the simplicity of the model working on the
+    embedding.
+  id: totrans-332
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(7.)在深度学习之外且比其更古老的，将投影到高维空间然后进行概念上更简单（比线性更简单）的机器学习通常被称为*核技巧*。通道数量的初始增加可以被视为一种类似的现象，但在嵌入的巧妙性和处理嵌入的模型的简单性之间达到不同的平衡。
+- en: ^(8.)There is a `pin_memory` option for the data loader that will cause the
+    data loader to use memory pinned to the GPU, with the goal of speeding up transfers.
+    Whether we gain something varies, though, so we will not pursue this here.
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(8.)数据加载器有一个`pin_memory`选项，将导致数据加载器使用固定到GPU的内存，目的是加快传输速度。然而，我们是否获得了什么是不确定的，因此我们不会在这里追求这个。
+- en: ^(9.)We’ll focus on L2 regularization here. L1 regularization--popularized in
+    the more general statistics literature by its use in Lasso--has the attractive
+    property of resulting in sparse trained weights.
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(9.)我们将重点放在L2正则化上。L1正则化--在更一般的统计文献中因其在Lasso中的应用而广为流行--具有产生稀疏训练权重的吸引人特性。
+- en: '^(10.)The seminal paper on the topic is by X. Glorot and Y. Bengio: “Understanding
+    the Difficulty of Training Deep Feedforward Neural Networks” (2010), which introduces
+    PyTorch’s *Xavier* initializations ([http:// mng.bz/vxz7](http://mng.bz/vxz7)).
+    The ResNet paper we mentioned expands on the topic, too, giving us the Kaiming
+    initializations used earlier. More recently, H. Zhang et al. have tweaked initialization
+    to the point that they do not need batch norm in their experiments with very deep
+    residual networks ([https://arxiv.org/abs/1901.09321](https://arxiv.org/abs/1901.09321)).'
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(10.)该主题的开创性论文是由X. Glorot和Y. Bengio撰写的：“理解训练深度前馈神经网络的困难”（2010年），介绍了PyTorch的*Xavier*初始化（[http://
+    mng.bz/vxz7](http://mng.bz/vxz7)）。我们提到的ResNet论文也扩展了这个主题，提供了之前使用的Kaiming初始化。最近，H.
+    Zhang等人对初始化进行了调整，以至于在他们对非常深的残差网络进行实验时不需要批量归一化（[https://arxiv.org/abs/1901.09321](https://arxiv.org/abs/1901.09321)）。
