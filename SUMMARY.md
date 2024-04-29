@@ -1,4 +1,5 @@
 +   [从零开始构建大语言模型（MEAP）](docs/bd-llm-scr/README.md)
++   [使用 GPT4 和 ChatGPT 开发应用](docs/dev-app-gpt4-cgpt/README.md)
 +   [深度学习秘籍书](docs/dl-cb/README.md)
 +   [面向程序员的 FastAI 和 PyTorch 深度学习](docs/dl-cdr-fai-pt/README.md)
 +   [面向金融的深度学习（提前发布）](docs/dl-fin/README.md)
