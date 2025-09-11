@@ -1,8 +1,0 @@
-+   [AI 驱动的开发者（MEAP）](README.md)
-+   [第一章：了解大型语言模型](ai-pwr-dev_1.md)
-+   [第二章：从生成式人工智能入门](ai-pwr-dev_2.md)
-+   [第三章：使用 ChatGPT 设计软件](ai-pwr-dev_3.md)
-+   [第四章：使用 GitHub Copilot 构建软件](ai-pwr-dev_4.md)
-+   [第五章：通过 GitHub Copilot 和 Copilot Chat 管理数据](ai-pwr-dev_5.md)
-+   [第六章：测试、评估和解释大型语言模型](ai-pwr-dev_6.md)
-+   [第七章：编码基础设施和管理部署](ai-pwr-dev_7.md)
