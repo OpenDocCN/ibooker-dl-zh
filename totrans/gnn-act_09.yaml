@@ -1,0 +1,3609 @@
+- en: 7 Learning and inference at scale
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 7 规模化的学习和推理
+- en: This chapter covers
+  id: totrans-1
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 本章涵盖
+- en: Strategies for handling data overload in small systems
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 处理小型系统中数据过载的策略
+- en: Recognizing graph neural network problems that require scaled resources
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 识别需要扩展资源的图神经网络问题
+- en: Seven robust techniques for mitigating problems arising from large data
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 七种减轻大数据问题影响的稳健技术
+- en: Scaling graph neural networks and tackling scalability challenges with PyTorch
+    Geometric
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用PyTorch Geometric扩展图神经网络并解决可扩展性挑战
+- en: For most of our journey through graph neural networks (GNNs), we’ve explained
+    key architectures and methods, but we’ve limited examples to problems of relatively
+    small scale. Our reason for doing so was to allow you to access example code and
+    data readily.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们大部分关于图神经网络（GNNs）的旅程中，我们已经解释了关键架构和方法，但我们将示例限制在相对较小的规模问题上。我们这样做的原因是让您能够轻松地访问示例代码和数据。
+- en: However, real-world problems in deep learning are not often so neatly packaged.
+    One of the major challenges in real-world scenarios is training GNN models when
+    the dataset is large enough to fit in memory or overwhelm the processor [1].
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然而，在现实世界的深度学习中，问题往往并不如此整洁地打包。在现实场景中，一个主要挑战是在数据集足够大以至于可以放入内存或压倒处理器时训练GNN模型[1]。
+- en: As we explore the challenges of scalability, it’s crucial to have a clear mental
+    model of the GNN training process. Figure 7.1 revisits our familiar visualization
+    of this process. At its core, the training of a GNN revolves around acquiring
+    data from a source, processing this data to extract relevant node and edge features,
+    and then using these features to train a model. As the data grows in size, each
+    of these steps can become increasingly resource-intensive, making necessary the
+    scalable strategies we’ll explore in this chapter.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在探索可扩展性的挑战时，拥有一个清晰的GNN训练过程的心理模型至关重要。图7.1回顾了我们对这一过程的熟悉可视化。其核心是，GNN的训练围绕着从源获取数据，处理这些数据以提取相关的节点和边特征，然后使用这些特征来训练模型。随着数据量的增长，这些步骤中的每一个都可能变得更加资源密集，因此需要我们在本章中探讨的可扩展策略。
+- en: '![figure](../Images/7-1.png)'
+  id: totrans-9
+  prefs: []
+  type: TYPE_IMG
+  zh: '![figure](../Images/7-1.png)'
+- en: '**Figure 7.1 Mental model for the GNN training process. We will focus on scaling
+    our system for large data in this chapter.**'
+  id: totrans-10
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: '**图7.1 GNN训练过程的心理模型。在本章中，我们将关注为大数据扩展我们的系统。**'
+- en: In deep learning development projects, accounting for large or scaled-up data
+    in training and in deployment can make the difference between a successful and
+    a failed venture. The machine learning engineer working on tight deadlines with
+    demanding stakeholders doesn’t have the luxury of spending weeks on long training
+    routines or rectifying errors triggered by processor overloads. Heading off scale
+    problems by planning ahead can prevent such time sinks.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在深度学习开发项目中，在训练和部署中考虑大量或扩展数据可以决定一个项目是成功还是失败。在紧迫的截止日期和有要求的利益相关者面前工作的机器学习工程师没有时间花费数周进行长时间的训练或纠正由处理器过载引起的错误。通过提前规划来避免规模问题可以防止这种时间浪费。
+- en: 'In this chapter, you’ll learn how to handle problems that arise when data is
+    too large for a small system. To characterize a scale problem, we focus on three
+    metrics: memory usage during processing or training, the time it takes to train
+    an epoch, and the time it takes for a problem to converge. We explain these metrics
+    and point to how to calculate them in the Python or PyTorch Geometric (PyG) environment.'
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，您将学习如何处理当数据对于小型系统来说太大而无法处理时出现的问题。为了描述规模问题，我们关注三个指标：处理或训练过程中的内存使用量、训练一个epoch所需的时间以及问题收敛所需的时间。我们解释了这些指标，并指出如何在Python或PyTorch
+    Geometric（PyG）环境中计算它们。
+- en: 'In this chapter, the emphasis is on scaling from modest beginnings, optimizing
+    from a single machine. While the primary focus of this book isn’t on data engineering
+    or architecting large-scale solutions, some of the concepts discussed here might
+    be pertinent in those contexts. To solve scale problems, seven methods are explained
+    that can be used in tandem or by themselves:'
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，重点是从不起眼的开端进行扩展，从单一机器进行优化。虽然本书的主要焦点不是数据工程或构建大规模解决方案，但这里讨论的一些概念可能在这些背景下相关。为了解决规模问题，解释了七种可以协同使用或单独使用的方法：
+- en: Choosing and configuring the processor (section 7.4)
+  id: totrans-14
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 选择和配置处理器（第7.4节）
+- en: Using sparse versus dense representation of your dataset (section 7.5)
+  id: totrans-15
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用数据集的稀疏表示与密集表示（第7.5节）
+- en: Choosing the GNN algorithm (section 7.6)
+  id: totrans-16
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 选择GNN算法（第7.6节）
+- en: Training in batches based on sampling from your data (section 7.7)
+  id: totrans-17
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 根据从您的数据中抽取的样本进行批量训练（第7.7节）
+- en: Using parallel or distributed computing (section 7.8)
+  id: totrans-18
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用并行或分布式计算（第7.8节）
+- en: Using remote backends (section 7.9)
+  id: totrans-19
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用远程后端（第7.9节）
+- en: Coarsening your graph (section 7.10)
+  id: totrans-20
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 粗化您的图（第7.10节）
+- en: To illustrate how to make decisions regarding these methods in practice, examples
+    or mini-cases are provided. The fictional company GeoGrid Inc. (hereafter, GeoGrid)
+    is followed through various cases as the company deals with relevant problems
+    related to large data.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了说明在实践中如何决定这些方法，提供了示例或迷你案例。虚构公司GeoGrid Inc.（以下简称GeoGrid）在各种案例中跟随，该公司处理与大数据相关的问题。
+- en: In addition, the Amazon Products dataset you encountered in chapter 3, where
+    a graph convolutional network (GCN) and GraphSAGE were used to perform node classification,
+    is used to demonstrate the various methods. For relevant methods, example code
+    can be found in the GitHub repository for this book.
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此外，您在第3章中遇到的亚马逊产品数据集，其中使用了图卷积网络（GCN）和GraphSAGE进行节点分类，也用于演示各种方法。对于相关方法，可以在本书的GitHub仓库中找到示例代码。
+- en: This chapter diverges from previous ones. Whereas earlier chapters honed in
+    on one or two examples to illustrate a range of concepts, the unique nature of
+    scale problems means that various methods will be explored, each accompanied by
+    brief examples. Consequently, this chapter’s sections can be read in any order
+    after section 7.3\.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章与之前的章节有所不同。而之前的章节专注于一个或两个示例来阐述一系列概念，而规模问题的独特性质意味着将探索各种方法，每种方法都伴随着简短的示例。因此，本章的章节可以在7.3节之后以任何顺序阅读。
+- en: We’ll start by reviewing the Amazon Products dataset from chapter 3 and introducing
+    GeoGrid. Then, we’ll discuss ways to characterize and measure scale, focusing
+    on the three metrics. Finally, we’ll go through each method in more detail and
+    provide code where appropriate.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将首先回顾第3章的亚马逊产品数据集并介绍GeoGrid。然后，我们将讨论如何表征和衡量规模，重点关注三个指标。最后，我们将更详细地介绍每种方法，并在适当的地方提供代码。
+- en: NOTE  Code from this chapter can be found in notebook form at the GitHub repository
+    ([https://mng.bz/QDER](https://mng.bz/QDER)). Colab links and data from this chapter
+    can be accessed in the same locations.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：本章的代码可以在GitHub仓库的笔记本形式中找到（[https://mng.bz/QDER](https://mng.bz/QDER)）。本章的Colab链接和数据也可以在相同的位置访问。
+- en: 7.1 Examples in this chapter
+  id: totrans-26
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.1 本章的示例
+- en: In this chapter, two cases are used to illustrate various concepts. We use the
+    Amazon Products dataset from chapter 3\. We’ll use this dataset to demonstrate
+    code examples, which can be found in the GitHub repository. Secondly, mini-cases
+    featuring a fictional company called GeoGrid will be used to illuminate guidelines
+    and the practice of using the methods presented.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们使用两个案例来阐述各种概念。我们使用第3章的亚马逊产品数据集。我们将使用这个数据集来演示代码示例，这些示例可以在GitHub仓库中找到。其次，我们将使用一个名为GeoGrid的虚构公司的迷你案例来阐明指南和运用所提出的方法的实践。
+- en: 7.1.1 Amazon Products dataset
+  id: totrans-28
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.1 亚马逊产品数据集
+- en: This subsection will reintroduce the dataset and its training from chapter 3\.
+    First, the dataset is reviewed and then the configuration of the hardware used
+    to train it. Finally, as a prelude to the sections that follow, we highlight a
+    couple of methods we applied in chapter 3 to accommodate the dataset size. This
+    dataset will be used extensively in the GitHub code examples of the sections that
+    follow.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本小节将重新介绍第3章中的数据集及其训练。首先，回顾数据集，然后介绍用于训练它的硬件配置。最后，作为后续章节的序言，我们突出介绍在第3章中应用的一些方法，以适应数据集的大小。这个数据集将在后续章节的GitHub代码示例中广泛使用。
+- en: 'In chapter 3, we studied node classification problems using two convolutional
+    GNNs: GCN and GraphSAGE. To this end, we used the Amazon Products dataset with
+    co-purchasing information, which is popularly used to illustrate and benchmark
+    node-classification [2]. This dataset (also referred to as *ogbn-products*) consists
+    of a set of product nodes linked by being purchased in the same transaction, illustrated
+    in figure 7.2\. Each product node has a set of features, including its product
+    category. The ogbn-products dataset consists of 2.5 million nodes and 61.9 million
+    edges. More information on this dataset is summarized in table 7.1.'
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第3章中，我们使用两个卷积GNN：GCN和GraphSAGE，研究了节点分类问题。为此，我们使用了包含共购买信息的Amazon Products数据集，该数据集常用于说明和基准测试节点分类[2]。这个数据集（也称为*ogbn-products*）由一组通过同一交易购买而相互连接的产品节点组成，如图7.2所示。每个产品节点都有一组特征，包括其产品类别。ogbn-products数据集包含250万个节点和6190万个边。关于此数据集的更多信息总结在表7.1中。
+- en: '![figure](../Images/7-2.png)'
+  id: totrans-31
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图](../Images/7-2.png)'
+- en: Figure 7.2 A graph representation of one of the co-purchases from the Amazon
+    Products dataset used in chapter 3\. Each product’s picture is a node, and the
+    co-purchases are the edges (shown as lines) between the products. For the four
+    products shown here, this graph is only the co-purchasing graph of one customer.
+    If we show the corresponding graph for all Amazon customers, the number of products
+    and edges could feature tens of thousands of product nodes and millions of co-purchasing
+    edges.
+  id: totrans-32
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 图7.2 第3章中使用Amazon Products数据集的一个共购买示例的图表示。每个产品的图片是一个节点，共购买是产品之间的边（以线条表示）。对于这里显示的四个产品，这个图只是单个客户的共购买图。如果我们显示所有亚马逊客户的相应图，产品节点和共购买边的数量可能达到数万个产品节点和数百万共购买边。
+- en: Note  For more details on this dataset and its origin, as well as GCN and GraphSAGE,
+    refer to chapter 3.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 备注：有关此数据集及其来源，以及GCN和GraphSAGE的更多详细信息，请参阅第3章。
+- en: Table 7.1 Summary characteristics of the ogbn-products dataset
+  id: totrans-34
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 表7.1 ogbn-products数据集的总结特征
+- en: '| Nodes | Edges | Average Node Degree | Number of Class Labels | Number of
+    Node Feature Dimensions | Size of Zipped Data (GB) |'
+  id: totrans-35
+  prefs: []
+  type: TYPE_TB
+  zh: '| 节点 | 边 | 平均节点度 | 类别标签数量 | 节点特征维度数量 | 压缩数据大小（GB） |'
+- en: '| --- | --- | --- | --- | --- | --- |'
+  id: totrans-36
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- | --- | --- | --- |'
+- en: '| 2.5 million  | 61.9 million  | 51  | 47  | 100  | 1.38  |'
+  id: totrans-37
+  prefs: []
+  type: TYPE_TB
+  zh: '| 2.5百万 | 6190万 | 51 | 47 | 100 | 1.38 |'
+- en: 'For the implemented code in chapter 3, we used a Colab instance with the following
+    configuration:'
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于第3章中实现的代码，我们使用了一个具有以下配置的Colab实例：
+- en: 'Storage: 56 GB HDD'
+  id: totrans-39
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 存储：56 GB HDD
+- en: 'Two CPUs: 2-core Xeon 2.2GHz'
+  id: totrans-40
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 两块CPU：2核Xeon 2.2GHz
+- en: 'CPU RAM: 13 GB'
+  id: totrans-41
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 'CPU RAM: 13 GB'
+- en: 'One GPU: Tesla T4'
+  id: totrans-42
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 一块GPU：Tesla T4
+- en: 'GPU RAM: 16 GB'
+  id: totrans-43
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 'GPU RAM: 16 GB'
+- en: While we’ll discuss the details later, we’ve already identified three factors
+    that will affect whether we’ll have trouble due to too much data. One is obviously
+    the size of the dataset itself—not only in its raw, unzipped size in storage but
+    also its representation, which affects working size when processing and training
+    are applied to it (covered in detail in section 7.5). A second factor is the storage
+    and memory capacity of the hardware (section 7.4). Finally, the choice of GNN
+    training algorithm—such as GraphSAGE—will significantly influence the computational
+    demands, particularly in terms of time and memory constraints (section 7.6).
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然我们将在后面讨论细节，但我们已经确定了三个可能因数据过多而引起问题的因素。第一个因素显然是数据集本身的大小——不仅包括存储中的原始、未解压的大小，还包括其表示形式，这会影响在应用处理和训练时的工作大小（在7.5节中详细说明）。第二个因素是硬件的存储和内存容量（7.4节）。最后，GNN训练算法的选择——例如GraphSAGE——将显著影响计算需求，尤其是在时间和内存限制方面（7.6节）。
+- en: As we were implementing the example in chapter 3, we indeed ran into problems
+    whose root cause was the size of the dataset. Our focus in that chapter was on
+    showcasing the algorithms, so we didn’t point this out and silently used one of
+    the methods to alleviate this problem. Specifically, we used an optimal representation
+    of the dataset (sparse instead of dense).
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们实现第3章的示例时，我们确实遇到了问题，其根本原因是数据集的大小。在第3章中，我们的重点是展示算法，因此我们没有指出这一点，并默默地使用了一种方法来减轻这个问题。具体来说，我们使用了数据集的最佳表示（稀疏而不是密集）。
+- en: 7.1.2 GeoGrid
+  id: totrans-46
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.2 GeoGrid
+- en: As you navigate through this chapter, we’ll draw upon a fictional yet representative
+    example of a tech company—GeoGrid—grappling with the challenges and opportunities
+    in the field. GeoGrid is a geospatial data analysis and modeling company. Using
+    advanced technologies such as GNNs, the company provides solutions for problems
+    ranging from traffic prediction to climate change planning. As a startup in a
+    competitive space, GeoGrid is often faced with crucial technical decisions that
+    could make or break the company, especially as it competes for large-scale government
+    projects.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在您浏览本章内容时，我们将借鉴一个虚构但具有代表性的科技公司——GeoGrid——在处理该领域挑战和机遇的例子。GeoGrid 是一家地理空间数据分析建模公司。利用
+    GNN 等先进技术，该公司为从交通预测到气候变化规划等问题的解决方案提供支持。作为一个在竞争激烈的领域中的初创公司，GeoGrid 经常面临可能决定公司成败的关键技术决策，尤其是在与大规模政府项目竞争时。
+- en: GeoGrid will be used to explore a range of concepts and technical decisions
+    related to scale problems. Whether the team is debating the pros and cons of different
+    machine learning architectures, considering the use of distributed data parallel
+    (DDP) training across multiple GPUs, or strategizing on how to scale their algorithms
+    for massive datasets, the company’s story offers a real-world context to the theories
+    and methodologies discussed in this chapter.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid 将被用来探讨与规模问题相关的各种概念和技术决策。无论团队是在讨论不同机器学习架构的利弊，考虑在多个 GPU 上使用分布式数据并行（DDP）训练，还是制定如何将算法扩展到大规模数据集的战略，公司的故事为本章讨论的理论和方法提供了现实世界的背景。
+- en: In the next section, we’ll provide a framework to judge and characterize scale
+    problems. We’ll then summarize the methods of solving such problems. Finally,
+    we’ll survey these methods in detail.
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们将提供一个框架来评估和描述规模问题。然后，我们将总结解决此类问题的方法。最后，我们将详细调查这些方法。
+- en: 7.2 Framing problems of scale
+  id: totrans-50
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.2 规模问题的框架
+- en: Before we dive into solutions, let’s define the challenge presented by scaling.
+    This section provides an overview of the root causes of data size problems and
+    their symptoms. Then, it highlights the essential metrics that are crucial in
+    identifying, diagnosing, and remedying such problems [1, 3].
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们深入解决方案之前，让我们定义一下规模带来的挑战。本节概述了数据大小问题的根本原因及其症状。然后，它强调了在识别、诊断和解决此类问题中至关重要的关键指标
+    [1, 3]。
+- en: 'From the point of view of machine resources, the development process is broken
+    down into three phases. Of the following three, in this chapter, the focus will
+    be on preprocessing and training:'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从机器资源的角度来看，发展过程被分解为三个阶段。在以下三个阶段中，本章将重点关注预处理和训练：
+- en: '*Preprocessing* —Transforming a raw dataset into a format suitable for training'
+  id: totrans-53
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*预处理* — 将原始数据集转换为适合训练的格式'
+- en: '*Training* —Creating a GNN model by applying a training algorithm to the preprocessed
+    dataset'
+  id: totrans-54
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*训练* — 通过将训练算法应用于预处理后的数据集来创建 GNN 模型'
+- en: '*Inference* —Creating predictions or other output from the trained model'
+  id: totrans-55
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*推理* — 从训练好的模型中创建预测或其他输出'
+- en: 7.2.1 Root causes
+  id: totrans-56
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.1 根本原因
+- en: In simple terms, problems of scale arise when the training data becomes too
+    large for our system. Determining when data size becomes problematic is complex
+    and depends on several factors, including hardware capabilities, graph size, and
+    constraints on time and space.
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 简而言之，当训练数据变得太大以至于无法适应我们的系统时，就会产生规模问题。确定数据大小何时成为问题很复杂，并取决于多个因素，包括硬件能力、图的大小以及时间和空间上的限制。
+- en: Hardware speed and capacity
+  id: totrans-58
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 硬件速度和容量
+- en: A suitable system has to be able to support the preprocessing and training process
+    via its memory capacity and processing speed. Memory should not only support the
+    graph size itself but also accommodate the data needed for implementing the transformations
+    and training algorithms. Processing speed should be enough to finish training
+    in some reasonable amount of time.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个合适的系统必须能够通过其内存容量和处理速度来支持预处理和训练过程。内存不仅要支持图的大小本身，还要容纳实现转换和训练算法所需的数据。处理速度应该足够快，能在合理的时间内完成训练。
+- en: We wrote this book assuming you have access to free cloud resources such as
+    those found on Google’s Colab and Kaggle, or modest local resources that host
+    at least one GPU processor. When these resources are exceeded, upgrading the hardware
+    setup may be an option if resources exist. For training on the largest enterprise
+    graphs, using computing clusters is unavoidable. We’ll look more closely at computing
+    hardware in section 7.4.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们编写这本书时假设您有权访问免费的云资源，例如Google的Colab和Kaggle上找到的资源，或者至少有一个GPU处理器的适度本地资源。当这些资源不足时，如果存在资源，升级硬件配置可能是一个选择。对于训练最大的企业图，使用计算集群是不可避免的。我们将在第7.4节中更详细地探讨计算硬件。
+- en: Graph size
+  id: totrans-61
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 图的大小
+- en: Fundamentally, we can go by the number of nodes and edges to get a rough idea
+    of scale and how it may affect our training solution. Understanding these characteristics
+    gives us an idea of how long an algorithm will take to process the graph. Further,
+    the data representation that holds the structural information will affect the
+    size of data.
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 基本上，我们可以通过节点和边的数量来大致了解规模及其可能对我们训练解决方案的影响。了解这些特征可以帮助我们判断算法处理图所需的时间。此外，持有结构信息的表示形式将影响数据的大小。
+- en: Aside from structural information, nodes and edges can contain features that
+    encompass one or many dimensions. Often, the sizes of the node and edge features
+    can be greater than the graph’s structural information.
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了结构信息之外，节点和边可以包含包含一个或多个维度的特征。通常，节点和边特征的大小可能大于图的结构信息。
+- en: 'Defining the exact size of small, medium, and large graphs for GNNs is somewhat
+    contextual. This depends on the specific problem domain, hardware, and computational
+    resources available. At the time of writing, here’s a general categorization:'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为GNNs定义小、中、大型图的精确大小具有一定的情境性。这取决于具体的问题领域、硬件和可用的计算资源。在撰写本文时，以下是一个通用的分类：
+- en: '*Small graphs* —These may include graphs with hundreds to a few thousand nodes
+    and edges. They can usually be processed on standard hardware without requiring
+    specialized resources.'
+  id: totrans-65
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*小型图* — 这些可能包括具有数百到数千个节点和边的图。它们通常可以在标准硬件上处理，无需专用资源。'
+- en: '*Medium graphs* —This category might encompass graphs with tens of thousands
+    of nodes and edges. The complexity in medium-sized graphs may require more sophisticated
+    algorithms or hardware, such as GPUs, to process efficiently.'
+  id: totrans-66
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*中等规模的图* — 这个类别可能包括具有数万个节点和边的图。中等规模图中的复杂性可能需要更复杂的算法或硬件，例如GPU，以有效地处理。'
+- en: '*Large graphs* —Large graphs can include hundreds of thousands to millions
+    (or even billions) of nodes and edges. Handling such graphs often require distributed
+    computing and specialized algorithms designed for scalability.'
+  id: totrans-67
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*大型图* — 大型图可以包括数十万到数百万（甚至数十亿）个节点和边。处理此类图通常需要分布式计算和专为可扩展性设计的专用算法。'
+- en: '*Time and space complexity of algorithms* —Time and space complexity point
+    to the computational and memory resources needed to run the algorithm. These directly
+    affect processing speed, memory usage, and efficiency. Understanding these complexities
+    helps in making informed decisions about algorithm selection and resource allocation.
+    High time complexity may lead to slower runtimes, affecting your model training
+    schedule. High space complexity can limit the size of the dataset the GNN can
+    handle, affecting your ability to process large, complex graphs. We examine this
+    further in section 7.6\.'
+  id: totrans-68
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*算法的时间和空间复杂度* — 时间和空间复杂度指向运行算法所需的计算和内存资源。这些直接影响到处理速度、内存使用和效率。了解这些复杂度有助于在算法选择和资源分配方面做出明智的决定。高时间复杂度可能导致运行时间变慢，影响您的模型训练计划。高空间复杂度可能限制GNN可以处理的数据集的大小，影响您处理大型、复杂图的能力。我们将在第7.6节中进一步探讨这一点。'
+- en: 7.2.2 Symptoms
+  id: totrans-69
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.2 症状
+- en: The root causes of scalability problems manifest in several ways. One common
+    problem is *long processing times*, which can occur when larger datasets require
+    more computational power and time to process. Slower algorithms can increase the
+    time required to train models, making it difficult to iterate and improve models
+    quickly. However, the amount of time that is seen as too long will depend on the
+    problem at hand. Several hours might be fine for results that need to be provided
+    weekly but can be far too long if the model needs to be retrained throughout the
+    day. Similarly, compute costs can quickly increase if processing times are long,
+    especially if a large machine is required to run the model.
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 可扩展性问题的根本原因以多种方式表现出来。一个常见问题是 *处理时间长*，这可能会发生在需要更多计算能力和时间来处理的大型数据集时。较慢的算法会增加训练模型所需的时间，使得快速迭代和改进模型变得困难。然而，被视为太长的时间将取决于具体问题。对于需要每周提供的结果，几个小时可能没问题，但如果模型需要在一天内重新训练，时间可能会过长。同样，如果处理时间长，计算成本可能会迅速增加，特别是如果需要大型机器来运行模型。
+- en: Another problem is *memory usage* at or over capacity, which can happen when
+    large datasets consume a significant amount of memory. If the dataset is too large
+    to fit into your system’s memory, it can cause the system to slow down or even
+    crash.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一个问题是在或超过容量时的 *内存使用*，这可能会发生在大型数据集消耗大量内存的情况下。如果数据集太大，无法适应您的系统内存，可能会导致系统变慢或甚至崩溃。
+- en: Finally, an inability to scale to larger datasets can occur when your algorithms
+    and system setup can’t handle the *increase in data size*. Ensuring efficiency
+    in terms of time and space is critical for your system to remain effective and
+    scalable.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，当您的算法和系统设置无法处理数据大小的 *增加* 时，可能会出现无法扩展到更大数据集的情况。确保时间和空间效率对于您的系统保持有效和可扩展至关重要。
+- en: 7.2.3 Crucial metrics
+  id: totrans-73
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.3 关键指标
+- en: 'For understanding scalability insights, running empirical analyses on key performance
+    metrics is helpful. These metrics include memory, time per epoch, FLOPs, and convergence
+    speed, as described here:'
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了理解可扩展性的见解，对关键性能指标进行实证分析是有帮助的。这些指标包括内存、每轮时间、FLOPs 和收敛速度，如本处所述：
+- en: '*Memory usage* —Memory usage (units in gigabytes), specifically the amount
+    of RAM or processor memory available, plays a significant role in determining
+    the size and complexity of the models you can train [4, 5]. This is because GNNs
+    require storing node features, edge features, and adjacency matrices in memory.
+    If your graph is large or the node and edge features are high-dimensional, your
+    model will require more memory.'
+  id: totrans-75
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*内存使用* — 内存使用（单位为千兆字节），特别是可用的 RAM 或处理器内存量，在确定您可以训练的模型的大小和复杂性方面起着重要作用 [4, 5]。这是因为
+    GNN 需要在内存中存储节点特征、边特征和邻接矩阵。如果您的图很大或节点和边特征是高维的，您的模型将需要更多的内存。'
+- en: There are several modules in PyTorch and Python that can do memory profiling.
+    PyTorch has a built-in profiler that can be used alone or in combination with
+    the PyTorch Profiler Tensorboard plugin [4]. There is also a `torch_ geometric.profile`
+    module. In addition, cloud notebooks hosted on Colab and Kaggle provide real-time
+    visualizations of memory usage per processor.
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch 和 Python 中有几个模块可以进行内存分析。PyTorch 内置了一个分析器，可以单独使用，也可以与 PyTorch Profiler
+    Tensorboard 插件 [4] 结合使用。还有一个 `torch_geometric.profile` 模块。此外，托管在 Colab 和 Kaggle
+    上的云笔记本提供了每个处理器的内存使用实时可视化。
+- en: 'In our repository’s code examples, we use two libraries for monitoring system
+    resources: `psutil` (Python system and process utilities library) and `pynvml`
+    (Python bindings for NVIDIA Management Library). `psutil` is a cross-platform
+    utility that provides an interface for retrieving information on system utilization
+    (CPU, memory, disks, network, sensors), running processes, and system uptime.
+    It’s particularly useful for system monitoring, profiling, and limiting process
+    resources in real time. Here’s a snippet of how `psutil` is used in the code:'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们仓库的代码示例中，我们使用两个库来监控系统资源：`psutil`（Python 系统和进程实用程序库）和 `pynvml`（NVIDIA 管理库的
+    Python 绑定）。`psutil` 是一个跨平台实用程序，它提供了一个接口来检索有关系统利用率（CPU、内存、磁盘、网络、传感器）、正在运行的过程和系统运行时间的详细信息。它特别适用于系统监控、分析和实时限制进程资源。以下是如何在代码中使用
+    `psutil` 的一个片段：
+- en: '[PRE0]'
+  id: totrans-78
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: In this snippet, `psutil.Process(os.getpid())` is used to get the current process,
+    and `memory_info().rss` retrieves the resident set size, or the portion of the
+    process’s memory that is held in RAM.
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个片段中，`psutil.Process(os.getpid())` 用于获取当前进程，而 `memory_info().rss` 获取常驻集大小，即进程内存中保留在
+    RAM 中的部分。
+- en: 'Alongside `psutil`, `pynvml` is a Python library for interacting with NVIDIA
+    GPUs. It provides detailed information about GPU status, including usage, temperature,
+    and memory. `pynvml` allows users to programmatically retrieve GPU statistics,
+    making it an essential tool for managing and monitoring GPU resources in machine
+    learning and other GPU-accelerated applications. Here’s how `pynvml` is used in
+    the code:'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了`psutil`之外，`pynvml`是一个用于与NVIDIA GPU交互的Python库。它提供了关于GPU状态的详细信息，包括使用情况、温度和内存。`pynvml`允许用户以编程方式检索GPU统计信息，使其成为管理监控机器学习和其他GPU加速应用中GPU资源的必备工具。以下是如何在代码中使用`pynvml`的示例：
+- en: '[PRE1]'
+  id: totrans-81
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: Here, `pynvml.nvmlInit()` initializes the NVIDIA Management Library, `pynvml
+    .nvmlDeviceGetHandleByIndex(0)` retrieves the handle of the GPU at index `0`,
+    and `pynvml.nvmlDeviceGetMemoryInfo(handle)` provides detailed information about
+    the GPU’s memory usage.
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，`pynvml.nvmlInit()`初始化NVIDIA管理库，`pynvml.nvmlDeviceGetHandleByIndex(0)`检索索引为`0`的GPU句柄，而`pynvml.nvmlDeviceGetMemoryInfo(handle)`提供了关于GPU内存使用的详细信息。
+- en: Both `psutil` and `pynvml` are used in our examples for providing insights into
+    the performance characteristics of the preprocessing and training processes, offering
+    a detailed view of system and GPU resource utilization.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的示例中，`psutil`和`pynvml`都用于提供对预处理和训练过程性能特征的洞察，提供了对系统和GPU资源利用的详细视图。
+- en: '*Time per epoch* —Time per epoch (aka “seconds per epoch” because the unit
+    for this metric is usually in seconds) refers to the time it takes to complete
+    one pass over the entire training dataset. This factor is influenced by the size
+    and complexity of your GNN, the graph size, the batch size, and the computational
+    resources at your disposal. A model with a lower time per epoch is preferable
+    as it allows for more iterations and faster experimentation. The profilers proved
+    by PyTorch or PyG can also be used for such measurement.'
+  id: totrans-84
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*每个epoch的时间* — 每个epoch的时间（也称为“每个epoch的秒数”，因为这个指标的计量单位通常是秒）指的是完成整个训练数据集的一次遍历所需的时间。这个因素受你的GNN的大小和复杂性、图的大小、批处理大小以及可用的计算资源的影响。具有较低每个epoch时间的模型更可取，因为它允许更多的迭代和更快的实验。PyTorch或PyG证明的剖析器也可以用于此类测量。'
+- en: In the provided code, the time taken for each epoch is measured by calculating
+    the difference between the start and end times of the epoch. At the beginning
+    of each epoch, the current time is captured using `start_time` `=` `time.time()`.
+    The model is then trained for 1 epoch, and upon completion, the current time is
+    again captured using `end_time` `=` `time.time()`. The epoch time, which is the
+    time taken to complete 1 epoch of training, is then calculated as the difference
+    between the end time and start time (`epoch_time` `=` `end_time` `-` `start_time`).
+    This gives a precise measurement of how long it takes for the model to be trained
+    for 1 epoch, including all the steps involved in the training process such as
+    forward pass, loss calculation, backward pass, and model parameter updates.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在提供的代码中，每个epoch的时间是通过计算epoch的开始和结束时间之间的差异来测量的。在每个epoch的开始，使用`start_time` `=`
+    `time.time()`捕获当前时间。然后对模型进行1个epoch的训练，完成之后，再次使用`end_time` `=` `time.time()`捕获当前时间。epoch时间，即完成1个epoch训练所需的时间，随后计算为结束时间和开始时间之间的差异（`epoch_time`
+    `=` `end_time` `-` `start_time`）。这给出了模型训练1个epoch所需时间的精确测量，包括训练过程中涉及的所有步骤，如前向传递、损失计算、反向传递和模型参数更新。
+- en: '*FLOPs* —Floating point operations (not to be confused with floating point
+    operations per second, FLOP/s [6, 7]) calculates the number of floating-point
+    operations that are needed to train a model. This can include operations such
+    as matrix multiplications, additions, and activations. For our purposes, the total
+    number of FLOPs gives an estimate of the computational cost of training the GNN.'
+  id: totrans-86
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*FLOPs* — 浮点运算（不要与每秒浮点运算数FLOP/s[6, 7]混淆）计算训练模型所需的浮点运算次数。这可能包括矩阵乘法、加法和激活等操作。就我们的目的而言，FLOPs的总数给出了训练GNN的计算成本的估计。'
+- en: 'FLOPs aren’t all created equal in terms of execution time. This variability
+    arises from several factors. First, the types of operations involved can greatly
+    influence computational costs: simple operations such as addition and subtraction
+    are generally faster, while more complex operations, such as division or square
+    root calculations, typically take longer. Second, the execution time of FLOPs
+    can vary significantly depending on the hardware being used. Some processors are
+    optimized for specific types of operations, and specialized hardware such as GPUs
+    may handle certain operations more efficiently than CPUs. Additionally, the structure
+    of an algorithm affects how efficiently FLOPs are executed; operations that can
+    be parallelized may be processed faster on multicore systems, whereas sequential
+    operations that depend on previous results may take longer overall. Despite these
+    variations in execution time, the total number of FLOPs required for a given algorithm
+    remains constant.'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: FLOPs在执行时间上并不完全相同。这种可变性源于几个因素。首先，涉及的运算类型可以极大地影响计算成本：如加法和减法等简单运算通常更快，而如除法或平方根计算等更复杂的运算通常需要更长的时间。其次，FLOPs的执行时间会根据所使用的硬件而显著变化。一些处理器针对特定类型的运算进行了优化，而像GPU这样的专用硬件可能比CPU更有效地处理某些运算。此外，算法的结构会影响FLOPs的执行效率；可以并行化的运算可能在多核系统上处理得更快，而依赖于先前结果的顺序运算可能总体上需要更长的时间。尽管执行时间存在这些变化，但给定算法所需的FLOPs总数保持不变。
+- en: At the time of writing, while there are some external modules that can profile
+    PyTorch operations, these aren’t compatible with PyG models and layers. Efforts
+    seen in the literature rely on custom programming.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在撰写本文时，尽管有一些外部模块可以分析PyTorch操作，但这些与PyG模型和层不兼容。文献中看到的一些努力依赖于自定义编程。
+- en: 'In our code examples on GitHub, we often use the `thop` library to estimate
+    the FLOPs associated with each epoch during the training of a neural network.
+    Here’s a brief snippet where FLOPs are calculated:'
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的GitHub代码示例中，我们经常使用`thop`库来估算神经网络训练过程中每个epoch相关的FLOPs。以下是一个计算FLOPs的简要片段：
+- en: '[PRE2]'
+  id: totrans-90
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: '#1 Heterogeneous GCNs'
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 异构GCN'
+- en: The profile function from `thop` is invoked, with the model and a sample input
+    batch passed as arguments. It returns the total FLOPs and parameters for a forward
+    pass. In this context, FLOPs measure the total number of operations, not operations
+    per second.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调用`thop`库的配置函数，将模型和样本输入批次作为参数传递。它返回正向传递的总FLOPs和参数。在此上下文中，FLOPs衡量的是操作的总数，而不是每秒的操作数。
+- en: FLOP is a useful metric for a general sense of the model’s computational requirements
+    and complexity when used alongside other indicators for a comprehensive understanding
+    of performance.
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: FLOPs是一个有用的指标，可以用来对模型的计算需求和复杂性有一个大致的了解，当与其他指标一起使用时，可以全面理解性能。
+- en: '*Convergence speed* —Convergence speed (units of seconds or minutes) is how
+    quickly the model learns or reaches an optimal state during training. Convergence
+    speed is influenced by factors such as the model’s complexity, the learning rate,
+    the optimizer used, and the quality of the training data. Faster convergence is
+    often desirable as it means the model requires fewer epochs to reach its optimal
+    state, saving time and computational resources.'
+  id: totrans-94
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*收敛速度* — 收敛速度（单位为秒或分钟）是指模型在训练过程中学习或达到最佳状态的速度。收敛速度受模型复杂度、学习率、使用的优化器以及训练数据质量等因素的影响。通常希望收敛速度更快，因为这意味着模型需要更少的迭代次数才能达到其最佳状态，从而节省时间和计算资源。'
+- en: As with memory and time-per-epoch profiling, the PyTorch and PyG profilers can
+    be used to measure time to convergence.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与内存和时间-per-epoch分析一样，PyTorch和PyG分析器可以用来测量收敛所需的时间。
+- en: In our code examples, convergence time is calculated by measuring the time interval
+    it takes to complete the training of the model over a specified number of epochs.
+    At the beginning of the training process, the `convergence_start_time` is recorded
+    using `time.time()`, marking the start of training. The model then undergoes training
+    through several epochs, with each epoch involving steps such as forward pass,
+    loss computation, backward pass, and parameter updates. After all epochs are completed,
+    the current time is captured again, and the `convergence_time` is calculated by
+    subtracting `convergence_start_time` from this final timestamp. This `convergence_time`
+    gives the total time taken for the model to complete its training over all epochs,
+    offering insights into the model’s efficiency and performance in terms of time.
+    The shorter the convergence time, the faster the model learns and reaches a satisfactory
+    level of performance, assuming quality of learning is maintained.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的代码示例中，收敛时间是通过测量在指定数量的周期内完成模型训练所需的时间间隔来计算的。在训练过程开始时，使用 `time.time()` 记录 `convergence_start_time`，标记训练的开始。然后，模型通过几个周期进行训练，每个周期涉及正向传播、损失计算、反向传播和参数更新等步骤。所有周期完成后，再次捕获当前时间，通过从最终时间戳中减去
+    `convergence_start_time` 来计算 `convergence_time`。这个 `convergence_time` 给出了模型在所有周期中完成训练所需的总时间，为模型在时间效率方面的性能和效率提供了见解。收敛时间越短，模型学习速度越快，达到令人满意的性能水平，前提是保持学习质量。
+- en: The right balance among these four factors depends on the specific project constraints
+    such as available computational resources, project timeline, and the complexity
+    and size of the dataset. For some real-world benchmarking of these metrics, Chiang
+    [8] does a great job at using these metrics to do a comparative analysis between
+    his proposed GNN, ClusterGCN, and benchmark GNNs. Given this background on what
+    constitutes a scale problem, as well as ways to benchmark and measure such problems,
+    we turn to methods that can alleviate these challenges.
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这四个因素之间的正确平衡取决于具体项目的约束条件，例如可用的计算资源、项目时间表以及数据集的复杂性和大小。对于这些指标的某些实际基准测试，Chiang
+    [8] 在使用这些指标对其提出的 GNN、ClusterGCN 和基准 GNNs 进行比较分析方面做得非常出色。鉴于我们对构成规模问题的构成以及如何基准测试和测量此类问题的了解，我们现在转向可以缓解这些挑战的方法。
+- en: 7.3 Techniques for tackling problems of scale
+  id: totrans-98
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.3 应对规模问题的技术
+- en: As we outlined in the previous section, when data becomes voluminous, we must
+    deal with problems related to memory constraints, processing time, and efficiency.
+    To navigate these challenges, it becomes essential to have a toolkit of strategies
+    at our disposal. In the following sections, we present an array of methods designed
+    to provide flexibility and control over the training process. These strategies
+    range from hardware configuration to algorithm optimization and are tailored to
+    suit different scenarios and requirements. These methods were drawn from best
+    practices in deep learning and graph deep learning across academia and industry.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在上一节中概述的，当数据变得庞大时，我们必须处理与内存限制、处理时间和效率相关的问题。为了应对这些挑战，拥有一系列策略工具箱变得至关重要。在接下来的章节中，我们介绍了一系列旨在提供训练过程灵活性和控制的方法。这些策略从硬件配置到算法优化，针对不同的场景和需求进行了定制。这些方法源自学术界和工业界在深度学习和图深度学习中的最佳实践。
+- en: 7.3.1 Seven techniques
+  id: totrans-100
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.3.1 七种技术
+- en: 'First, we start with three basic choices that can be planned for ahead of time
+    and reconfigured during the course of a project. To prepare, choose the following
+    for your project:'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们考虑三个可以在项目开始前规划并在项目过程中重新配置的基本选择。为了准备，为您的项目选择以下内容：
+- en: '*Hardware configuration* —These choices cover the processor type, the memory
+    configuration of the processor, and whether to use a single machine/processor
+    or many.'
+  id: totrans-102
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*硬件配置* — 这些选择包括处理器类型、处理器的内存配置，以及是否使用单个机器/处理器或多个处理器。'
+- en: '*Dataset representation* —PyG provides support for dense and sparse tensors.
+    Conversion from dense to sparse may significantly reduce the memory footprint
+    when dealing with large graphs. You can convert dense adjacency matrices or node
+    feature matrices into sparse representations using PyG’s `torch_geometric .utils.to_sparse`
+    function.'
+  id: totrans-103
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*数据集表示* — PyG 支持稠密和稀疏张量。在处理大型图时，从稠密到稀疏的转换可能会显著减少内存占用。您可以使用 PyG 的 `torch_geometric
+    .utils.to_sparse` 函数将稠密邻接矩阵或节点特征矩阵转换为稀疏表示。'
+- en: '*GNN architecture* —Certain GNN architectures are designed to be computationally
+    efficient and scalable for large graphs. Choosing an algorithm that scales well
+    can significantly mitigate size problems.'
+  id: totrans-104
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*GNN架构* — 某些GNN架构被设计为计算效率高且可扩展性适用于大型图。选择一个扩展性好的算法可以显著减轻大小问题。'
+- en: 'Given these three categories of choices, if the problem overwhelms our system,
+    then the following are techniques we can use to alleviate the problems:'
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑到这些三种选择类别，如果问题超出了我们的系统，那么以下是我们可以使用的技术来减轻问题：
+- en: '*Sampling* —Instead of training on the entire large graph, you can sample a
+    subset of nodes or subgraphs for each training iteration. The cost in complexity
+    (adding sampling and batching routines) can be made up for with the gains in memory
+    efficiency. To perform sampling of nodes or graphs, PyG provides functionalities
+    from its `torch_geometric.sampler` and `torch_geometric.loader` modules.'
+  id: totrans-106
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*采样* — 在整个大型图上进行训练而不是，你可以为每个训练迭代采样节点或子图的子集。通过增加采样和批处理例程的复杂性，可以在内存效率的收益中得到补偿。为了执行节点或图的采样，PyG提供了来自其`torch_geometric.sampler`和`torch_geometric.loader`模块的功能。'
+- en: '*Parallelism and distributed computing* —You can use multiple processors or
+    clusters of machines to reduce the training time by spreading the dataset from
+    one to many machines during training. Depending on the way you do this, some development
+    and configuration overhead may be required.'
+  id: totrans-107
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*并行和分布式计算* — 你可以使用多个处理器或机器集群，通过在训练期间将数据集从一台机器分散到多台机器来减少训练时间。根据你这样做的方式，可能需要一些开发和配置开销。'
+- en: '*Use of remote backends* —Instead of storing the training graph dataset in
+    memory, it can be stored completely in the backend database and pull in mini-batches
+    when needed. The simplest case of this involves storing data on the local hard
+    drive, and reading mini-batches iteratively from there. In PyG, this method is
+    called a *remote backend*. This is a relatively new method in PyG, with some examples
+    but not many. At the time of writing, two database companies have developed some
+    support for PyG’s remote backend functionality. This method requires the most
+    development and maintenance overhead, but it’s most rewarding in alleviating big
+    data problems.'
+  id: totrans-108
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*使用远程后端* — 而不是将训练图数据集存储在内存中，它可以完全存储在后端数据库中，并在需要时拉取小批量数据。这种情况的最简单例子是将数据存储在本地硬盘上，并从那里迭代地读取小批量数据。在PyG中，这种方法被称为*远程后端*。这是PyG中相对较新的方法，有一些示例，但不多。在撰写本文时，两家数据库公司已经为PyG的远程后端功能开发了一些支持。这种方法需要最多的开发和维护开销，但在缓解大数据问题方面最有回报。'
+- en: '*Graph coarsening* —Graph coarsening techniques are used to reduce the size
+    of the graph while (hopefully) preserving its essential structure. These techniques
+    aggregate nodes and edges, creating a coarser version of the original graph. PyG
+    provides graph clustering and pooling operations for this purpose. The drawbacks
+    are that you must be careful that the coarsened graph will truly represent the
+    original, and, for supervised learning, you must make decisions about how targets
+    will be consolidated.'
+  id: totrans-109
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*图粗化* — 图粗化技术用于在（希望）保留其基本结构的同时减小图的大小。这些技术通过聚合节点和边，创建原始图的粗化版本。PyG为此提供了图聚类和池化操作。缺点是必须小心确保粗化图真正代表原始图，并且在监督学习中，你必须决定如何合并目标。'
+- en: The multifaceted problem of scale in training GNNs requires a thoughtful approach.
+    Through the application of various levers such as hardware choice, optimization
+    techniques, memory management, and architectural decisions, you can tailor the
+    process to fit specific needs and constraints.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 训练GNN时规模的多方面问题需要深思熟虑的方法。通过应用各种杠杆，如硬件选择、优化技术、内存管理和架构决策，你可以调整过程以适应特定的需求和约束。
+- en: 7.3.2 General Steps
+  id: totrans-111
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.3.2 一般步骤
+- en: 'In this section, we provide some general guidelines for planning and evaluating
+    a project with scale in mind. The general steps are provided here:'
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们提供了一些关于规划和评估考虑规模的项目的通用指南。一般步骤如下：
+- en: '*Planning stage*'
+  id: totrans-113
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*规划阶段*'
+- en: '*Anticipate hardware needs* —Familiarize yourself with available hardware options
+    in advance. Many online and local systems have published configurations.'
+  id: totrans-114
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*预测硬件需求* — 提前熟悉可用的硬件选项。许多在线和本地系统已发布配置。'
+- en: '*Understand your data* —Have a clear idea of your dataset size for every phase
+    of the machine learning lifecycle.'
+  id: totrans-115
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*理解你的数据* — 对于机器学习生命周期的每个阶段，对你的数据集大小有一个清晰的认识。'
+- en: '*Memory-to-data ratio* —As a rule of thumb, your memory capacity should ideally
+    be between 4 and 10 times the size of your dataset.'
+  id: totrans-116
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*内存与数据比率* — 作为经验法则，您的内存容量应理想地介于数据集大小的4到10倍之间。'
+- en: '*Benchmarking stage*'
+  id: totrans-117
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*基准测试阶段*'
+- en: '*Establish baselines* —Benchmark these metrics using a representative dataset.
+    These initial figures can then serve as a foundation to predict training and experimentation
+    timelines for your project.'
+  id: totrans-118
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*建立基线* — 使用代表性数据集对这些指标进行基准测试。这些初始数据可以随后作为预测项目训练和实验时间线的基石。'
+- en: '*Metrics for training* —Monitor and measure key metrics such as memory utilization,
+    time per epoch, floating point operations per second (FLOP/s), and time to convergence.'
+  id: totrans-119
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*训练指标* — 监控和测量关键指标，如内存利用率、每个epoch的时间、每秒浮点运算次数（FLOP/s）以及收敛时间。'
+- en: '*Troubleshooting* —If you encounter challenges and lack the resources for a
+    hardware upgrade, consider implementing the strategies detailed in this chapter
+    to navigate around hardware constraints.'
+  id: totrans-120
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*故障排除* — 如果您遇到挑战且缺乏硬件升级的资源，请考虑实施本章中详细说明的策略来绕过硬件限制。'
+- en: Now that we’ve learned about scale problems, the metrics to gauge them, and
+    a set of techniques to alleviate them, let’s dig into these individual methods
+    in more detail.
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经了解了规模问题、衡量它们的指标以及一系列缓解这些问题的技术，让我们更深入地探讨这些个别方法。
+- en: 7.4 Choice of hardware configuration
+  id: totrans-122
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.4 硬件配置的选择
+- en: This section examines choosing and adjusting hardware configuration to solve
+    scale problems. First, we’ll review general choices for hardware configurations,
+    followed by taking a broad overview of relevant system and processor choices.
+    Guidelines and recommendations are given for these options. The section ends with
+    the first GeoGrid mini-case study.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本节探讨了选择和调整硬件配置以解决规模问题。首先，我们将回顾硬件配置的一般选择，然后对相关的系统和处理器选择进行广泛概述。为这些选项提供了指南和建议。本节最后以第一个GeoGrid迷你案例研究结束。
+- en: 7.4.1 Types of hardware choices
+  id: totrans-124
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.1 硬件选择的类型
+- en: 'Various hardware configurations are available for training GNNs. Each configuration
+    is tailored to meet different needs and optimize performance:'
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 可用于训练图神经网络（GNNs）的硬件配置多种多样。每种配置都针对不同的需求进行了定制，以优化性能：
+- en: '*Processor type* —PyTorch offers the flexibility to run on different types
+    of processors, including central processing units (CPUs), graphics processing
+    units (GPUs), neural processing units (NPUs), tensor processing units (TPUs),
+    and intelligence processing units (IPUs). While CPUs are ubiquitous and can handle
+    most general tasks, GPUs, equipped with parallel processing capabilities, are
+    specifically designed for intensive computations, making them ideal for training
+    large-scale neural network models. TPUs are custom accelerators for machine learning
+    tasks. They can offer even greater computational capabilities, but their availability
+    might be restricted. More details are given in the next subsection. Two other
+    accelerators, NPUs (processors specially designed to run neural network workloads
+    in phones, laptops, and edge devices) and IPUs (designed for highly parallel workloads
+    that require large-scale data processing), are important classes of processors.
+    PyTorch only supports Graphcore IPUs at this time.'
+  id: totrans-126
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*处理器类型* — PyTorch提供了在多种处理器上运行的灵活性，包括中央处理器（CPUs）、图形处理器（GPUs）、神经处理器（NPUs）、张量处理器（TPUs）和智能处理器（IPUs）。虽然CPU无处不在，可以处理大多数通用任务，但配备了并行处理能力的GPU专门设计用于密集计算，因此它们非常适合训练大规模神经网络模型。TPU是针对机器学习任务的定制加速器。它们可以提供更大的计算能力，但它们的可用性可能受到限制。更多细节将在下一小节中给出。两种其他加速器，神经处理器（NPUs，专门设计在手机、笔记本电脑和边缘设备上运行神经网络工作负载的处理器）和智能处理器（IPUs，设计用于需要大规模数据处理的极高并行工作负载），是重要的处理器类别。PyTorch目前仅支持Graphcore
+    IPUs。'
+- en: '*Memory size* *—*Each processor type comes with its associated RAM. The size
+    of this RAM plays a pivotal role in determining the scale of workload a system
+    can handle. Adequate RAM ensures smooth model training, especially for networks
+    that require processing large volumes of data or those with complex architectures.'
+  id: totrans-127
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*内存大小* — 每种处理器类型都配备其相应的RAM。这种RAM的大小在确定系统可以处理的工作负载规模中起着关键作用。充足的RAM确保模型训练顺畅，特别是对于需要处理大量数据或具有复杂架构的网络。'
+- en: '*Single versus multiple GPUs or TPUs* *—*For those fortunate enough to have
+    access to multiple GPUs or TPUs, they can significantly expedite training times.
+    PyTorch offers the `DistributedDataParallel` module, which harnesses the power
+    of multiple GPUs or TPUs to train a model in parallel. This means you can distribute
+    the computational load across several devices, enabling faster iteration and model
+    convergence.'
+  id: totrans-128
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*单 GPU 或 TPU 与多 GPU 或 TPU 的选择* — 对于有幸能够访问多个 GPU 或 TPU 的用户来说，它们可以显著缩短训练时间。PyTorch
+    提供了 `DistributedDataParallel` 模块，它利用多个 GPU 或 TPU 的力量并行训练模型。这意味着您可以将计算负载分配到多个设备上，从而实现更快的迭代和模型收敛。'
+- en: '*Single machine versus computing clusters* *—*Beyond just the scope of a single
+    machine, sometimes training demands can scale up to require entire clusters. A
+    cluster, in this context, refers to a collective of machines, each equipped with
+    its distinct set of computational, memory, and storage resources. If you find
+    yourself with access to such a resource, PyTorch’s `DistributedDataParallel` module
+    is again the tool of choice, at least for clustering at a small scale. In this
+    case, it lets you span your training process across the entire cluster, which
+    proves invaluable when working with especially large models or massive datasets.'
+  id: totrans-129
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*单机与计算集群* — 除了单机的范围之外，有时训练需求可能需要扩展到整个集群。在这个上下文中，集群指的是由机器组成的集合，每台机器都配备了其独特的计算、内存和存储资源。如果您能够访问这样的资源，PyTorch
+    的 `DistributedDataParallel` 模块再次成为首选工具，至少在小型集群方面是这样。在这种情况下，它允许您将训练过程扩展到整个集群，这对于处理特别大的模型或大量数据集非常有价值。'
+- en: As you scale up in terms of hardware capabilities—from individual processors
+    to multiple devices and then to whole clusters—the complexity of planning, setup,
+    and management also rises. Making informed decisions based on the task’s requirements
+    and available resources can make this journey smoother and more productive. As
+    highlighted in the introduction, we’ll focus on single machine optimizations in
+    this chapter.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随着你在硬件能力方面的提升——从单个处理器到多个设备，再到整个集群——规划、设置和管理复杂性也会增加。根据任务的要求和可用资源做出明智的决策可以使这一过程更加顺畅和高效。正如引言中提到的，在本章中，我们将重点关注单机优化。
+- en: 7.4.2 Choice of processor and memory size
+  id: totrans-131
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.2 处理器和内存大小的选择
+- en: 'As we pivot to the topic of hardware considerations, it’s important to understand
+    the primary options for training GNNs: CPUs, GPUs, NPUs, IPUs, and TPUs. In this
+    section, we offer a concise overview of each type of hardware and present guidelines
+    for their application. These key points are encapsulated in table 7.2.'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们转向硬件考虑的话题时，了解训练 GNN 的主要选项（CPU、GPU、NPU、IPU 和 TPU）非常重要。在本节中，我们提供了每种硬件类型的简要概述，并提供了它们应用的指南。这些关键点总结在表
+    7.2 中。
+- en: '*Central processing units (CPUs)* —CPUs excel in general-purpose computing
+    tasks, from data preprocessing to model training. However, they aren’t optimized
+    for specialized deep learning tasks, which can affect their speed and efficiency.
+    On the plus side, CPUs are generally more budget-friendly compared to other hardware
+    options, making them accessible for a broader range of users.'
+  id: totrans-133
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*中央处理器 (CPUs)* — CPU 在通用计算任务中表现出色，从数据预处理到模型训练。然而，它们并不是针对专门的深度学习任务进行优化的，这可能会影响它们的速度和效率。另一方面，与其它硬件选项相比，CPU
+    通常更具成本效益，这使得它们对更广泛的用户群体来说更加可访问。'
+- en: '*Graphics processing units (GPUs)* —GPUs are engineered for tasks requiring
+    parallel computing capabilities. From reading this book so far, you know they
+    frequently serve as the preferred hardware for training GNNs in a PyTorch environment,
+    particularly when using libraries (e.g., PyG) that are designed to make the most
+    of GPU parallelism. Most of the examples in this book have been run on NVIDIA
+    GPUs available on the Colab platform, which include Tesla T4, A100, and V100\.'
+  id: totrans-134
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*图形处理单元 (GPUs)* — GPU 是为需要并行计算能力的任务而设计的。到目前为止，通过阅读这本书，你知道它们经常被用作 PyTorch 环境中训练
+    GNN 的首选硬件，尤其是在使用旨在充分利用 GPU 并行性的库（例如，PyG）时。本书中的大多数示例都是在 Colab 平台上可用的 NVIDIA GPU
+    上运行的，包括 Tesla T4、A100 和 V100。'
+- en: '*Tensor processing units (TPUs)* —TPUs represent a specialized choice, built
+    by Google to boost machine learning computations. They provide rapid computational
+    speeds and can be cost-effective. However, their scope may be limited because
+    they are a proprietary technology primarily compatible with Google Cloud and TensorFlow,
+    and they may not offer full PyTorch compatibility.'
+  id: totrans-135
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*张量处理单元（TPUs）* — TPUs是一种专门的选择，由Google构建以提升机器学习计算。它们提供快速的计算速度，并且可能具有成本效益。然而，它们的范围可能有限，因为它们是一种专有技术，主要与Google
+    Cloud和TensorFlow兼容，并且可能不完全兼容PyTorch。'
+- en: '*Neural processing units (NPUs)* —Both AMD and Intel have NPU product lines,
+    accompanied by an acceleration library that can be integrated with PyTorch. NPUs
+    are dedicated hardware for parallelized processing, similar to TPUs. While GPUs
+    were designed originally for processing graphics, they typically contain circuits
+    that are dedicated to machine learning tasks. NPUs make a dedicated unit out of
+    these circuits, improving efficiency and performance. Apple typically provides
+    a similar dedicated unit (known as the Apple Neural Engine [ANE]) in most of their
+    laptops and computers.'
+  id: totrans-136
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*神经处理单元（NPUs）* — AMD和Intel都有NPU产品线，并配有可以与PyTorch集成的加速库。NPUs是用于并行处理的专用硬件，类似于TPUs。虽然GPU最初是为处理图形而设计的，但它们通常包含专门用于机器学习任务的电路。NPUs将这些电路转化为专用单元，提高了效率和性能。苹果通常在其大多数笔记本电脑和计算机中提供类似的专用单元（称为Apple
+    Neural Engine [ANE]）。'
+- en: '*Intelligent processing units (IPUs)* —These are specialized circuit chips,
+    designed and optimized with deep learning tasks in mind. IPUs were developed by
+    Graphcore and specialize in graph-based computing. These are extremely well suited
+    for GNN-based models as they allow for independent tasks to be parallelized as
+    needed for GNN models during message passing. IPUs are compatible with both PyTorch
+    and PyG but require rewriting certain tasks. Other companies designing very large
+    and powerful specialized chips include Cerebras and Groq.'
+  id: totrans-137
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*智能处理单元（IPUs）* — 这些是专门设计的电路芯片，考虑到深度学习任务进行设计和优化。IPUs由Graphcore开发，擅长基于图计算。它们非常适合基于GNN的模型，因为它们允许在消息传递过程中根据需要并行化独立任务。IPUs与PyTorch和PyG兼容，但需要重写某些任务。其他设计非常大型和强大专用芯片的公司包括Cerebras和Groq。'
+- en: '*Configuration considerations* —When selecting hardware, it’s crucial to account
+    for memory constraints, as GNNs are often data-intensive due to the unique structure
+    of graph data. The choice of hardware can also influence the pace of both training
+    and inference. Therefore, it’s essential to weigh the tradeoffs between cost and
+    performance, tailored to the specific demands of your project.'
+  id: totrans-138
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*配置考虑因素* — 在选择硬件时，考虑到内存限制至关重要，因为GNN通常由于图数据的独特结构而数据密集。硬件的选择也可能影响训练和推理的速度。因此，权衡成本和性能之间的权衡，以适应您项目的具体需求是至关重要的。'
+- en: The principal factors to contemplate while selecting hardware for GNN training
+    in PyTorch include the processor type (e.g., CPU, GPU, or TPU), the available
+    memory, and your budgetary limitations. These considerations are organized for
+    quick reference in table 7.2.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyTorch中选择用于GNN训练的硬件时需要考虑的主要因素包括处理器类型（例如，CPU、GPU或TPU）、可用内存以及您的预算限制。这些考虑因素在表7.2中组织，以便快速参考。
+- en: Table 7.2 Pros and cons of processor choice
+  id: totrans-140
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 表7.2 处理器选择的优缺点
+- en: '| Hardware | Recommended Workload | Pros | Cons |'
+  id: totrans-141
+  prefs: []
+  type: TYPE_TB
+  zh: '| 硬件 | 推荐工作负载 | 优点 | 缺点 |'
+- en: '| --- | --- | --- | --- |'
+  id: totrans-142
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- | --- |'
+- en: '| CPU  | Preprocessing  | Suitable for data collection and preprocessing More
+    affordable than GPUs and TPUs'
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| CPU | 预处理 | 适用于数据收集和预处理，比GPU和TPU便宜'
+- en: '| Slower for training due to lack of accelerated parallel processing  |'
+  id: totrans-144
+  prefs: []
+  type: TYPE_TB
+  zh: '| 由于缺乏加速并行处理而训练较慢 |'
+- en: '| GPU  | Training  | Excellent for training due to parallel processing  | More
+    expensive than CPUs Surpassed by TPUs for deep learning tasks'
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| GPU | 训练 | 由于并行处理，非常适合训练 | 比CPU贵，在深度学习任务上被TPU超越'
+- en: '|'
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '|'
+- en: '| TPU  | Preprocessing and training  | Faster computation time and cost-effectiveness
+    for deep learning tasks  | Requires specific software infrastructure'
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| TPU | 预处理和训练 | 对于深度学习任务，计算时间快且成本效益高 | 需要特定的软件基础设施'
+- en: Limited to Google platforms
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 仅限于Google平台
+- en: '|'
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '|'
+- en: '| NPU  | Training  | Optimized for deep learning and especially good for on-device
+    AI applications, reducing reliance on cloud services  | Limited to specific AI
+    workloads, primarily neural network-based tasks  |'
+  id: totrans-150
+  prefs: []
+  type: TYPE_TB
+  zh: '| NPU  | 训练  | 优化用于深度学习，尤其是在设备端AI应用中表现优异，减少对云服务的依赖  | 限制于特定的AI工作负载，主要是基于神经网络的任务  |'
+- en: '| IPU  | Training  | Especially good for graph-based tasks such as GNNs  |
+    Can be more complex to program and optimize compared to NPUs  |'
+  id: totrans-151
+  prefs: []
+  type: TYPE_TB
+  zh: '| IPU  | 训练  | 特别适合基于图的任务，如GNNs  | 与NPUs相比，编程和优化可能更复杂  |'
+- en: 'One last thing to consider is that certain processor types shine in particular
+    steps in the machine learning lifecycle:'
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 需要考虑的最后一点是，某些处理器类型在机器学习生命周期的特定步骤中表现突出：
+- en: '*Data collection and preprocessing* —CPUs are typically sufficient for these
+    steps. Often, they can handle a variety of tasks efficiently without requiring
+    specialized hardware. However, in our experience, for some memory-intensive, long
+    preprocessing steps, a TPU will perform better when available.'
+  id: totrans-153
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*数据收集和预处理* — CPU通常足以完成这些步骤。通常，它们可以高效地处理各种任务，而无需专用硬件。然而，根据我们的经验，对于一些内存密集型、长预处理步骤，如果可用，TPU的表现会更好。'
+- en: '*Model training* *—*Usually, this is the most compute-intensive part of the
+    lifecycle, and GPUs are usually the best option here. They are designed for parallel
+    processing, which accelerates the training of neural networks. GNNs, in particular,
+    benefit from this as they often involve calculations across multiple nodes and
+    edges in a graph. When available, TPUs may provide a performance edge.'
+  id: totrans-154
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*模型训练* — 通常，这是生命周期中最计算密集的部分，GPU通常是最佳选择。它们设计用于并行处理，这加速了神经网络的训练。GNNs尤其受益于此，因为它们通常涉及图中的多个节点和边的计算。当可用时，TPU可能提供性能优势。'
+- en: '*Model evaluation and inference* *—*For evaluation and inference, the choice
+    between CPUs and GPUs depends on the specific use case. If cost-effectiveness
+    is more important, CPUs might be preferred. TPUs, with their high computational
+    speed and cost-effectiveness, could be a good choice for large-scale deployments,
+    but their usage is more limited compared to CPUs and GPUs.'
+  id: totrans-155
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*模型评估和推理* — 对于评估和推理，CPU和GPU的选择取决于具体的使用场景。如果成本效益更重要，CPU可能更受欢迎。TPU凭借其高计算速度和成本效益，对于大规模部署来说可能是一个不错的选择，但与CPU和GPU相比，其使用范围更有限。'
+- en: Note that the best choice of processor may vary depending on the specific requirements
+    of the project, such as the model complexity, the size of the dataset, the platform
+    used, and the available budget. We end this section with an example from our fictional
+    company, GeoGrid.
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，最佳处理器选择可能取决于项目的具体要求，例如模型复杂性、数据集大小、使用的平台和可用的预算。我们以我们虚构的GeoGrid公司的一个例子结束本节。
+- en: Example
+  id: totrans-157
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 示例
+- en: 'Dr. Smith works for GeoGrid, a leading mapping company, on a research project
+    involving GNNs to analyze the spread of infectious diseases across different cities.
+    Her dataset comprises data from 10,000 connected towns (nodes), with each town
+    having approximately 1,000 node features. This dataset has a size of 10 GB. The
+    following outlines some of the different steps required in preparing this project
+    for analysis using a GNN:'
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 史密斯博士在GeoGrid公司工作，这是一家领先的地图公司，她正在进行一个涉及GNNs以分析不同城市间传染病传播的研究项目。她的数据集包含来自10,000个相连城镇（节点）的数据，每个城镇大约有1,000个节点特征。这个数据集的大小为10
+    GB。以下概述了在准备使用GNN进行分析的项目时所需的一些不同步骤：
+- en: '*Planning stage*'
+  id: totrans-159
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*规划阶段*'
+- en: '*Anticipate hardware needs* —Dr. Smith reviews her university’s computational
+    resources and finds they have access to both GPUs and CPUs, but TPUs are currently
+    in limited supply.'
+  id: totrans-160
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*预测硬件需求* — 史密斯博士审查了她所在大学的计算资源，发现他们可以访问GPU和CPU，但TPU目前供应有限。'
+- en: '*Understand your data* —Dr. Smith estimates that her dataset will be about
+    10 GB in total. Via exploratory data analysis, she has determined that her data
+    is sparse.'
+  id: totrans-161
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*理解您的数据* — 史密斯博士估计她的数据集总大小约为10 GB。通过探索性数据分析，她确定她的数据是稀疏的。'
+- en: '*Memory-to-data ratio* —Keeping the rule of thumb to reserve capacity of 4
+    to 10 times the data size in mind, she deduces that she’d ideally want access
+    to a machine with at least 40 GB to 100 GB of RAM.'
+  id: totrans-162
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*内存与数据比率* — 考虑到保留4到10倍数据大小的容量这一经验法则，她推断她理想情况下希望访问至少拥有40 GB到100 GB RAM的机器。'
+- en: '*Benchmarking stage* —Using a subset of her data, Dr. Smith benchmarks the
+    data preprocessing time and model training time on both a GPU and CPU. She notices
+    a significant speed-up when using the GPU for model training, as expected, but
+    the CPU performs comparatively well for data preprocessing. She decides to use
+    a CPU device for preprocessing and a GPU for model training.'
+  id: totrans-163
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*基准测试阶段* — 使用她数据的一个子集，史密斯博士在 GPU 和 CPU 上对数据预处理时间和模型训练时间进行了基准测试。正如预期的那样，当使用
+    GPU 进行模型训练时，她注意到速度显著提高，但 CPU 在数据预处理方面表现相对较好。她决定使用 CPU 设备进行预处理，使用 GPU 进行模型训练。'
+- en: '*Troubleshooting* —By investigating the cause of frequent system crashes and
+    memory errors, Dr. Smith realizes that her current GPU doesn’t have sufficient
+    memory to handle the larger graphs. Instead of requesting a machine with a device
+    with larger memory (in short supply at the time), she decides to use subgraph
+    sampling methods, a technique detailed in section 7.7, to make her data more manageable
+    for her current hardware.'
+  id: totrans-164
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*故障排除* — 通过调查频繁的系统崩溃和内存错误的根本原因，史密斯博士意识到她当前的 GPU 没有足够的内存来处理更大的图。鉴于当时内存更大的设备（短缺）无法申请，她决定使用子图采样方法，这是一种在第
+    7.7 节中详细描述的技术，以便使她的数据更适合当前硬件。'
+- en: Through this example, we see the importance of understanding your dataset and
+    available resources, benchmarking to set expectations, and troubleshooting to
+    find solutions within the constraints. Next, we examine the choice of how to represent
+    our data.
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过这个例子，我们看到了理解你的数据集和可用资源的重要性，基准测试以设定期望，以及故障排除以在限制内找到解决方案。接下来，我们将检查如何表示我们的数据的选择。
+- en: 7.5 Choice of data representation
+  id: totrans-166
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.5 数据表示的选择
+- en: 'Depending on the characteristics of your input graph(s), how you store and
+    represent them in PyG will have an effect on time and space constraints. In PyG,
+    the primary data classes, `torch_geometric.data.Data` and `torch_geometric.data.HeteroData`,
+    can be represented in two formats to represent graphs in a sparse or dense format.
+    In PyG, the difference between dense and sparse representation lies in how the
+    graph’s adjacency matrix and node features are stored in memory. Dense representation
+    has the following characteristics:'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 根据你的输入图（组）的特性，你在 PyG 中如何存储和表示它们将对时间和空间限制产生影响。在 PyG 中，主要的数据类 `torch_geometric.data.Data`
+    和 `torch_geometric.data.HeteroData` 可以用两种格式表示，以稀疏或密集格式表示图。在 PyG 中，密集表示和稀疏表示之间的区别在于图邻接矩阵和节点特征在内存中的存储方式。密集表示具有以下特点：
+- en: The entire adjacency matrix is stored in memory, both zero and nonzero elements,
+    using a 2D tensor of size *N* × *N*, where *N* is the number of nodes.
+  id: totrans-168
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 整个邻接矩阵以大小为 *N* × *N* 的二维张量形式存储在内存中，其中 *N* 是节点的数量。
+- en: Node features are stored in a dense 2D tensor of size *N* × *F*, where *F* is
+    the number of features per node.
+  id: totrans-169
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 节点特征存储在大小为 *N* × *F* 的密集二维张量中，其中 *F* 是每个节点的特征数量。
+- en: This representation is memory-intensive but allows for faster computation when
+    the graph is dense, meaning most of the graph’s vertices are connected to one
+    another; that is, its adjacency matrix has a high percentage of nonzero elements,
+    as explained in appendix A.
+  id: totrans-170
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 这种表示方式内存密集，但在图密集时允许更快的计算，这意味着图的大部分顶点相互连接；也就是说，其邻接矩阵有很高的非零元素百分比，如附录 A 中所述。
+- en: 'Sparse representation, on the other hand, has these characteristics:'
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相反，稀疏表示具有以下特点：
+- en: The adjacency matrix is stored in a sparse format, such as the COO (coordinate)
+    format, which only stores the nonzero elements’ indices and their values.
+  id: totrans-172
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 邻接矩阵以稀疏格式存储，例如 COO（坐标）格式，它只存储非零元素的索引及其值。
+- en: Node features can be stored in a sparse 2D tensor or a dictionary mapping node
+    with indices to their feature vectors.
+  id: totrans-173
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 节点特征可以存储在稀疏二维张量中，或者是一个将节点索引映射到其特征向量的字典。
+- en: This representation is memory-efficient, especially when the graph is sparse,
+    meaning few of the graph’s vertices are connected to one another; that is, its
+    adjacency matrix has a low percentage of nonzero elements, as explained in appendix
+    A. However, it may result in slower computation compared to dense representation
+    for specific tasks.
+  id: totrans-174
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 这种表示方式在图稀疏时内存效率更高，意味着图中很少的顶点相互连接；也就是说，其邻接矩阵有很低的非零元素百分比，如附录 A 中所述。然而，与密集表示相比，它可能在特定任务中导致计算速度较慢。
+- en: Note  To understand the difference between sparse or dense formats and the characteristic
+    of a graph *being* sparse or dense, refer to appendix A, section A.2.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 — 要了解稀疏或密集格式之间的区别以及图 *是否* 稀疏或密集的特点，请参阅附录 A，第 A.2 节。
+- en: 'In PyG, two approaches that can be used to convert a dense dataset into a sparse
+    representation are using the built-in function or performing the conversion manually:'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyG中，可以将密集数据集转换为稀疏表示的两种方法是使用内置函数或手动执行转换：
+- en: '`torch_geometric.transforms.ToSparseTensor`—This transformation in PyG can
+    be used to convert a dense adjacency matrix or edge index to a sparse tensor representation.
+    It constructs a sparse adjacency matrix using the COO (Coordinate) format. You
+    can apply this transformation to your dataset to convert the dense representation
+    to a sparse one:'
+  id: totrans-177
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`torch_geometric.transforms.ToSparseTensor` — PyG中的这种转换可以用来将密集邻接矩阵或边索引转换为稀疏张量表示。它使用COO（坐标）格式构建稀疏邻接矩阵。您可以将此转换应用于您的数据集，将密集表示转换为稀疏表示：'
+- en: '[PRE3]'
+  id: totrans-178
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: '*Manual conversion* —You can manually convert a dense adjacency matrix or edge
+    index to a sparse representation using PyTorch or SciPy sparse tensor functionalities.
+    You can create a `torch_sparse.SparseTensor` or `scipy.sparse` matrix and construct
+    it from the dense representation:'
+  id: totrans-179
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*手动转换* — 您可以使用PyTorch或SciPy稀疏张量功能手动将密集邻接矩阵或边索引转换为稀疏表示。您可以创建一个`torch_sparse.SparseTensor`或`scipy.sparse`矩阵，并从密集表示中构建它：'
+- en: '[PRE4]'
+  id: totrans-180
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: '#1 Dense adjacency matrix'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 密集邻接矩阵'
+- en: In general, the primary motive for using sparse tensors is to save memory, especially
+    when dealing with large-scale graphs or matrices with a high percentage of zeros.
+    But, if your data has very few zero elements, dense tensors could provide a slight
+    advantage in terms of memory access and computation speed, as the overhead associated
+    with indexing and accessing sparse tensors may outweigh the space savings. Note
+    that converting your graph dataset from one representation to another can itself
+    tax your memory and processing power.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常，使用稀疏张量的主要动机是节省内存，尤其是在处理大规模图或零百分比很高的矩阵时。但是，如果您的数据零元素非常少，密集张量在内存访问和计算速度方面可能略有优势，因为与索引和访问稀疏张量相关的开销可能超过了节省的空间。请注意，将您的图数据集从一种表示转换为另一种表示本身可能会对您的内存和处理能力造成压力。
+- en: Example
+  id: totrans-183
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 示例
+- en: 'A school district has hired GeoGrid to study the relationships of its honor
+    students across its many campuses. One aspect of this work is a social network
+    where students are nodes and associations between students are edges. Dr. Barker
+    is researching a social network graph of the students, hoping to determine patterns
+    of friendship formation:'
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个学区雇佣了GeoGrid来研究其多个校园中优秀学生的关系。这项工作的一个方面是一个社交网络，其中学生是节点，学生之间的关联是边。巴克博士正在研究学生的社交网络图，希望确定友谊形成的模式：
+- en: '*Initial analysis* —Dr. Barker finds that within this small community, almost
+    everyone knows everyone else. In terms of raw data, there are 1,000 students (nodes)
+    and around 450,000 friendships (edges). Dr. Barker compares the existing edges
+    to the total possible connections: *n(n-1)/2*, where n is the number of nodes;
+    this equals 499,500\. Because the existing edges (450,000) are nearly equal to
+    the total number of edges (499,500), he determines he is dealing with a dense
+    graph.'
+  id: totrans-185
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*初步分析* — 巴克博士发现，在这个小社区中，几乎每个人都认识其他人。从原始数据来看，有1,000名学生（节点）和大约450,000个友谊（边）。巴克博士将现有的边与总可能连接数进行比较：*n(n-1)/2*，其中n是节点的数量；这等于499,500。因为现有的边（450,000）几乎等于边的总数（499,500），他确定他正在处理一个密集图。'
+- en: '*Dense representation* —Considering the density of the graph:'
+  id: totrans-186
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*密集表示* — 考虑到图的密度：'
+- en: The adjacency matrix is of size 1,000 × 1,000\.
+  id: totrans-187
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 邻接矩阵的大小为1,000 × 1,000。
+- en: If each student has a feature vector capturing 10 attributes (e.g., grade, number
+    of clubs, etc.), the node features are stored in a tensor of size 1,000 × 10\.
+  id: totrans-188
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果每个学生都有一个包含10个属性的特征向量（例如，成绩、参加的社团数量等），节点特征存储在一个大小为1,000 × 10的张量中。
+- en: 'Given the high number of nonzero elements in the adjacency matrix due to the
+    dense nature of the graph, Dr. Barker first considers using the dense representation
+    for more efficient computation:'
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于图的高度密集性，邻接矩阵中非零元素的数量很高，因此巴克博士首先考虑使用密集表示来进行更有效的计算：
+- en: '*Memory consideration* —However, as Dr. Barker’s research progresses, he plans
+    to incorporate more schools into his dataset, expecting the graph to become much
+    larger but not necessarily denser. He anticipates that the increased size could
+    become memory-intensive with a dense representation.'
+  id: totrans-190
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*内存考虑* — 然而，随着巴克博士研究的进展，他计划将更多学校纳入他的数据集，预计图将变得更大，但不一定是更密集的。他预计随着规模的增加，密集表示可能会变得内存密集。'
+- en: '*Sparse representation* —To handle this potential problem, he decides to experiment
+    with sparse representation as well. He uses the `torch_geometric.transforms .ToSparseTensor`
+    transformation to convert his current dense graph dataset into a sparse tensor
+    representation.'
+  id: totrans-191
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*稀疏表示*—为了处理这个潜在的问题，他决定尝试使用稀疏表示。他使用`torch_geometric.transforms.ToSparseTensor`转换将他的当前密集图数据集转换为稀疏张量表示。'
+- en: '*Results* —Upon conversion, he observes memory-saving with the sparse representation
+    that is substantial enough to choose it, especially considering his future plans.
+    Although there’s a slight increase in computation time, the memory savings make
+    the sparse format more suitable for his expanding dataset.'
+  id: totrans-192
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*结果*—在转换后，他观察到稀疏表示可以节省足够的内存，足以选择它，特别是考虑到他的未来计划。尽管计算时间略有增加，但内存节省使得稀疏格式更适合他的不断扩大的数据集。'
+- en: 7.6 Choice of GNN algorithm
+  id: totrans-193
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.6 GNN算法的选择
+- en: Choosing your GNN algorithm well is essential to ensure the scalability and
+    efficiency of your machine learning tasks, particularly when dealing with large-scale
+    graphs and limited computational resources. Leaving aside predictive performance
+    and task suitability, two ways to choose the GNN algorithm with scalability in
+    mind is by considering time and space complexity and by gauging a few key metrics.
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 选择合适的GNN算法对于确保你的机器学习任务的扩展性和效率至关重要，尤其是在处理大规模图和有限的计算资源时。除了预测性能和任务适用性之外，考虑时间和空间复杂度以及评估一些关键指标是选择具有扩展性的GNN算法的两种方法。
+- en: 7.6.1 Time and space complexity
+  id: totrans-195
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.6.1 时间和空间复杂度
+- en: We gauge time and space complexity by using *Big O notation*, which is a kind
+    of math shorthand used to explain how fast a function grows or declines as the
+    input size changes. It’s like a speedometer for functions or algorithms, telling
+    you how they’ll behave when the input gets really big or goes toward a specific
+    value. It’s especially useful in machine learning engineering and development
+    to measure the efficiency of algorithms.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们通过使用*Big O表示法*来评估时间和空间复杂度，这是一种数学简写，用于解释函数随着输入大小的变化而增长或减少的速度。它就像函数或算法的速度计，告诉你当输入变得非常大或趋向于特定值时它们会如何表现。这在机器学习工程和开发中特别有用，可以用来衡量算法的效率。
+- en: Note  For a more comprehensive explanation of Big O notation, see Goodrich et
+    al. [9]. In addition, any beginning text on algorithms should cover this topic.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：对于Big O表示法的更全面解释，请参阅Goodrich等人[9]。此外，任何关于算法的入门文本都应该涵盖这个主题。
+- en: 'We also discuss time and space complexity with respect to graphs and graph
+    algorithms in the appendix, but here are a few examples of Big O notation for
+    time complexity, sorted in rising order:'
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还在附录中讨论了与图和图算法相关的时间和空间复杂度，但这里有一些关于时间复杂度的Big O表示法的例子，按升序排列：
+- en: '*Constant time complexity,* *O(1)* —This is the best-case scenario, where the
+    algorithm always takes the same amount of time, regardless of the input size.
+    An example is accessing an array element by its index.'
+  id: totrans-199
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*常数时间复杂度，O(1)*—这是最佳情况，算法总是花费相同的时间，无论输入大小如何。一个例子是通过索引访问数组元素。'
+- en: '*Linear time complexity, O(n)* —The running time of the algorithm increases
+    linearly with the size of the input. An example is finding a specific value in
+    an array.'
+  id: totrans-200
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*线性时间复杂度，O(n)*—算法的运行时间随着输入大小的增加而线性增长。一个例子是在数组中查找特定值。'
+- en: '*Logarithmic time complexity, O(log n)* —The running time increases logarithmically
+    with the size of the input. Algorithms with this type of time complexity are highly
+    efficient. An example is binary search.'
+  id: totrans-201
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*对数时间复杂度，O(log n)*—运行时间随着输入大小的增加而对数增长。具有这种时间复杂度的算法非常高效。一个例子是二分搜索。'
+- en: '*Quadratic time complexity,* *O(n**²**)* —The running time of the algorithm
+    is proportional to the square of the size of the input. An example is bubble sort.'
+  id: totrans-202
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*二次时间复杂度，O(n²)*—算法的运行时间与输入大小的平方成正比。一个例子是冒泡排序。'
+- en: When you understand the basics of how to assess Big O, you can use the information
+    provided by the authors of a GNN algorithm to assess this. Often in a publication
+    of an algorithm, the authors will provide the steps of the algorithm itself, which
+    can be used to conduct a Big O analysis. In addition, authors will also often
+    provide their own complexity analysis.
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当你理解了如何评估Big O的基本方法后，你可以使用GNN算法作者提供的信息来评估这一点。通常在算法的出版物中，作者会提供算法本身的步骤，这可以用来进行Big
+    O分析。此外，作者还会经常提供他们自己的复杂度分析。
+- en: 'Now that we’ve covered the benefits of Big O, we’ll list some of its caveats.
+    Conducting a standalone or comparative complexity analysis of GNN algorithms can
+    be challenging due to reasons that include the following:'
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经介绍了 Big O 的好处，我们将列出一些其注意事项。由于以下原因，对 GNN 算法进行独立或比较复杂度分析可能具有挑战性：
+- en: '*Diverse operations* —GNN algorithms involve a variety of operations, such
+    as matrix multiplications, nonlinear transformations, and pooling. Each operation
+    has different complexities, making it hard to provide a singular measure. Further,
+    not all GNNs employ the same operations, so comparing them side-by-side can be
+    of limited use. Often, in the literature, when comparisons are made between GNNs,
+    one major operation is compared instead of the entire algorithm.'
+  id: totrans-205
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*多样化操作* — GNN 算法涉及各种操作，如矩阵乘法、非线性变换和池化。每个操作具有不同的复杂度，这使得提供一个单一的度量标准变得困难。此外，并非所有
+    GNN 都采用相同的操作，因此并排比较可能有限。在文献中，当比较 GNN 时，通常比较一个主要操作而不是整个算法。'
+- en: '*Implementation specifics* —The actual implementation of the GNN algorithm
+    such as the use of specific libraries, hardware optimization, or parallel computing
+    strategies, also influences the complexity.'
+  id: totrans-206
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*实现细节* — GNN 算法的实际实现，如使用特定库、硬件优化或并行计算策略，也会影响复杂度。'
+- en: 'As an example, table 7.3 compares the complexity of GCN with GraphSAGE found
+    in Bronstein et al. [10]. This comparison specifically looks at one operation
+    (the convolution-like operation in forward propagation) on a type of input graph
+    (sparse). Specifically, Bronstein et al. compare the time and space complexities
+    of the operation *Y* = ReLU(*A* × *W*). Broken down, this operation consists of
+    two main stages:'
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，表 7.3 比较了 Bronstein 等人 [10] 中发现的 GCN 与 GraphSAGE 的复杂度。这种比较特别关注一种操作（正向传播中的卷积类似操作）在一种输入图（稀疏图）上的操作。具体来说，Bronstein
+    等人比较了操作 *Y* = ReLU(*A* × *W*) 的时间和空间复杂度。分解来看，这个操作包括两个主要阶段：
+- en: '*Matrix multiplication (A* × *W)* —This means we’re multiplying matrix A (which
+    could be our input data) by matrix X (our weights or parameters that the algorithm
+    is trying to optimize) and then by matrix W. Matrix multiplication is a way of
+    transforming our data.'
+  id: totrans-208
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*矩阵乘法（A* × *W）* — 这意味着我们在矩阵 A（可能是我们的输入数据）上乘以矩阵 X（我们的权重或算法试图优化的参数），然后乘以矩阵 W。矩阵乘法是一种转换我们的数据的方式。'
+- en: '*Activation (ReLU)* —The rectified linear unit (ReLU) is a type of activation
+    function that’s used to introduce nonlinearity into our model. Essentially, ReLU
+    takes the result of our matrix multiplication and, for each element, if the value
+    is less than 0, it sets it to 0\. If it’s greater than 0, ReLU leaves it as is.'
+  id: totrans-209
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*激活（ReLU）* — 矩形线性单元（ReLU）是一种用于将非线性引入我们模型的激活函数。本质上，ReLU 取矩阵乘法的结果，对于每个元素，如果值小于
+    0，则将其设置为 0。如果值大于 0，ReLU 保持不变。'
+- en: 'Table 7.3 Factors on the scalability of two graph algorithms: GCN and GraphSAGE.'
+  id: totrans-210
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 表 7.3 两种图算法（GCN 和 GraphSAGE）的可扩展性因素。
+- en: '| Algorithm | Time Complexity | Space Complexity | Memory/Epoch Time/Convergence
+    Speed | Notes |'
+  id: totrans-211
+  prefs: []
+  type: TYPE_TB
+  zh: '| 算法 | 时间复杂度 | 空间复杂度 | 内存/Epoch 时间/收敛速度 | 备注 |'
+- en: '| --- | --- | --- | --- | --- |'
+  id: totrans-212
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- | --- | --- |'
+- en: '| GCN  | *O*( *Lnd*²)  | *O*( *Lnd* + *Ld*²)  | Memory: Bad Epoch time: Good'
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| GCN  | *O*( *Lnd*²)  | *O*( *Lnd* + *Ld*²)  | 内存：差 Epoch 时间：好'
+- en: 'Convergence speed: Bad'
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 收敛速度：差
+- en: '| Pros: Spectral convolution: Efficient and suitable for large-scale graphs'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| 优点：光谱卷积：高效且适用于大规模图'
+- en: 'Versatility: Applicable to various graph-related problems'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通用性：适用于各种与图相关的问题
+- en: 'Node feature learning: Rich feature learning that captures the topological
+    structure of the graph'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 节点特征学习：丰富的特征学习，能够捕捉图的拓扑结构
+- en: 'Con:'
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 'Con:'
+- en: High memory and time complexity due to the need to store the entire adjacency
+    matrix and node features
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于需要存储整个邻接矩阵和节点特征，导致高内存和时间复杂度
+- en: '|'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '|'
+- en: '| GraphSAGE  | *O*( *Lbd*² *k* ^L)  | *O*( *bk* ^L)  | Memory: Good Epoch time:
+    Bad'
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| GraphSAGE  | *O*( *Lbd*² *k* ^L)  | *O*( *bk* ^L)  | 内存：好 Epoch 时间：差'
+- en: 'Convergence speed: Good'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 收敛速度：好
+- en: '| Pro: Solves GCN’s scalability problem by using neighborhood sampling and
+    mini-batching'
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| 优点：通过使用邻域采样和批量处理解决了 GCN 的可扩展性问题'
+- en: 'Cons:'
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 'Cons:'
+- en: May introduce redundant computations when sampled nodes appear multiple times
+    in the neighborhood
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当采样节点在邻域中出现多次时，可能会引入冗余计算
+- en: Keeps *O*( *bk* ^L) nodes in memory for each batch, but the loss is computed
+    only on b of them
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个批次保留 *O*( *bk* ^L) 个节点在内存中，但只在其中的 b 个上计算损失
+- en: '|'
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '|'
+- en: '| *n* = Number of nodes in the graph *d* = Dimensions of the node feature representation'
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '| *n* = 图中的节点数量 *d* = 节点特征表示的维度'
+- en: '*L* = Number of message-passing iterations or layers in the algorithm'
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*L* = 算法中的消息传递迭代次数或层数'
+- en: '*k* = Number of neighbors sampled per hop'
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*k* = 每跳采样的邻居数量'
+- en: '*b* = Number of nodes in a mini-batch'
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*b* = 小批量中的节点数量'
+- en: '|'
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '|'
+- en: One takeaway from this comparison is that while GCN’s complexities have a dependence
+    on the entire node count in the input graph, GraphSAGE’s complexity is independent
+    of this, offering a great improvement in both space and time performance. GraphSAGE
+    accomplishes this by employing neighborhood sampling and mini-batching.
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从这次比较中得出的一个启示是，虽然GCN的复杂性依赖于输入图中整个节点数量，但GraphSAGE的复杂性与此无关，在空间和时间性能上都有很大的改进。GraphSAGE通过采用邻域采样和小批量处理来实现这一点。
+- en: Example
+  id: totrans-234
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 示例
+- en: 'GeoGrid is tasked with predicting the likelihood of an area undergoing development
+    based on various urban factors. The nodes in the graph represent geographical
+    areas, while the edges could represent proximity to amenities, road networks,
+    or other areas that have undergone development:'
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid的任务是根据各种城市因素预测一个区域进行开发的可能性。图中的节点代表地理区域，而边可能代表便利设施、道路网络或已经开发的其他区域：
+- en: '*Team analysis* —While the current project consists of only one metropolitan
+    area, GeoMap hopes to gradually expand the system in the future to have nationwide
+    coverage, including a database with millions of geographical nodes and billions
+    of edges. Each node has a feature vector that may include attributes such as land
+    value, proximity to public transit, and zoning regulations.'
+  id: totrans-236
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*团队分析* — 虽然当前项目只包含一个都市区，GeoMap希望未来逐步扩展系统，实现全国覆盖，包括包含数百万地理节点和数十亿边的数据库。每个节点都有一个特征向量，可能包括诸如土地价值、距离公共交通的远近和分区法规等属性。'
+- en: Due to the current size of the graph, the plans to expand it, and the need for
+    timely predictions, GeoGrid’s data science team must carefully select an appropriate
+    GNN architecture.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于当前图的大小、扩展计划以及对及时预测的需求，GeoGrid的数据科学团队必须仔细选择一个合适的GNN架构。
+- en: '*GCN* —GCNs are easy to interpret, but their time complexity of O(*Lnd*) may
+    pose challenges as the graph scales. However, with the use of PyG’s mini-batch
+    method, the team can manage the graph without needing to store the entire adjacency
+    matrix, making GCN a reasonable candidate.'
+  id: totrans-238
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*GCN* — GCN易于解释，但它们的时间复杂度O(*Lnd*)在图规模扩大时可能带来挑战。然而，使用PyG的小批量方法，团队可以在不需要存储整个邻接矩阵的情况下管理图，使GCN成为一个合理的候选方案。'
+- en: '*GraphSAGE* —GraphSAGE offers a time complexity of O(*Lbdk*), appealing for
+    its memory efficiency and scalability. It allows for the adjustment of the mini-batch
+    size *b* and the number of sampled neighbors *k*, providing flexibility in performance
+    tuning.'
+  id: totrans-239
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*GraphSAGE* — GraphSAGE提供了O(*Lbdk*)的时间复杂度，由于其内存效率和可扩展性而具有吸引力。它允许调整小批量大小*b*和采样邻居数量*k*，从而在性能调整方面提供灵活性。'
+- en: '*GAT* —Graph attention networks (GATs) offer the potential for nuanced insights
+    through attention mechanisms, but they come with added computational costs. While
+    the Big O complexity might be similar to GCN, the attention mechanisms could introduce
+    additional computational overhead.'
+  id: totrans-240
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*GAT* — 图注意力网络（GATs）通过注意力机制提供细微洞察的潜力，但它们带来了额外的计算成本。虽然大O复杂度可能与GCN相似，但注意力机制可能会引入额外的计算开销。'
+- en: Algorithm comparison
+  id: totrans-241
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 算法比较
+- en: While GCN appears simpler than GraphSAGE, its dependency on the number of nodes
+    *n* can be problematic as the graph grows. GraphSAGE offers scalability due to
+    its dependency on *b* and *k*. GAT, although potentially more accurate, comes
+    with computational complexities due to its attention mechanism.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然GCN看起来比GraphSAGE简单，但随着图的增长，其依赖于节点数量*n*可能会出现问题。GraphSAGE由于其依赖于*b*和*k*而提供可扩展性。尽管GAT可能更准确，但其注意力机制带来了计算复杂性。
+- en: Using PyG for mini-batch processing makes GCN more manageable. However, the
+    team also liked GraphSAGE for its inherent scalability advantages. GAT, despite
+    its likely higher accuracy, could be too resource-intensive for this application.
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用PyG进行小批量处理使得GCN更易于管理。然而，团队也喜欢GraphSAGE，因为它固有的可扩展性优势。尽管GAT可能具有更高的准确性，但对于这个应用来说可能过于资源密集。
+- en: '*Decision* —After a thorough assessment, the GeoGrid team decides that GraphSAGE
+    offers the most balanced approach, optimizing between computational efficiency
+    and prediction accuracy.'
+  id: totrans-244
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*决策* — 经过彻底评估后，GeoGrid团队决定GraphSAGE提供了最平衡的方法，在计算效率和预测准确性之间进行优化。'
+- en: '*Conclusion* —They plan to trial GAT in a controlled setting later to assess
+    whether its added computational demands genuinely yield more accurate urban development
+    predictions. They will set out user acceptance testing with clear metrics before
+    moving to production.'
+  id: totrans-245
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*结论* — 他们计划在受控环境中试验GAT，以评估其增加的计算需求是否真正产生了更准确的城市发展预测。在进入生产之前，他们将以明确的指标开始用户接受度测试。'
+- en: The previous three sections have covered the fundamental choices to be made
+    when planning to train a GNN with size problems in mind. In the next five sections,
+    we review the methods that can solve scale problems, including deep learning optimizations,
+    sampling, distributed processing, use of remote backends, and graph coarsening.
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前三个部分已经涵盖了在考虑规模问题时计划训练GNN时需要做出的基本选择。在接下来的五个部分中，我们将回顾可以解决规模问题的方法，包括深度学习优化、采样、分布式处理、使用远程后端和图粗化。
+- en: 7.7 Batching using a sampling method
+  id: totrans-247
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.7 使用采样方法进行批量处理
+- en: In this section, we explore how to piece large data into batches chosen by a
+    sampling method. We’ll explain this in general, and then break down a few implementations
+    from the PyG package. We close with a GeoGrid case, highlighting the practical
+    choices and implications of using these methods.
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们探讨了如何将大量数据分成由采样方法选择的批次。我们将一般性地解释这一点，然后分析PyG包中的一些实现。我们以GeoGrid案例结束，强调使用这些方法的实际选择和影响。
+- en: 'Sampling: Literature versus implementation'
+  id: totrans-249
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 采样：文献与实现
+- en: In the literature, there is much discussion covering various types of sampling
+    techniques (usually classified as node-, layer-, and graph-sampling) designed
+    into GNN algorithms, but in this section, we’ll focus on sampling implementations
+    in the PyG package. Many of these techniques are derived from the literature,
+    but are nonetheless meant to generalize sampling to support various GNN algorithms
+    and training operations. For the purposes of this section, we use these sampling
+    implementations to support mini-batching.
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在文献中，有许多关于设计到GNN算法中的各种类型采样技术（通常分为节点采样、层采样和图采样）的讨论，但在这个部分，我们将专注于PyG包中的采样实现。许多这些技术源自文献，但它们的目的仍然是推广采样以支持各种GNN算法和训练操作。为了本部分的目的，我们使用这些采样实现来支持小批量处理。
+- en: A GCN provides a good illustration for this. While it’s true that the GCN model
+    as conceived in its standard form doesn’t involve sampling, PyG’s `NeighborSampler`
+    function can still be applied with the `GCNConv` layer. This is possible because
+    `NeighborSampler` is essentially a dataloader that returns a batch of subgraphs
+    from the larger graph.
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GCN（图卷积网络）为这一点提供了一个很好的说明。虽然按照其标准形式所设计的GCN模型确实不涉及采样，但PyG的`NeighborSampler`函数仍然可以与`GCNConv`层一起使用。这是可能的，因为`NeighborSampler`本质上是一个数据加载器，它从更大的图中返回一批子图。
+- en: In this context, the subgraphs are used to approximate the full graph convolution
+    operation. The obvious advantage is that we can work with large graphs that may
+    otherwise overwhelm the algorithm or our machine’s memory. A drawback is that
+    the accuracy of `GCNConv` with `NeighborSampler` might not be as high as the full
+    batch training due to this approximation.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这种情况下，子图被用来近似完整的图卷积操作。明显的优势是我们可以处理可能使算法或我们的机器内存不堪重负的大图。一个缺点是，由于这种近似，使用`NeighborSampler`的`GCNConv`的准确性可能不如完整批次训练那么高。
+- en: '7.7.1 Two concepts: Mini-batching and sampling'
+  id: totrans-253
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.7.1 两个概念：小批量处理和采样
+- en: Two distinct methods—batching and sampling—can often be combined into one function.
+    *Batching* (done by *loaders* in PyG) is breaking up a large dataset into subsets
+    of nodes or edges to be run through the training process. But how do we determine
+    the subset of nodes or edges to include in the smaller groups? *Sampling* is the
+    specific mechanism that we use to choose the subsets. These subsets can be in
+    the form of connected subgraphs, but they don’t necessarily have to be. Batching
+    done in this way will alleviate the memory load. During an epoch, instead of storing
+    the entire graph in memory, we can store smaller pieces of it at a time.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 两种不同的方法——批量处理和采样——通常可以合并为一个函数。*批量处理*（在PyG中由*加载器*执行）是将大型数据集分成节点或边的子集，以便在训练过程中运行。但我们如何确定要包含在较小组中的节点或边的子集？*采样*是我们用来选择子集的具体机制。这些子集可以是连接的子图的形式，但它们不一定是。以这种方式进行的批量处理将减轻内存负载。在一个epoch期间，我们不必将整个图存储在内存中，我们可以一次存储它的一小部分。
+- en: Batching with sampling can have drawbacks. One concern is the loss of essential
+    information. For instance, if we consider the message passing process, every node
+    and its neighborhood are critical for updating node information. Sampling could
+    miss important nodes, thus affecting the model’s performance. This can be likened
+    to omitting crucial messages in a message-passing framework. Additionally, the
+    sampling process may introduce bias, affecting the generalizability of the model.
+    This is equivalent to having a biased aggregation operation in a message passing
+    framework.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 带有采样的批处理可能存在缺点。一个担忧是丢失关键信息。例如，如果我们考虑消息传递过程，每个节点及其邻域对于更新节点信息都是关键的。采样可能会错过重要的节点，从而影响模型的性能。这可以比作在消息传递框架中省略关键消息。此外，采样过程可能会引入偏差，影响模型的泛化能力。这相当于在消息传递框架中有一个偏差的聚合操作。
+- en: Batching implemented in PyG
+  id: totrans-256
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: PyG中的批处理实现
+- en: Batching methods can be found in the `loader` and `sampler` modules. Most of
+    these combine a sampling method with functions that batch and serve the sampled
+    data to a model training process. There are vanilla classes that allow you to
+    write custom samplers (`baseloader`, `basesampler`) as well as loaders with predetermined
+    sampling mechanisms [11, 12].
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 批处理方法可以在`loader`和`sampler`模块中找到。其中大多数结合了采样方法以及将采样数据批量提供给模型训练过程的函数。有通用类允许您编写自定义采样器（`baseloader`，`basesampler`），以及具有预定义采样机制的加载器[11,
+    12]。
+- en: Choosing the right sampler
+  id: totrans-258
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 选择合适的采样器
+- en: Choosing the ideal sampling method can be nontrivial and depends on the nature
+    of the graph and the training objectives. Different samplers will yield a range
+    of epoch times and convergence times. There is no general rule to determine the
+    best sampler; it’s best to experiment with limited sets of your data to see what
+    works best. Implementing sampling adds another layer of complexity to the GNN
+    architecture, just as message passing requires carefully orchestrated aggregation
+    and update steps.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 选择理想的采样方法可能相当复杂，并且取决于图的性质和训练目标。不同的采样器会产生不同的epoch时间和收敛时间。没有普遍的规则来确定最佳采样器；最好是实验性地使用有限的数据集来查看哪种方法最有效。实现采样为GNN架构增加了另一层复杂性，就像消息传递需要精心编排的聚合和更新步骤一样。
+- en: 7.7.2 A glance at notable PyG samplers
+  id: totrans-260
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.7.2 概览PyG中显著的采样器
+- en: 'As we’ve seen, GNNs work by aggregating across local neighborhoods. However,
+    for very large graphs, it can be infeasible to consider all the nodes or edges
+    in the aggregation operation, so samplers are typically used instead. The following
+    lists some of the commonly used samplers that are also supported by default from
+    the PyG libraries:'
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们所见，GNNs通过聚合局部邻域来工作。然而，对于非常大的图，考虑聚合操作中的所有节点或边可能是不切实际的，因此通常使用采样器。以下列出了一些PyG库默认支持的常用采样器：
+- en: '`NeighborLoader`—Ideal for capturing local neighborhood dynamics and frequently
+    used in social network analysis.'
+  id: totrans-262
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`NeighborLoader`—非常适合捕捉局部邻域动态，常用于社交网络分析。'
+- en: '`ImbalancedSampler`—Built for imbalanced datasets, such as in fraud-detection
+    scenarios.'
+  id: totrans-263
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`ImbalancedSampler`—专为不平衡数据集设计，例如在欺诈检测场景中。'
+- en: '`GraphSAINT` `Variants`—Designed to minimize the gradient noise, making them
+    apt for large-scale training [9].'
+  id: totrans-264
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`GraphSAINT` `Variants`—旨在最小化梯度噪声，使其适用于大规模训练[9]。'
+- en: '`ShaDowKHopSampler`—Useful for sampling larger neighborhoods, capturing broader
+    structural information.'
+  id: totrans-265
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`ShaDowKHopSampler`—适用于采样较大的邻域，捕捉更广泛的结构信息。'
+- en: '`DynamicBatchSampler`—Designed to group nodes by neighbor count, optimizing
+    batch-wise computational consistency.'
+  id: totrans-266
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`DynamicBatchSampler`—旨在按邻域计数分组节点，优化批处理计算一致性。'
+- en: '`LinkNeighborLoader`—A loader that samples edges using a methodology analogous
+    to `neighborloader`.'
+  id: totrans-267
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`LinkNeighborLoader`—一种使用类似于`neighborloader`的方法采样边的加载器。'
+- en: Note  This overview isn’t exhaustive, and functionalities may differ based on
+    the PyG version in use. For in-depth information, consult the official PyG documentation
+    ([https://mng.bz/DMBa](https://mng.bz/DMBa)).
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：此概述并不全面，功能可能根据使用的PyG版本而有所不同。如需深入了解，请参阅官方PyG文档（[https://mng.bz/DMBa](https://mng.bz/DMBa)）。
+- en: 'Let’s look at a code snippet using the `Neighborloader` loader. The full code
+    is in the GitHub repository, and we’ll look at snippets here. The code runs a
+    training loop for a GNN using the sampler. For each batch, it moves node features,
+    labels, and adjacency information to the device, that is, the GPU. It then clears
+    prior gradients, performs a forward and backward pass through the model to compute
+    the loss, and updates the model parameters accordingly. To add neighbor batching
+    using the `NeighborSampler` in your code, you can follow these steps:'
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们看看使用`Neighborloader`加载器的代码片段。完整代码在GitHub仓库中，我们在这里将查看代码片段。该代码使用采样器运行一个GNN的训练循环。对于每个批次，它将节点特征、标签和邻接信息移动到设备上，即GPU。然后清除先前的梯度，通过模型进行正向和反向传递以计算损失，并相应地更新模型参数。要在你的代码中添加使用`NeighborSampler`的邻居批处理，你可以按照以下步骤操作：
+- en: 'Import the required modules:'
+  id: totrans-270
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 导入所需的模块：
+- en: '[PRE5]'
+  id: totrans-271
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: '2\. Define the mini-batch size and the number of layers to sample:'
+  id: totrans-272
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 2. 定义迷你批次大小和要采样的层数：
+- en: '[PRE6]'
+  id: totrans-273
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: '#1 Sets the desired mini-batch size'
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 设置所需的迷你批次大小'
+- en: '#2 Sets the number of layers to sample for each node'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#2 设置每个节点要采样的层数'
+- en: '3\. Create the `NeighborLoader` instance for sampling over a neighborhood during
+    mini-batch training:'
+  id: totrans-276
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 3. 创建用于迷你批次训练期间在邻域中采样的`NeighborLoader`实例：
+- en: '[PRE7]'
+  id: totrans-277
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: Here, `data` is the input graph, `input_nodes` contains the indices of the training
+    nodes, and `num_neighbors` specifies the number of neighbors to sample for each
+    layer.
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，`data`是输入图，`input_nodes`包含训练节点的索引，`num_neighbors`指定每个层要采样的邻居数量。
+- en: 4\. Modify your training loop to iterate over the mini-batches using the sampler,
+    as shown in the following listing.
+  id: totrans-279
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 4. 修改你的训练循环，使用采样器遍历迷你批次，如下所示。
+- en: Listing 7.1 Training loop using `NeighborSampler`
+  id: totrans-280
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 列表7.1 使用`NeighborSampler`的训练循环
+- en: '[PRE8]'
+  id: totrans-281
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: '#1 Initiates the training loop, iterating through batches using NeighborSampler.
+    batch_size is the size of the batch, n_id contains the node IDs, and adjs stores
+    adjacency information for the sampled subgraph.'
+  id: totrans-282
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 初始化训练循环，使用NeighborSampler遍历批次。batch_size是批次的大小，n_id包含节点ID，adjs存储采样子图的邻接信息。'
+- en: '#2 Fetches node features (x) for nodes in the current batch and moves them
+    to the target device (usually GPU). This is similar to fetching embeddings in
+    a message-passing paradigm.'
+  id: totrans-283
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#2 获取当前批次中节点的特征（x），并将它们移动到目标设备（通常是GPU）。这与在消息传递范式下获取嵌入相似。'
+- en: '#3 Fetches the corresponding labels (y) for nodes in the current batch, removes
+    any singleton dimensions, and moves them to the device.'
+  id: totrans-284
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#3 获取当前批次中节点的对应标签（y），删除任何单例维度，并将它们移动到设备上。'
+- en: '#4 Moves the adjacency information for the sampled subgraph to the device.'
+  id: totrans-285
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#4 将采样子图的邻接信息移动到设备上。'
+- en: '#5 Sets the gradients of all optimized variables to zero. This is essential
+    for correct gradient computation during backpropagation.'
+  id: totrans-286
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#5 将所有优化变量的梯度设置为零。这在反向传播期间正确计算梯度是必不可少的。'
+- en: '#6 Forward pass through the GNN model to compute predictions. The model receives
+    the node features and adjacency information as input.'
+  id: totrans-287
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#6 通过GNN模型进行正向传递以计算预测。模型接收节点特征和邻接信息作为输入。'
+- en: '#7 Computes the loss between the model output and the true labels using negative
+    log likelihood loss'
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#7 使用负对数似然损失计算模型输出和真实标签之间的损失'
+- en: '#8 Backward pass to compute the gradients based on the loss'
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#8 反向传递以根据损失计算梯度'
+- en: '#9 Updates the model parameters based on the computed gradients'
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#9 根据计算出的梯度更新模型参数'
+- en: To round out this section, we’ll look at a case where a team at GeoGrid has
+    to decide among three batchers for a project.
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了完善这一部分，我们将探讨GeoGrid团队在项目中必须从三个批处理器中选择的情况。
+- en: Example
+  id: totrans-292
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 示例
+- en: Let’s return to GeoGrid, a leading mapping company. A team is developing a graph-based
+    representation of the entire US road system, with intersections as nodes and road
+    segments as edges. The sheer scale of this project presented computational and
+    memory challenges.
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们回到GeoGrid，一家领先的地图公司。一个团队正在开发整个美国道路系统的基于图的表示，交叉路口作为节点，道路段作为边。这个项目的规模巨大，带来了计算和内存挑战。
+- en: 'After a thorough investigation, the team shortlisted three prominent batching
+    techniques, for which we’ll assess the tradeoffs of each here:'
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 经过彻底调查后，团队筛选出了三种突出的批处理技术，我们将在这里评估每种技术的权衡：
+- en: '`GraphSAINTSampler` is advantageous for its noise-reduction capabilities, offering
+    more accurate gradient estimates, and is scalable—ideal for expansive systems
+    such as the US road network. However, its implementation might be complex, and
+    there’s a risk of overrepresenting highly connected nodes.'
+  id: totrans-295
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`GraphSAINTSampler` 在其噪声减少能力方面具有优势，提供更准确的梯度估计，并且可扩展——非常适合像美国道路网络这样的大型系统。然而，其实现可能复杂，存在过度表示高度连接节点的风险。'
+- en: '`NeighborSampler` is memory-efficient, focusing on essential road segments,
+    and emphasizes local neighborhood connections, offering insights into significant
+    intersections. Yet, it might omit crucial data from less-traveled routes and potentially
+    be biased toward densely connected nodes.'
+  id: totrans-296
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`NeighborSampler` 是一种内存高效的采样器，专注于关键道路段，并强调局部邻域连接，为重要交叉口提供见解。然而，它可能会遗漏较少旅行路线上的关键数据，并且可能偏向于密集连接的节点。'
+- en: '`ShaDowKHopSampler` effectively samples *k*-hop subgraphs, capturing larger
+    neighborhoods, and its depth is adjustable to accommodate various road system
+    complexities. However, certain *k* values can make it computationally demanding,
+    and the broad capture might introduce excessive and not immediately relevant data.'
+  id: totrans-297
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`ShaDowKHopSampler` 有效地采样 *k*-跳子图，捕捉更大的邻域，其深度可调节以适应各种道路系统的复杂性。然而，某些 *k* 值可能会使其计算成本高昂，广泛的捕获可能会引入过多且不立即相关的数据。'
+- en: 'In the following, we demonstrate how different samplers are used in practice,
+    with the same GeoGrid company as our case study:'
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在以下内容中，我们将展示不同采样器在实际中的应用，以 GeoGrid 公司作为案例研究：
+- en: '*Decision* —After extensive deliberation, the team leaned toward `ShaDowKHopSampler`.
+    The method’s ability to capture broader neighborhoods without being restricted
+    to immediate neighbors seemed apt for the varied complexity of the US road system.
+    They believed that with the right value of *k*, determined by experimentation,
+    they could achieve a balance between depth and computational efficiency.'
+  id: totrans-299
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*决策* — 经过广泛讨论，团队倾向于选择 `ShaDowKHopSampler`。该方法能够捕捉更广泛的邻域而无需局限于直接邻居，这似乎非常适合美国道路系统的多样化复杂性。他们相信，通过实验确定正确的
+    *k* 值，他们可以在深度和计算效率之间取得平衡。'
+- en: To counteract potential information overload and ensure relevance, GeoGrid planned
+    to check the results against real-world traffic data, ensuring the sampled graph
+    remained practical and accurate.
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了对抗潜在的信息过载并确保相关性，GeoGrid 计划将结果与实际交通数据进行对比，确保采样图保持实用和准确。
+- en: '*Conclusion* —GeoGrid’s decision to adopt the `ShaDowKHopSampler` stemmed from
+    an in-depth analysis of their requirements against the pros and cons of each technique.
+    By pairing the sampling method with real-world data, they aimed to strike a balance
+    between granularity and relevance in their graph representation.'
+  id: totrans-301
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*结论* — GeoGrid 采用 `ShaDowKHopSampler` 的决定源于对每种技术优缺点的深入分析。通过将采样方法与实际数据相结合，他们旨在在图表示的粒度和相关性之间取得平衡。'
+- en: 'Now that we have a grasp on batching, we can examine two techniques that work
+    hand-in-hand with sampling: parallel processing and using a remote backend.'
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经掌握了批处理的概念，我们可以检查两种与采样协同工作的技术：并行处理和使用远程后端。
+- en: 7.8 Parallel and distributed processing
+  id: totrans-303
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.8 并行和分布式处理
+- en: Batching lends itself well to the next two methods, parallel processing and
+    the use of remote backends, because these methods work best when data is split
+    up. Parallel processing is a method of training machine learning models by spreading
+    the computational tasks across multiple compute nodes or multiple machines. In
+    this section, we focus on spreading the model training across multiple GPUs in
+    a single machine [13–17]. We’ll use PyTorch’s `DistributedDataParallel` for this
+    purpose.
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 批处理非常适合于接下来的两种方法，并行处理和使用远程后端，因为这些方法在数据分割时效果最佳。并行处理是一种通过在多个计算节点或多台机器上分散计算任务来训练机器学习模型的方法。在本节中，我们专注于在单台机器上的多个
+    GPU 之间分散模型训练 [13–17]。我们将使用 PyTorch 的 `DistributedDataParallel` 来实现这一点。
+- en: DataParallel and DistributedDataParallel
+  id: totrans-305
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: DataParallel 和 DistributedDataParallel
+- en: 'In the realm of PyTorch, you’ll encounter two main options for parallelizing
+    your neural network models: `DataParallel` and `DistributedDataParallel`. Each
+    has its merits and limitations, which are critical to making an informed decision.'
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 PyTorch 领域，你将遇到两种并行化神经网络模型的主要选项：`DataParallel` 和 `DistributedDataParallel`。每种方法都有其优点和局限性，这对于做出明智的决定至关重要。
+- en: '`DataParallel` is tailored for multi-GPU setups on a single machine but comes
+    with a few caveats, such as the model’s replication during each forward pass incurs
+    additional computational costs. These limitations become more pronounced as your
+    model and data scale up.'
+  id: totrans-307
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`DataParallel`是为单台机器上的多GPU设置量身定制的，但也有一些注意事项，例如在每个前向传递期间模型的复制会带来额外的计算成本。随着你的模型和数据规模的扩大，这些限制变得更加明显。'
+- en: On the other hand, `DistributedDataParallel` scales across multiple machines
+    and GPUs. It outperforms `DataParallel` by allocating dedicated Compute Unified
+    Device Architecture (CUDA) buffers for inter-GPU communication and by generally
+    incurring less overhead. This makes it ideal for large-scale data and complex
+    models.
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，`DistributedDataParallel`可以跨多台机器和GPU进行扩展。它通过为GPU间通信分配专用的Compute Unified
+    Device Architecture (CUDA) 缓冲区，并且通常产生更少的开销，从而优于`DataParallel`。这使得它非常适合大规模数据和复杂模型。
+- en: Both `DataParallel` and `DistributedDataParallel` offer pathways to parallelize
+    your models in PyTorch. Understanding their respective strengths and weaknesses
+    enables you to choose the technique that best suits your specific machine learning
+    challenges. Given its advantages in scalability and efficiency, especially for
+    complex or large-scale projects, we’ve chosen `DistributedDataParallel` as our
+    go-to option for model parallelization.
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`DataParallel`和`DistributedDataParallel`都为在PyTorch中并行化你的模型提供了途径。了解它们各自的优势和劣势，使你能够选择最适合你特定机器学习挑战的技术。鉴于其在可扩展性和效率方面的优势，尤其是在复杂或大规模项目中，我们选择了`DistributedDataParallel`作为我们模型并行化的首选选项。'
+- en: 7.8.1 Using distributed data parallel
+  id: totrans-310
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.8.1 使用分布式数据并行
+- en: In plain language, distributed data parallel (DDP) is a way to train a machine
+    learning model on multiple graphics cards (GPUs) at the same time. The idea is
+    to split the data and the model across different GPUs, perform computations, and
+    then bring the results back together. To make this work, you first need to set
+    up a *process group*, which is just a way to organize the GPUs you’re using. Unlike
+    some other methods, DDP doesn’t automatically split your data; you have to do
+    that part yourself.
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 用简单的话说，分布式数据并行（DDP）是一种同时使用多个图形卡（GPU）训练机器学习模型的方法。想法是将数据和模型分布在不同的GPU上，执行计算，然后将结果汇总在一起。为了使这成为可能，你首先需要设置一个*进程组*，这仅仅是一种组织你使用的GPU的方式。与一些其他方法不同，DDP不会自动分割你的数据；你必须自己完成这部分工作。
+- en: When you’re ready to train, DDP helps by synchronizing the updates made to the
+    model across all GPUs. This is done by sharing the gradients. Because all GPUs
+    get these updates, they’re all helping to improve the same model, even though
+    they’re working on different pieces of data.
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当你准备训练时，DDP通过在所有GPU之间同步对模型所做的更新来提供帮助。这是通过共享梯度来完成的。因为所有GPU都获得了这些更新，它们都在帮助改进同一个模型，尽管它们正在处理不同的数据。
+- en: 'The method is particularly fast and efficient, especially when compared to
+    running on a single GPU or using simpler methods of parallelism. However, there
+    are some technical details to keep in mind, such as making sure that you’re loading
+    and saving your model correctly if you’re using multiple machines. The general
+    steps to train are as follows:'
+  id: totrans-313
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与在单个GPU上运行或使用更简单的并行方法相比，这种方法特别快速且高效。然而，有一些技术细节需要记住，例如如果你使用多台机器，确保你正确地加载和保存你的模型。训练的一般步骤如下：
+- en: '*Model instantiation* —Initialize the GNN model that will be used for training.'
+  id: totrans-314
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*模型实例化* — 初始化用于训练的GNN模型。'
+- en: '*Distributed model setup* —Wrap the model in PyTorch’s `DistributedDataParallel`
+    to prepare it for distributed training.'
+  id: totrans-315
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*分布式模型设置* — 使用PyTorch的`DistributedDataParallel`包装模型，以准备分布式训练。'
+- en: '*Training loop* —Implement a training loop that includes forward propagation,
+    computing the loss, backpropagation, and updating the model parameters.'
+  id: totrans-316
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*训练循环* — 实现一个包含前向传播、计算损失、反向传播和更新模型参数的训练循环。'
+- en: '*Process synchronization* —Use PyTorch’s distributed communication package
+    to synchronize all the processes, ensuring that all processes have finished training
+    before proceeding to the next step. This can be done using `dist.barrier()`before
+    moving on to the next epoch. Once all epochs are done, it destroys the process
+    group.'
+  id: totrans-317
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*进程同步* — 使用PyTorch的分布式通信包来同步所有进程，确保在进入下一步之前所有进程都已完成训练。这可以通过在移动到下一个epoch之前使用`dist.barrier()`来实现。一旦所有epoch都完成，它将销毁进程组。'
+- en: '*Entry point guard* —Use `if` `__name__` `==` `''__main__'':` to specify the
+    dataset and start the distributed training. This ensures that the training code
+    is executed only when the script is run directly, not when it’s imported as a
+    module.'
+  id: totrans-318
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*入口点守卫* — 使用 `if` `__name__` `==` `''__main__'':` 来指定数据集并启动分布式训练。这确保了只有在脚本直接运行时才会执行训练代码，而不是当它作为模块导入时。'
+- en: Using distributed processing requires careful handling of synchronization points
+    to ensure that the models are trained correctly. You must also ensure that your
+    machine or cluster has enough resources to handle the parallel computations.
+  id: totrans-319
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用分布式处理需要仔细处理同步点，以确保模型被正确训练。你还必须确保你的机器或集群有足够的资源来处理并行计算。
+- en: '`Torch.distributed` supports various backends for distributed computing. The
+    two most recommended are the following:'
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`Torch.distributed` 支持分布式计算的多种后端。以下是最推荐的两种：'
+- en: NVIDIA Collective Communications Library (`NCCL`)—Nvidia’s NCCL is used for
+    GPU-based distributed training. It provides optimized primitives for collective
+    communications.
+  id: totrans-321
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: NVIDIA 集体通信库（`NCCL`）—Nvidia 的 NCCL 用于基于 GPU 的分布式训练。它为集体通信提供了优化的原语。
+- en: '`Gloo`—Gloo is a collective communications library, developed by Facebook,
+    providing various operations such as broadcast, all-reduce, and so on. This library
+    is used for CPU training.'
+  id: totrans-322
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`Gloo` — Gloo 是由 Facebook 开发的集体通信库，提供广播、全归约等各种操作。这个库用于 CPU 训练。'
+- en: 7.8.2 Code example for DDP
+  id: totrans-323
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.8.2 DDP 代码示例
+- en: Following is an example of distributed training using PyTorch. For simplicity,
+    we train a simple neural network using the Modified National Institute of Standards
+    and Technology (MNIST) dataset. An example using GCN on the Amazon Products dataset
+    can be found in the GitHub repository. In that case, instead of Google Colab to
+    run the code, we use a Kaggle notebook, which has a dual GPU system. Another difference
+    in the GCN example is that we use the `NeighborLoader` dataloader, which uses
+    the `NeighborSampler` sampler.
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下面是使用 PyTorch 进行分布式训练的示例。为了简单起见，我们使用修改后的国家标准与技术研究院（MNIST）数据集训练一个简单的神经网络。在 GitHub
+    仓库中可以找到一个使用 GCN 在 Amazon 产品数据集上的示例。在那个例子中，我们不是使用 Google Colab 来运行代码，而是使用 Kaggle
+    笔记本，它具有双 GPU 系统。GCN 示例中的另一个区别是我们使用了 `NeighborLoader` 数据加载器，它使用 `NeighborSampler`
+    样本器。
+- en: Let’s break down what’s happening in this code. The GCN version essentially
+    follows this logic as well.
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们分解一下这段代码中发生的事情。GCN 版本基本上遵循同样的逻辑。
+- en: Setting up for distributed training
+  id: totrans-326
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 分布式训练设置
+- en: The script imports necessary modules such as `torch`, `torch.distributed`, and
+    so on. It initializes the DDP environment using `dist.init_process_group`. It
+    sets up communication using NCCL and specifies a localhost address and port (tcp://localhost:23456)
+    for synchronization.
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 脚本导入必要的模块，如 `torch`、`torch.distributed` 等。它使用 `dist.init_process_group` 初始化
+    DDP 环境。它使用 NCCL 设置通信，并指定本地主机地址和端口（tcp://localhost:23456）用于同步。
+- en: Preparing the model and data
+  id: totrans-328
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 准备模型和数据
+- en: The code defines a simple `Flatten` layer, which is a part of the neural network
+    that reshapes its input. The data transformation and loading steps are set up
+    using PyTorch’s DataLoader and torchvision datasets. The data loaded is MNIST.
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码定义了一个简单的 `Flatten` 层，这是神经网络的一部分，用于重塑其输入。数据转换和加载步骤使用 PyTorch 的 DataLoader 和
+    torchvision 数据集进行设置。加载的数据是 MNIST。
+- en: Training function
+  id: totrans-330
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 训练函数
+- en: '`train` is the function responsible for training the model. It iterates through
+    batches of data, performs forward and backward passes, and updates the model parameters.'
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`train` 是负责训练模型的函数。它遍历数据批次，执行正向和反向传递，并更新模型参数。'
+- en: Main function
+  id: totrans-332
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 主函数
+- en: Within the `main()` function, each process (representing a single GPU in this
+    example) sets its random seed and device (CUDA device based on the rank of the
+    process). The neural network model is defined as a sequential model with the `Flatten`
+    layer followed by a `Linear` layer. It’s then wrapped with `DistributedDataParallel`.
+    Loss function (`CrossEntropyLoss`) and optimizer (`SGD`) are defined.
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 `main()` 函数内部，每个进程（在本例中代表单个 GPU）设置其随机种子和设备（基于进程的排名的 CUDA 设备）。神经网络模型被定义为具有
+    `Flatten` 层和 `Linear` 层的顺序模型。然后使用 `DistributedDataParallel` 进行包装。定义了损失函数（`CrossEntropyLoss`）和优化器（`SGD`）。
+- en: Multiprocessing spawn
+  id: totrans-334
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 多进程启动
+- en: Finally, the script uses the `mp.spawn` function to start the distributed training.
+    It runs `main()` on the `world_size` number of processes (basically, two GPUs).
+    Each process will train the model on its subset of data.
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，脚本使用`mp.spawn`函数启动分布式训练。它在`world_size`数量的进程（基本上是两个GPU）上运行`main()`。每个进程将在其数据子集上训练模型。
+- en: Running the training
+  id: totrans-336
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 运行训练
+- en: Each process trains the model using its subset of data, but the gradients are
+    synchronized across all processes (GPUs) to ensure that the processors are updating
+    the same global model. This process is summarized in figure 7.3.
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个进程使用其数据子集训练模型，但梯度会在所有进程（GPU）之间同步，以确保处理器正在更新相同的全局模型。这个过程总结在图7.3中。
+- en: '![figure](../Images/7-3.png)'
+  id: totrans-338
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图](../Images/7-3.png)'
+- en: Figure 7.3 Process diagram for initiating and running a training with multiple
+    processor devices
+  id: totrans-339
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 图7.3 使用多个处理器设备启动和运行训练的过程图
+- en: The following listing uses the `DistributedDataParallel` module to train a neural
+    network.
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下列表使用`DistributedDataParallel`模块训练神经网络。
+- en: Listing 7.2 Training using DDP
+  id: totrans-341
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 列表7.2 使用DDP进行训练
+- en: '[PRE9]'
+  id: totrans-342
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: '#1 Imports the DistributedDataParallel class for distributed training'
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 导入分布式训练的DistributedDataParallel类'
+- en: '#2 Imports the DataLoader utility for data loading'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#2 导入数据加载器实用工具'
+- en: '#3 Defines the main training function'
+  id: totrans-345
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#3 定义主要训练函数'
+- en: '#4 Defines the main function for the distributed training setup'
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#4 定义分布式训练设置的主要函数'
+- en: '#5 Initializes the distributed process group'
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#5 初始化分布式进程组'
+- en: '#6 Specifies the total number of participating processes'
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#6 指定参与进程的总数'
+- en: '#7 Sets a random seed for reproducibility'
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#7 设置随机种子以确保可重复性'
+- en: '#8 Sets the device based on the process rank'
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#8 根据进程排名设置设备'
+- en: '#9 Loads and transforms the MNIST dataset'
+  id: totrans-351
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#9 加载和转换MNIST数据集'
+- en: '#10 Creates a DataLoader for the training data'
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#10 为训练数据创建数据加载器'
+- en: '#11 Wraps the model for distributed training'
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#11 包装模型以进行分布式训练'
+- en: '#12 Calls the training function to start the training process'
+  id: totrans-354
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#12 调用训练函数以启动训练过程'
+- en: We end this section with another example from our friends at GeoGrid.
+  id: totrans-355
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们以GeoGrid的朋友们的另一个例子结束本节。
+- en: Example
+  id: totrans-356
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 示例
+- en: GeoGrid had the opportunity to submit a proof-of-concept for a government project
+    that aimed to use GNNs for complex environmental modeling. Winning this contract
+    could establish them as leaders in the field, but they were up against stiff competition.
+    The government set a tight deadline to review a proof-of-concept demo, making
+    the situation tense for GeoGrid, which was still in the early stages of development.
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid有机会提交一个政府项目的概念验证，该项目旨在使用GNN进行复杂的环境建模。赢得这个合同可能使他们成为该领域的领导者，但他们面临着激烈的竞争。政府设定了一个紧张的截止日期来审查概念验证演示，这使得GeoGrid的情况变得紧张，因为它仍处于开发初期。
+- en: 'During a team meeting, the focus shifted to a crucial technical decision and
+    an important dilemma: the potential use of DDP training across multiple GPUs.
+    The lead data scientist saw the allure of DDP’s capability to speed up training
+    times, offering a potentially impressive demonstration of efficiency and readiness
+    for the government project.'
+  id: totrans-358
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在一次团队会议上，焦点转向了一个关键的技术决策和一个重要的困境：在多个GPU上使用DDP训练的潜在用途。首席数据科学家看到了DDP加快训练时间的吸引力，这为政府项目提供了一个可能令人印象深刻的效率展示和准备情况。
+- en: On the other hand, an experienced engineer on the team harbored concerns. DDP,
+    despite its advantages, could introduce problems such as computational overhead
+    from synchronizing gradients between GPUs. Another layer of complexity came from
+    other team members who pointed out that their specialized GNN algorithms hadn’t
+    been tested with DDP. They expressed concerns over how the data would distribute
+    across the GPUs and the potential for imbalances and inefficiencies. Other concerns
+    centered around the time needed to develop and test the code.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，团队中的一位经验丰富的工程师心存担忧。尽管DDP有其优势，但它可能会引入问题，例如在GPU之间同步梯度时产生的计算开销。另一层复杂性来自其他团队成员，他们指出，他们的专用GNN算法尚未与DDP进行过测试。他们表达了对数据如何在GPU之间分配以及可能出现的不平衡和低效的担忧。其他担忧集中在开发和测试代码所需的时间上。
+- en: The team weighed these factors carefully. Producing a demo quickly and on time
+    would be desirable. Yet, the complexities and unknowns of applying DDP to their
+    specific GNN model could risk unexpected delays and costs, maybe causing them
+    to miss the submission deadline.
+  id: totrans-360
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 团队仔细权衡了这些因素。快速且按时完成演示将是理想的选择。然而，将DDP应用于他们特定的GNN模型可能带来的复杂性和未知因素可能会带来意外的延误和成本，可能使他们错过提交截止日期。
+- en: 'Further consideration was given to the iterative nature of model development.
+    At the proof-of-concept stage, quick iterations for performance optimization were
+    crucial. Adding DDP into the mix could complicate debugging and extend the development
+    cycle:'
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对模型开发的迭代性质进行了进一步考虑。在概念验证阶段，为了性能优化进行快速迭代至关重要。将DDP加入其中可能会使调试复杂化并延长开发周期：
+- en: '*Decision* —In the end, the team opted for a measured approach. They decided
+    to conduct a one-week feasibility study to rigorously evaluate the effect of using
+    DDP on their GNN architecture. This would allow them to make an informed decision
+    based on empirical data, which tracked convergence time and average time per epoch.
+    IT would be consulted to ensure that the necessary computational resources were
+    available exclusively for this critical study.'
+  id: totrans-362
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*决策* — 最终，团队选择了一种谨慎的方法。他们决定进行为期一周的可行性研究，严格评估使用DDP对他们的GNN架构的影响。这将使他们能够根据经验数据做出明智的决定，这些数据跟踪了收敛时间和每个epoch的平均时间。将咨询IT部门以确保必要的计算资源仅用于这项关键研究。'
+- en: '*Conclusion* —The decision to roll out GNNs is typically highly dependent on
+    data, timelines, and compute requirements. Feasibility studies are an important
+    part of the decision-making progress, especially when identifying compute requirements.'
+  id: totrans-363
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*结论* — 推出GNN的决定通常高度依赖于数据、时间表和计算需求。可行性研究是决策过程中的重要部分，尤其是在确定计算需求时。'
+- en: In the next section, we look at another technique that rests upon sampling,
+    training while drawing data directly from a remote storage system.
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们将探讨另一种基于采样的技术，该技术通过直接从远程存储系统中抽取数据来进行训练。
+- en: 7.9 Training with remote storage
+  id: totrans-365
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.9 使用远程存储进行训练
+- en: A prominent approach to data pipelining in this book is to source data from
+    a data storage system and then preprocess this data by transforming it for use
+    in the GNN platform. This preprocessed data is stored in memory during training.
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本书在数据处理管道方面的一个突出方法是从数据存储系统中获取数据，然后通过将其转换为GNN平台使用的形式来预处理这些数据。在训练过程中，这些预处理好的数据被存储在内存中。
+- en: By contrast, when data gets too big for memory, one approach is to integrate
+    the preprocessing into the training process. Instead of preprocessing the entire
+    dataset, placing it in memory, and then training, we can basically sample and
+    mini-batch directly from the initial data storage system when training. Using
+    an interface between our GNN platform and our data source, we can process each
+    batch pulled directly from the data source [18]. In PyG, this is called *remote
+    backend* and is designed to be agnostic of the particular backend that is used
+    [19–22].
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相比之下，当数据变得太大而无法放入内存时，一种方法是将预处理集成到训练过程中。我们不必预处理整个数据集，将其放入内存，然后进行训练，我们基本上可以直接从初始数据存储系统进行采样和批处理。通过我们GNN平台和数据源之间的接口，我们可以处理直接从数据源抽取的每个批次[18]。在PyG中，这被称为*远程后端*，并且设计为对所使用的特定后端无感知[19–22]。
+- en: 'The benefit is that our dataset’s size is now limited by the capacity of our
+    database. The tradeoffs are as follows:'
+  id: totrans-368
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 好处在于，我们现在数据集的大小仅受我们数据库容量的限制。权衡如下：
+- en: We have to do a bit of work to set up the remote backend, as detailed in this
+    section.
+  id: totrans-369
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们需要做一些工作来设置远程后端，具体细节在本节中详细说明。
+- en: Pulling from a remote backend will introduce I/O latency.
+  id: totrans-370
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 从远程后端抽取数据将引入I/O延迟。
+- en: Integrating a remote backend adds complexity to a training setup. Basically,
+    more things can go wrong, and there will be more items to debug.
+  id: totrans-371
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 集成远程后端会增加训练设置的复杂性。基本上，可能出现更多问题，并且需要调试的项目也会更多。
+- en: 'In PyG, remote backends are implemented by storing and sampling from two aspects
+    of a graph: the structural information (i.e., the edges) using a `GraphStore`,
+    and the node features using a `FeatureStore` (at the time of writing, edge features
+    aren’t yet supported). For storing graph structures, the PyG team recommends using
+    graph databases as the backend, such as Neo4J, TigerGraph, Kùzu, and ArangoDB.
+    Likewise for node features, the PyG team recommends using key-value databases,
+    such as Memcached, LevelDB, and RocksDB. The key elements to implementation of
+    a remote backend are as follows:'
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在PyG中，远程后端是通过存储和从图的两个方面进行采样实现的：使用`GraphStore`对结构信息（即，边）进行采样，以及使用`FeatureStore`对节点特征进行采样（在撰写本文时，边特征尚未支持）。对于存储图结构，PyG团队建议使用图数据库作为后端，例如Neo4J、TigerGraph、Kùzu和ArangoDB。同样，对于节点特征，PyG团队建议使用键值数据库，例如Memcached、LevelDB和RocksDB。实现远程后端的关键要素如下：
+- en: '*Remote data sources* —Databases that store your graph structure and node features.
+    This choice may be simply the database system you’re currently using to store
+    your graph.'
+  id: totrans-373
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*远程数据源* — 存储您的图结构和节点特征的数据库。这个选择可能仅仅是您目前用来存储图的数据库系统。'
+- en: '*A graphstore object* —The `torch_geometric.data.GraphStore` object stores
+    edge indices of a graph, enabling node sampling. Core components of your custom
+    class must be the connection to your database, and CRUD (create, read, update,
+    delete) functions, including `put_edge_index()`, `get_edge_index()`, and `remove_
+    edge_index()`.'
+  id: totrans-374
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*图存储对象* — `torch_geometric.data.GraphStore` 对象存储图的边索引，从而实现节点采样。您自定义类的主要组件必须是与您数据库的连接，以及
+    CRUD（创建、读取、更新、删除）函数，包括 `put_edge_index()`、`get_edge_index()` 和 `remove_edge_index()`。'
+- en: '*A featurestore object* —The `torch_geometric.data.FeatureStore` manages features
+    for graph nodes. The size of node features is considered to be a major storage
+    problem in graph learning applications. Like the `GraphStore`, custom implementations
+    include connecting to the remote database and CRUD functions.'
+  id: totrans-375
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*特征存储对象* — `torch_geometric.data.FeatureStore` 管理图节点的特征。在图学习应用中，节点特征的大小被认为是一个主要的存储问题。与
+    `GraphStore` 类似，自定义实现包括连接到远程数据库和 CRUD 函数。'
+- en: '*A sampler* —A graph sampler, linked to a `GraphStore`, uses sampling algorithms
+    to produce subgraphs from input nodes via the `torch_geometric.sampler .BaseSampler`
+    interface. PyG’s default sampler pulls edge indices, converts them to Compressed
+    Sparse Column (CSC) format, and uses in-memory sampling routines. Custom samplers
+    can use specialized `GraphStore` methods by implementing `sample_from_nodes()`
+    and `sample_from_edges()` of the `BaseSampler` class. This involves node-level
+    and link-level sampling, respectively.'
+  id: totrans-376
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*采样器* — 一个与 `GraphStore` 链接的图采样器，通过 `torch_geometric.sampler.BaseSampler` 接口使用采样算法从输入节点生成子图。PyG
+    的默认采样器拉取边索引，将它们转换为压缩稀疏列 (CSC) 格式，并使用内存中的采样例程。自定义采样器可以通过实现 `BaseSampler` 类的 `sample_from_nodes()`
+    和 `sample_from_edges()` 方法来使用专门的 `GraphStore` 方法。这涉及到节点级和链接级采样。'
+- en: '*A dataloader* —A dataloader operates similarly to what has been presented
+    in previous chapters. The differences here are that the dataloader uses the `GraphStore`,
+    `FeatureStore`, and `sampler` objects created instead of the usual PyG data objects.
+    An example from the PyG docs is shown in the next listing.'
+  id: totrans-377
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*数据加载器* — 数据加载器的工作方式与前面章节中介绍的方式类似。这里的区别在于数据加载器使用 `GraphStore`、`FeatureStore`
+    和 `sampler` 对象，而不是通常的 PyG 数据对象。PyG 文档中的一个示例将在下一列表中展示。'
+- en: Listing 7.3 Loader object using remote backend
+  id: totrans-378
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 列表 7.3 使用远程后端的加载器对象
+- en: '[PRE10]'
+  id: totrans-379
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: While custom classes and functionalities can be developed, using tools crafted
+    by database vendors is encouraged. Currently, KuzuDB and ArangoDB offer implementations
+    for PyG’s remote backend [14, 18–20, 23]. We close this section with another mini-case
+    featuring GeoGrid.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然可以开发自定义类和功能，但鼓励使用数据库供应商制作的工具。目前，KuzuDB 和 ArangoDB 为 PyG 的远程后端提供了实现[14, 18–20,
+    23]。我们以另一个以 GeoGrid 为例的迷你案例结束本节。
+- en: 7.9.1 Example
+  id: totrans-381
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.9.1 示例
+- en: 'GeoGrid has a graph so large that it can’t fit into the memory of the available
+    hardware. They want to employ GNNs to analyze the large graph, predicting features
+    such as traffic congestion and route popularity. But how can they train a GNN
+    on a graph that doesn’t even fit into memory? Following are some specific examples
+    of working with large GNNs:'
+  id: totrans-382
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid 有一个如此大的图，以至于它无法适应可用硬件的内存。他们想使用 GNN 分析这个大图，预测交通拥堵和路线受欢迎程度等特征。但是，如何在连内存都装不下图的图上训练
+    GNN 呢？以下是一些与大型 GNN 一起工作的具体示例：
+- en: '*Adopting remote backend with PyG* *—*GeoGrid uses PyG’s remote backend feature,
+    which aligns perfectly with the company’s need to handle large-scale graphs. They
+    use Neo4J as the graph database for storing the graph structure and RocksDB for
+    storing node features such as location type, historical traffic data, and so on.'
+  id: totrans-383
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*采用 PyG 的远程后端* — GeoGrid 使用 PyG 的远程后端功能，这与公司处理大规模图的需求完美契合。他们使用 Neo4J 作为存储图结构的图数据库，使用
+    RocksDB 存储节点特征，如位置类型、历史交通数据等。'
+- en: '*Remote data sources* —GeoGrid chose Neo4J and RocksDB as their data storage
+    systems. The first task was to write scripts that load their vast graph data into
+    these databases. This involved data validation to ensure that the loaded data
+    was correct and consistent.'
+  id: totrans-384
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*远程数据源* — GeoGrid 选择了 Neo4J 和 RocksDB 作为他们的数据存储系统。第一个任务是编写将大量图数据加载到这些数据库中的脚本。这涉及到数据验证，以确保加载的数据是正确和一致的。'
+- en: '`GraphStore` *object* —The development team at GeoGrid spent a significant
+    amount of time implementing the `GraphStore` object. They needed to build secure
+    and reliable connections to the Neo4J database. Once the connections were established,
+    they implemented CRUD operations.'
+  id: totrans-385
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`GraphStore` *对象* — GeoGrid的开发团队花费了大量时间来实现`GraphStore`对象。他们需要建立到Neo4J数据库的安全和可靠连接。一旦建立了连接，他们实现了CRUD操作。'
+- en: '`FeatureStore` *object* —Similarly, implementing the `FeatureStore` object
+    for RocksDB wasn’t trivial. The main challenge was handling the varying sizes
+    and types of node features, which required thorough testing to ensure efficiency
+    and correctness.'
+  id: totrans-386
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`FeatureStore` *对象* — 类似地，为RocksDB实现`FeatureStore`对象也不是一件简单的事情。主要挑战是处理节点特征的变量大小和类型，这需要彻底测试以确保效率和正确性。'
+- en: '*Sampler* —Developing the custom sampling strategy was a project on its own.
+    The sampler needed to be both effective and efficient, and it went through several
+    iterations before it met the performance criteria.'
+  id: totrans-387
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*采样器* — 开发定制的采样策略本身就是一个项目。采样器需要既有效又高效，在满足性能标准之前，它经历了多次迭代。'
+- en: '*Dataloader* —The `NodeLoader` was the final piece of the puzzle, combining
+    all the preceding elements into a coherent pipeline for training. The development
+    team had to ensure that the `NodeLoader` was optimized for speed to minimize I/O
+    latency.'
+  id: totrans-388
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*数据加载器* — `NodeLoader`是最后一部分，将所有前面的元素组合成一个连贯的流水线，用于训练。开发团队必须确保`NodeLoader`在速度上进行了优化，以最小化I/O延迟。'
+- en: Testing and troubleshooting
+  id: totrans-389
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+  zh: 测试和故障排除
+- en: 'As with all software development, machine learning, or AI projects, testing
+    is a critical part of the workflow. The following lists some of the typical testing
+    and quality assurance (QA) steps when working on a project:'
+  id: totrans-390
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如所有软件开发、机器学习或AI项目一样，测试是工作流程中的关键部分。以下列出了一些在项目工作中典型的测试和质量保证（QA）步骤：
+- en: '*Unit testing* —Each component underwent rigorous unit testing. This was crucial
+    to catch bugs early and ensure that each part of the system worked as expected
+    in isolation.'
+  id: totrans-391
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*单元测试* — 每个组件都经历了严格的单元测试。这至关重要，可以早期捕捉到错误，并确保系统每个部分在独立工作时都能按预期工作。'
+- en: '*Integration testing* —After unit testing, the team performed integration tests
+    where they ran the entire pipeline from loading a batch of data to running it
+    through the GNN model. They found a few bottlenecks and bugs, particularly with
+    the sampler and the database connections, which took considerable time to troubleshoot
+    and resolve.'
+  id: totrans-392
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*集成测试* — 在单元测试之后，团队进行了集成测试，其中他们从加载数据批次到运行GNN模型的全流程进行了测试。他们发现了一些瓶颈和错误，特别是采样器和数据库连接方面，这些问题需要相当多的时间来排查和解决。'
+- en: '*I/O latency* —One significant problem the company encountered was the I/O
+    latency when pulling data from Neo4J and RocksDB. GeoGrid optimized its queries
+    and also used some caching mechanisms to mitigate this.'
+  id: totrans-393
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*I/O延迟* — 公司遇到的一个重大问题是，从Neo4J和RocksDB中拉取数据时的I/O延迟。GeoGrid优化了其查询，并使用了一些缓存机制来减轻这一问题。'
+- en: '*Debugging* —During the development and testing phases, the team encountered
+    various bugs and errors, from data inconsistencies to unexpected behavior in the
+    sampling process. Each problem had to be debugged meticulously, adding to the
+    overall development time.'
+  id: totrans-394
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*调试* — 在开发和测试阶段，团队遇到了各种错误和问题，从数据不一致到采样过程中的意外行为。每个问题都必须仔细调试，这增加了整体开发时间。'
+- en: Despite these challenges, GeoGrid was able to successfully implement a scalable
+    solution for training GNNs on their enormous geographical graph. The project was
+    time-consuming and had its complexities, but the scalability and capability to
+    train on out-of-memory graphs were invaluable benefits that justified the effort.
+  id: totrans-395
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管存在这些挑战，GeoGrid仍然能够成功实施了一个可扩展的解决方案，用于在庞大的地理图上训练GNN。这个项目耗时且复杂，但可扩展性和在内存外图上训练的能力是无价的收益，这些收益证明了付出的努力是值得的。
+- en: 7.10 Graph coarsening
+  id: totrans-396
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.10 图细化
+- en: '*Graph coarsening* is a technique used to reduce the size of a graph while
+    preserving its essential features. This technique reduces the size and complexity
+    of a graph by creating a coarser version of the original graph. Graph coarsening
+    reduces the number of nodes and edges, making them more manageable and easier
+    to analyze. It involves aggregating or merging nodes and edges to form a simplified
+    representation of the original graph while trying to preserve its structural and
+    relational information.'
+  id: totrans-397
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*图粗化* 是一种在保留图的基本特征的同时减小图大小的技术。该技术通过创建原始图的粗化版本来减少图的大小和复杂性。图粗化减少了节点和边的数量，使它们更容易管理和分析。它涉及聚合或合并节点和边，以形成原始图的简化表示，同时试图保留其结构和关系信息。'
+- en: 'One approach to graph coarsening involves starting with an input graph *G*,
+    with its labels *Y*, and then generating a coarsened graph *G’* using the following
+    steps [23]:'
+  id: totrans-398
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图粗化的一种方法是从输入图 *G* 和其标签 *Y* 开始，然后使用以下步骤[23]生成粗化图 *G’*：
+- en: Apply a graph coarsening algorithm on *G*, producing a normalized partition
+    matrix (i.e., set of node clusters) *P*.
+  id: totrans-399
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在 *G* 上应用图粗化算法，生成归一化的划分矩阵（即节点簇集合）*P*。
+- en: 'Use this partition matrix to do the following:'
+  id: totrans-400
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用这个划分矩阵来完成以下操作：
+- en: Construct a course graph, *G’*.
+  id: totrans-401
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 构建粗化图，*G’*。
+- en: Compute the feature matrix of G’.
+  id: totrans-402
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 计算G’的特征矩阵。
+- en: Compute the labels of G’.
+  id: totrans-403
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 计算G’的标签。
+- en: Train using the coarsened graph, producing a weight matrix that can be tested
+    on the original graph.
+  id: totrans-404
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用粗化图进行训练，生成可以在原始图上测试的权重矩阵。
+- en: 'While we can use graph coarsening to reduce the size of large graphs by reducing
+    vertices and edges, it has drawbacks. It can result in information loss, as key
+    details of the original graph may be removed, complicating subsequent analyses.
+    It may also introduce inaccuracies, not fully representing the original graph’s
+    structure. Finally, no universal method exists for graph coarsening, leading to
+    varied results and possible bias. In PyG, graph coarsening involves two steps:'
+  id: totrans-405
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然我们可以通过减少顶点和边来使用图粗化来减小大型图的大小，但它有缺点。它可能导致信息丢失，因为原始图的关键细节可能被删除，从而复杂化后续分析。它也可能引入不准确之处，未能完全代表原始图的结构。最后，没有通用的图粗化方法，导致结果各异和可能的偏差。在PyG中，图粗化涉及两个步骤：
+- en: '*Clustering* —This involves grouping similar nodes together to form super-nodes.
+    Each super-node represents a cluster of nodes in the original graph. The clustering
+    algorithm determines which nodes are similar based on certain criteria. In PyG,
+    there are various clustering algorithms available such as `graclus()` and `voxel_grid()`.'
+  id: totrans-406
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*聚类* — 这涉及将相似节点分组在一起形成超节点。每个超节点代表原始图中的节点簇。聚类算法根据某些标准确定哪些节点是相似的。在PyG中，有各种聚类算法可用，如`graclus()`和`voxel_grid()`。'
+- en: '*Pooling* —Once the clusters or super-nodes are formed, pooling is then used
+    to create a coarser graph from the original graph. Pooling combines the information
+    from the nodes in each cluster into a single node in the coarser graph. The `max_pool()`
+    and `avg_pool()` functions in PyG are pooling operations that input clusters from
+    the first step.'
+  id: totrans-407
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '*池化* — 一旦形成簇或超节点，就使用池化从原始图创建更粗的图。池化将每个簇中的节点信息合并为粗化图中的一个单个节点。PyG中的`max_pool()`和`avg_pool()`函数是池化操作，它们从第一步输入簇。'
+- en: If used repeatedly, the combination of clustering and pooling allows us to create
+    a hierarchy of graphs, each one simpler than the last, as shown in figure 7.4.
+  id: totrans-408
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果反复使用，聚类和池化的组合允许我们创建一个图层次结构，每个图都比上一个简单，如图7.4所示。
+- en: '![figure](../Images/7-4.png)'
+  id: totrans-409
+  prefs: []
+  type: TYPE_IMG
+  zh: '![figure](../Images/7-4.png)'
+- en: 'Figure 7.4 Graph coarsening process: The original graph (left) is progressively
+    simplified through coarsening. The first stage (middle) merges nearby nodes to
+    create a coarsened graph, while the second stage (right) further reduces the graph’s
+    complexity, highlighting the essential structure for efficient processing.'
+  id: totrans-410
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 图7.4图粗化过程：原始图（左侧）通过粗化逐步简化。第一阶段（中间）合并附近的节点以创建粗化图，而第二阶段（右侧）进一步降低图的复杂性，突出显示高效处理的基本结构。
+- en: If used in supervised or semi-supervised learning, labels have to be generated
+    for the new set of nodes. This generation must be carefully tended to preserve
+    the new labels as closely as possible to the originals. Simple methods for this
+    involve using a centrality statistic for the new assigned label, such as the mode
+    or average of the labels in the cluster.
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果用于监督或半监督学习，必须为新节点集生成标签。此生成必须仔细处理，以尽可能保留新标签与原始标签的相似性。实现此目的的简单方法包括使用新的分配标签的中心性统计量，例如聚类中标签的众数或平均值。
+- en: In listing 7.4, graph coarsening is implemented through the use of the Graclus
+    algorithm, which recursively applies a clustering procedure to the nodes of the
+    graph, grouping them into clusters of roughly equal size. The resulting clusters
+    are then merged into a new graph, which is coarser than the original one. This
+    is a type of hierarchical clustering that operates on the graph’s edge indices.
+    The function `graclus(edge_index)` clusters the nodes of the graph together based
+    on the structure of the graph. The resulting `cluster` tensor maps each node to
+    the cluster it belongs to.
+  id: totrans-412
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在列表7.4中，通过使用Graclus算法实现图粗化，该算法递归地对图中的节点应用聚类过程，将它们分组为大小大致相等的聚类。然后将这些聚类合并到一个新的图中，该图比原始图更粗。这是一种在图边索引上操作的层次聚类。函数`graclus(edge_index)`根据图的结构将图中的节点聚在一起。结果`cluster`张量将每个节点映射到它所属的聚类。
+- en: The `max_pool` function is then applied to this clustered data. This operation
+    essentially coarsens the graph, reducing the number of nodes based on the clusters
+    formed by Graclus. The most influential node (based on certain criteria, e.g.,
+    edge weight) in each cluster becomes the representative of that cluster in the
+    coarsened graph.
+  id: totrans-413
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后将`max_pool`函数应用于这些聚类数据。此操作本质上粗化了图，根据Graclus形成的聚类减少了节点数量。每个聚类中最有影响力的节点（基于某些标准，例如边权重）成为粗化图中该聚类的代表。
+- en: Listing 7.4 Graph coarsening using `graclus` and `Max_Pool`
+  id: totrans-414
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 列表7.4 使用`graclus`和`Max_Pool`进行图粗化
+- en: '[PRE11]'
+  id: totrans-415
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: '#1 Converts to undirected graph for the graclus function'
+  id: totrans-416
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#1 将图转换为无向图以供graclus函数使用'
+- en: '#2 Creates a batch vector for max_pool'
+  id: totrans-417
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#2 为max_pool创建批向量'
+- en: '#3 Applies Graclus clustering'
+  id: totrans-418
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#3 应用Graclus聚类'
+- en: '#4 Sets the early stopping criteria'
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '#4 设置早期停止标准'
+- en: This code applies two major operations on the graph data, which changes its
+    structure and properties. The result is a coarsened version of the original graph.
+    The number of nodes decreases from 34 to 22 due to the max pooling operation.
+    Meanwhile, the number of edges also reduces from 156 to 98 as the graph becomes
+    more compact. This is summarized in table 7.4.
+  id: totrans-420
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此代码对图数据进行两项主要操作，这改变了其结构和属性。结果是原始图的粗化版本。由于最大池化操作，节点数量从34减少到22。同时，由于图变得更加紧凑，边数也从156减少到98。这总结在表7.4中。
+- en: Table 7.4 Input and output graphs from listing 7.4
+  id: totrans-421
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 表7.4 列表7.4中的输入和输出图
+- en: '| Input | Output |'
+  id: totrans-422
+  prefs: []
+  type: TYPE_TB
+  zh: '| 输入 | 输出 |'
+- en: '| --- | --- |'
+  id: totrans-423
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- |'
+- en: '| `Data(x=[34, 34], edge_index=[2, 156], y=[34], train_mask=[34])`  | `DataBatch(x=[22,
+    34], edge_index=[2, 98])`  |'
+  id: totrans-424
+  prefs: []
+  type: TYPE_TB
+  zh: '| `Data(x=[34, 34], edge_index=[2, 156], y=[34], train_mask=[34])` | `DataBatch(x=[22,
+    34], edge_index=[2, 98])` |'
+- en: '| Nodes: 34 Edges: 156  | Nodes: 22 Edges: 98  |'
+  id: totrans-425
+  prefs: []
+  type: TYPE_TB
+  zh: '| 节点：34 边：156 | 节点：22 边：98 |'
+- en: This table provides an overview of the structure and features of both the input
+    and output graphs described in listing 7.4\. The input graph is represented as
+    data, with 34 nodes, each having 34 features, as indicated by `x=[34,` `34]`.
+    It contains 156 edges, described by the edge index tensor `edge_index=[2,` `156]`.
+    Additionally, the input graph includes a label tensor `y=[34]`, representing one
+    label per node, and a training mask `train_mask=[34]`, specifying which nodes
+    are part of the training set.
+  id: totrans-426
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此表概述了列表7.4中描述的输入和输出图的结构和特征。输入图表示为数据，具有34个节点，每个节点有34个特征，如`x=[34,` `34]`所示。它包含156条边，由边索引张量`edge_index=[2,`
+    `156]`描述。此外，输入图还包括一个标签张量`y=[34]`，表示每个节点一个标签，以及一个训练掩码`train_mask=[34]`，指定哪些节点是训练集的一部分。
+- en: The output graph, processed and represented as `DataBatch`, shows a reduction
+    in size. It now contains 22 nodes, while each node retains the original 34 features
+    (`x=[22,` `34]`). The number of edges is also reduced to 98, as indicated by `edge_
+    index=[2,` `98]`. This transformation demonstrates a typical graph reduction process,
+    which simplifies the graph for downstream tasks.
+  id: totrans-427
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 输出图，经过处理并以`DataBatch`表示，显示出大小的减少。现在它包含22个节点，每个节点保留原始的34个特征（`x=[22,` `34]`）。边的数量也减少到98，如`edge_index=[2,`
+    `98]`所示。这种转换展示了典型的图简化过程，简化了图以适应下游任务。
+- en: 7.10.1 Example
+  id: totrans-428
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.10.1 示例
+- en: 'GeoGrid has a mammoth task: to analyze an extensive graph of the US road system
+    for their ambitious traffic management solution. With an initial dataset comprising
+    50,000 nodes and 200,000 edges, the computational toll is daunting. In the initial
+    exploration when GeoGrid considered the computational load, graph coarsening seemed
+    like a tempting strategy. But apprehensions were high. Initial concerns ranged
+    from the loss of crucial information and the introduction of inaccuracies given
+    the complexities around label preservation and method bias.'
+  id: totrans-429
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid面临一项艰巨的任务：分析美国道路系统的庞大图，以实现其雄心勃勃的交通管理解决方案。初始数据集包含50,000个节点和200,000条边，计算成本令人畏惧。在初始探索中，当GeoGrid考虑计算负载时，图粗化似乎是一个诱人的策略。但担忧很高。初始担忧包括标签保留和方法偏差周围的复杂性导致的损失关键信息和引入误差。
+- en: GeoGrid decided to proceed cautiously with a trial run using the Graclus algorithm
+    and `max_pool` for pooling on the entire graph. The trial run confirmed the company’s
+    fears. The graph’s size was reduced significantly but at the cost of losing detail
+    in high-traffic zones. Newly generated labels for clustered nodes didn’t reflect
+    the original optimally, affecting machine learning model performance.
+  id: totrans-430
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GeoGrid决定谨慎地进行试验运行，使用Graclus算法和`max_pool`在整个图上进行池化。试验运行证实了公司的担忧。图的大小显著减少，但代价是在高流量区域失去了细节。为聚类节点生成的新标签没有反映原始的最佳状态，影响了机器学习模型的表现。
+- en: 'Given the unsatisfactory trial results, GeoGrid explored alternative optimizations.
+    GeoGrid’s breakthrough idea was a multilayer analytical framework as follows:'
+  id: totrans-431
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于试验结果不尽如人意，GeoGrid探索了其他优化方案。GeoGrid的突破性想法是一个多层分析框架，如下所示：
+- en: '*National level* —A broad, high-level layer where each node signifies a state
+    or major region'
+  id: totrans-432
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*国家级别* — 一个广泛的、高级别的层，其中每个节点代表一个州或主要地区'
+- en: '*State level* —An intermediate layer representing cities or counties'
+  id: totrans-433
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*状态级别* — 代表城市或县的中间层'
+- en: '*City level* —The most granular layer, focusing on individual intersections
+    and road segments'
+  id: totrans-434
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*城市级别* — 最细粒度的层，专注于单个交叉口和路段'
+- en: 'The team speculated that applying graph coarsening at an intermediate layer
+    might alleviate some of the initial concerns. The state level became the company’s
+    target for coarsening, which promised a balance between computational efficiency
+    and data integrity. With this new approach in mind, GeoGrid reevaluated the disadvantages
+    of graph coarsening:'
+  id: totrans-435
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 团队推测，在中间层应用图粗化可能有助于缓解一些初始担忧。状态级别成为公司粗化的目标，这保证了计算效率和数据完整性的平衡。考虑到这种新的方法，GeoGrid重新评估了图粗化的不利因素：
+- en: '*Loss of granular information* —While still a concern, the damage appeared
+    to be minimized because coarsening was being applied to an intermediate layer,
+    preserving the city level’s details.'
+  id: totrans-436
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*粒度信息丢失* — 虽然仍然是一个担忧，但由于粗化是在中间层进行的，因此损害似乎已经最小化，因为保留了城市级别的细节。'
+- en: '*Introduction of inaccuracies* —GeoGrid theorized that the other layers could
+    serve as compensatory mechanisms for any inaccuracies introduced at the state
+    level.'
+  id: totrans-437
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*引入误差* — GeoGrid理论认为，其他层可以作为在状态级别引入的任何误差的补偿机制。'
+- en: '*Label preservation* —Coarsening at the state level seemed less risky regarding
+    label reconciliation, as they could reference both the national and city levels
+    for corrections.'
+  id: totrans-438
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*标签保留* — 在状态级别进行粗化似乎在标签协调方面风险较低，因为它们可以参考国家和城市级别进行修正。'
+- en: They went ahead and coarsened the state level with the same Graclus algorithm
+    and `max_pool` technique. The subsequent evaluation found that the loss of granularity
+    was acceptable for this specific layer, and any inaccuracies introduced were mostly
+    balanced by the city and national levels.
+  id: totrans-439
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 他们继续使用相同的Graclus算法和`max_pool`技术对状态级别进行粗化。随后的评估发现，对于这个特定层，粒度损失是可以接受的，并且引入的任何误差主要被城市和国家级别所平衡。
+- en: Though the company initially shied away from graph coarsening, GeoGrid found
+    a way to incorporate it meaningfully into a more complex, multilayer system. The
+    compromise allowed GeoGrid to conserve computational resources without severely
+    compromising the model’s accuracy. However, they remained cautious and committed
+    to ongoing research to fully grasp the tradeoffs involved.
+  id: totrans-440
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管公司最初回避了图粗化，但GeoGrid找到了一种有意义地将它纳入更复杂、多层系统的方法。这种妥协使得GeoGrid能够在不严重损害模型准确性的情况下节省计算资源。然而，他们仍然保持谨慎，并致力于持续研究以全面理解所涉及的权衡。
+- en: Table 7.5 summarizes the tradeoffs of graph coarsening. Graph coarsening presents
+    a balance between computational efficiency and data fidelity. On the upside, it
+    enables quicker real-time processing, simplifies high-level analyses, and offers
+    scalability. Its flexibility allows selective application to specific layers of
+    a hierarchical graph, as demonstrated when GeoGrid applied coarsening only to
+    its state level layer.
+  id: totrans-441
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 表7.5总结了图粗化的权衡。图粗化在计算效率和数据保真度之间提供了一个平衡。从积极的一面来看，它使得实时处理更快，简化了高级分析，并提供了可扩展性。其灵活性允许选择性地应用于分层图的特定层，正如GeoGrid仅将其状态层应用于粗化时所展示的那样。
+- en: Table 7.5 Tradeoffs of using graph coarsening, with insights from the GeoGrid
+    case
+  id: totrans-442
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+  zh: 表7.5 使用图粗化的权衡，以及GeoGrid案例的见解
+- en: '| Category | Insight | GeoGrid’s Use Case |'
+  id: totrans-443
+  prefs: []
+  type: TYPE_TB
+  zh: '| 类别 | 洞察 | GeoGrid的应用场景 |'
+- en: '| --- | --- | --- |'
+  id: totrans-444
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- |'
+- en: '| Computational efficiency  | Ideal for real-time processing with limited computational
+    resources  | Enabled quicker analyses at the state level, reducing computational
+    load  |'
+  id: totrans-445
+  prefs: []
+  type: TYPE_TB
+  zh: '| 计算效率 | 对于有限的计算资源来说，是实时处理的理想选择 | 在状态层实现了更快的分析，减少了计算负担 |'
+- en: '| Simplified analysis  | Useful for high-level overviews for initial understanding
+    or macro-level decision-making  | The national level layer provided a broad picture,
+    serving as a basis for more detailed analyses at lower layers.  |'
+  id: totrans-446
+  prefs: []
+  type: TYPE_TB
+  zh: '| 简化分析 | 适用于高级概述以获得初步理解或宏观层面的决策 | 国家层面的层提供了广泛的视角，为较低层级的更详细分析提供了基础 |'
+- en: '| Scalability  | Allows handling of larger graphs that might otherwise be computationally
+    infeasible  | Multilayer approach could be further extended to include additional
+    hierarchical layers if needed.  |'
+  id: totrans-447
+  prefs: []
+  type: TYPE_TB
+  zh: '| 可扩展性 | 允许处理可能因计算不可行而无法处理的更大图 | 如果需要，多层方法可以进一步扩展以包括额外的分层层 |'
+- en: '| Flexibility  | Can be applied to selected layers or segments of a graph,
+    rather than the entire graph  | Applied coarsening only to the state level layer,
+    mitigating some disadvantages while still gaining computational benefits  |'
+  id: totrans-448
+  prefs: []
+  type: TYPE_TB
+  zh: '| 灵活性 | 可以应用于图的选择层或段，而不是整个图 | 仅将粗化应用于状态层，在减轻一些不利因素的同时，仍然获得了计算上的好处 |'
+- en: '| Loss of granular information  | Not suitable for tasks requiring precise,
+    detailed data  | Initially avoided coarsening due to loss of critical details
+    at the intersection level  |'
+  id: totrans-449
+  prefs: []
+  type: TYPE_TB
+  zh: '| 信息粒度损失 | 不适用于需要精确、详细数据的任务 | 由于交叉层面的关键细节丢失，最初回避了粗化 |'
+- en: '| Potential for inaccuracies  | Requires validation from more detailed layers
+    or additional data to mitigate inaccuracies  | The city level and national level
+    acted as checks against the coarsened state level.  |'
+  id: totrans-450
+  prefs: []
+  type: TYPE_TB
+  zh: '| 不准确性的可能性 | 需要来自更详细层或额外数据的验证来减轻不准确 | 市级和国家级作为对粗化状态层的检查 |'
+- en: '| Label preservation challenges  | Requires additional steps to generate or
+    map new labels, which could introduce errors  | Found it easier to reconcile labels
+    when coarsening was applied to an intermediate layer  |'
+  id: totrans-451
+  prefs: []
+  type: TYPE_TB
+  zh: '| 标签保留挑战 | 需要额外的步骤来生成或映射新标签，这可能会引入错误 | 发现当粗化应用于中间层时，更容易协调标签 |'
+- en: '| Method bias  | Choosing a coarsening algorithm can affect the outcome and
+    introduce biases.  | Identified as an area for ongoing research to understand
+    its effect better  |'
+  id: totrans-452
+  prefs: []
+  type: TYPE_TB
+  zh: '| 方法偏差 | 选择粗化算法可能会影响结果并引入偏差 | 被确定为持续研究的一个领域，以更好地理解其影响 |'
+- en: As we wrap up this section, it becomes clear that the ability to scale for expansive
+    datasets is crucial for individuals working with GNNs. Handling large-scale data
+    problems demands careful strategy, and this section has supplied a detailed outline
+    of diverse methods to address such hurdles. From choosing the ideal processor
+    to making decisions regarding sparse versus dense representations, from batch
+    processing strategies to distributed computation—the options for scaling optimization
+    are numerous.
+  id: totrans-453
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随着本节的结束，很明显，对于使用GNN的个人来说，能够扩展到庞大的数据集是至关重要的。处理大规模数据问题需要谨慎的策略，本节已经提供了一系列详细的方法来克服这些障碍。从选择理想的处理器到决定使用稀疏表示还是密集表示，从批量处理策略到分布式计算——扩展优化的选项众多。
+- en: As you move forward, the code provided in our repository can be used as a useful
+    benchmark, ensuring that the methods mentioned here aren’t just high-level ideas
+    but actionable plans.
+  id: totrans-454
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随着你继续前进，我们仓库中提供的代码可以用作有用的基准，确保这里提到的不仅仅是高级想法，而是可执行的计划。
+- en: Navigating the vast landscape of GNNs requires a blend of strategic foresight
+    and hands-on execution. Irrespective of your data’s size or complexity, the trick
+    lies in planning, optimizing, and iterating. Let our insights be your compass,
+    guiding you confidently through challenges, no matter their scale.
+  id: totrans-455
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在GNN的广阔领域中导航需要战略远见和实际操作的结合。无论您数据的大小或复杂性如何，关键在于规划、优化和迭代。让我们提供的见解成为您的指南针，引导您自信地通过各种规模挑战。
+- en: Summary
+  id: totrans-456
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 摘要
+- en: Time and scale optimization methods are critical when training on very large
+    datasets. We can characterize a large graph by the raw number of vertices and
+    edges, the size of their edge and node features, or the time and space complexity
+    of the algorithms used in the processing and training of our datasets.
+  id: totrans-457
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 当在非常大的数据集上进行训练时，时间和尺度优化方法是至关重要的。我们可以通过原始的顶点数和边数、边的特征和节点的特征大小，或者处理和训练我们数据集所使用的算法的时间和空间复杂度来描述一个大图。
+- en: 'A few well-known techniques exist to manage scale problems, which can be used
+    singularly or in tandem:'
+  id: totrans-458
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 存在一些著名的技巧可以管理规模问题，这些技巧可以单独使用或结合使用：
+- en: Your choice of processor and its configuration
+  id: totrans-459
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 您选择的处理器及其配置
+- en: Using sparse versus dense representation of your dataset
+  id: totrans-460
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用数据集的稀疏表示与密集表示
+- en: Your choice of the GNN algorithm
+  id: totrans-461
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 您选择的GNN算法
+- en: Training in batches based on sampling from your data
+  id: totrans-462
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 根据从您的数据中采样进行批量训练
+- en: Using parallel or distributed computing
+  id: totrans-463
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用并行或分布式计算
+- en: Use of remote backends
+  id: totrans-464
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用远程后端
+- en: Coarsening your graph
+  id: totrans-465
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 粗化您的图
+- en: Being selective of how graph data is represented for training can affect performance.
+    PyTorch Geometric (PyG) provides support for sparse and dense representations.
+  id: totrans-466
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对训练中图数据的表示进行选择性选择可能会影响性能。PyTorch Geometric (PyG) 提供了对稀疏和密集表示的支持。
+- en: Choice of training algorithm can affect the time performance of training and
+    the space requirements of memory. Using Big O notation and benchmarking key metrics
+    can help you select the optimal GNN architecture.
+  id: totrans-467
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 训练算法的选择可能会影响训练的时间性能和内存的空间需求。使用大O符号和基准测试关键指标可以帮助您选择最佳的GNN架构。
+- en: Node or graph batching can improve time and space complexity by using portions
+    of your data instead of the full dataset in training.
+  id: totrans-468
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 节点或图批量可以通过在训练中使用数据的一部分而不是整个数据集来提高时间和空间复杂度。
+- en: Parallelism, dividing the work of training across several processor nodes on
+    one machine or across a cluster of machines, can improve the speed of execution
+    but requires the overhead of setting up and configuring the additional devices.
+  id: totrans-469
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 并行化，将训练工作分配到一台机器上的多个处理器节点或机器集群中，可以提高执行速度，但需要设置和配置额外设备的开销。
+- en: Remote backends pull directly from your external data source (graph database
+    and key/value stores) to mini-batch during training. This can alleviate memory
+    problems but requires additional work to set up and configure.
+  id: totrans-470
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 远程后端在训练期间直接从您的外部数据源（图数据库和键/值存储）拉取到小批量。这可以减轻内存问题，但需要额外的工作来设置和配置。
+- en: Graph coarsening can reduce memory requirements by replacing a graph with a
+    smaller version of itself. This smaller version is created by consolidating nodes.
+    A drawback of this method is that the coarsened graph will deviate from the representation
+    of the original graph. Graph coarsening is a tradeoff between computational efficiency
+    and data fidelity. It’s most effective when applied judiciously and as part of
+    a larger, layered analytical strategy. Application to intermediate layers can
+    mitigate some drawbacks.
+  id: totrans-471
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 图粗化可以通过用自身的一个更小版本替换图来减少内存需求。这个更小的版本是通过合并节点创建的。这种方法的一个缺点是粗化后的图将与原始图的表示有所偏差。图粗化是在计算效率和数据保真度之间的权衡。当谨慎应用并作为更大、分层的分析策略的一部分时，它最为有效。应用于中间层可以缓解一些缺点。
