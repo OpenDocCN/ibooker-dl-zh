@@ -1,0 +1,474 @@
+<html><head></head><body><div id="book-content"><div id="sbo-rt-content"><div class="readable-text" id="p1"> 
+   <h1 class=" readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">appendix D</span></span> <span class="chapter-title-text">Adding bells and whistles to the training loop</span></h1> 
+  </div> 
+  <div class="readable-text" id="p2"> 
+   <p>In this appendix, we enhance the training function for the pretraining and fine-tuning processes covered in chapters 5 to 7. In particular, it covers <em>learning rate warmup</em>, <em>cosine decay</em>, and <em>gradient clipping</em>. We then incorporate these techniques into the training function and pretrain an LLM. </p> 
+  </div> 
+  <div class="readable-text intended-text" id="p3"> 
+   <p>To make the code self-contained, we reinitialize the model we trained in chapter 5:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p4"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">import torch
+from chapter04 import GPTModel
+
+GPT_CONFIG_124M = {
+    "vocab_size": 50257,         <span class="aframe-location"/> #1
+
+    "context_length": 256,      <span class="aframe-location"/> #2
+    "emb_dim": 768,          <span class="aframe-location"/> #3
+    "n_heads": 12,           <span class="aframe-location"/> #4
+    "n_layers": 12,          <span class="aframe-location"/> #5
+    "drop_rate": 0.1,        <span class="aframe-location"/> #6
+    "qkv_bias": False        <span class="aframe-location"/> #7
+}
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+model.to(device)
+model.eval()</pre> 
+    <div class="code-annotations-overlay-container">
+     #1 Vocabulary size
+     <br/>#2 Shortened context length (orig: 1024)
+     <br/>#3 Embedding dimension
+     <br/>#4 Number of attention heads
+     <br/>#5 Number of layers
+     <br/>#6 Dropout rate
+     <br/>#7 Query-key-value bias
+     <br/>
+    </div> 
+   </div> 
+  </div> 
+  <div class="readable-text" id="p5"> 
+   <p>After initializing the model, we need to initialize the data loaders. First, we load the “The Verdict” short story:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p6"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">import os
+import urllib.request
+
+file_path = "the-verdict.txt"
+
+url = (
+    "https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/"
+    "main/ch02/01_main-chapter-code/the-verdict.txt"
+)
+
+if not os.path.exists(file_path):
+    with urllib.request.urlopen(url) as response:
+        text_data = response.read().decode('utf-8')
+    with open(file_path, "w", encoding="utf-8") as file:
+        file.write(text_data)
+else:
+    with open(file_path, "r", encoding="utf-8") as file:
+        text_data = file.read()</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p7"> 
+   <p>Next, we load the <code>text_data</code> into the data loaders:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p8"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">from previous_chapters import create_dataloader_v1
+
+train_ratio = 0.90
+split_idx = int(train_ratio * len(text_data))
+torch.manual_seed(123)
+train_loader = create_dataloader_v1(
+    text_data[:split_idx],
+    batch_size=2,
+    max_length=GPT_CONFIG_124M["context_length"],
+    stride=GPT_CONFIG_124M["context_length"],
+    drop_last=True,
+    shuffle=True,
+    num_workers=0
+)
+val_loader = create_dataloader_v1(
+    text_data[split_idx:],
+    batch_size=2,
+    max_length=GPT_CONFIG_124M["context_length"],
+    stride=GPT_CONFIG_124M["context_length"],
+    drop_last=False,
+    shuffle=False,
+    num_workers=0
+)</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p9"> 
+   <h2 class=" readable-text-h2"><span class="num-string">D.1</span> Learning rate warmup</h2> 
+  </div> 
+  <div class="readable-text" id="p10"> 
+   <p>Implementing a learning rate warmup can stabilize the training of complex models such as LLMs. This process involves gradually increasing the learning rate from a very low initial value (<code>initial_lr</code>) to a maximum value specified by the user (<code>peak_lr</code>). Starting the training with smaller weight updates decreases the risk of the model encountering large, destabilizing updates during its training phase.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p11"> 
+   <p>Suppose we plan to train an LLM for 15 epochs, starting with an initial learning rate of 0.0001 and increasing it to a maximum learning rate of 0.01: </p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p12"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">n_epochs = 15
+initial_lr = 0.0001
+peak_lr = 0.01</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p13"> 
+   <p>The number of warmup steps is usually set between 0.1% and 20% of the total number of steps, which we can calculate as follows:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p14"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">total_steps = len(train_loader) * n_epochs
+warmup_steps = int(0.2 * total_steps)      <span class="aframe-location"/> #1
+print(warmup_steps)</pre> 
+    <div class="code-annotations-overlay-container">
+     #1 20% warmup
+     <br/>
+    </div> 
+   </div> 
+  </div> 
+  <div class="readable-text" id="p15"> 
+   <p>This prints <code>27</code>, meaning that we have 20 warmup steps to increase the initial learning rate from 0.0001 to 0.01 in the first 27 training steps.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p16"> 
+   <p>Next, we implement a simple training loop template to illustrate this warmup process:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p17"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">optimizer = torch.optim.AdamW(model.parameters(), weight_decay=0.1)
+lr_increment = (peak_lr - initial_lr) / warmup_steps   <span class="aframe-location"/> #1
+
+global_step = -1
+track_lrs = []
+
+for epoch in range(n_epochs):   <span class="aframe-location"/> #2
+    for input_batch, target_batch in train_loader:
+        optimizer.zero_grad()
+        global_step += 1
+
+        if global_step &lt; warmup_steps:            <span class="aframe-location"/> #3
+            lr = initial_lr + global_step * lr_increment
+        else:
+            lr = peak_lr
+
+        for param_group in optimizer.param_groups:   <span class="aframe-location"/> #4
+            param_group["lr"] = lr
+        track_lrs.append(optimizer.param_groups[0]["lr"])  <span class="aframe-location"/> #5</pre> 
+    <div class="code-annotations-overlay-container">
+     #1 This increment is determined by how much we increase the inital_lr in each of the 20 warmup steps.
+     <br/>#2 Executes a typical training loop iterating over the batches in the training loader in each epoch
+     <br/>#3 Updates the learning rate if we are still in the warmup phase
+     <br/>#4 Applies the calculated learning rate to the optimizer
+     <br/>#5 In a complete training loop, the loss and the model updates would be calculated, which are omitted here for simplicity.
+     <br/>
+    </div> 
+   </div> 
+  </div> 
+  <div class="readable-text" id="p18"> 
+   <p>After running the preceding code, we visualize how the learning rate was changed by the training loop to verify that the learning rate warmup works as intended:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p19"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">import matplotlib.pyplot as plt
+
+plt.ylabel("Learning rate")
+plt.xlabel("Step")
+total_training_steps = len(train_loader) * n_epochs
+plt.plot(range(total_training_steps), track_lrs);
+plt.show()</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p20"> 
+   <p>The resulting plot shows that the learning rate starts with a low value and increases for 20 steps until it reaches the maximum value after 20 steps (figure D.1).<span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p21">  
+   <img alt="figure" src="../Images/D-1.png" width="517" height="299"/> 
+   <h5 class=" figure-container-h5"><span class="num-string">Figure D.1</span> The learning rate warmup increases the learning rate for the first 20 training steps. After 20 steps, the learning rate reaches the peak of 0.01 and remains constant for the rest of the training.</h5>
+  </div> 
+  <div class="readable-text" id="p22"> 
+   <p>Next, we will modify the learning rate further so that it decreases after reaching the maximum learning rate, which further helps improve the model training.</p> 
+  </div> 
+  <div class="readable-text" id="p23"> 
+   <h2 class=" readable-text-h2"><span class="num-string">D.2</span> Cosine decay</h2> 
+  </div> 
+  <div class="readable-text" id="p24"> 
+   <p>Another widely adopted technique for training complex deep neural networks and LLMs is <em>cosine decay</em>. This method modulates the learning rate throughout the training epochs, making it follow a cosine curve after the warmup stage. </p> 
+  </div> 
+  <div class="readable-text intended-text" id="p25"> 
+   <p>In its popular variant, cosine decay reduces (or decays) the learning rate to nearly zero, mimicking the trajectory of a half-cosine cycle. The gradual learning decrease in cosine decay aims to decelerate the pace at which the model updates its weights. This is particularly important because it helps minimize the risk of overshooting the loss minima during the training process, which is essential for ensuring the stability of the training during its later phases.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p26"> 
+   <p>We can modify the training loop template by adding cosine decay:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p27"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">import math
+
+min_lr = 0.1 * initial_lr
+track_lrs = []
+lr_increment = (peak_lr - initial_lr) / warmup_steps
+global_step = -1
+
+for epoch in range(n_epochs):
+    for input_batch, target_batch in train_loader:
+        optimizer.zero_grad()
+        global_step += 1
+
+        if global_step &lt; warmup_steps:                    <span class="aframe-location"/> #1
+            lr = initial_lr + global_step * lr_increment  
+        else:                                               <span class="aframe-location"/> #2
+            progress = ((global_step - warmup_steps) / 
+                        (total_training_steps - warmup_steps))
+            lr = min_lr + (peak_lr - min_lr) * 0.5 * (
+                1 + math.cos(math.pi * progress)
+            )
+
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+        track_lrs.append(optimizer.param_groups[0]["lr"])</pre> 
+    <div class="code-annotations-overlay-container">
+     #1 Applies linear warmup
+     <br/>#2 Uses cosine annealing after warmup
+     <br/>
+    </div> 
+   </div> 
+  </div> 
+  <div class="readable-text" id="p28"> 
+   <p>Again, to verify that the learning rate has changed as intended, we plot the learning rate:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p29"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">plt.ylabel("Learning rate")
+plt.xlabel("Step")
+plt.plot(range(total_training_steps), track_lrs)
+plt.show()</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p30"> 
+   <p>The resulting learning rate plot shows that the learning rate starts with a linear warmup phase, which increases for 20 steps until it reaches the maximum value after 20 steps. After the 20 steps of linear warmup, cosine decay kicks in, reducing the learning rate gradually until it reaches its minimum (figure D.2).<span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p31">  
+   <img alt="figure" src="../Images/D-2.png" width="552" height="315"/> 
+   <h5 class=" figure-container-h5"><span class="num-string">Figure D.2</span> The first 20 steps of linear learning rate warmup are followed by a cosine decay, which reduces the learning rate in a half-cosine cycle until it reaches its minimum point at the end of training.</h5>
+  </div> 
+  <div class="readable-text" id="p32"> 
+   <h2 class=" readable-text-h2"><span class="num-string">D.3</span> Gradient clipping</h2> 
+  </div> 
+  <div class="readable-text" id="p33"> 
+   <p><em>Gradient clipping</em> is another important technique for enhancing stability during LLM training. This method involves setting a threshold above which gradients are downscaled to a predetermined maximum magnitude. This process ensures that the updates to the model’s parameters during backpropagation stay within a manageable range. </p> 
+  </div> 
+  <div class="readable-text intended-text" id="p34"> 
+   <p>For example, applying the <code>max_norm=1.0</code> setting within PyTorch’s <code>clip_grad_</code> <code>norm_</code> function ensures that the norm of the gradients does not surpass 1.0. Here, the term “norm” signifies the measure of the gradient vector’s length, or magnitude, within the model’s parameter space, specifically referring to the L2 norm, also known as the Euclidean norm.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p35"> 
+   <p>In mathematical terms, for a vector <strong><em>v</em></strong> composed of components <strong><em>v</em></strong> = [<em>v</em><sub>1</sub>, <em>v</em><sub>2</sub>, ..., <em>v</em><em>n</em>], the L2 norm is <span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p36"> 
+   <img alt="figure" src="../Images/Equation-eqs-D-1.png" width="247" height="44"/> 
+  </div> 
+  <div class="readable-text" id="p37"> 
+   <p>This calculation method is also applied to matrices. For instance, consider a gradient matrix given by<span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p38"> 
+   <img alt="figure" src="../Images/Equation-eqs-D-2.png" width="117" height="59"/> 
+  </div> 
+  <div class="readable-text" id="p39"> 
+   <p>If we want to clip these gradients to a <code>max_norm</code> of 1, we first compute the L2 norm of these gradients, which is<span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p40"> 
+   <img alt="figure" src="../Images/Equation-eqs-D-3.png" width="367" height="34"/> 
+  </div> 
+  <div class="readable-text" id="p41"> 
+   <p>Given that |<strong>G</strong>|<sub>2</sub> = 5 exceeds our <code>max_norm</code> of 1, we scale down the gradients to ensure their norm equals exactly 1. This is achieved through a scaling factor, calculated as <code>max_norm</code>/|<strong>G</strong>|<sub>2</sub> = 1/5. Consequently, the adjusted gradient matrix <strong>G'</strong> becomes<span class="aframe-location"/></p> 
+  </div> 
+  <div class="browsable-container figure-container" id="p42"> 
+   <img alt="figure" src="../Images/Equation-eqs-D-4.png" width="217" height="62"/> 
+  </div> 
+  <div class="readable-text" id="p43"> 
+   <p>To illustrate this gradient clipping process, we begin by initializing a new model and calculating the loss for a training batch, similar to the procedure in a standard training loop:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p44"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">from chapter05 import calc_loss_batch
+
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+model.to(device)
+loss = calc_loss_batch(input_batch, target_batch, model, device)
+loss.backward()</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p45"> 
+   <p>Upon calling the <code>.backward()</code> method, PyTorch calculates the loss gradients and stores them in a <code>.grad</code> attribute for each model weight (parameter) tensor.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p46"> 
+   <p>To clarify the point, we can define the following <code>find_highest_gradient</code> utility function to identify the highest gradient value by scanning all the <code>.grad</code> attributes of the model’s weight tensors after calling <code>.backward()</code>:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p47"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">def find_highest_gradient(model):
+    max_grad = None
+    for param in model.parameters():
+        if param.grad is not None:
+            grad_values = param.grad.data.flatten()
+            max_grad_param = grad_values.max()
+            if max_grad is None or max_grad_param &gt; max_grad:
+                max_grad = max_grad_param
+    return max_grad
+print(find_highest_gradient(model))</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p48"> 
+   <p>The largest gradient value identified by the preceding code is </p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p49"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">tensor(0.0411)</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p50"> 
+   <p>Let’s now apply gradient clipping and see how this affects the largest gradient value:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p51"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+print(find_highest_gradient(model))</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p52"> 
+   <p>The largest gradient value after applying the gradient clipping with the max norm of 1 is substantially smaller than before:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p53"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">tensor(0.0185)</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p54"> 
+   <h2 class=" readable-text-h2"><span class="num-string">D.4</span> The modified training function</h2> 
+  </div> 
+  <div class="readable-text" id="p55"> 
+   <p>Finally, we improve the <code>train_model_simple</code> training function (see chapter 5) by adding the three concepts introduced herein: linear warmup, cosine decay, and gradient clipping. Together, these methods help stabilize LLM training.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p56"> 
+   <p>The code, with the changes compared to the <code>train_model_simple</code> annotated, is as follows:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p57"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">from chapter05 import evaluate_model, generate_and_print_sample
+
+
+def train_model(model, train_loader, val_loader, optimizer, device,
+                n_epochs, eval_freq, eval_iter, start_context, tokenizer,
+                warmup_steps, initial_lr=3e-05, min_lr=1e-6):
+
+    train_losses, val_losses, track_tokens_seen, track_lrs = [], [], [], []
+    tokens_seen, global_step = 0, -1
+
+    peak_lr = optimizer.param_groups[0]["lr"]  <span class="aframe-location"/> #1
+    total_training_steps = len(train_loader) * n_epochs    <span class="aframe-location"/> #2
+    lr_increment = (peak_lr - initial_lr) / warmup_steps   <span class="aframe-location"/> #3
+
+    for epoch in range(n_epochs):
+        model.train()
+        for input_batch, target_batch in train_loader:
+            optimizer.zero_grad()
+            global_step += 1
+
+            if global_step &lt; warmup_steps:  <span class="aframe-location"/> #4
+                lr = initial_lr + global_step * lr_increment  
+            else:
+                progress = ((global_step - warmup_steps) / 
+                            (total_training_steps - warmup_steps))
+                lr = min_lr + (peak_lr - min_lr) * 0.5 * (
+                    1 + math.cos(math.pi * progress))
+
+            for param_group in optimizer.param_groups:  <span class="aframe-location"/> #5
+                param_group["lr"] = lr
+            track_lrs.append(lr)
+            loss = calc_loss_batch(input_batch, target_batch, model, device)
+            loss.backward()
+
+            if global_step &gt;= warmup_steps:        <span class="aframe-location"/> #6
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=1.0
+                )
+ #7
+            optimizer.step() 
+            tokens_seen += input_batch.numel()
+
+            if global_step % eval_freq == 0:
+                train_loss, val_loss = evaluate_model(
+                    model, train_loader, val_loader,
+                    device, eval_iter
+                )
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                track_tokens_seen.append(tokens_seen)
+                print(f"Ep {epoch+1} (Iter {global_step:06d}): "
+                      f"Train loss {train_loss:.3f}, "
+                      f"Val loss {val_loss:.3f}"
+                )
+
+
+        generate_and_print_sample(
+            model, tokenizer, device, start_context
+        )
+
+    return train_losses, val_losses, track_tokens_seen, track_lrs</pre> 
+    <div class="code-annotations-overlay-container">
+     #1 Retrieves the initial learning rate from the optimizer, assuming we use it as the peak learning rate
+     <br/>#2 Calculates the total number of iterations in the training process
+     <br/>#3 Calculates the learning rate increment during the warmup phase
+     <br/>#4 Adjusts the learning rate based on the current phase (warmup or cosine annealing)
+     <br/>#5 
+     <strong>Applies the calculated learning rate to the optimizer</strong>
+     <br/>#6 Applies gradient clipping after the warmup phase to avoid exploding gradients
+     <br/>#7 Everything below here remains unchanged compared to the train_model_simple function used in chapter 5.
+     <br/>
+    </div> 
+   </div> 
+  </div> 
+  <div class="readable-text" id="p58"> 
+   <p>After defining the <code>train_model</code> function, we can use it in a similar fashion to train the model compared to the <code>train_model_simple</code> method we used for pretraining:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p59"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">import tiktoken
+
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+model.to(device)
+peak_lr = 0.001
+optimizer = torch.optim.AdamW(model.parameters(), weight_decay=0.1)
+tokenizer = tiktoken.get_encoding("gpt2")
+
+n_epochs = 15
+train_losses, val_losses, tokens_seen, lrs = train_model(
+    model, train_loader, val_loader, optimizer, device, n_epochs=n_epochs,
+    eval_freq=5, eval_iter=1, start_context="Every effort moves you",
+    tokenizer=tokenizer, warmup_steps=warmup_steps, 
+    initial_lr=1e-5, min_lr=1e-5
+)</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p60"> 
+   <p>The training will take about 5 minutes to complete on a MacBook Air or similar laptop and prints the following outputs:</p> 
+  </div> 
+  <div class="browsable-container listing-container" id="p61"> 
+   <div class="code-area-container"> 
+    <pre class="code-area">Ep 1 (Iter 000000): Train loss 10.934, Val loss 10.939
+Ep 1 (Iter 000005): Train loss 9.151, Val loss 9.461 
+Every effort moves you,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Ep 2 (Iter 000010): Train loss 7.949, Val loss 8.184 
+Ep 2 (Iter 000015): Train loss 6.362, Val loss 6.876 
+Every effort moves you,,,,,,,,,,,,,,,,,,, the,,,,,,,,, the,,,,,,,,,,, 
+the,,,,,,,, 
+... 
+Ep 15 (Iter 000130): Train loss 0.041, Val loss 6.915 
+Every effort moves you?"  "Yes--quite insensible to the irony. She wanted him vindicated--and by me!"  He laughed again, and threw back his head to look up at the sketch of the donkey. "There were days when I</pre>  
+   </div> 
+  </div> 
+  <div class="readable-text" id="p62"> 
+   <p>Like pretraining, the model begins to overfit after a few epochs since it is a very small dataset, and we iterate over it multiple times. Nonetheless, we can see that the function is working since it minimizes the training set loss.</p> 
+  </div> 
+  <div class="readable-text intended-text" id="p63"> 
+   <p>Readers are encouraged to train the model on a larger text dataset and compare the results obtained with this more sophisticated training function to the results that can be obtained with the <code>train_model_simple</code> function.</p> 
+  </div>
+ </div></div></body></html>

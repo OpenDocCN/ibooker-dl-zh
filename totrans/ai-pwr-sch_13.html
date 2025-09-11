@@ -1,0 +1,906 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">11</span> </span> <span class="chapter-title-text">Automating learning to rank with click models</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Automating learning to rank retraining from user behavioral signals (searches, clicks, etc.)</li>
+<li class="readable-text" id="p3">Transforming user signals into implicit LTR training data using click models</li>
+<li class="readable-text" id="p4">Overcoming user’s tendency to click items higher in the search results, regardless of relevance</li>
+<li class="readable-text" id="p5">Handling low-confidence documents with fewer clicks when deriving implicit judgments</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>In chapter 10, we went step by step through training a learning to rank (LTR) model. Like walking through the mechanics of building a car, we saw the underlying nuts and bolts of LTR model training. In this chapter, we’ll treat the LTR training process as a black box. In other words, we’ll step away from the LTR internals, instead treating LTR more like a self-driving car, fine-tuning its trip toward a final destination. </p>
+</div>
+<div class="readable-text intended-text" id="p7">
+<p>Recall that LTR relies on accurate training data in order to be effective. LTR training data describes how users expect search results to be optimally ranked; it provides the directions we’ll input into our LTR self-driving car. As you’ll see, determining what’s relevant based on user interactions comes with many challenges. If we can overcome these challenges and gain high confidence in our training data, though, we can build <em>automated learning to rank</em>: a system that regularly retrains LTR to capture the latest user relevance expectations. </p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>As training data is so central to automated LTR, the challenges become not “What model/features/search engine should we use?” but more fundamentally, “What do users want from search?”, “How do we turn that into training data?”, and “How do we know whether that training data is any good?”. By improving our confidence in the answers to these questions, we can put LTR (re)training on autopilot, as shown in figure 11.1. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p9">
+<img alt="figure" height="611" src="../Images/CH11_F01_Grainger.png" width="1009"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.1</span> An automated LTR system automatically learns and retrains from the user’s signals. This helps build models based on what actual users consider relevant over many queries.</h5>
+</div>
+<div class="readable-text" id="p10">
+<p>Let’s briefly walk through each step in the automated LTR process:</p>
+</div>
+<ol>
+<li class="readable-text" id="p11"> <em>Input new destination</em><em> </em>—We input training data into the LTR system describing ideal relevance, based on our understanding of user behavioral signals, such as searches, clicks, and conversions (covered in this chapter). </li>
+<li class="readable-text" id="p12"> <em>Drive to destination</em><em> </em>—Our LTR system retrains an LTR model using the provided training data (as covered in chapter 10). </li>
+<li class="readable-text" id="p13"> <em>Are we there yet?</em><em> </em>—Is the model truly helping users? And should future models perhaps explore alternate routes (covered in chapter 12)? </li>
+</ol>
+<div class="readable-text" id="p14">
+<p>Automated LTR repeats steps 1–3 continuously to automatically optimize relevance. The search team monitors the automated LTR’s performance and intervenes as needed. This is the <em>maintenance</em> portion of figure 11.1. During maintenance, we open the hood to explore new LTR features and other model adjustments. Maintenance could also mean revisiting step 1 to correct our understanding of user behaviors and build more reliable, robust training data. After all, without good training data, we could follow chapter 10 to a T and still fail to satisfy our users. </p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>This chapter starts our exploration of automated LTR by focusing on step 1—inputting a new destination. We’ll first define the task of deriving training data from user clicks. We’ll then spend the rest of this chapter overcoming some common biases and challenges with search click data. By the end of this chapter, you’ll be able to build models with more reliable training data derived from user signals. Chapter 12 will then finish our automated LTR exploration by observing the model interacting with live users, using active learning and Gaussian techniques to overcome trickier presentation biases, and integrating all these components into a final, end-to-end automated LTR system. </p>
+</div>
+<div class="readable-text" id="p16">
+<h2 class="readable-text-h2" id="sigil_toc_id_154"><span class="num-string">11.1</span> (Re)creating judgment lists from signals</h2>
+</div>
+<div class="readable-text" id="p17">
+<p>We mentioned that we need to overcome biases when creating LTR training data from clicks. However, before we dig into those biases, we’ll explore the implications of using clicks instead of manual labels for LTR training data. We’ll then take a naive, first stab at crafting training data in this section, reflecting on what went well or not so well. This will set us up for the rest of the chapter, where we’ll explore removing bias from these results (in section 11.2 and beyond). </p>
+</div>
+<div class="readable-text" id="p18">
+<h3 class="readable-text-h3" id="sigil_toc_id_155"><span class="num-string">11.1.1</span> Generating implicit, probabilistic judgments from signals</h3>
+</div>
+<div class="readable-text" id="p19">
+<p>Let’s lay a foundation for how to use behavioral signals as LTR training data. Then we’ll dive into the details of constructing reliable judgment lists. </p>
+</div>
+<div class="readable-text intended-text" id="p20">
+<p>In chapter 10, we discussed LTR training data, referred to as <em>judgment lists</em> or <em>judgments</em>. These judgements contain labels or <em>grades</em> for how relevant potential search results are for a given query. In chapter 10, we used movies as our example, labeling them with a grade of either <code>1</code> (relevant) or <code>0</code> (irrelevant), as in the following example. </p>
+</div>
+<div class="browsable-container listing-container" id="p21">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.1</span> Labeling movies relevant or irrelevant</h5>
+<div class="code-area-container">
+<pre class="code-area"># Judgment(grade, keywords, doc_id)
+sample_judgments = [
+  # for 'social network' query
+  Judgment(1, "social network", 37799),  # The Social Network
+  Judgment(0, "social network", 267752), # #chicagoGirl
+  Judgment(0, "social network", 38408),  # Life As We Know It
+  Judgment(0, "social network", 28303),  # The Cheyenne Social Club
+  # for 'star wars' query
+  Judgment(1, "star wars", 11),          # Star Wars
+  Judgment(1, "star wars", 1892),        # Return of the Jedi
+  Judgment(0, "star wars", 54138),       # Star Trek Into Darkness
+  Judgment(0, "star wars", 85783),       # The Star
+  Judgment(0, "star wars", 325553)       # Battlestar Galactica
+]</pre>
+</div>
+</div>
+<div class="readable-text" id="p22">
+<p>There are many techniques for generating judgment lists, and this isn’t a comprehensive chapter on judgment lists and their many applications. Instead, we’ll specifically focus on LTR training data. For this reason, we will only discuss judgments generated from user click signals. We call these <em>implicit judgments</em> because they derive from user interactions with the search application as users search and click. This contrasts with <em>explicit judgments</em>, where raters directly label search results as relevant/irrelevant. </p>
+</div>
+<div class="readable-text intended-text" id="p23">
+<p>Implicit judgments are ideal for automating LTR for several reasons:</p>
+</div>
+<ul>
+<li class="readable-text" id="p24"> <em>Recency</em><em> </em>—We have ready access to user traffic, so we can automate training today’s LTR model on the latest user search expectations. </li>
+<li class="readable-text" id="p25"> <em>More data at less cost</em><em> </em>—Setting up a task to capture explicit judgments, even with crowdsourcing, is time consuming and expensive to do well at scale. Deriving implicit judgments from live user interactions we’re already collecting allows us to use the existing user base to do this work for us. </li>
+<li class="readable-text" id="p26"> <em>Capturing real use cases</em><em> </em>—Implicit judgments capture real users doing actual tasks with your search app. Contrast this with an artificial setting where explicit raters think carefully, perhaps unrealistically so, about the abstract task of choosing the most relevant results. </li>
+</ul>
+<div class="readable-text" id="p27">
+<p>Unfortunately, click data can be noisy. We don’t know why a user clicked on a given search result. Further, users are not homogeneous; some will interpret one result as relevant, while others will think otherwise. Search interactions also contain biases that need to be overcome, creating additional uncertainty around a model’s calculations, which we’ll discuss in detail later in this chapter and the next.</p>
+</div>
+<div class="readable-text intended-text" id="p28">
+<p>For these reasons, instead of a binary judgment, click models create <em>probabilistic judgments</em>. Instead of producing a grade of only <code>1</code> (relevant) or <code>0</code> (irrelevant), the grade represents the probability (between <code>0.0</code> and <code>1.0</code>) that a random user would consider the result to be relevant or not. For example, a good click model might restate the judgments from listing 11.1 as something more like the following. </p>
+</div>
+<div class="browsable-container listing-container" id="p29">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.2</span> Labeling movie query relevance probabilistically</h5>
+<div class="code-area-container">
+<pre class="code-area"># Judgment(grade, keywords, doc_id),
+sample_judgments = [
+  Judgment(0.99, "social network", 37799),  # The Social Network
+  Judgment(0.01, "social network", 267752), # #chicagoGirl
+  Judgment(0.01, "social network", 38408),  # Life As We Know It
+  Judgment(0.01, "social network", 28303),  # The Cheyenne Social Club
+  Judgment(0.99, "star wars", 11),          # Star Wars
+  Judgment(0.80, "star wars", 1892),        # Return of the Jedi
+  Judgment(0.20, "star wars", 54138),       # Star Trek Into Darkness
+  Judgment(0.01, "star wars", 85783),       # The Star
+  Judgment(0.20, "star wars", 325553)       # Battlestar Galactica
+]</pre>
+</div>
+</div>
+<div class="readable-text" id="p30">
+<p>Notice the Star Wars movies in listing 10.2—the <code>grade</code> has become quite a bit more interesting. <em>Star Wars</em> now has a very high probability of relevance (<code>0.99</code>). The sequel, <em>Return of the Jedi</em>, has a slightly lower probability. Other science fiction movies (<em>Star Trek Into Darkness</em> and <em>Battlestar Galactica</em>) have ratings a bit higher than <code>0</code>, as fans of the Star Wars franchise might also enjoy these movies. <em>The Star</em> is completely unrelated—it’s a children’s animated movie about the first Christmas—so it receives a low <code>0.01</code> relevance probability. </p>
+</div>
+<div class="readable-text" id="p31">
+<h3 class="readable-text-h3" id="sigil_toc_id_156"><span class="num-string">11.1.2</span> Training an LTR model using probabilistic judgments</h3>
+</div>
+<div class="readable-text" id="p32">
+<p>We just introduced the idea that a relevance grade could be probabilistic. Now let’s consider how we can apply the lessons from chapter 10 to train a model using these probabilistic judgments (between <code>0.0</code> and <code>1.0</code>) instead of binary judgments. </p>
+</div>
+<div class="readable-text intended-text" id="p33">
+<p>Generally, you might consider these options when training a model:</p>
+</div>
+<ul>
+<li class="readable-text" id="p34"> <em>Quantize the grades</em><em> </em>—Quite simply, you can set arbitrary cutoffs before training to convert the grades to an acceptable format. You might assign a grade greater than <code>0.75</code> as relevant (or <code>1.00</code>). Anything less than <code>0.75</code> would be considered irrelevant (or <code>0.00</code>). Other algorithms, like LambdaMART, accept a range of grades, like <code>1</code> to <code>4</code>, and these could have discrete cutoffs as well, such as assigning anything less than <code>0.25</code> a grade of <code>1.00</code>, anything greater than or equal to <code>0.25</code> but less than <code>0.5</code> a grade of <code>2.00</code>, and so on. With these algorithms, you could create 100 such labels, assigning <code>0.00</code> a grade of <code>0</code>, <code>0.01</code> a grade of <code>1</code>, and so on, until <code>1</code> is assigned a grade of <code>100</code> prior to training. </li>
+<li class="readable-text" id="p35"> <em>Just use the floating-point judgments</em><em> </em>—The SVMRank algorithm from chapter 10 subtracted a more relevant item’s features from a less relevant item’s features (and vice versa) and built a classifier to tell relevant from irrelevant items. We did this with binary judgments, but nothing prevents us from doing this with probabilistic judgments. Here, if <em>Return of the Jedi</em> (<code>grade=0.80</code>) is considered more relevant than <em>Star Trek Into Darkness</em> (<code>grade=0.20</code>), we simply note <em>Return of the Jedi</em> as more relevant than <em>Star Trek Into Darkness</em> (labeling the difference as <code>+1</code>). Then we perform the same pairwise subtraction we would perform from chapter 10, subtracting features of <em>Star Trek Into Darkness</em> from those of <em>Return of the Jedi</em> to create a full training example. </li>
+</ul>
+<div class="readable-text" id="p36">
+<p>Retraining the model with judgments in this chapter would mostly repeat the code from chapter 10, so we’ll instead focus on the mechanics of training a click model. We have included a notebook with a full end-to-end LTR training example (see section 11.4) that integrates the click model we’ll arrive at by the end of this chapter into the LTR training process you already explored in chapter 10.</p>
+</div>
+<div class="readable-text intended-text" id="p37">
+<p>Time to get back to the code and see our first click model!</p>
+</div>
+<div class="readable-text" id="p38">
+<h3 class="readable-text-h3" id="sigil_toc_id_157"><span class="num-string">11.1.3</span> Click-Through Rate: Your first click model</h3>
+</div>
+<div class="readable-text" id="p39">
+<p>Now that you’ve seen the judgments format that a click model generates and how this format can be integrated to train an LTR model, let’s take a first, naive pass at building a click model. After that, we’ll take a step back to focus on a more sophisticated, general-purpose click model, and we’ll then explore some of the core biases inherent in processing query and click signals. </p>
+</div>
+<div class="readable-text print-book-callout" id="p40">
+<p><span class="print-book-callout-head">TIP</span> <strong> </strong>If you’d like to take a deeper dive into this topic, we encourage you to read <em>Click Models for Web Search</em> by Chuklin, Markov, and Rijke (Springer, 2015).</p>
+</div>
+<div class="readable-text" id="p41">
+<p>To build our click model, we’ll return to the RetroTech dataset, as it comes conveniently bundled with user click signals. From these signals, we’ve also reverse-engineered the kind of raw session data you need to build high-quality judgments. We’ll make use of the <code>pandas</code> library to perform tabular computations on session data. </p>
+</div>
+<div class="readable-text intended-text" id="p42">
+<p>In the following listing, we examine a sample search session for the movie <em>Transformers Dark of The Moon</em>. This raw session information is your starting point—the bare minimum information needed to develop a judgment list from user signals.</p>
+</div>
+<div class="browsable-container listing-container" id="p43">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.3</span> Examining a search session</h5>
+<div class="code-area-container">
+<pre class="code-area">query = "transformers dark of the moon"
+sessions = get_sessions(query) <span class="aframe-location"/> #1
+print(sessions.loc[3])<span class="aframe-location"/> #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 Selects sessions for the "transformers dark of the moon" query
+     <br/>#2 Examines a single search session shown to the user
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p44">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p45">
+<div class="code-area-container">
+<pre class="code-area">sess_id  query                          rank    doc_id          clicked
+3        transformers dark of the moon  0.0     47875842328     False
+3        transformers dark of the moon  1.0     24543701538     False
+...
+3        transformers dark of the moon  7.0     97360810042     True
+...
+3        transformers dark of the moon  13.0    47875841406     False
+3        transformers dark of the moon  14.0    400192926087    False</pre>
+</div>
+</div>
+<div class="readable-text" id="p46">
+<p>Listing 11.3 corresponds to a single search session, with <code>sess_id=3</code>, for the query <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code>. This session includes the query, the ranked results seen by the user, and whether each result was clicked. These three elements are the core ingredients needed to build a click model.</p>
+</div>
+<div class="readable-text intended-text" id="p47">
+<p>Search sessions will frequently differ. Another session, even seconds later, could have a slightly different ranking presented to the user. The search index might have changed, or a new relevance algorithm may have been deployed to production. We encourage you to retry listing 11.3 with another <code>sess_id</code> to compare sessions.</p>
+</div>
+<div class="readable-text intended-text" id="p48">
+<p>Let’s convert this data into judgments using our first, simple click model: Click-Through Rate.</p>
+</div>
+<div class="readable-text" id="p49">
+<h4 class="readable-text-h4 sigil_not_in_toc">Building judgments from click-through rate</h4>
+</div>
+<div class="readable-text" id="p50">
+<p>We’ll start by building a very simple click model to get comfortable with the data, and then we can step back to see the flaws in this first pass. This will allow us to think carefully about the quality of the generated judgments for automated LTR in the rest of this chapter. </p>
+</div>
+<div class="readable-text intended-text" id="p51">
+<p>Our first click model will be based on <em>click-through rate</em> (CTR). CTR is the number of clicks received on a search result divided by the number of times it appeared in search results. If a result is clicked every single time the search engine returns the result, the CTR will be <code>1</code>. If it’s never clicked, the CTR will be <code>0</code>. Sounds simple enough—what could go wrong?</p>
+</div>
+<div class="readable-text intended-text" id="p52">
+<p>We can look over every result for the query <code>transformers</code> <code>dark of the moon</code> and consider clicks with respect to the number of sessions in which the <code>doc_id</code> was returned. The following listing shows the computation and the resulting CTR value per document.</p>
+</div>
+<div class="browsable-container listing-container" id="p53">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.4</span> Computing CTR</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_ctr(sessions):
+  click_counts = sessions.groupby("doc_id")["clicked"].sum()
+  sess_counts = sessions.groupby("doc_id")["sess_id"].nunique()
+  ctrs = click_counts / sess_counts
+  return ctrs.sort_values(ascending=False)
+
+query = "transformers dark of the moon"
+sessions = get_sessions(query, index=False)
+click_through_rates = calculate_ctr(sessions)
+print_series_data(click_through_rates, column="CTR")</pre>
+</div>
+</div>
+<div class="readable-text" id="p54">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p55">
+<div class="code-area-container">
+<pre class="code-area">doc_id         CTR       name
+97360810042    0.0824    Transformers: Dark of the Moon - Blu-ray Disc
+47875842328    0.0734    Transformers: Dark of the Moon Stealth Force E...
+47875841420    0.0434    Transformers: Dark of the Moon Decepticons - N...
+...
+93624956037    0.0082    Transformers: Dark of the Moon - Original Soun...
+47875841369    0.0074    Transformers: Dark of the Moon - PlayStation 3
+24543750949    0.0062    X-Men: First Class - Widescreen Dubbed Subtitl...</pre>
+</div>
+</div>
+<div class="readable-text" id="p56">
+<p>In listing 11.4, for all <code>sessions</code> with the query <code>transformers dark of the moon</code> (per listing 11.3), we sum the clicks for each <code>doc_id</code> as <code>click_counts</code>. We also count the number of unique sessions for that document in <code>sess_counts</code>. Finally, we compute <code>ctrs</code> as <code>click_counts</code> <code>/</code> <code>sess_counts</code>, giving us our first click model. We see that document 97360810042 has the highest CTR and 24543750949 the lowest.</p>
+</div>
+<div class="readable-text intended-text" id="p57">
+<p>The preceding listing outputs the <em>ideal search results</em> based on the CTR. That is, if our LTR model was trained using this CTR click model to provide the relevance judgments, the search engine would produce this ordering as the optimal ranking. Throughout this chapter and the next, we’ll frequently visually display this ideal ranking to understand whether the click model builds reasonable training data (judgments). We can see the CTR-based ideal judgments for <code>transformers</code> <code>dark</code> <code>of</code> <code>the moon</code> in figure 11.2.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p58">
+<img alt="figure" height="618" src="../Images/CH11_F02_Grainger.png" width="675"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.2</span> Search results ranked by CTR for the query <code>transformers dark</code> <code>of</code> <code>the</code> <code>moon</code></h5>
+</div>
+<div class="readable-text" id="p59">
+<p>Examining the results of figure 11.2, a couple of things jump out:</p>
+</div>
+<ul>
+<li class="readable-text" id="p60"> The CTR for our top result (the Blu-ray of the movie <em>Transformers: Dark of the Moon</em>) seems rather low (<code>0.0824</code>, only a little better than the next judgment at <code>0.0734</code>). We might expect the Blu-ray’s relevance grade to be much higher than other results. </li>
+<li class="readable-text" id="p61"> The DVD for the movie <em>Transformers: Dark of The Moon</em> doesn’t even show up. It sits far below seemingly unrelated movies and secondary video games about the movie <em>Dark of The Moon</em>. We would expect the DVD to rank higher, maybe as high or higher than the Blu-ray. </li>
+</ul>
+<div class="readable-text" id="p62">
+<p>But perhaps <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code> is just a weird query. Let’s repeat the process for something completely unrelated, this time for <code>dryer</code> in figure 11.3.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p63">
+<img alt="figure" height="618" src="../Images/CH11_F03_Grainger.png" width="675"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.3</span> Search results ranked by CTR for the query <code>dryer</code>. Here we note the strange result for the movie <em>The Independent</em> that doesn’t seem relevant.</h5>
+</div>
+<div class="readable-text" id="p64">
+<p>In figure 11.3 we see other odd-looking results:</p>
+</div>
+<ul>
+<li class="readable-text" id="p65"> The first two results are clothes dryers, which seems good. </li>
+<li class="readable-text" id="p66"> Following the clothes dryers are clothes-dryer parts. Hmm, OK? </li>
+<li class="readable-text" id="p67"> A movie called <em>The Independent</em> shows up. This seems completely random. Why would this be rated so highly? </li>
+<li class="readable-text" id="p68"> Next there’s a washer accessory, which is kind of related. </li>
+<li class="readable-text" id="p69"> Finally, we see hair dryers, which shows another potential meaning of the word “dryer”. </li>
+</ul>
+<div class="readable-text" id="p70">
+<p>What do you think of the judgments produced by the CTR click model? Think back to what you learned in chapter 10. Remember this is the foundation, the very target, of your LTR model. Do you think these judgments would lead to a good LTR model that would ultimately succeed if put into production?</p>
+</div>
+<div class="readable-text intended-text" id="p71">
+<p>We also encourage you to ask yourself a more fundamental question: how could we even tell if a judgment list is good? Our subjective interpretation could be as flawed as the data in a click model. We’ll consider this more analytically in chapter 12. For this chapter, we’ll let our instincts guide us to possible problems. </p>
+</div>
+<div class="readable-text" id="p72">
+<h3 class="readable-text-h3" id="sigil_toc_id_158"><span class="num-string">11.1.4</span> Common biases in judgments</h3>
+</div>
+<div class="readable-text" id="p73">
+<p>We’ve seen so far that we can create probabilistic judgments—those with grades between 0.00 and 1.00—simply by dividing the number of clicks on a product by the number of times that product is returned by search. The output, however, seemed to be a bit wanting, as it included movies unrelated to the Transformers franchise. We also saw a movie placed in the search results for <code>dryer</code>!</p>
+</div>
+<div class="readable-text intended-text" id="p74">
+<p>It turns out that search click data is full of biases. Here, we’ll briefly define what we mean by “bias” before exploring each of these biases in the RetroTech click data.</p>
+</div>
+<div class="readable-text intended-text" id="p75">
+<p>With click models, a <em>bias</em> is a reason that raw user click data can have nothing to do with the relevance of search results. Instead, biases define how clicks (or the lack of clicks) reflect user psychology, search user interface design, or noisy data. We can separate biases into two broad groups: nonalgorithmic and algorithmic biases. <em>Algorithmic biases</em> are those inherent in the ranking, display, and interaction with search results. <em>Nonalgorithmic biases</em> occur for reasons only indirectly related to search ranking. </p>
+</div>
+<div class="readable-text intended-text" id="p76">
+<p>Algorithmic biases can include the following:</p>
+</div>
+<ul>
+<li class="readable-text" id="p77"> <em>Position bias</em><em> </em>—Users click on higher-ranked results more than lower-ranked results. </li>
+<li class="readable-text" id="p78"> <em>Confidence bias</em><em> </em>—Documents with little signal data influence judgments the same as documents with much more data. </li>
+<li class="readable-text" id="p79"> <em>Presentation Bias</em><em> </em>—If search never surfaces particular results, users never click them, so the click model won’t know whether they’re relevant. </li>
+</ul>
+<div class="readable-text" id="p80">
+<p>Nonalgorithmic biases, on the other hand, are biases like the following:</p>
+</div>
+<ul>
+<li class="readable-text" id="p81"> <em>Attractiveness bias</em><em> </em>—Some results appear attractive and generate clicks (perhaps due to better images or wording selection), but they turn out to be spammy or just irrelevant. </li>
+<li class="readable-text" id="p82"> <em>Performance bias</em><em> </em>—Users give up on slow searches, get distracted, and end up not clicking anything or clicking only on the earliest-returned results. </li>
+</ul>
+<div class="readable-text" id="p83">
+<p>Since this book is about <em>AI-powered</em> search, we will focus our discussion on <em>algorithmic</em> biases in search clickstream data. We’ll cover position bias and confidence bias in this chapter. Presentation bias will be covered in chapter 12.</p>
+</div>
+<div class="readable-text intended-text" id="p84">
+<p>But nonalgorithmic biases matter too! Search is a complex ecosystem that goes beyond relevance rankings. If results are frequently clicked, but follow-up actions like sales or other conversions don’t occur, it might not be a ranking problem—perhaps you have a problem with spammy products. Or you might have a problem with the product pages or checkout process. You may find yourself asked to improve “relevance” when the limiting factor is actually the user experience, the content, or the speed of search.</p>
+</div>
+<div class="readable-text intended-text" id="p85">
+<p>Now that we’ve reflected on our first click model, let’s work to overcome the first bias. </p>
+</div>
+<div class="readable-text" id="p86">
+<h2 class="readable-text-h2" id="sigil_toc_id_159"><span class="num-string">11.2</span> Overcoming position bias</h2>
+</div>
+<div class="readable-text" id="p87">
+<p>In the previous section, we saw our first click model in action: a simple CTR click model. This divided the number of times a product was clicked in search by the number of times it was returned in the top results. We saw that this was quite a flawed approach, noting numerous reasons it could be biased. Specifically, we pointed out position bias, confidence bias, and presentation bias as three of the algorithmic biases present in our click model. It’s time to begin tackling those problems!</p>
+</div>
+<div class="readable-text intended-text" id="p88">
+<p>In this section, we’ll focus on the first of those algorithmic biases, position bias, digging into the problem and working on a click model designed to overcome it.</p>
+</div>
+<div class="readable-text" id="p89">
+<h3 class="readable-text-h3" id="sigil_toc_id_160"><span class="num-string">11.2.1</span> Defining position bias</h3>
+</div>
+<div class="readable-text" id="p90">
+<p><em>Position bias</em> is present in most search systems. If users are shown search results, they tend to prefer highly ranked search results over lower ones, even when those lower results are in fact more relevant. Joachims, et al. in their paper “Evaluating the Accuracy of Implicit Feedback from Clicks and Query Reformulations in Web Search” (<a href="http://www.cs.cornell.edu/people/tj/publications/joachims_etal_07a.pdf">www.cs.cornell.edu/people/tj/publications/joachims_etal_07a.pdf</a>) discuss several reasons for position biases to exist:</p>
+</div>
+<ul>
+<li class="readable-text" id="p91"> <em>Trust bias</em><em> </em>—Users trust that the search engine must know what it’s doing, so they interact with higher results more. </li>
+<li class="readable-text" id="p92"> <em>Scanning behaviors</em><em> </em>—Users examine search results in specific patterns, such as top-to-bottom, and often don’t explore everything in front of them. </li>
+<li class="readable-text" id="p93"> <em>Visibility</em><em> </em>—Higher ranked results are likely to be rendered on the user’s screen, so users need to scroll to see the remaining results. </li>
+</ul>
+<div class="readable-text" id="p94">
+<p>With these factors in mind, let’s see if we can detect position bias in the RetroTech sessions.</p>
+</div>
+<div class="readable-text" id="p95">
+<h3 class="readable-text-h3" id="sigil_toc_id_161"><span class="num-string">11.2.2</span> Position bias in RetroTech data</h3>
+</div>
+<div class="readable-text" id="p96">
+<p>How much position bias exists in the sessions in the RetroTech dataset? If we can quantify this, we can consider how exactly we can remedy this problem. Let’s assess the bias quickly before we consider a new click model for overcoming these biases. </p>
+</div>
+<div class="readable-text intended-text" id="p97">
+<p>By looking at all sessions across all queries, we can compute an average CTR per rank. This will tell us how much position bias exists in the RetroTech click data. We do this in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p98">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.5</span> CTR per rank in search sessions across all queries</h5>
+<div class="code-area-container">
+<pre class="code-area">sessions = all_sessions()
+num_sessions = len(sessions["sess_id"].unique())
+ctr_by_rank = sessions.groupby("rank")["clicked"].sum() / num_sessions
+print(ctr_by_rank)</pre>
+</div>
+</div>
+<div class="readable-text" id="p99">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p100">
+<div class="code-area-container">
+<pre class="code-area">rank
+0     0.249727
+1     0.142673
+2     0.084218
+3     0.063073
+4     0.056255
+5     0.042255
+6     0.033236
+7     0.038000
+8     0.020964
+9     0.017364
+10    0.013982</pre>
+</div>
+</div>
+<div class="readable-text" id="p101">
+<p>You can see in listing 11.5 that users click higher positions more. The CTR of results at rank <code>0</code> is <code>0.25</code>, followed by <code>0.143</code> at rank <code>1</code>, and so on.</p>
+</div>
+<div class="readable-text intended-text" id="p102">
+<p>Further, we can see position bias when we compare the CTR judgments from earlier to the typical ranking for each product in a query. If position bias is present, then our judgment’s ideal ranking will end up resembling the typical ranking shown to users. We can analyze this by averaging the rank of each document over every session to see where they appear.</p>
+</div>
+<div class="readable-text intended-text" id="p103">
+<p>The following listing shows the typical search results page for <code>transformers dark of the moon</code> sessions.</p>
+</div>
+<div class="browsable-container listing-container" id="p104">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.6</span> Examining ranking for <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code></h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_average_rank(sessions):
+  avg_rank = sessions.groupby("doc_id")["rank"].mean()
+  return avg_rank.sort_values(ascending=True)
+
+sessions = get_sessions("transformers dark of the moon")
+average_rank = calculate_average_rank(sessions)
+print_series_data(average_rank, "mean_rank")</pre>
+</div>
+</div>
+<div class="readable-text" id="p105">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p106">
+<div class="code-area-container">
+<pre class="code-area">doc_id        mean_rank    name
+400192926087    13.0526    Transformers: Dark of the Moon - Original Soun...
+97363532149     12.1494    Transformers: Revenge of the Fallen - Widescre...
+93624956037     11.3298    Transformers: Dark of the Moon - Original Soun...
+...
+25192107191      2.6596    Fast Five - Widescreen - Blu-ray Disc
+24543701538      1.8626    The A-Team - Widescreen Dubbed Subtitle AC3 - ...
+47875842328      0.9808    Transformers: Dark of the Moon Stealth Force E...</pre>
+</div>
+</div>
+<div class="readable-text" id="p107">
+<p>In listing 11.6, some documents, like 24543701538 and 47875842328, historically occur toward the top of the search results for this query. They will be clicked more due to position bias. The typical results page, shown in figure 11.4, overlaps quite a lot with the CTR rank from figure 11.2.</p>
+</div>
+<div class="browsable-container figure-container" id="p108">
+<img alt="figure" height="618" src="../Images/CH11_F04_Grainger.png" width="675"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.4</span> Typical search result page for the <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code> query. Notice the irrelevant movies like <em>The A-Team</em> and <em>Fast Five</em> showing up. Also note the high ranking of the Wii game. The high position of these results and the fact that they get clicked more just by showing up higher in the list explains why the CTR model erroneously thinks these are relevant.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p109">
+<p>Unfortunately, CTR is primarily influenced by position bias. Users click on the odd movies in figure 11.4 because the search engine returns them highly for this query, not because they are relevant. If we train an LTR model just on CTR, we would be asking the LTR model to optimize for what users already see and interact with. We must account for position bias when automating LTR.</p>
+</div>
+<div class="readable-text intended-text" id="p110">
+<p>Next, let’s see how we can overcome position bias in a more robust click model that compensates for position bias. </p>
+</div>
+<div class="readable-text" id="p111">
+<h3 class="readable-text-h3" id="sigil_toc_id_162"><span class="num-string">11.2.3</span> Simplified dynamic Bayesian network: A click model that overcomes position bias</h3>
+</div>
+<div class="readable-text" id="p112">
+<p>You’ve seen the harm position bias can do in action! If we just use clicks directly, we will train our LTR model to reinforce the ranking already shown to users. It’s time to introduce a click model that can overcome position bias. We’ll start by defining an “examine”, a key concept in modeling position bias. We’ll then introduce one particular click model that uses this examine concept to adjust raw clicks to overcome position bias. </p>
+</div>
+<div class="readable-text" id="p113">
+<h4 class="readable-text-h4 sigil_not_in_toc">How click models overcome position bias with an “examine” event</h4>
+</div>
+<div class="readable-text" id="p114">
+<p>The basic CTR calculation doesn’t <em>really</em> account for how users scan search results. The user likely considers only a few results—biased by position—before deciding to click one or two. If we can capture which results users consciously consider before clicking, we might be able to overcome position bias. Click models do exactly this by defining the concept of an “examine”. We’ll explore this concept before building a click model that overcomes position bias. </p>
+</div>
+<div class="readable-text intended-text" id="p115">
+<p>What is an examine? You may be familiar with an <em>impressio</em><em>n</em>—when a UI element is rendered on the visible part of a user’s screen. In click models, we consider instead an <em>examine</em>, the probability that a search result was consciously considered by the user. As we know, users often fail to notice something right in front of their eyes. You may have even been that user! Figure 11.5 captures this concept, contrasting impressions with examines.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p116">
+<img alt="figure" height="581" src="../Images/CH11_F05_Grainger.png" width="1016"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.5</span> Impressions are whatever is rendered in the viewport (the monitor-shaped square) while examines are what the user considers (the results with eyeballs adjacent). Modeling what users examine helps correctly account for how users interact with search results.</h5>
+</div>
+<div class="readable-text" id="p117">
+<p>You can see in figure 11.5 that the user fails to notice the Nintendo game in the second position, even though it’s being rendered on their monitor. If the user didn’t examine it, a click model shouldn’t penalize the Nintendo game’s relevance.</p>
+</div>
+<div class="readable-text intended-text" id="p118">
+<p>Why does tracking examines help overcome position bias? Examines are how a click model understands position bias. Another way of saying “position bias” is “we think that whether users examine search results depends on the position.” As a result, modeling examines correctly is a core activity of most click models. Some click models, like the <em>position-based model</em> (PBM) attempt to determine an examine probability per position across all searches. Others, like the <em>cascading model</em> or, as we’ll see soon, the <em>dynamic Bayesian network</em> (DBN) models, assume that if a result was above the last click on the search page, it likely was examined. </p>
+</div>
+<div class="readable-text intended-text" id="p119">
+<p>For most click models, the top position usually has a higher examine probability than lower ones. This allows click models to adjust for clicks correctly. Items examined frequently and clicked are rewarded and seen as more relevant. Those examined but not clicked are seen as less relevant.</p>
+</div>
+<div class="readable-text intended-text" id="p120">
+<p>To make this more concrete, let’s dive deeper into one of the dynamic Bayesian network click models that uses examines to help overcome position bias. </p>
+</div>
+<div class="readable-text" id="p121">
+<h4 class="readable-text-h4 sigil_not_in_toc">Defining a simplified dynamic Bayesian network</h4>
+</div>
+<div class="readable-text" id="p122">
+<p>A <em>simplified dynamic Bayesian network</em> (SDBN) is a slightly less accurate version of the more complex dynamic Bayesian network (DBN) click model. These click models assume that, within a search session, the probability that a user examined a document depends heavily on whether it was positioned at or above the lowest clicked document. </p>
+</div>
+<div class="readable-text intended-text" id="p123">
+<p>SDBN’s algorithm first marks the last click of each session and then considers every document at or above this last click as examined. Finally, it computes a relevance grade by simply dividing the total clicks on a document by that document’s total examines. We thus get a kind of dynamic CTR, tracking within each user’s search session when they likely examined a result, and carefully using this to account for how that user evaluated its relevance. We then use these relevance evaluations in aggregate across sessions to train the SDBN click model.</p>
+</div>
+<div class="readable-text intended-text" id="p124">
+<p>Let’s follow this algorithm step by step. We’ll first mark the last click of each session in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p125">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.7</span> Marking which results were examined in each session</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_examine_probability(sessions):
+  last_click_per_session = sessions.groupby( <span class="aframe-location"/> #1
+    ["clicked", "sess_id"])["rank"].max()[True]  #1
+  sessions["last_click_rank"] = last_click_per_session <span class="aframe-location"/> #2
+  sessions["examined"] = \ <span class="aframe-location"/> #3
+    sessions["rank"] &lt;= sessions["last_click_rank"]  #3
+  return sessions
+
+sessions = get_sessions("dryer")
+probability_data = calculate_examine_probability(sessions).loc[3]
+print(probability_data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Computes last_click_per_ session, the max rank where clicked is True per session.
+     <br/>#2 Marks the last click rank in each session
+     <br/>#3 Sets every position at or above the last click to True (otherwise False)
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p126">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p127">
+<div class="code-area-container">
+<pre class="code-area">sess_id  query   rank    doc_id          clicked  last_click_rank  examined
+3        dryer   0.0     12505451713     False    9.0              True
+3        dryer   1.0     84691226727     False    9.0              True
+3        dryer   2.0     883049066905    False    9.0              True
+...
+3        dryer   8.0     14381196320     True     9.0              True
+3        dryer   9.0     74108096487     True     9.0              True
+3        dryer   10.0    74108007469     False    9.0              False
+3        dryer   11.0    12505525766     False    9.0              False
+...</pre>
+</div>
+</div>
+<div class="readable-text" id="p128">
+<p>In listing 11.7, we find the max rank where <code>clicked</code> is <code>True</code> by storing it in <code>last_click_per_session</code>. We then mark positions at or above <code>last_click_rank</code> as examined in our sessions for <code>dryer</code>, as you can see in the output for <code>sess_id=3</code>.</p>
+</div>
+<div class="readable-text intended-text" id="p129">
+<p>With every session updated with examines set to <code>True</code> or <code>False</code>, we now sum the total clicks and examines per document across all sessions.</p>
+</div>
+<div class="browsable-container listing-container" id="p130">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.8</span> Sum clicks and examines per <code>doc_id</code> for this query</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_clicked_examined(sessions):
+  sessions = calculate_examine_probability(sessions)
+  return sessions[sessions["examined"]] \
+    .groupby("doc_id")[["clicked", "examined"]].sum()
+
+sessions = get_sessions("dryer")
+clicked_examined_data = calculate_clicked_examined(sessions)
+print_dataframe(clicked_examined_data)</pre>
+</div>
+</div>
+<div class="readable-text" id="p131">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p132">
+<div class="code-area-container">
+<pre class="code-area">doc_id        clicked  examined    name
+12505451713       355      2707    Frigidaire - Semi-Rigid Dryer Ve...
+12505525766       268       974    Smart Choice - 6' 30 Amp 3-Prong...
+...
+36172950027        97       971    Tools in the Dryer: A Rarities C...
+...
+883049066905      286      2138    Whirlpool - Affresh Washer Cleaner
+883929085118       44       578    A Charlie Brown Christmas - AC3 ...</pre>
+</div>
+</div>
+<div class="readable-text" id="p133">
+<p>In listing 11.8, <code>sessions[sessions["examined"]]</code> filters to examined rows only. Then, for each <code>doc_id</code>, we compute the total <code>clicked</code> and <code>examined</code> counts. You can see that some results, like <code>doc_id=36172950027</code>, clearly were examined a lot with relatively few clicks from users.</p>
+</div>
+<div class="readable-text intended-text" id="p134">
+<p>Finally, we finish the SDBN algorithm in the following listing by computing clicks over examines.</p>
+</div>
+<div class="browsable-container listing-container" id="p135">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.9</span> Compute final SDBN grades</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_grade(sessions):
+  sessions = calculate_clicked_examined(sessions)
+  sessions["grade"] = sessions["clicked"] / sessions["examined"]
+  return sessions.sort_values("grade", ascending=False)
+
+query = "dryer"
+sessions = get_sessions(query)
+grade_data = calculate_grade(sessions)
+print_dataframe(grade_data)</pre>
+</div>
+</div>
+<div class="readable-text" id="p136">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p137">
+<div class="code-area-container">
+<pre class="code-area">doc_id      clicked  examined  grade     name
+856751002097    133       323  0.411765  Practecol - Dryer Balls (2-Pack)
+48231011396     166       423  0.392435  LG - 3.5 Cu. Ft. 7-Cycle High-Ef...
+84691226727     804      2541  0.316411  GE - 6.0 Cu. Ft. 3-Cycle Electri...
+...
+12505451713     355      2707  0.131141  Frigidaire - Semi-Rigid Dryer Ve...
+36172950027      97       971  0.099897  Tools in the Dryer: A Rarities C...
+883929085118     44       578  0.076125  A Charlie Brown Christmas - AC3 ...</pre>
+</div>
+</div>
+<div class="readable-text" id="p138">
+<p>In the output of listing 11.9, document 856751002097 is seen as the most relevant, with a grade of <code>0.4118</code>, or <code>133</code> clicks out of <code>323</code> examines.</p>
+</div>
+<div class="readable-text intended-text" id="p139">
+<p>Let’s revisit our two queries to see how the ideal results now look for <code>dryer</code> and <code>transformers dark of the moon</code>. Figure 11.6 shows results for <code>dryer</code>, and figure 11.7 shows the <code>transformers dark of the moon</code> results.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p140">
+<img alt="figure" height="1010" src="../Images/CH11_F06_Grainger.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.6</span> Ideal search results for the query <code>dryer</code> according to SDBN. Notice how SDBN seems to promote more results related to washing clothes.</h5>
+</div>
+<div class="browsable-container figure-container" id="p141">
+<img alt="figure" height="994" src="../Images/CH11_F07_Grainger.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.7</span> Ideal search results for the query <code>transformers</code> <code>dark</code> <code>of the moon</code> according to SDBN. We’ve now surfaced the DVD, Blu-ray movie, and CD soundtrack.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p142">
+<p>If we subjectively examine figures 11.6 and 11.7, both sets of judgments appear more intuitive than the previous CTR judgments. In our <code>dryer</code> example, the emphasis appears to be on washing clothes. There are some accessories (such as the dryer balls) that score roughly the same as the dryers themselves.</p>
+</div>
+<div class="readable-text intended-text" id="p143">
+<p>For <code>transformers dark of the moon</code>, we note the very high grade for the Blu-ray movie. We also see the DVD and CD soundtrack ranking higher than other secondary “Dark of the Moon” items such as video games. Somewhat oddly, the soundtrack CD is ranked higher than the movie DVD—perhaps we should investigate this more.</p>
+</div>
+<div class="readable-text intended-text" id="p144">
+<p>Of course, as we’ve said earlier, we’re using our intuition for now. In chapter 12, we’ll think more objectively about how we might evaluate judgment quality.</p>
+</div>
+<div class="readable-text intended-text" id="p145">
+<p>With our position bias more under control, we’ll now move on to fine-tune our judgments to handle another crucial bias: confidence bias. </p>
+</div>
+<div class="readable-text" id="p146">
+<h2 class="readable-text-h2" id="sigil_toc_id_163"><span class="num-string">11.3</span> Handling confidence bias: Not upending your model due to a few lucky clicks</h2>
+</div>
+<div class="readable-text" id="p147">
+<p>In the game of baseball, a player’s batting average tells us the proportion of hits they get for every at bat. A great professional player has a batting average greater than 0.3. Consider, however, a lucky little league baseball player stepping up to the plate for their first at bat and getting a hit. Their batting average is technically 1.0! We can conclude, then, that this young child is a baseball prodigy and will certainly have a great baseball career. Right?</p>
+</div>
+<div class="readable-text intended-text" id="p148">
+<p>Not quite! In this section, we’re going to explore the relevance side of this lucky little leaguer. What do we do with results that, perhaps simply out of luck, have been examined only a few times, each resulting in a click? These likely shouldn’t get a perfect grade of 1.0. We’ll see (and correct) this problem in our data.</p>
+</div>
+<div class="readable-text" id="p149">
+<h3 class="readable-text-h3" id="sigil_toc_id_164"><span class="num-string">11.3.1</span> The low-confidence problem in click data</h3>
+</div>
+<div class="readable-text" id="p150">
+<p>Let’s look at the data to see where low-confidence data points are biasing the training data. We’ll then see how we can compensate for low-confidence problems in the SDBN results. To define the problem, let’s look at the SDBN results for <code>transformers</code> <code>dark of</code> <code>the</code> <code>moon</code> and another, rarer, query to see common low-confidence situations. </p>
+</div>
+<div class="readable-text intended-text" id="p151">
+<p>If you recall, it was a bit suspicious that the soundtrack CD for the <em>Transformers Dark of The Moon</em> movie ranked so highly according to SDBN. When we examine the raw data underlying the rankings, we can see a possible problem. In the following listing, we reconstruct the SDBN data for <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code> to debug this problem, combining listings 11.7–11.9.</p>
+</div>
+<div class="browsable-container listing-container" id="p152">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.10</span> Recomputing SDBN statistics</h5>
+<div class="code-area-container">
+<pre class="code-area">query = "transformers dark of the moon"
+sessions = get_sessions(query)
+grade_data = calculate_grade(sessions)
+print_dataframe(grade_data)</pre>
+</div>
+</div>
+<div class="readable-text" id="p153">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p154">
+<div class="code-area-container">
+<pre class="code-area">doc_id      clicked  examined  grade     name
+97360810042     412       642  0.641745  Transformers: Dark of the Moon -...
+400192926087     62       129  0.480620  Transformers: Dark of the Moon -...
+97363560449      96       243  0.395062  Transformers: Dark of the Moon -...
+...
+47875841406      80       626  0.127796  Transformers: Dark of the Moon A...
+24543750949      31       313  0.099042  X-Men: First Class - Widescreen ...
+47875842335      53       681  0.077827  Transformers: Dark of the Moon S...</pre>
+</div>
+</div>
+<div class="readable-text" id="p155">
+<p>In the output of listing 11.10, note that the top result, the Blu-ray movie (<code>doc_id=97360810042</code>), has far more examines (<code>642</code>) than the soundtrack CD (<code>doc_id=400192926087</code> with <code>129</code> examines). The Blu-ray’s grade is more reliable, given it has had many times more opportunities for user interaction, making it less likely to be dominated by noisy, spurious clicks. The CD, on the other hand, has far fewer examines. Shouldn’t the Blu-ray’s relevance grade be weighed higher, given that it’s a more reliable data point compared to the CD with more limited data?</p>
+</div>
+<div class="readable-text intended-text" id="p156">
+<p>Often, this situation is even starker, particularly when dealing with less common queries. Regardless of the number of queries your search engine receives, some queries are likely to be received many times (<em>head queries</em>), some a moderate number of times (<em>torso queries</em>), and some very rarely (<em>long-tail queries</em>, or simply <em>tail queries</em>). Consider the query <code>blue ray</code>. You’ll note that this is a common misspelling of “Blu-ray”. As a common mistake, it likely mixes documents with a modest number of examines with documents receiving very few. In the following listing, we compute the SDBN statistics for <code>blue ray</code>, which suffers from this data sparsity problem. </p>
+</div>
+<div class="browsable-container listing-container" id="p157">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.11</span> SDBN judgments for a query with sparse data</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_sample_sessions(query):
+  sessions = get_sessions(query, index=False)
+  sessions = sessions[sessions["sess_id"] &lt; 50050] <span class="aframe-location"/> #1
+  return sessions.set_index("sess_id")
+
+sessions = get_sample_sessions("blue ray")
+grade_data = calculate_grade(sessions)
+print_dataframe(grade_data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Randomly samples a few sessions to simulate a typical long-tail case
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p158">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p159">
+<div class="code-area-container">
+<pre class="code-area">doc_id        clicked  examined  grade      name
+600603132872  1        1         1.000000   Blu-ray Disc Cases (10-Pack)
+827396513927  14       34        0.411765   Panasonic - Blu-Ray Player
+25192073007   8        20        0.400000   The Blues Brothers - Widescree...
+...
+25192107191   0        7         0.000000   Fast Five - Widescreen - Blu-r...
+23942972389   0        15        0.000000   Verbatim - 10-Pack 6x BD-R Dis...
+885170038875  0        5         0.000000   Panasonic - 9" Widescreen Port...</pre>
+</div>
+</div>
+<div class="readable-text" id="p160">
+<p>Looking at the output of listing 11.11, we see something unsettling. Like the most extreme case of our lucky little league baseball player, the most relevant result, doc 600603132872, receives a grade of <code>1.0</code> (perfectly relevant) after being examined by only one user! This grade of <code>1.0</code> ranks higher than the next result, which has a grade of <code>0.411</code> based on <code>34</code> examines. When you consider that doc 600603132872 is a set of Blu-ray cases and 827396513927 is a Blu-ray player, this feels more troubling. Our subjective interpretation might rank the player above the cases. Shouldn’t the fact that the second result was examined significantly more count for something?</p>
+</div>
+<div class="readable-text intended-text" id="p161">
+<p>What we’ve seen in these examples is <em>confidence bias</em>—when a judgment list has many grades based on statistically insignificant, spurious events. We say these spurious events with few examines have low confidence, whereas those with more examines provide a higher level of confidence. No matter your click model, you likely have many situations where queries have only a modest amount of traffic. To automate LTR, you’ll need to adjust your training data generation to account for the confidence you have in the data.</p>
+</div>
+<div class="readable-text intended-text" id="p162">
+<p>Now that you’ve seen the effect of low-confidence data, we can move on to some solutions you can apply when building your click model. </p>
+</div>
+<div class="readable-text" id="p163">
+<h3 class="readable-text-h3" id="sigil_toc_id_165"><span class="num-string">11.3.2</span> Using a beta prior to model confidence probabilistically</h3>
+</div>
+<div class="readable-text" id="p164">
+<p>We’ve just seen a few problems created by valuing low-confidence data too highly. Without adjusting your models based on your confidence in the data, you won’t be able to build a reliable automated LTR system. We could just filter these low-confidence examples out, but can we perhaps do something smarter? We’ll discuss an approach to preserving all the click-stream data in this section as we introduce the concept of beta distributions. But first, let’s discuss why using all data is generally preferred over simply filtering out the low-confidence examples. </p>
+</div>
+<div class="readable-text" id="p165">
+<h4 class="readable-text-h4 sigil_not_in_toc">Should we filter out low-confidence judgments?</h4>
+</div>
+<div class="readable-text" id="p166">
+<p>In our click model, should we just remove the low-confidence examples? We don’t generally recommend throwing data points away like that. </p>
+</div>
+<div class="readable-text intended-text" id="p167">
+<p>Filtering training data, such as data points below some minimum threshold of examines, reduces the amount of training data you have. Even with a reasonable threshold, documents for a query are typically examined on a power law distribution. Users examine some documents very frequently, while examining the vast majority very infrequently. A threshold can thus remove too many LTR examples and cause an LTR model to miss important patterns. Even with a threshold, you would be left with the challenge of how to weight medium-confidence examples against high-confidence ones, such as with the <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code> query from earlier.</p>
+</div>
+<div class="readable-text intended-text" id="p168">
+<p>Instead of using a hard cutoff, we advocate keeping low-confidence examples and just weighing all examples based on confidence level. We’ll do this using a beta distribution on the computed relevance grades. We’ll then apply this solution to fix our SDBN click model judgments. </p>
+</div>
+<div class="readable-text" id="p169">
+<h4 class="readable-text-h4 sigil_not_in_toc">Using the beta distribution to adjust for confidence</h4>
+</div>
+<div class="readable-text" id="p170">
+<p>Beta distributions help us draw conclusions from our clicks and examines based on probabilities instead of just biased occurrences. However, before we dive straight into using the beta distribution for judgments, let’s first examine the usefulness of a beta distribution using our previous, intuitive baseball batting-average analogy. </p>
+</div>
+<div class="readable-text intended-text" id="p171">
+<p>In baseball, a batting average of 0.295 for a player means that when this player goes to bat, there’s roughly a 29.5% chance they will get a hit. But if we wanted to know “What’s the batting average for that player, batting in Fenway Park in September on rainy days”, we’d probably have very little information to go on. The player may have only batted in those conditions a handful of times. Maybe they made 2 hits out of 3 tries in those conditions. We would conclude their batting average in these cases is 2/3 or 0.67. We know by now that this conclusion would be a mistake: do we really think, based on only 3 chances at bat, we can conclude that the player has an improbably high 66.7% chance of making a hit? A better approach would be to use the 0.295 general batting average as an initial belief, moving slowly away from that assumption as we gradually gain more data on “Fenway Park in September on rainy days” at bats.</p>
+</div>
+<div class="readable-text intended-text" id="p172">
+<p>The <em>beta distribution</em> is a tool used to manage beliefs. It turns a probability, like a batting average or judgment grade, into two values, <code>a</code> and <code>b</code>, that represent the probability as a distribution. The <code>a</code> and <code>b</code> values can be interpreted as follows:</p>
+</div>
+<ul>
+<li class="readable-text" id="p173"> <code>a</code> <em>(the successes)</em><em> </em>—The number of at bats with hits we’ve observed, or the number of examines with clicks </li>
+<li class="readable-text" id="p174"> <code>b</code> <em>(the failures)</em><em> </em>—The number of at bats without hits we’ve observed, or the number of examines without clicks </li>
+</ul>
+<div class="readable-text" id="p175">
+<p>With the beta distribution, the property <code>mean</code> <code>=</code> <code>a</code> <code>/</code> <code>(a</code> <code>+</code> <code>b)</code> holds, where <code>mean</code> is the initial point value, like a batting average. Given a <code>mean</code>, we can find many <code>a</code> and <code>b</code> values that satisfy <code>mean</code> <code>=</code> <code>a</code> <code>/</code> <code>(a</code> <code>+</code> <code>b)</code>. After all, <code>0.295</code> <code>=</code> <code>295</code> <code>/</code> <code>(295</code> <code>+</code> <code>705)</code> as does <code>0.295</code> <code>=</code> <code>1475</code> <code>/</code> <code>(1475</code> <code>+</code> <code>3525)</code> and so on. Yet each represents a different beta distribution. Keep this property in mind as we move along.</p>
+</div>
+<div class="readable-text intended-text" id="p176">
+<p>Let’s put these pieces together to see how the beta distribution prevents us from jumping to conclusions on spurious click (or batting) data.</p>
+</div>
+<div class="readable-text intended-text" id="p177">
+<p>We could declare our initial belief about any document’s relevance grade as <code>0.125</code>. This is like declaring the baseball player’s batting average to be 0.295 as our initial belief of their performance. We can use the beta distribution to update the initial belief for specific cases like “Fenway Park in September on rainy days” or a specific document’s relevance for a search query.</p>
+</div>
+<div class="readable-text intended-text" id="p178">
+<p>The first step is to pick an <code>a</code> and a <code>b</code> that capture our initial belief. For our relevance case, we could choose many values for <code>a</code> and <code>b</code> that satisfy <code>0.125</code> <code>=</code> <code>a</code> <code>/</code> <code>(a</code> <code>+</code> <code>b)</code>. Suppose we choose <code>a=2.5,</code> <code>b=17.5</code> as our relevance belief on documents with no clicks. Graphing this, we would see the distribution in figure 11.8.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p179">
+<img alt="figure" height="812" src="../Images/CH11_F08_Grainger.png" width="1050"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.8</span> Beta distribution for a relevance grade of 0.125. The mean corresponds to our default relevance grade. We see the distribution of most likely relevance grades.</h5>
+</div>
+<div class="readable-text" id="p180">
+<p>We can observe now what happens when we see a document’s first click, incrementing that document’s <code>a</code> to 3.5. In figure 11.9 we have <code>a=3.5, b=17.5</code>.</p>
+</div>
+<div class="browsable-container figure-container" id="p181">
+<img alt="figure" height="806" src="../Images/CH11_F09_Grainger.png" width="1050"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.9</span> The beta distribution for a relevance grade after adding one click is now <code>0.1667</code>. Adding a click “pulls” the probability distribution a little toward one direction, updating the initial belief.</h5>
+</div>
+<div class="readable-text intended-text" id="p182">
+<p>The mean relevance grade for the updated distribution is now <code>3.5</code> <code>/</code> <code>(17.5</code> <code>+</code> <code>3.5)</code> or <code>0.1667</code>, effectively pulling the initial belief a little higher, given its first click. Without the beta distribution, this document would have 1 click and 1 examine, resulting in a grade of <code>1</code>.</p>
+</div>
+<div class="readable-text" id="p183">
+<p>We refer to the starting point probability distribution (the chosen <code>a</code> and <code>b</code>) as the <em>prior distribution</em>, or just a <em>prior</em>. This is our initial belief in what will happen. The distribution after updating <code>a</code> and <code>b</code> for a specific case, like a document, is a <em>posterior distribution</em>, or just a <em>posterior</em>. This is our updated belief. <strong><span class="aframe-location"/></strong></p>
+</div>
+<div class="readable-text intended-text" id="p184">
+<p>Recall that we said earlier that many initial <code>a</code> and <code>b</code> values could be chosen. This has significance, as the magnitude of the initial <code>a</code> and <code>b</code> make our prior weaker or stronger. We could choose any value for <code>a</code> and <code>b</code> where <code>a</code> <code>/</code> <code>(a</code> <code>+</code> <code>b)</code> <code>=</code> <code>0.125</code>. But note what happens if we choose a very small value <code>a=0.25,</code> <code>b=1.75</code>. Then we go to update <code>a</code> by incrementing it by 1. The new expected value of the posterior distribution is <code>1.25 /</code> <code>(1.25</code> <code>+</code> <code>1.75)</code> or ~<code>0.416</code>. That’s a major effect for just one click. Conversely, using very high <code>a</code> and <code>b</code> values would make a prior so strong it would barely budge. When you use the beta distribution, you’ll want to tune the magnitude of the prior so updates have the desired effect.</p>
+</div>
+<div class="readable-text intended-text" id="p185">
+<p>Now that you’ve seen this handy tool for capturing SDBN grades in practice, let’s see how the beta distribution can help with our SDBN confidence problems. </p>
+</div>
+<div class="readable-text" id="p186">
+<h4 class="readable-text-h4 sigil_not_in_toc">Using a beta prior in SDBN click models</h4>
+</div>
+<div class="readable-text" id="p187">
+<p>Let’s finish the chapter by updating the SDBN click model using the beta distribution. If you use other click models, like the ones alluded to earlier in this chapter, you’ll need to reflect on how confidence can be solved in those cases. The beta distribution might be a useful tool there, as well. </p>
+</div>
+<div class="readable-text intended-text" id="p188">
+<p>If you recall, the output of SDBN was a count of <code>clicks</code> and <code>examines</code> for each document. In listing 11.12, we pick up from listing 11.11, which computed the SDBN for the <code>blue ray</code> query. We’ll choose a prior grade of <code>0.3</code> for use with our SDBN model. This is our default grade when we don’t have information about the document—possibly derived from the typical grade we see in our judgments. We’ll then compute a prior beta distribution (<code>prior_a</code> and <code>prior_b</code>) using this prior grade.</p>
+</div>
+<div class="browsable-container listing-container" id="p189">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.12</span> Computing prior beta distribution</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_prior(sessions, prior_grade, prior_weight):
+  sessions = calculate_grade(sessions)
+  sessions["prior_a"] = prior_grade * prior_weight <span class="aframe-location"/> #1
+  sessions["prior_b"] = (1 - prior_grade) * prior_weight  #1
+  return sessions
+
+prior_grade = 0.3 <span class="aframe-location"/> #2
+prior_weight = 100 <span class="aframe-location"/> #3
+query = "blue ray"
+sessions = get_sample_sessions(query)
+prior_data = calculate_prior(sessions, prior_grade, prior_weight)
+print(prior_data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Resulting a and b satisfying prior_grade = prior_a / (prior_a + prior_b)
+     <br/>#2 Default prior relevance grade
+     <br/>#3 How much confidence to place in the prior (prior_weight = a + b)
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p190">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p191">
+<div class="code-area-container">
+<pre class="code-area">doc_id          clicked  examined  grade     prior_a  prior_b
+600603132872    1.0      1.0       1.000000  30.0     70.0
+827396513927    14.0     34.0      0.411765  30.0     70.0
+25192073007     8.0      20.0      0.400000  30.0     70.0
+885170033412    6.0      19.0      0.315789  30.0     70.0
+...</pre>
+</div>
+</div>
+<div class="readable-text" id="p192">
+<p>In listing 11.12, with a weight of <code>100</code>, you can confirm that <code>prior_grade</code> <code>=</code> <code>prior_a</code> <code>/ (prior_a</code> <code>+</code> <code>prior_b)</code> or <code>0.3</code> <code>=</code> <code>30 /</code> <code>(30</code> <code>+</code> <code>70)</code>. This has captured an initial probability distribution for our prior.</p>
+</div>
+<div class="readable-text intended-text" id="p193">
+<p>In listing 11.13, we need to compute a posterior distribution and corresponding relevance grade. We do this by incrementing <code>prior_a</code> for clicks (our “successes”), and <code>prior_b</code> for examines with no clicks (our “failures”). Finally, we compute an updated grade as the <code>beta_grade</code>.</p>
+</div>
+<div class="browsable-container listing-container" id="p194">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.13</span> Computing posterior beta distribution</h5>
+<div class="code-area-container">
+<pre class="code-area">def calculate_sdbn(sessions, prior_grade=0.3, prior_weight=100):
+  sessions = calculate_prior(sessions, prior_grade, prior_weight)
+  sessions["posterior_a"] = (sessions["prior_a"] + <span class="aframe-location"/> #1
+                             sessions["clicked"])  #1
+ sessions["posterior_b"] = (sessions["prior_b"] +   <span class="aframe-location"/> #2
+    sessions["examined"] - sessions["clicked"])  #2
+  sessions["beta_grade"] = (sessions["posterior_a"] / <span class="aframe-location"/> #3
+    (sessions["posterior_a"] + sessions["posterior_b"]))  #3
+  return sessions.sort_values("beta_grade", ascending=False)
+
+query = "blue ray"
+sessions = get_sample_sessions(query)
+bluray_sdbn_data = calculate_sdbn(sessions)
+print(bluray_sdbn_data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Updates our belief about the document’s relevance, increasing from prior_a by the number of clicks
+     <br/>#2 Updates our belief about the document’s lack of relevance, increasing from prior_b by examines without clicks
+     <br/>#3 Computes a new grade from posterior_a and posterior_b
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p195">
+<p>Output (truncated):</p>
+</div>
+<div class="browsable-container listing-container" id="p196">
+<div class="code-area-container">
+<pre class="code-area">doc_id        cl  ex  grade  pr_a  pr_b  posterior_a posterior_b beta_grade
+827396513927  14  34  0.411  30.0  70.0  44.0        90.0        0.328358
+25192073007   8   20  0.400  30.0  70.0  38.0        82.0        0.316667
+600603132872  1   1   1.000  30.0  70.0  31.0        70.0        0.306931
+...
+786936805017  1   14  0.071  30.0  70.0  31.0        83.0        0.271930
+36725608511   0   11  0.000  30.0  70.0  30.0        81.0        0.270270
+23942972389   0   15  0.000  30.0  70.0  30.0        85.0        0.260870</pre>
+</div>
+</div>
+<div class="readable-text" id="p197">
+<p>In the output of listing 11.13, the column headers <code>clicked</code>, <code>examined</code>, <code>prior</code> <code>a</code>, and <code>prior_b</code> were shortened for space to <code>cl</code>, <code>ex</code>, <code>pr_a</code>, and <code>pr_b</code>. Notice our new ideal results for the query <code>blue</code> <code>ray</code> by sorting on <code>beta</code> <code>grade</code>. The <code>beta</code> <code>grade</code> values remain closer to the prior grade of <code>0.3</code>. Notably, our Blu-ray cases have slid to the third most relevant slot, with the single click not pushing the grade much past <code>0.3</code>.</p>
+</div>
+<div class="readable-text intended-text" id="p198">
+<p>When we repeat this calculation of judgments for <code>dryer</code> and <code>transformers</code> <code>dark of</code> <code>the</code> <code>moon</code> in figures 11.10 and 11.11, we note that the order is the same, but the grades themselves stay closer to the prior of <code>0.3</code> depending on our confidence in the data.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p199">
+<img alt="figure" height="629" src="../Images/CH11_F10_Grainger.png" width="675"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.10</span> Beta-adjusted SDBN results for <code>dryer</code>. Notice the grades now are more tightly focused around the prior grade <code>0.3</code>, with some above or below this prior.</h5>
+</div>
+<div class="browsable-container figure-container" id="p200">
+<img alt="figure" height="642" src="../Images/CH11_F11_Grainger.png" width="675"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.11</span> Beta-adjusted SDBN results for <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code>. In figure 11.7, we noted the soundtrack seemed oddly high (<code>0.48</code>) in its relevance grade despite fewer clicks than the Blu-ray movie. We now see the soundtrack’s relevance closer to the prior of <code>0.4</code>.</h5>
+</div>
+<div class="readable-text" id="p201">
+<p>Figure 11.11 notably shows less confidence in the soundtrack when compared to the SDBN judgments without modeling confidence (figure 11.7). The grade has dropped from <code>0.4806</code> to <code>0.4017</code>. Notably, the DVD grade following the CD has not changed much, only changing from <code>0.3951</code> to <code>0.3673</code>, because of our higher confidence in that observation. As more observations come in, it’s likely the CD would even move down in ranking if this pattern continues.</p>
+</div>
+<div class="readable-text intended-text" id="p202">
+<p>Most of your queries won’t be like <code>dryer</code> or <code>transformers</code> <code>dark</code> <code>of</code> <code>the</code> <code>moon</code>. They’ll be more like <code>blue</code> <code>ray</code>. To meaningfully work with these queries for LTR, you’ll need to be able to handle these “small data” problems, such as having lower confidence.</p>
+</div>
+<div class="readable-text intended-text" id="p203">
+<p>We are beginning to have a more reasonable training set for automating LTR, but there’s still work to do. In the next chapter, we’ll move to look at the complete search feedback loop. This includes working on presentation bias. Recall that this is the bias where users never examine what search never returns to them. How can we add surveillance to the automated LTR feedback loop to both overcome presentation bias and ensure that our model—and by extension, the judgments—are working as expected?</p>
+</div>
+<div class="readable-text intended-text" id="p204">
+<p>Before we examine those topics in the next chapter, though, let’s look again at training an LTR model end-to-end so you can experiment with what you’ve learned so far. </p>
+</div>
+<div class="readable-text" id="p205">
+<h2 class="readable-text-h2" id="sigil_toc_id_166"><span class="num-string">11.4</span> Exploring your training data in an LTR system</h2>
+</div>
+<div class="readable-text" id="p206">
+<p>Great work! You’ve made it through chapters 10 and 11. You now have what you need to develop reasonable LTR training data and train an LTR model. You’re likely eager to train a model from your work. Instead of repeating the extensive code from chapter 10 here, we’ve created an “End-to-End Automated Learning to Rank” notebook in the ch11 folder of the book’s codebase (4.end-to-end-auto-ltr.ipynb). It will allow you to experiment with LTR on the RetroTech data (figure 11.12). </p>
+</div>
+<div class="readable-text intended-text" id="p207">
+<p>In this notebook, you can fine-tune the inner LTR engine—the feature engineering and model creation that attempts to satisfy the training data. You can also explore the implications of altering the automated inputs to this engine: the training data itself. Altogether, this notebook has every step you’ve learned about so far:</p>
+</div>
+<ol>
+<li class="readable-text" id="p208"> Processing raw click session data into judgments, using the SDBN click model and a beta prior </li>
+<li class="readable-text" id="p209"> Transforming the dataframe into the judgments we used in chapter 10 </li>
+<li class="readable-text" id="p210"> Loading a selection of LTR features to use with the search engine’s feature store capabilities </li>
+<li class="readable-text" id="p211"> Logging these features from the search engine and then performing a pairwise transformation of the data into a suitable training set </li>
+<li class="readable-text" id="p212"> Training and uploading a model to the search engine’s model store </li>
+<li class="readable-text" id="p213"> Searching and ranking with the model<span class="aframe-location"/> </li>
+</ol>
+<div class="browsable-container figure-container" id="p214">
+<img alt="figure" height="547" src="../Images/CH11_F12_Grainger.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.12</span> Notebook exploring the full LTR system. You can take the model for a test drive.</h5>
+</div>
+<div class="readable-text" id="p215">
+<p>We invite you to tune the click model parameters and to think of new features, and different ways of arriving at the final LTR model, discovering which ones seem to yield the best results. While you do this tuning, please be sure to question your own subjective assumptions compared to what the data is showing you.</p>
+</div>
+<div class="readable-text intended-text" id="p216">
+<p>With out-of-the box tuning, we’ll leave you with figure 11.13, showing the current search results for the query <code>transformers</code> <code>dvd</code>. Try different queries here. How can you help the model better discriminate between relevant and irrelevant documents? Are the problems you encounter due to the training data used? Or are they due to the features used to construct the model?<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p217">
+<img alt="figure" height="664" src="../Images/CH11_F13_Grainger.png" width="900"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.13</span> How our trained model ranks <code>transformers dvd</code>. Do you think you could improve on this?</h5>
+</div>
+<div class="readable-text" id="p218">
+<p>In the next chapter, we’ll finalize the automated LTR system by performing surveillance on the model. Most crucially, we’ll consider how to overcome <em>presentation bias</em>. Even with the adjustments in this chapter, users will still only ever have a chance to act on what the search shows them. So we still have a feedback loop biased heavily by the current relevance ranking. How can we look out for this problem and overcome it? In the next chapter, we’ll consider these problems as our LTR model continues to iteratively incorporate incoming user interactions and actively surface additional promising results. </p>
+</div>
+<div class="readable-text" id="p219">
+<h2 class="readable-text-h2" id="sigil_toc_id_167">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p220"> We can automate learning to rank (LTR) if we can reliably transform user click data into relevance judgments using a click model. However, the click model must be designed carefully to reduce bias in the data and ensure the reliability of the automated LTR system when deployed to live users. </li>
+<li class="readable-text" id="p221"> Learned (implicit) relevance judgment lists can be plugged into existing LTR training processes to either replace or augment manually created judgments. </li>
+<li class="readable-text" id="p222"> Raw clicks are usually problematic in automated LTR models due to common biases in how algorithms rank and present search results to users. </li>
+<li class="readable-text" id="p223"> Among the visible search results, position bias says users prefer results ranked near the top. We can overcome position bias by using a click model that tracks the probability that a user has examined a document or a position in the search results. </li>
+<li class="readable-text" id="p224"> Most search applications have a lot of spurious click data. When training data is biased toward these spurious results, we have confidence bias. We can overcome confidence bias by using a beta distribution to create a prior that we update gradually with new observations as they come in. </li>
+</ul>
+</div></body></html>

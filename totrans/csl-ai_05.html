@@ -1,0 +1,1408 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">4</span> </span> <span class="chapter-title-text">Testing the DAG with causal constraints</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Using d-separation to reason about how causality constrains conditional independence</li>
+<li class="readable-text" id="p3">Using NetworkX and pgmpy to do d-separation analysis</li>
+<li class="readable-text" id="p4">Refuting a causal DAG using conditional independence tests</li>
+<li class="readable-text" id="p5">Refuting a causal DAG when there are latent variables</li>
+<li class="readable-text" id="p6">Using and applying causal discovery algorithm constraints</li>
+</ul>
+</div>
+<div class="readable-text" id="p7">
+<p>Our causal DAG, or any causal model, captures a set of assumptions about the real world. Often, those assumptions are testable with data. If we test an assumption, and it turns out not to hold, then our causal model is wrong. In other words, our test has “falsified” or “refuted” our model. When this happens, we go back to the drawing board, come up with a better model, and try to refute it again. We repeat this loop until we get a model that is robust to our attempts to refute it.</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>In this chapter, we’ll focus on using statistical conditional independence-based testing to test our causal DAG. As you learn more about the assumptions we can pack into a causal model, and the inferences those assumptions allow you to make, you’ll learn new ways to test and refute your model. The workflow you’ll learn for running conditional independence tests in this chapter can be applied to new tests you may come up with.</p>
+</div>
+<div class="readable-text" id="p9">
+<h2 class="readable-text-h2" id="sigil_toc_id_74"><span class="num-string">4.1</span> How causality induces conditional independence</h2>
+</div>
+<div class="readable-text" id="p10">
+<p>Causal relationships constrain the data in certain ways, one of which is by forcing variables to be conditionally independent. This forced conditional independence gives us a way to test our model with data using statistical tests for independence; if we find strong evidence that two variables are dependent when the DAG says they shouldn’t be, our DAG is wrong.</p>
+</div>
+<div class="readable-text intended-text" id="p11">
+<p>In this chapter, we’ll test our causal DAG using these statistical independence tests, including independence tests on <em>functions</em> of observed variables that we can run when other variables are latent in the data. At the end, we’ll look at how these ideas enable <em>causal discovery algorithms </em>that try to learn the causal DAG directly from data.</p>
+</div>
+<div class="readable-text intended-text" id="p12">
+<p>But before that, let’s see how causality induces conditional independence. Consider again our blood type example, shown in figure 4.1. Your father’s blood type is a direct cause of yours, and your paternal grandfather’s blood type is an indirect cause. Despite being a cause of your blood type, your paternal grandfather’s blood type is conditionally independent of your blood type, given your father’s.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p13">
+<img alt="figure" height="310" src="../Images/CH04_F01_Ness.png" width="749"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.1</span> Causality induces conditional independence. Your blood type is conditionally independent of your paternal grandfather’s blood type (an indirect cause), given your father’s blood type (a direct cause).</h5>
+</div>
+<div class="readable-text" id="p14">
+<p>We know this from causality; the parents’ blood types completely determine the blood type of the child. Your paternal grandfather’s and grandmother’s blood types completely determined your father’s blood type, but your father’s and mother’s blood types completely determined yours. Once we know your father’s blood type, there is nothing more your paternal grandfather’s blood type can tell us. In other words, your grandparent’s blood type is independent of yours, given your parents.</p>
+</div>
+<div class="readable-text" id="p15">
+<h3 class="readable-text-h3" id="sigil_toc_id_75"><span class="num-string">4.1.1</span> Colliders</h3>
+</div>
+<div class="readable-text" id="p16">
+<p>Now we’ll consider the <em>collider,</em> an interesting way in which causality induces cases of dependence between variables that are typically independent. Consider the canonical example in figure 4.2. Whether the sprinkler is on or off, and whether it is raining or not, are causes of whether the grass is wet, but knowing that the sprinkler is off won’t help you predict whether it’s raining. In other words, the state of the sprinkler and whether it’s raining are independent. But when you know the grass is wet, also knowing that the sprinkler is off tells you it <em>must</em> be raining. So while the state of the sprinkler and the presence or absence of rain are independent, they become conditionally dependent, given the state of the grass.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p17">
+<img alt="figure" height="145" src="../Images/CH04_F02_Ness.png" width="379"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.2</span> The sprinkler being on or off and whether or not it rains causes the grass to be wet or not. Knowing that the sprinkler is off won’t help you predict whether it’s raining—the sprinkler state and rain state are independent. But given that the grass is wet, knowing the sprinkler is off tells you it must be raining—the sprinkler state and rain state are conditionally dependent, given the state of the grass.</h5>
+</div>
+<div class="readable-text" id="p18">
+<p> In this case “wet grass” is a <em>collide</em><em>r</em>: an effect with at least two independent causes. Colliders are interesting because they illustrate how causal variables can be independent but then become dependent if we condition on a shared effect variable. In conditional independence terms, the parent causes are independent (sprinkler ⊥ rain) but become dependent after we observe (condition on) the child (sprinkler ⟂̷ rain | wet grass).</p>
+</div>
+<div class="readable-text intended-text" id="p19">
+<p>For another example, let’s look at blood type again, as shown in figure 4.3.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p20">
+<img alt="figure" height="148" src="../Images/CH04_F03_Ness.png" width="399"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.3</span> Mothers and fathers are usually unrelated, so knowing mother’s blood type can’t help predict the father’s blood type. But if we know the mother’s blood type and the child’s blood type, it narrows down the possible blood types of the father.</h5>
+</div>
+<div class="readable-text" id="p21">
+<p>If we assume the mother and father are unrelated, the mother’s blood type tells us nothing about the father’s blood type—(mother’s blood type ⊥ father’s blood type). But suppose we know the child’s blood type is B. Does that help us use the mother’s blood type to predict the father’s blood type?</p>
+</div>
+<div class="readable-text intended-text" id="p22">
+<p>To answer this, examine the standard blood type table in figure 4.4. We see that if mother has blood type A and the child has blood type B, then possibly blood types for the father are B and AB.</p>
+</div>
+<div class="browsable-container figure-container" id="p23">
+<img alt="figure" height="282" src="../Images/CH04_F04_Ness.png" width="637"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.4</span> Knowing the mother’s blood type can help you narrow down the father’s blood type if you know the child’s blood type.</h5>
+</div>
+<div class="readable-text" id="p24">
+<p>Knowing the mother’s blood type alone doesn’t tell us anything about the father’s blood type. But if we add information about the child’s blood type (the collider), we can narrow down the father’s blood type from four to two possibilities. In other words, (mother’s blood type ⊥ father’s blood type), but the mother’s and father’s blood type become dependent once we condition on the child’s blood type.<span class="aframe-location"/></p>
+</div>
+<div class="readable-text intended-text" id="p25">
+<p>Colliders show up in various parts of causal inference. In section 4.6, we’ll see that colliders are important in the task of causal discovery, where we try to learn a causal DAG from data. When we look at causal effects in chapters 7 and 11, we’ll see how accidentally “adjusting for” colliders can introduce unwanted “collider bias” when inferring causal effects.</p>
+</div>
+<div class="readable-text intended-text" id="p26">
+<p>For now, we’ll note that colliders can be at odds with our statistical intuition, because they describe how causal logic leads to situations where two things are independent but “suddenly” become dependent when you condition on a third or more variables.</p>
+</div>
+<div class="readable-text" id="p27">
+<h3 class="readable-text-h3" id="sigil_toc_id_76"><span class="num-string">4.1.2</span> Abstracting independence with a causal graph<span class="aframe-location"/></h3>
+</div>
+<div class="browsable-container figure-container" id="p28">
+<img alt="figure" height="252" src="../Images/CH04_F05_Ness.png" width="295"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.5</span> In causal effect inference, we are interested in statistically quantifying how much a cause (treatment) affects an effect (outcome). <em>Confounders</em> are common causes that are a source of non-causal correlation between treatment and outcome. Causal effect inference requires “adjusting” for confounders. D-separation is the backbone of the theory that tells us how.</h5>
+</div>
+<div class="readable-text" id="p29">
+<p>In the previous section, we used the basic rules of blood type heredity to show how causality induces conditional independence. If we want to write code that can help us make causal inferences across different domains, we’ll need an abstraction for mapping causal relationships to conditional independence that doesn’t rely on the rules of a particular domain. “D-separation” solves this problem.</p>
+</div>
+<div class="readable-text intended-text" id="p30">
+<p><em>D-separation </em>and<em> d-connection</em> refer to how we use graphs to reason about conditional independence. The concepts are novel at first glance, but they will be some of your most important tools for graph-based causal reasoning. As a bit of a spoiler for chapter 7, consider the problem of causal effect inference, illustrated in figure 4.5. In causal inference, you are interested in statistically quantifying how much a cause (often called a “treatment”) affects an effect (an “outcome”).</p>
+</div>
+<div class="readable-text" id="p31">
+<p>As you saw in chapter 3, you can describe variables in a DAG in terms of their role in a causal inference task. One role in the task of causal effect inference is the <em>confounder</em>. Confounders are common causes that are a source of non-causal correlation between the treatment and the effect. To estimate the causal effect of the treatment on the outcome, we have to “adjust” for the confounder. The theoretical justification for doing so is based on “d-separating” the path {treatment ← confounder → outcome} and zooming in on the path {treatment → outcome}. </p>
+</div>
+<div class="readable-text" id="p32">
+<h2 class="readable-text-h2" id="sigil_toc_id_77"><span class="num-string">4.2</span> D-separation and conditional independence</h2>
+</div>
+<div class="readable-text" id="p33">
+<p>Recall the following ideas from previous chapters:</p>
+</div>
+<ul>
+<li class="readable-text" id="p34"> A causal DAG is a model of the data generating process (DGP). </li>
+<li class="readable-text" id="p35"> The DGP entails a joint probability distribution. </li>
+<li class="readable-text" id="p36"> Causal relationships induce independence and conditional independence between variables in the joint probability distribution. </li>
+</ul>
+<div class="readable-text" id="p37">
+<p>D-separation and d-connection are graphical abstractions for reasoning about the conditional independence in the joint probability distribution that a causal DAG models. The concept refers to nodes and paths between nodes in the causal DAG; the nodes and paths are “d-connected” or “d-separated,” where the “d” stands for “directional.” The idea is for a statement like “these nodes are d-separated in the graph” to correspond to a statement like “these variables are conditionally independent.” D-separation is not about stating what causes what; it is about whether paths between variables in the DAG indicate the absence or presence of dependence between those variables in the joint probability distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p38">
+<p>We want to make this correspondence because reasoning about graphs is easier than reasoning about probability distributions directly; tracing paths between nodes is easier than taking graduate-level classes in probability theory. Also, recall from chapter 2 that graphs are fundamental to algorithms and data structures, and that statistical modeling benefits from making conditional independence assumptions. </p>
+</div>
+<div class="readable-text" id="p39">
+<h3 class="readable-text-h3" id="sigil_toc_id_78"><span class="num-string">4.2.1</span> D-separation: A gateway to simplified causal analysis</h3>
+</div>
+<div class="readable-text" id="p40">
+<p>Suppose we have a statement that <em>U</em> and <em>V</em> are conditionally independent given <em>Z</em> (i.e., <em>U</em>⊥<em>V</em><em>  </em>|<em>Z</em><em> </em>). Our task is to define a corresponding statement purely in graphical terms. We’ll write this statement as <em>U</em>⊥<sub><em>G</em></sub><em>V</em><em>  </em>|<em>Z</em> and read it as “<em>U</em> and <em>V</em> are d-separated by <em>Z</em> in graph <em>G.</em>”</p>
+</div>
+<div class="readable-text intended-text" id="p41">
+<p>Let <em>Z</em> represent a set of nodes called the d-separating set or “blockers.” In terms of conditional independence, <em>Z</em> corresponds to a set of variables we condition on. Our goal is to define d-separation such that the nodes in <em>Z</em> in some sense “block” the dependence between <em>U</em> and <em>V</em> that is implied by the causal structure of our DAG.</p>
+</div>
+<div class="readable-text intended-text" id="p42">
+<p>Next, let <em>P</em> be a <em>path</em>, meaning a series of connected edges (and nodes) between two nodes. It does not matter if the nodes on the paths are observed or not in your data (we’ll see how the data factors in later). Our definition of “path” does not depend on the orientation of the edges; for example, {<em>x</em> → <em>y</em> → <em>z</em><em> </em>}, {<em>x</em> ← <em>y</em> → <em>z</em><em> </em>}, {<em>x</em> ← <em>y</em> ← <em>z</em><em> </em>}, and {<em>x</em> → <em>y</em> ← <em>z</em><em> </em>} are all paths between <em>x</em> and <em>z</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p43">
+<p>Finally, let’s revisit the collider. A collider structure refers to a motif like <em>x</em> → <em>y</em> ← <em>z</em> where the middle node <em>y</em> (the collider) has incoming edges.</p>
+</div>
+<div class="readable-text intended-text" id="p44">
+<p>We’ll define d-separation now. First, two nodes <em>u</em> and <em>v</em> are said to be d-separated (blocked) by <em>Z</em> if all <em>paths</em> between them are d-separated by <em>Z</em>. If any of those paths between <em>u</em> and <em>v</em> are not d-separated, then <em>u</em> and <em>v</em> are d-connected. </p>
+</div>
+<div class="readable-text intended-text" id="p45">
+<p>Let’s define d-separation for a path. A path <em>P</em> is d-separated by node set <em>Z</em> if any of four criteria are met.</p>
+</div>
+<ol>
+<li class="readable-text" id="p46"> <em>P</em> contains a chain, <em>i</em> → <em>m</em> → <em>j</em>, such that the middle node <em>m</em> is in <em>Z.</em> </li>
+<li class="readable-text" id="p47"> <em>P</em> contains a chain, <em>i</em> ← <em>m</em> ← <em>j</em>, such that the middle node <em>m</em> is in <em>Z.</em> </li>
+<li class="readable-text" id="p48"> <em>P</em> contains a child-parent-child structure <em>i</em> ← <em>m</em> → <em>j</em>, such that the middle (parent) node <em>m</em> is in <em>Z.</em> </li>
+</ol>
+<div class="readable-text" id="p49">
+<p>Let’s pause. Criteria 1–3 are just walking through the ways we can orient edges between three nodes. If this keeps up, then <em>P</em> is always d-separated if a node on <em>P</em> is in set <em>Z</em>. That would be nice, because it would mean that two nodes are d-connected (i.e., dependent) if there are any paths between them in the DAG, and they are d-separated if all those paths are blocked by nodes in set <em>Z</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p50">
+<p>Unfortunately, colliders make the fourth criterion contrary to the others:</p>
+</div>
+<ol class="faux-ol-li" style="list-style: none;">
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p51"><span class="faux-ol-li-counter">4. </span> <em>P</em> contains a <em>collider</em> <em>structure</em>, <em>i</em> → <em>m</em> ← <em>j</em>, such that the middle node <em>m</em> is not in <em>Z,</em> and no descendant of <em>m</em> is in <em>Z.</em> </li>
+</ol>
+<div class="readable-text" id="p52">
+<p>This fourth criterion is how d-separation captures the way two independent (d-separated) items can become dependent when conditioning on a collider.</p>
+</div>
+<div class="readable-text intended-text" id="p53">
+<p>Many writers conflate d-separation and conditional independence. Keep the distinction clear in your mind: ⊥<em><sub>G</sub></em> speaks of graphs, whereas ⊥ speaks of distributions. It matters because, as you’ll see later in this chapter, we’ll use d-separation to test our causal assumptions against statistical evidence of conditional independence in the data.<span class="aframe-location"/> </p>
+</div>
+<div class="browsable-container figure-container" id="p54">
+<img alt="figure" height="433" src="../Images/CH04_F06_Ness.png" width="301"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.6</span> Does the set {<em>m</em>, <em>k</em>} d-separate path <em>u</em> → <em>i</em> → <em>m</em> → <em>j</em> → <em>v</em>?</h5>
+</div>
+<div class="readable-text intended-text" id="p55">
+<p>Let’s work through a few examples.</p>
+</div>
+<div class="readable-text" id="p56">
+<h4 class="readable-text-h4 sigil_not_in_toc">Example with chain i → m → j</h4>
+</div>
+<div class="readable-text" id="p57">
+<p>Consider the DAG in figure 4.6, where <em>P</em> is <em>u</em> → <em>i</em> → <em>m</em> → <em>j</em> → <em>v</em>. This path is d-connected by default. Now let <em>Z</em> be the set {<em>m</em>, <em>k</em>}. <em>P</em> contains a chain <em>i</em> → <em>m</em> → <em>j</em>, and <em>m</em> is in <em>Z</em>. If we block on <em>Z</em>, the first criterion is satisfied, and <em>u</em> and <em>v</em> are d-separated.</p>
+</div>
+<div class="readable-text intended-text" id="p58">
+<p>For some (but not all), a helpful analogy for understanding d-separation is an electronic circuit. Paths without colliders are d-connected and are like closed circuits, where electrical current flows uninhibited. “Blocking” on a node on that path d-separates the path and will “break the circuit” so current can’t flow. Blocking on <em>Z</em> (specifically, blocking on <em>m</em>, which is in <em>Z</em>) “breaks the circuit” as shown in figure 4.7.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p59">
+<img alt="figure" height="131" src="../Images/CH04_F07_Ness.png" width="507"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.7</span> The path is d-connected by default, but blocking on m <strong>∈</strong> <em>Z</em> d-separates the path and figuratively breaks the circuit (“<strong>∈</strong>” means “in”).</h5>
+</div>
+<div class="readable-text" id="p60">
+<h4 class="readable-text-h4 sigil_not_in_toc">Example with chain i ← m → j</h4>
+</div>
+<div class="readable-text" id="p61">
+<p>Now consider the DAG in figure 4.8, where <em>P</em> is <em>u</em> ← <em>i</em> ← <em>m</em> → <em>j</em> → <em>v</em>. This path is also d-connected by default. Note that d-connection can go against the grain of causality. In figure 4.7, the d-connected path from <em>u</em> to <em>v</em> takes steps in the direction of causality: <em>u</em> to <em>i</em> (<em>u</em> ← <em>i</em>), then <em>i</em> to <em>m</em> (<em>i</em> ← <em>m</em>), then <em>m</em> to <em>j</em> (<em>m</em> → <em>j</em>), and then <em>j</em> to <em>v</em> (<em>j</em> → <em>v</em>). But here, we have two <em>anticausal</em> (meaning against the direction of causality) steps, namely the step from <em>u</em> to <em>i</em> (<em>u</em> ← <em>i</em>) and <em>i</em> to <em>m</em> (<em>i</em> ← <em>m</em>).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p62">
+<img alt="figure" height="279" src="../Images/CH04_F08_Ness.png" width="321"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.8</span> Does the set {<em>m</em>} d-separate path <em>u</em> ← <em>i</em> ← <em>m</em> → <em>j</em> → <em>v</em>?</h5>
+</div>
+<div class="readable-text intended-text" id="p63">
+<p> Suppose we block on set <em>Z</em>, and <em>Z</em> contains only the node <em>m</em>. Then condition 3 is satisfied and the path is d-separated, as illustrated in figure 4.9.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p64">
+<img alt="figure" height="131" src="../Images/CH04_F09_Ness.png" width="507"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.9</span> This path from <em>u</em> to <em>v</em> is also d-connected by default, even though it has some steps (<em>u</em> to <em>i</em> and <em>i</em> to <em>m</em>) that go against the direction of causality. Again, blocking on <em>m</em> <strong>∈</strong> <em>Z</em> d-separates the path and figuratively breaks the circuit.</h5>
+</div>
+<div class="readable-text" id="p65">
+<h4 class="readable-text-h4 sigil_not_in_toc">Colliders make d-separation weird</h4>
+</div>
+<div class="readable-text" id="p66">
+<p>The fourth criterion focuses on the collider motif <em>i</em> → <em>m</em> ← <em>j</em>: <em>P</em> contains a <em>collider</em> <em>structure</em>, <em>i</em> → <em>m</em> ← <em>j</em>, such that the middle node <em>m</em> is not in <em>Z,</em> and no descendant of <em>m</em> is in <em>Z.</em></p>
+</div>
+<div class="readable-text intended-text" id="p67">
+<p>Let’s relate this back to our blood type example. Here <em>i</em> and <em>j</em> are the parents’ blood types and <em>m</em> is the child’s blood type. We saw that colliders are a bit odd, because conditioning on the collider (the child’s blood type) induces dependence between two independent things (like the parents’ blood types). This oddness makes d-separation a bit tricky to understand at first glance. Figure 4.10 illustrates how colliders affect d-separation. </p>
+</div>
+<div class="browsable-container figure-container" id="p68">
+<img alt="figure" height="386" src="../Images/CH04_F10_Ness.png" width="337"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.10</span> Colliders make d-connection tricky. Given a node <em>m</em> on a path, if <em>m</em> is not a collider, the path is d-connected by default and d-separated when you block on <em>m</em>. If <em>m</em> is a collider, the path is d-separated by default and d-connected when you block on <em>m</em>.</h5>
+</div>
+<div class="readable-text" id="p69">
+<p>The following is true of colliders:</p>
+</div>
+<ul>
+<li class="readable-text" id="p70"> All paths between two nodes d-connect by default <em>unless that path has a collider motif</em>. A path with a collider is d-separated by default. </li>
+<li class="readable-text" id="p71"> Blocking with any node on a d-connected path will d-separate that path <em>unless that node is a collider</em>. Blocking on a collider will d-connect a path by default, as </li>
+<li class="readable-text" id="p72"> will blocking with a descendant of that collider.<span class="aframe-location"/> </li>
+</ul>
+<div class="browsable-container figure-container" id="p73">
+<img alt="figure" height="391" src="../Images/CH04_F11_Ness.png" width="321"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.11</span> Does the set {<em>m</em>} (or {<em>k</em>} or {<em>m</em>, <em>k</em>}) d-separate path <em>u</em> → <em>i</em> → <em>m</em> ← <em>j</em> → <em>v</em>?</h5>
+</div>
+<div class="readable-text" id="p74">
+<p>In terms of the circuit analogy, colliders are like an open switch, which prevents current flow in an electronic circuit. When a path has a collider, the collider stops all current from passing through it. Colliders break the circuit. Blocking on a collider is like closing the switch, and the current that couldn’t pass through before now can pass through (d-connection).</p>
+</div>
+<div class="readable-text intended-text" id="p75">
+<p>In the DAG in figure 4.11, is the path <em>u</em> → <em>i</em> → <em>m</em> ← <em>j</em> → <em>v</em> d-connected by default? No, because the path contains a collider structure <em>m</em> (<em>i</em> → <em>m</em> ← <em>j</em>).</p>
+</div>
+<div class="readable-text" id="p76">
+<p>Now consider what would happen if the blocking set <em>Z</em> included <em>m</em>. In this case, condition 4 is violated and the path <em>becomes d-connected</em>, as in figure 4.12. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p77">
+<img alt="figure" height="118" src="../Images/CH04_F12_Ness.png" width="502"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.12</span> This path from <em>u</em> to <em>v</em> is d-separated by default because it contains a collider <em>m</em>. The collider is analogous to an open circuit. Blocking on <em>m</em> or any of its descendants d-connects the path and figuratively closes the circuit.</h5>
+</div>
+<div class="readable-text" id="p78">
+<p>The path would also become d-connected if <em>Z</em> didn’t have <em>m</em> but just had <em>k</em> (or if <em>Z</em> included both <em>m</em> and <em>k</em>). Blocking on a descendant of a collider d-connects in the same manner as blocking on a collider.</p>
+</div>
+<div class="readable-text intended-text" id="p79">
+<p>Can you guess why? It’s because the collider’s descendant is <em>d-connected to the collider</em>. In causal terms, we saw how, given a mother’s blood type, observing the child’s blood type (the collider) might reveal the father’s blood type. Suppose that if instead of observing the child’s blood type, we observed the child’s child’s blood type (call it the grandchild’s blood type). That grandchild’s blood type could help narrow down the child’s blood type and thus narrow down the father’s blood type. In other words, if the mother’s and father’s blood types are dependent, given the child’s blood type, and the grandchild’s blood type gives you information about the child’s blood type, then the mother’s and father’s blood types are dependent given the grandchild’s blood type.</p>
+</div>
+<div class="readable-text" id="p80">
+<h4 class="readable-text-h4 sigil_not_in_toc">D-separation and sets of nodes</h4>
+</div>
+<div class="readable-text" id="p81">
+<p>D-separation doesn’t just apply to pairs of nodes, it applies to pairs of sets of nodes. In the notation <em>u</em>⊥<em>v</em><em> </em>|<em>Z</em>, <em>Z</em> can be a set of blockers, and <em>u</em> and <em>v</em> can be sets as well. We d-separate two sets by blocking all d-connected paths between members of each set. Other graph-based causal ideas, such as the do-calculus, also generalize to sets of nodes. If you remember that fact, we can build intuition on individual nodes, and that intuition will generalize to sets. </p>
+</div>
+<div class="readable-text intended-text" id="p82">
+<p>When the blocking set <em>Z</em> is the singleton set {<em>m</em>}, this set is sufficient to block the paths <em>u</em> → <em>i</em> → <em>m</em> → <em>j</em> → <em>v</em> in figure 4.7 and <em>u</em> ← <em>i</em> ← <em>m</em> → <em>j</em> → <em>v</em> in figure 4.8. Altogether, the sets {<em>i</em><em> </em>}, {<em>m</em><em> </em>}, {<em>j</em><em> </em>}, {<em>i</em>, <em>m</em><em> </em>}, {<em>i</em>, <em>j</em><em> </em>}, {<em>m</em>, <em>j</em><em> </em>}, and {<em>i</em>, <em>m</em>, <em>j</em><em> </em>} all d-separate <em>u</em> and <em>v</em> on these two paths. However, {<em>i</em><em> </em>}, {<em>m</em><em> </em>}, and {<em>j</em><em> </em>} are the <em>minimal d-separating sets</em>, meaning that all the other d-separating sets include at least one of these sets. The minimal d-separation sets are sufficient to d-separate the two nodes. When reasoning about d-separation and when implementing it in algorithms, we want to focus on finding minimal d-separating sets; if <em>U</em>⊥<em>V</em>|<em>Z</em> and <em>U</em>⊥<em>V</em>|<em>Z</em>, <em>W</em> are both true, we don’t want to waste effort on <em>U</em>⊥<em>V</em>|<em>Z</em>, <em>W</em>.</p>
+</div>
+<div class="readable-text" id="p83">
+<h3 class="readable-text-h3" id="sigil_toc_id_79"><span class="num-string">4.2.2</span> Examples of d-separating multiple paths</h3>
+</div>
+<div class="readable-text" id="p84">
+<p>Suppose we want to d-separate two nodes. Often there are multiple d-connected paths between those nodes. To d-separate those nodes, we need to find blockers that d-separate each of those paths. Let’s walk through some examples. </p>
+</div>
+<div class="readable-text" id="p85">
+<h4 class="readable-text-h4 sigil_not_in_toc">Finding a minimal d-separating set </h4>
+</div>
+<div class="readable-text" id="p86">
+<p>In a bigger graph with more edges, the number of paths between two nodes can be quite large. But often longer paths often get blocked as a side-effect of blocking shorter paths. So we can start with shorter paths, and work our way to longer paths that haven’t been blocked yet, until no unblocked paths remain.</p>
+</div>
+<div class="readable-text intended-text" id="p87">
+<p>For example, <em>U</em> and <em>V</em> are d-connected in figure 4.13. What sets of nodes are fully required to d-separate them?</p>
+</div>
+<div class="readable-text" id="p88">
+<p>In figure 4.13, <em>U</em> and <em>V</em> are d-connected through these paths:</p>
+</div>
+<ul>
+<li class="readable-text" id="p89"> <em>U</em> → <em>I</em> → <em>V</em> </li>
+<li class="readable-text" id="p90"> <em>U</em> → <em>J</em> → <em>V</em> </li>
+<li class="readable-text" id="p91"> <em>U</em> → <em>J</em> → <em>I</em> → <em>V</em> </li>
+</ul>
+<div class="readable-text" id="p92">
+<p>First, we can d-separate <em>U</em> → <em>I</em> → <em>V</em> by blocking on <em>I</em>. Then, we d-separate <em>U</em> → <em>J</em> → <em>V </em><em>by blo</em>cking on <em>J</em>. At this point, we see that our blocking set {<em>I</em>, <em>J</em><em>  </em>} already d-separates <em>U</em> → <em>J</em> → <em>I</em> → <em>V</em>, so we are done.</p>
+</div>
+<div class="readable-text intended-text" id="p93">
+<p>In another example, how do we d-separate <em>U</em> and <em>V</em> in figure 4.14?</p>
+</div>
+<div class="browsable-container figure-container" id="p94">
+<img alt="figure" height="341" src="../Images/CH04_F13_Ness.png" width="244"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.13</span> We can d-separate <em>U</em> and <em>V</em> with {<em>I</em>, <em>J</em>}.</h5>
+</div>
+<div class="browsable-container figure-container" id="p95">
+<img alt="figure" height="442" src="../Images/CH04_F14_Ness.png" width="384"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.14</span> We can d-separate <em>U</em> and <em>V</em> with sets {<em>I</em>, <em>M</em>, <em>K</em>, <em>J</em>} or {<em>I</em>, <em>M</em>, <em>K</em>, <em>L</em>}.</h5>
+</div>
+<div class="readable-text" id="p96">
+<p>There are many paths between <em>U</em> and <em>V</em>. Let’s first enumerate three of the shortest paths:</p>
+</div>
+<ul>
+<li class="readable-text" id="p97"> <em>U</em> ← <em>I</em> → <em>V</em> </li>
+<li class="readable-text" id="p98"> <em>U</em> ← <em>M</em> → <em>V</em> </li>
+<li class="readable-text" id="p99"> <em>U</em> ← <em>K</em> → <em>V</em> </li>
+</ul>
+<div class="readable-text" id="p100">
+<p>We’ll need to block on at least on {<em>I</em>, <em>M</em>, <em>K</em>} to d-separate these three paths. Note that <em>U</em> has another parent <em>J</em>, and there are several paths from <em>U</em> to <em>V</em> through <em>J</em>, but there are only two paths we haven’t already d-separated; <em>U</em> ← <em>J</em> → <em>L</em> → <em>V</em> and <em>U</em> ← <em>J</em> → <em>K</em> ← <em>L</em> → <em>V</em>. Both <em>J</em> and <em>L</em> will block these paths, so we could d-separate <em>U</em> and V with minimal sets {<em>I</em>, <em>M</em>, <em>K</em>, <em>J</em>} or {<em>I</em>, <em>M</em>, <em>K</em>, <em>L</em>}. Note that <em>U</em> ← <em>J</em> → <em>K</em> ← <em>L</em> → <em>V</em> was d-connected because we initially added <em>K</em>, a collider on this path, to our blocking set. Next, we look at another example of this phenomenon.</p>
+</div>
+<div class="readable-text" id="p101">
+<h4 class="readable-text-h4 sigil_not_in_toc">When d-separating one path d-connects another</h4>
+</div>
+<div class="readable-text" id="p102">
+<p>When you attempt to d-separate a path between <em>U</em> and <em>V</em> by blocking on a node that is a collider on another path, you potentially d-connect that other path. That is fine, as long as you take additional steps to d-separate that path as well. To illustrate, consider the graph in figure 4.15. This graph is simple enough that we can enumerate all of the paths.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p103">
+<img alt="figure" height="305" src="../Images/CH04_F15_Ness.png" width="337"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.15</span> Blocking with <em>M</em> will block the path <em>U</em> ← <em>M</em> → <em>V</em> but would d-connect the path <em>U</em> ← <em>I</em> → <em>M</em> ← <em>J</em> → <em>V</em> because <em>M</em> is a collider between <em>I</em> and <em>J</em>. So we need to additionally block on either <em>I</em> or <em>J</em> to d-separate <em>U</em> ← <em>I</em> → <em>M</em> ← <em>J</em> → <em>V</em>.</h5>
+</div>
+<div class="readable-text" id="p104">
+<p> Let’s start with the three d-connecting paths:</p>
+</div>
+<ul>
+<li class="readable-text" id="p105"> <em>U</em> ← <em>M</em> → <em>V</em> </li>
+<li class="readable-text" id="p106"> <em>U</em> ← <em>I</em> → <em>M</em> → <em>V</em> </li>
+<li class="readable-text" id="p107"> <em>U</em> ← <em>M</em> ← <em>J</em> → <em>V</em> </li>
+</ul>
+<div class="readable-text" id="p108">
+<p>We also have a path <em>U</em> ← <em>I</em> → <em>M</em> ← <em>J</em> → <em>V</em>, but that is not a d-connecting path because <em>M</em> is a collider on that path.</p>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>The easiest way to block all three of these d-connected paths with one node is to block on <em>M</em>. However, if we block on that collider, the path<em> U</em> ← <em>I</em> → <em>M</em> ← <em>J</em> → <em>V</em> d-connects. So we need to additionally block on <em>I</em> or <em>J</em>. In other words, our minimal d-separating sets are {<em>I</em>, <em>M</em><em> </em>} and {<em> </em><em>J</em>, <em>M</em><em> </em>}.</p>
+</div>
+<div class="readable-text" id="p110">
+<h3 class="readable-text-h3" id="sigil_toc_id_80"><span class="num-string">4.2.3</span> D-separation in code</h3>
+</div>
+<div class="readable-text" id="p111">
+<p>Don’t fret if you are still hazy on d-separation. We’ve defined four criteria for describing paths between nodes on a graph, which is just the sort of thing we can implement in a graph library. In Python, the graph library NetworkX already has a utility that checks for d-separation. You can experiment with these tools to build an intuition for d-separation on different graphs.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p112">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p113">
+<p>This code was written with pgmpy version 0.1.24. The pandas version was 2.0.3.</p>
+</div>
+</div>
+<div class="readable-text" id="p114">
+<p>Let’s verify our d-separation analysis of the causal DAG shown previously in figure 4.15.</p>
+</div>
+<div class="browsable-container listing-container" id="p115">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.1</span> D-separation analysis of the DAG in figure 4.15</h5>
+<div class="code-area-container">
+<pre class="code-area">from networkx import is_d_separator     <span class="aframe-location"/> #1
+from pgmpy.base import DAG    <span class="aframe-location"/> #2
+dag = DAG([     #2
+    ('I', 'U'),     #2
+    ('I', 'M'),     #2
+    ('M', 'U'),  #2
+    ('J', 'V'),    #2
+    ('J', 'M'),     #2
+    ('M', 'V')     #2
+])     #2
+print(is_d_separator(dag, {"U"}, {"V"}, {"M"}))    <span class="aframe-location"/> #3
+print(is_d_separator(dag, {"U"}, {"V"}, {"M", "I", "J"}))   <span class="aframe-location"/> #4
+print(is_d_separator(dag, {"U"}, {"V"}, {"M", "I"}))    <span class="aframe-location"/> #5
+print(is_d_separator(dag, {"U"}, {"V"}, {"M", "J"}))    #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 The graph library NetworkX implements the d-separation algorithm for NetworkX graph objects, such as ΔiGraph (directed graph).
+     <br/>#2 ΔAG is a base class for the BayesianNetwork class. The base class for ΔAG is NetworkX’s ΔiGraph. So is_d_separator will work on objects of the class ΔAG (and BayesianNetwork).
+     <br/>#3 Build the graph in figure 4.11. Blocking on a collider M blocks the path U ← M → V but will d-connect the path U ← I → M ← J → V, so this will print False.
+     <br/>#4 Blocking on M will block U ← M → V and open (d-connect) U ← I → M ← J → V, but we can block that path with I and J, so this evaluates to True.
+     <br/>#5 Blocking on both I and J is overkill. The minimal d-separating sets are {“M”, “I”} and {“M”, “J”}.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p116">
+<p>pgmpy also has a <code>get_independencies</code> method in the <code>DAG</code> class that enumerates minimal d-separating states that are true given a graph.</p>
+</div>
+<div class="browsable-container listing-container" id="p117">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.2</span> Enumerating d-separations in pgmpy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.base import DAG
+dag = DAG([
+    ('I', 'U'),
+    ('I', 'M'),
+    ('M', 'U'),
+    ('J', 'V'),
+    ('J', 'M'),
+    ('M', 'V')
+])
+dag.get_independencies()   <span class="aframe-location"/> #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 Obtain all the minimal d-separation statements that are true in the ΔAG.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p118">
+<p>The <code>get_independencies</code> method returns the following results. (You might see a slight difference in the ordering of the output depending on your environment.)</p>
+</div>
+<div class="browsable-container listing-container" id="p119">
+<div class="code-area-container">
+<pre class="code-area">(I ⊥ J)
+(I ⊥ V | J, M)
+(I ⊥ V | J, U, M)
+(V ⊥ I, U | J, M)
+(V ⊥ U | I, M)
+(V ⊥ I | J, U, M)
+(V ⊥ U | J, M, I)
+(J ⊥ I)
+(J ⊥ U | I, M)
+(J ⊥ U | I, M, V)
+(U ⊥ V | J, M)
+(U ⊥ J, V | I, M)
+(U ⊥ V | J, M, I)
+(U ⊥ J | I, M, V)</pre>
+</div>
+</div>
+<div class="readable-text" id="p120">
+<p>Note that the <code>get_independencies</code> function name is a misnomer; it does not “get independencies”; it gets d-separations. Again, don’t conflate d-separation in the causal graph with conditional independence in the joint probability distribution entailed by the DGP the graph is meant to model. Keeping this distinction in your mind will help you with the next task: using d-separation to test a DAG against evidence of conditional independence in the data.</p>
+</div>
+<div class="readable-text" id="p121">
+<h2 class="readable-text-h2" id="sigil_toc_id_81"><span class="num-string">4.3</span> Refuting a causal DAG</h2>
+</div>
+<div class="readable-text" id="p122">
+<p>We have seen how to build a causal DAG. Of course, we want to find a causal model that fits the data well, so now we’ll evaluate the causal DAG against the data. We could use standard goodness-of-fit and predictive statistics to evaluate fit, but here we’re going to focus on <em>refuting</em> our causal DAG, using data to show that our model is wrong.</p>
+</div>
+<div class="readable-text intended-text" id="p123">
+<p>Statistical models fit curves and patterns in the data. There is no “right” statistical model; there are just models that fit the data well. In contrast, causal models go beyond the data to make causal assertions about the DGP, and those assertions are either true or false. As modelers of causality, we try to find a model that fits well, but we also try to <em>refute </em>our model’s causal assertions.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p124">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Refutation and Popper</h5>
+</div>
+<div class="readable-text" id="p125">
+<p>The approach to building DAGs by refutation aligns with Karl Popper’s falsifiable theories framework. Karl Popper was a 20th-century philosopher known for his contributions to the philosophy of science, particularly his theory of falsification. Popper argued that scientific theories cannot be proven true, but they can be tested and potentially falsified, or in other words, <em>refuted</em>. </p>
+</div>
+<div class="readable-text" id="p126">
+<p>We take a “Popperesque” approach to model building, meaning that we don’t merely want to find a model that fits the evidence. Rather, we actively search for evidence that refutes our model. When we find it, we reject our model, build a better one, and repeat.</p>
+</div>
+</div>
+<div class="readable-text" id="p127">
+<p>D-separation is our first tool for refutation. Suppose you build a causal DAG and it implies conditional independence. You then look for evidence in the data of dependence, where your DAG says there should be conditional independence. If you find that evidence, you have refuted your DAG. You then go back and iterate on the causal DAG, until you can no longer refute it, given your data.</p>
+</div>
+<div class="readable-text intended-text" id="p128">
+<p>Once you’ve done that, you move on to your downstream causal inference workflow. But keep this refutation mentality in mind. If you work with the same causal DAG repeatedly, you should always be seeking new ways to refute and iterate upon it. Practically, your goal is not getting the true DAG, but getting a hard-to-refute DAG.</p>
+</div>
+<div class="readable-text" id="p129">
+<h3 class="readable-text-h3" id="sigil_toc_id_82"><span class="num-string">4.3.1</span> Revisiting the causal Markov property</h3>
+</div>
+<div class="readable-text" id="p130">
+<p>Recall that we saw two aspects of the causal Markov property:</p>
+</div>
+<ul>
+<li class="readable-text" id="p131"> <em>Local Markov property</em><em> </em>—A node is conditionally independent of its non-descendants, given its parents. </li>
+<li class="readable-text" id="p132"> <em>Markov factorization property</em><em> </em>—The joint probability distribution factorizes into conditional distributions of variables, given their direct parents in the causal DAG. </li>
+</ul>
+<div class="readable-text" id="p133">
+<p>Now we’ll introduce a third face of this property called the <em>global Markov property</em>. This property states that d-separation in the causal DAG implies conditional independence in the joint probability distribution. In notation, we write<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p134">
+<img alt="figure" height="22" src="../Images/ness-ch4-eqs-0x.png" width="214"/>
+</div>
+<div class="readable-text" id="p135">
+<p>In plain words, that notation reads as “If <em>U</em> and <em>V</em> are d-separated by <em>Z</em> in graph <em>G</em>, they are conditionally independent given <em>Z</em>.” Note that if any of the three facets of the causal Markov property are true, they are all true.</p>
+</div>
+<div class="readable-text intended-text" id="p136">
+<p>The global Markov property gives us a straightforward way to refute our causal model. We can use d-separations to specify statistical tests for the presence of conditional independence. Failing tests refute the model.</p>
+</div>
+<div class="readable-text" id="p137">
+<h3 class="readable-text-h3" id="sigil_toc_id_83"><span class="num-string">4.3.2</span> Refutation using conditional independence tests</h3>
+</div>
+<div class="readable-text" id="p138">
+<p>There are multiple ways to statistically evaluate conditional independence, and the most obvious is with a statistical test for conditional independence. pgmpy and other libraries make it relatively easy to run conditional independence tests. Let’s revisit the transportation model, shown again in figure 4.16.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p139">
+<img alt="figure" height="392" src="../Images/CH04_F16_Ness.png" width="220"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.16</span> The transportation model. Age (<em>A</em>) and gender (<em>S</em>) determine education (<em>E</em>). Education causes occupation (<em>O</em>) and residence (<em>R</em>). Occupation and residence cause transportation (<em>T</em>).</h5>
+</div>
+<div class="readable-text intended-text" id="p140">
+<p>Recall that for our transportation model we were able to collect the following observations: </p>
+</div>
+<ul>
+<li class="readable-text" id="p141"> <em>Age (A)</em><em> </em>—Recorded as young (“young”) for individuals up to and including 29 years, adult (“adult”) for individuals from 30 to 60 years old (inclusive), and old (“old”) for people 61 and over. </li>
+<li class="readable-text" id="p142"> <em>Gender (S)</em><em> </em>—The self-reported gender of an individual, recorded as male (“M”), female (“F”), or other (“O”). </li>
+<li class="readable-text" id="p143"> <em>Education (E)</em><em> </em>—The highest level of education or training completed by the individual, recorded as either high school (“high”) or university degree (“uni”). </li>
+<li class="readable-text" id="p144"> <em>Occupation (O)</em><em> </em>—Employee (“emp”) or a self-employed worker (“self”). </li>
+<li class="readable-text" id="p145"> <em>Residence (R)</em><em> </em>—The population size of the city the individual lives in, recorded as small (“small”) or big (“big”). </li>
+<li class="readable-text" id="p146"> <em>Travel (T)</em><em> </em>—The means of transport favored by the individual, recorded as car (“car”), train (“train”), or other (“other”). </li>
+</ul>
+<div class="readable-text" id="p147">
+<p>In the graph, <em>E</em> ⊥<sub><em>G</em></sub> <em>T</em> | <em>O</em>, <em>R</em>. So let’s test the conditional independence statement <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em>. Statistical hypothesis tests have a <em>null hypothesis </em>(denoted <em>H</em><sub>0</sub><em>)</em> and an <em>alternative hypothesis </em>(denoted <em>H</em><sub><em>a</em></sub><em>)</em>. For statistical hypothesis tests of conditional independence, it is standard that the null hypothesis <em>H</em><sub>0</sub> is the hypothesis of conditional independence, and <em>H</em><sub><em>a</em></sub> is the hypothesis that the variables are not conditionally independent.</p>
+</div>
+<div class="readable-text intended-text" id="p148">
+<p>A statistical hypothesis test uses the <em>N</em> data points of observed values of <em>U</em>, <em>V</em>, and <em>Z</em> (from an exploratory dataset) to calculate a statistic. The following code loads the transportation data. After loading, it creates two DataFrames, one with all the data and one with just the first 30 rows so we can see how sample size affects the significance test.</p>
+</div>
+<div class="browsable-container listing-container" id="p149">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.3</span> Loading the transportation data</h5>
+<div class="code-area-container">
+<pre class="code-area">import pandas as pd
+survey_url = "https://raw.githubusercontent.com/altdeep/causalML/master
+[CA] /datasets/transportation_survey.csv"
+fulldata = pd.read_csv(survey_url)
+
+data = fulldata[0:30]    <span class="aframe-location"/> #1
+print(data[0:5])</pre>
+<div class="code-annotations-overlay-container">
+     #1 Subsetting the data to only 30 datapoints for explanation
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p150">
+<p>The line <code>print(data[0:5])</code> prints the first five rows of the DataFrame.</p>
+</div>
+<div class="browsable-container listing-container" id="p151">
+<div class="code-area-container">
+<pre class="code-area">       A  S     E    O      R      T
+0  adult  F  high  emp  small  train
+1  young  M  high  emp    big    car
+2  adult  M   uni  emp    big  other
+3    old  F   uni  emp    big    car
+4  young  F   uni  emp    big    car</pre>
+</div>
+</div>
+<div class="readable-text" id="p152">
+<p>Most conditional independence testing libraries will implement frequentist hypothesis tests. These tests will conclude in favor of <em>H</em><sub><em>0</em></sub> or <em>H</em><sub><em>a</em></sub> depending on whether a given statistic falls above or below a certain threshold. “Frequentist,” in this context, means that the statistic produced by the test is called a <em>p</em>-value, and the threshold is called a significance level, which by convention is usually .05 or .01.</p>
+</div>
+<div class="readable-text intended-text" id="p153">
+<p>The test favors the null hypothesis <em>H</em><sub>0</sub> of conditional independence if the <em>p</em>-value falls above the significance threshold and the alternative hypothesis H<sub><em>a</em></sub> if it falls below the threshold. This frequentist approach is an optimization that guarantees the significance level is an upper bound on the chances of concluding in favor of dependence when <em>E</em> and <em>T</em> are actually conditionally independent.</p>
+</div>
+<div class="readable-text intended-text" id="p154">
+<p>Most software libraries provide conditional independence testing utilities that make specific mathematical assumptions when calculating a <em>p</em>-value. For example, we can run a specific conditional independence test that derives a test statistic that theoretically follows the chi-squared probability distribution, and then use this assumption to derive a <em>p</em>-value. The following code runs the test.</p>
+</div>
+<div class="browsable-container listing-container" id="p155">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.4</span> Chi-squared test of conditional independence</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.estimators.CITests import chi_square    <span class="aframe-location"/> #1
+significance = .05    <span class="aframe-location"/> #2
+
+
+result = chi_square(   <span class="aframe-location"/> #3
+    X="E", Y="T", Z=["O", "R"],     #3
+    data=data,     #3
+    boolean=False,   #3
+    significance_level=significance     #3
+)     #3
+print(result)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Import the chi_square test function.
+     <br/>#2 Set the significance level to .05.
+     <br/>#3 When the boolean argument is set to False, the test returns a tuple of three elements. The first two are the chi-square statistic and the corresponding p-value of 0.56. The last element is a chi-squares distribution parameter called degrees of freedom, which is needed to calculate the p-value.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p156">
+<p>This prints the tuple <code>(1.1611111111111112, 0.5595873983053805, 2)</code>, where the values are chi-squared test statistic, <em>p</em>-value, and degrees of freedom respectively. The <em>p</em>-value is greater than the significance level, so this test favors the null hypothesis of conditional independence. In other words, this particular test did not offer falsifying evidence against our model.</p>
+</div>
+<div class="readable-text intended-text" id="p157">
+<p>We can jump directly to the result of the test by setting the <code>chi_square</code> function’s <code>boolean</code> argument to <code>True</code>. The function will then return <code>True</code> if the <em>p</em>-value is greater than the significance value (favoring conditional independence) and <code>False</code> otherwise (favoring dependence).</p>
+</div>
+<div class="browsable-container listing-container" id="p158">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.5</span> Chi-squared test with Boolean outcome</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.estimators.CITests import chi_square   <span class="aframe-location"/>  #1
+significance = .05    <span class="aframe-location"/> #2
+result = chi_square(    <span class="aframe-location"/> #3
+    X="E", Y="T", Z=["O", "R"],   #3
+    data=data,    #3
+    boolean=True,    #3
+    significance_level=significance  #3   
+)    #3
+print(result)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Import the chi_square test function.
+     <br/>#2 Set the significance level to .05.
+     <br/>#3 When the boolean argument is set to True, the test returns a simple True or False outcome. It will return True if the p-value is greater than the significance value, which favors conditional independence. It returns False otherwise, favoring dependence.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p159">
+<p>This prints the result <code>True</code>. Now let’s iterate through all the d-separation statements we can derive from the transportation graph, and test them one by one. The following script will print each d-separation statement along with the outcome of the corresponding conditional independence test.</p>
+</div>
+<div class="browsable-container listing-container" id="p160">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.6</span> Run a chi-squared test for each d-separation statement</h5>
+<div class="code-area-container">
+<pre class="code-area">from pprint import pprint
+from pgmpy.base import DAG
+from pgmpy.independencies import IndependenceAssertion
+
+dag = DAG([
+    ('A', 'E'),
+    ('S', 'E'),
+    ('E', 'O'),
+    ('E', 'R'),
+    ('O', 'T'),
+    ('R', 'T')
+])
+dseps = dag.get_independencies()    
+
+def test_dsep(dsep):
+    test_outputs = []
+    for X in list(dsep.get_assertion()[0]):
+        for Y in list(dsep.get_assertion()[1]):
+            Z = list(dsep.get_assertion()[2])
+            test_result = chi_square(
+                X=X, Y=Y, Z=Z,
+                data=data,
+                boolean=True,
+                significance_level=significance
+            )
+            assertion = IndependenceAssertion(X, Y, Z)
+            test_outputs.append((assertion, test_result))
+    return test_outputs
+
+results = [test_dsep(dsep) for dsep in dseps.get_assertions()]
+results = dict([item for sublist in results for item in sublist])
+pprint(results)</pre>
+</div>
+</div>
+<div class="readable-text" id="p161">
+<p>The result is a list of d-separation statements and whether the evidence in the data supports (or fails to refute) that statement.</p>
+</div>
+<div class="browsable-container listing-container" id="p162">
+<div class="code-area-container">
+<pre class="code-area">{(O ⊥ A | R, E, T, S): True,
+ (S ⊥ R | E, T, A): True,
+ (S ⊥ O | E, T, A): True,
+ (T ⊥ S | R, O, A): True,
+ (S ⊥ O | R, E): True,
+ (R ⊥ O | E): False,
+ (S ⊥ O | E, A): True,
+ (S ⊥ R | E, A): True,
+ (S ⊥ R | E, T, O, A): True,
+ (S ⊥ R | E, O, A): True,
+ (O ⊥ A | E, T): True,
+ (S ⊥ O | R, E, T): True,
+ (R ⊥ O | E, S): False, 
+ …
+ (T ⊥ A | E, S): True}</pre>
+</div>
+</div>
+<div class="readable-text" id="p163">
+<p>We can count the number of tests that pass.</p>
+</div>
+<div class="browsable-container listing-container" id="p164">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.7</span> Calculate the proportion of d-separations with passing tests</h5>
+<div class="code-area-container">
+<pre class="code-area">num_pass = sum(results.values())
+num_dseps = len(dseps.independencies)
+num_fail = num_dseps - num_pass
+print(num_fail / num_dseps)</pre>
+</div>
+</div>
+<div class="readable-text" id="p165">
+<p>Here we get <code>0.2875</code>. This implies that 29% of the d-separations lack corresponding evidence of conditional independence in the data.</p>
+</div>
+<div class="readable-text intended-text" id="p166">
+<p>This number seems high, but as we’ll see in section 4.4, this statistic depends on the size of the data and other factors. We’ll want to compare it to the result for other candidate DAGs. For now, the next step is to inspect these cases of apparent dependence where our DAG says there should be conditional independence. If the evidence of dependence is strong, we need to think about how to improve our causal DAG to explain it.</p>
+</div>
+<div class="readable-text intended-text" id="p167">
+<p>Earlier, I used the <code>chi_square</code> function, which constructs a specific test statistic with a chi-squared test distribution—the distribution used to calculate the <em>p</em>-value. The chi-squared distribution is just another canonical distribution, like the normal or Bernoulli distributions. The chi-squared distribution comes up frequently for discrete variables, because there are several test statistics in the discrete setting that either have a chi-squared distribution or get closer to one as the size of the data increases. Overall, independence tests have a variety of test statistics with different test distributions. pgmpy provides several options by way of calls to SciPy’s stats library.</p>
+</div>
+<div class="readable-text intended-text" id="p168">
+<p>One common concern is that the test makes strong assumptions. For example, some conditional independence tests between continuous variables assume any dependence between the variables would be <em>linear</em>. An alternative approach is to use a <em>permutation</em> test, which is an algorithm that constructs the <em>p</em><em> </em>-value without relying on a canonical test distribution<em>. </em>Permutation tests make fewer assumptions but are computationally expensive.</p>
+</div>
+<div class="readable-text" id="p169">
+<h3 class="readable-text-h3" id="sigil_toc_id_84"><span class="num-string">4.3.3</span> Some tests are more important than others</h3>
+</div>
+<div class="readable-text" id="p170">
+<p>The previous analysis tested all the d-separations implied by a causal DAG. But some d-separations might be more important to you than others. Some dependence relations and conditional independence relations are pivotal to a downstream causal inference analysis, while others don’t affect that analysis at all.</p>
+</div>
+<div class="readable-text intended-text" id="p171">
+<p>For example, consider figure 4.17, which we looked at earlier in section 3.3. We added the variable <em>Z</em> to the graph because we might want to use it as an “instrumental variable” in the estimation of the causal effect.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p172">
+<img alt="figure" height="365" src="../Images/CH04_F17_Ness.png" width="880"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.17</span> <em>Z</em>, <em>X</em><sub>0</sub>, and <em>X</em><sub>1</sub> were included in the DAG because they play a useful role in analyzing the causal effect of <em>U</em> on <em>Y</em>. Their role depends on conditional independence, and it is important to test that they can indeed serve those roles. </h5>
+</div>
+<div class="readable-text" id="p173">
+<p>We’ll discuss instrumental variables in depth in chapter 11. For now, suffice it to say that for <em>Z</em> to be an instrument, it must be independent of <em>W</em><sub>0</sub>, <em>W</em><sub>1</sub>, and <em>W</em><sub>2</sub>. So we’d pay special attention to testing that assumption.</p>
+</div>
+<div class="readable-text" id="p174">
+<h2 class="readable-text-h2" id="sigil_toc_id_85"><span class="num-string">4.4</span> Caveats with conditional independence testing</h2>
+</div>
+<div class="readable-text" id="p175">
+<p>As I mentioned, conditional independence tests are perhaps the most obvious way to test the conditional independence constraints implied by your proposed causal DAG. However, there are several caveats with using statistical tests to test a causal DAG. In my experience, these issues can distract analysts from their ultimate goal of answering a causal question. In this section, I’ll highlight some of these caveats and propose some alternatives to conditional independence testing. The main takeaway is that statistical testing is an important tool for building your DAG, but as with any statistical methodology, it is not a panacea (and that’s fine).</p>
+</div>
+<div class="readable-text" id="p176">
+<h3 class="readable-text-h3" id="sigil_toc_id_86"><span class="num-string">4.4.1</span> Statistical tests always have some chance of error</h3>
+</div>
+<div class="readable-text" id="p177">
+<p>I mentioned that with d-separation, we should not “confuse the map for the terrain”; d-separation is not the same thing as conditional independence. Rather, if your model is a good representation of causality, d-separation <em>implies</em> conditional independence.</p>
+</div>
+<div class="readable-text intended-text" id="p178">
+<p>Similarly, conditional independence is not the same as <em>statistical evidence</em> of conditional independence. The causal structure of the DGP imposes conditional independence constraints on the joint probability distribution. But you can’t “see” the joint distribution and the independencies it contains; you can only “see” (and run statistical tests on) the data sampled from that distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p179">
+<p>Just like with prediction, classification, or any other statistical pattern recognition procedure, the procedure for detecting these independencies in data can get it wrong. You can get false negatives, where a pair of variables are truly conditionally independent but the statistical independence test concludes they are dependent. You can have false positives, where a statistical independence test finds a pair of variables to be conditionally independent when they are not.</p>
+</div>
+<div class="readable-text" id="p180">
+<h3 class="readable-text-h3" id="sigil_toc_id_87"><span class="num-string">4.4.2</span> Testing causal DAGs with traditional CI tests is flawed</h3>
+</div>
+<div class="readable-text" id="p181">
+<p>I say that the proposed conditional independence tests for refutation are “flawed” because they violate the spirit of statistical hypothesis testing in science. Suppose you think you have discovered some pattern in stock prices. You are biased to think the pattern is more than coincidence because, if it is, you can make money. To be rigorous and not fall prey to your biases, your alternative hypothesis says the pattern is real and exploitable, whereas the null hypothesis is that it is just random noise. The frequentist test assumes the null hypothesis is true and gives you a <em>p</em><em> </em>-value, which quantifies the chances that random noise could form a pattern at least as strong as the one you found. The test forces you to reject the pattern as real unless that <em>p</em><em> </em>-value is really small. Most mainstream statistical testing libraries are designed for this use case.</p>
+</div>
+<div class="readable-text intended-text" id="p182">
+<p>When you propose a causal model, you are also biased to believe it is true. But causal models induce conditional independences, which by definition are the <em>absences </em>of patterns. In this case the null and alternative hypotheses should switch; the alternative should be that your model is right and there isn’t a pattern (and any evidence of patterns in the data is just spurious correlation), and the null should be that there is a pattern. It is possible to implement such a hypothesis test, but it is not mathematically trivial, and most mainstream statistical libraries like SciPy do not support this use case.</p>
+</div>
+<div class="readable-text intended-text" id="p183">
+<p>The compromise is using the traditional tests, where the null hypothesis specifies conditional independence less as a theoretically rigorous analysis and more as a <em>heuristic</em><em> </em>—an empirical problem solving technique that can be suboptimal but sufficient to reach a good enough solution.</p>
+</div>
+<div class="readable-text" id="p184">
+<h3 class="readable-text-h3" id="sigil_toc_id_88"><span class="num-string">4.4.3</span> p-values vary with the size of the data</h3>
+</div>
+<div class="readable-text" id="p185">
+<p>The conclusion of a traditional conditional independence test depends on a significance threshold. If the <em>p</em><em> </em>-value falls below this threshold, you favor dependence, and if it falls above, you favor conditional independence. The choice of threshold is a bit arbitrary; people tend to go with commonly selected values like .1 or .05 or .01.</p>
+</div>
+<div class="readable-text intended-text" id="p186">
+<p>The problem is that the <em>p</em><em> </em>-value statistic varies with the size of the data. All else equal, as the size of the data increases, the <em>p</em>-value decreases. In other words, the larger the data, the more that things start to look dependent. If you have a large dataset, it is more likely that <em>p</em><em> </em>-values will fall below that arbitrary threshold, and the data will look like it’s refuting the conditional independence implied by your DAG, even when that conditional independence is true. </p>
+</div>
+<div class="readable-text intended-text" id="p187">
+<p>To illustrate, the test of <em>E</em> ⊥<em> T</em> | <em>O</em>, <em>R</em> in section 4.3.2 had 30 data points and produced a <em>p</em>-value of 0.56. In our data, <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em> is ground truth (via simulation), so if a test concludes against <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em>, it is because of statistical issues with the test, not the quality of the data. The following bootstrap statistical analysis will show how the estimate of the <em>p</em>-value falls as the size of the data increases.</p>
+</div>
+<div class="readable-text intended-text" id="p188">
+<p>First, we’ll write a <code>sample_p_value</code> function that samples a <em>p</em>-value for a given data size. The next function, <code>estimate_p_value</code>, will do this sampling repeatedly and calculate a mean <em>p</em><em> </em>-value, a 90% confidence interval, and the probability that the <em>p</em><em> </em>-value falls below the significance threshold, which is the probability of rejecting the correct conclusion that <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em>.</p>
+</div>
+<div class="browsable-container listing-container" id="p189">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.8</span> Bootstrap analysis of sensitivity of test of <em>E </em><strong>⊥</strong> <em>T</em> | <em>O</em>, <em>R</em> to sample size</h5>
+<div class="code-area-container">
+<pre class="code-area">from numpy import mean, quantile
+
+def sample_p_val(data_size, data, alpha):    <span class="aframe-location"/> #1
+    bootstrap_data = data.sample(n=data_size, replace=True)    #1
+    result = chi_square(    #1
+        X="E", Y="T", Z=["O", "R"],    #1
+        data=bootstrap_data,     #1
+        boolean=False,     #1
+        significance_level = alpha     #1
+    )    #1
+    p_val = result[1]    #1
+    return p_val     #1
+
+def estimate_p_val(data_size, data=fulldata, boot_size=1000, α=.05):   <span class="aframe-location"/> #2
+    samples = [  #2
+        sample_p_val(data_size, data=fulldata, alpha=α)  #2
+        for _ in range(boot_size)     #2
+    ]    #2
+   <span class="aframe-location"/> positive_tests = [p_val &gt; significance for p_val in samples]    #3
+    prob_conclude = mean(positive_tests)   <span class="aframe-location"/> #4
+    p_estimate = mean(samples)    #4
+ <span class="aframe-location"/>   quantile_05, quantile_95 = quantile(samples, [.05, .95])    #5
+    lower_error = p_estimate - quantile_05     #5
+    higher_error = quantile_95 - p_estimate    #5
+    return p_estimate, lower_error, higher_error, prob_conclude
+
+data_size = range(30, 1000, 20)    <span class="aframe-location"/> #6
+result = list(zip(*[estimate_p_val(size) for size in data_size]))  #6</pre>
+<div class="code-annotations-overlay-container">
+     #1 Given a certain data size, this function randomly samples that number of rows from the full dataset. It then runs the chi-squared independence test and returns the p-value.
+     <br/>#2 This function conducts a “bootstrap” procedure that samples 1,000 p-values for a given data size and calculates the mean p-value and 90% p-value confidence interval.
+     <br/>#3 Calculate the probability of a test concluding in favor of conditional independence.
+     <br/>#4 Calculate the mean of the p-values to get the bootstrap mean.
+     <br/>#5 Calculate the 5th and 95th percentiles to get a 90% bootstrap confidence interval.
+     <br/>#6 Run the bootstrap analysis.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p190">
+<p>Finally, we’ll visualize the results. We’ll plot the size of the data against the mean and 90% confidence intervals for the <em>p</em>-values we get for that given data size. We’ll also plot how the probability of concluding in favor of the true hypothesis (<em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em><em> </em>) for a significance level of .05 depends on data size.</p>
+</div>
+<div class="browsable-container listing-container" id="p191">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.9</span> Visualize dependence of conditional independence testing on data size</h5>
+<div class="code-area-container">
+<pre class="code-area">import numpy as np
+import matplotlib.pyplot as plt
+
+p_vals, lower_bars, higher_bars, probs_conclude_indep = result   <span class="aframe-location"/> #1
+plt.title('Data size vs. p-value (Ind. of E &amp; T | O &amp; R)')    <span class="aframe-location"/> #2
+plt.xlabel("Number of examples in data")     #2
+plt.ylabel("Expected p-value")   #2
+error_bars = np.array([lower_bars, higher_bars])    #2
+plt.errorbar(   #2
+    data_size,    #2
+    p_vals,     #2
+    yerr=error_bars,    #2
+    ecolor="grey",    #2
+    elinewidth=.5   #2
+)     #2
+plt.hlines(significance, 0, 1000, linestyles="dashed")     #2
+plt.show()
+plt.title('Probability of favoring independence given data size')   <span class="aframe-location"/> #3
+plt.xlabel("Number of examples in data")     #3
+plt.ylabel("Probability of test favoring conditional independence")    #3
+plt.plot(data_size, probs_conclude_indep)  #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Run the bootstrap analysis to get quantiles of p-values and probability of concluding in favor of independence.
+     <br/>#2 Plot the data size vs. p-value. At larger data sizes, the expected p-value falls below a threshold.
+     <br/>#3 Plot data size vs. the probability of concluding in favor of independence, given .05 significance.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p192">
+<p>Figure 4.18 shows the first plot. The descending curve is the expected <em>p</em>-values at different data sizes, the vertical lines are error bars showing a 90% bootstrap confidence interval. By the time we get to a dataset of size 1,000, the expected <em>p</em>-value is below the threshold, meaning that the test favors the conclusion that <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em> is false.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p193">
+<img alt="figure" height="861" src="../Images/CH04_F18_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.18</span> Sample size vs. expected <em>p</em>-value of the conditional independence test for <em>E</em><em> </em><strong>⊥</strong> <em>T</em> | <em>O</em>, <em>R</em> (solid line). The vertical lines are the error bars; they show the 90% bootstrap confidence intervals. The horizontal dashed line is a .05 significance level, above which we favor the null hypothesis of conditional independence and below which we reject it. As the sample size increases, we eventually cross the line. Thus, the result of our refutation analysis depends on the size of the data.</h5>
+</div>
+<div class="readable-text" id="p194">
+<p>Note that the lower bound of the confidence interval crosses the significance threshold well before 1,000, suggesting that at even lower data sizes, we have a good chance of rejecting the true conclusion of <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em>. This becomes clearer in figure 4.19, where the probability of concluding in favor of the true conclusion decreases as the size of the data increases. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p195">
+<img alt="figure" height="861" src="../Images/CH04_F19_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.19</span> As the size of the data increases, the probability of concluding in favor of this (true) instance of the conditional independence relation <em>E</em> <strong>⊥</strong> <em>T</em> | <em>O</em>, <em>R</em> decreases.</h5>
+</div>
+<div class="readable-text" id="p196">
+<p>You might think that as the size of the data increases, the algorithm is detecting subtle dependencies between <em>E</em> and <em>T</em> that were undetectable with less data. Not so, for this transportation data is simulated in such a way that <em>E</em> ⊥ <em>T</em> | <em>O</em>, <em>R</em> is definitely true. This is a case where more data leads us to rejecting independence because more data leads to more spurious correlations—patterns that aren’t really there.</p>
+</div>
+<div class="readable-text intended-text" id="p197">
+<p>A causal model is either right or wrong about causality in the DGP it describes. The conditional independence the model implies is either there or it’s not. Yet if that conditional independence is there, the test can still conclude in favor of dependence when the data is arbitrarily large.</p>
+</div>
+<div class="readable-text intended-text" id="p198">
+<p>Again, if we view conditional independence testing as a heuristic for refuting our DAG, then this sensitivity to the size of the data shouldn’t upset us. Regardless of the data size and the significance thresholds, the <em>relative</em> differences between <em>p</em>-values when there is no conditional independence and when there is will be large and obvious.</p>
+</div>
+<div class="readable-text" id="p199">
+<h3 class="readable-text-h3" id="sigil_toc_id_89"><span class="num-string">4.4.4</span> The problem of multiple comparisons</h3>
+</div>
+<div class="readable-text" id="p200">
+<p>In statistical hypothesis testing, the more tests you run, the more testing errors you rack up. The same is true when running a test for each d-separation implied by a causal DAG. In statistics, this problem is called the <em>multiple comparisons problem</em>. There are solutions to dealing with multiple comparisons problems, such as using <em>false discovery rates</em>. If you are familiar with such methods, applying them won’t hurt. If you want to learn more, see the chapter’s notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for references to false discovery rates in the context of causal modeling. But again, I encourage you to view traditional conditional independence testing as a heuristic that helps with the ultimate goal of building a good causal DAG. Focus on this goal and on the subsequent causal inference analysis you will conduct using your DAG, and avoid rabbit holes of statistical testing rigor.</p>
+</div>
+<div class="readable-text" id="p201">
+<h3 class="readable-text-h3" id="sigil_toc_id_90"><span class="num-string">4.4.5</span> Conditional independence testing struggles in machine learning settings</h3>
+</div>
+<div class="readable-text" id="p202">
+<p>Commonly used libraries for conditional independence testing are generally limited to one-dimensional variables with fairly simple patterns of correlation between them. pgmpy’s conditional independence tests, which are imported from SciPy, are no exception. In recent years, several nonparametric tests have been developed for more nuanced distributions, such as kernel-based conditional independence tests. Tests in the PyWhy library PyWhy-Stats are a good place to start if you are interested in such tests.</p>
+</div>
+<div class="readable-text intended-text" id="p203">
+<p>However, in machine learning, it is common for variables to have more than one dimension such as vectors, matrices, and tensors. For example, one variable in a causal DAG might represent a matrix of pixels constituting an image. Further, the statistical associations between these variables can be nonlinear.</p>
+</div>
+<div class="readable-text intended-text" id="p204">
+<p>One solution is to focus on prediction. If two things are independent, they have no ability to predict one another. Suppose we have two predictive models <em>M</em><sub>1</sub> and <em>M</em><sub>2</sub>. <em>M</em><sub>1</sub> predicts <em>Y</em> using <em>Z</em> as a predictor. <em>M</em><sub>2</sub> predicts <em>Y</em> using <em>X</em> and <em>Z</em> as a predictor. Predictors can have dimensions greater than one. If <em>X</em> ⊥ <em>Y</em> | <em>Z</em>, then any <em>X</em> has no predictive information about <em>Y</em> beyond what is already provided by <em>Z</em>. So you can test <em>X</em> ⊥ <em>Y</em> | <em>Z</em> by comparing the model predictive accuracy of <em>M</em><sub>2</sub><sub> </sub>to <em>M</em><sub>1</sub>. When the models perform similarly, we have evidence of conditional independence. Note that you’d want to prevent <em>M</em><sub>2</sub> from “cheating” on its predictive accuracy by taking steps to avoid overfitting—yet another way spurious correlation can creep into our analysis.</p>
+</div>
+<div class="readable-text" id="p205">
+<h3 class="readable-text-h3" id="sigil_toc_id_91"><span class="num-string">4.4.6</span> Final thoughts</h3>
+</div>
+<div class="readable-text" id="p206">
+<p>Conditional independence testing is an extensive and nuanced subject. Your goal with this testing is to refute your causal DAG, not to create the Platonic ideal of a conditional independence testing suite. I recommend getting a testing workflow that is <em>good enough</em>, and then focusing on building your DAG and using that DAG in downstream causal inferences. For example, if I had a mix of continuous and discrete variables, then rather than implementing a test that could accommodate my different data types, I would discretize my continuous variables (for example, turning age as time since birth into age brackets) and use a vanilla chi-squared test, to keep things moving along.</p>
+</div>
+<div class="readable-text" id="p207">
+<h2 class="readable-text-h2" id="sigil_toc_id_92"><span class="num-string">4.5</span> Refuting a causal DAG given latent variables</h2>
+</div>
+<div class="readable-text" id="p208">
+<p>The method of testing DAGs with conditional independence has a latent variable problem. If a variable in our causal DAG is latent (not observed in the data), we can’t run any conditional independence tests involving that variable. That is a major problem; if a variable is an important part of the DGP, we can’t exclude it from our DAG simply because we can’t test independence assertions with that variable.</p>
+</div>
+<div class="readable-text intended-text" id="p209">
+<p>To illustrate, consider the causal DAG in figure 4.20. This figure represents how smoking behavior (<em>S</em><em> </em>) is influenced both by the cost of cigarettes (<em>C</em><em>  </em>) as well as genetic factors (denoted <em>D</em> as in “DNA”) that make one more or less prone to nicotine addiction. Those same genetic factors influence one’s likelihood of getting lung cancer (<em>L</em>). In this model, smoking’s effect on cancer is <em>mediated</em> through tar buildup (<em>T</em><em>  </em>) in the lungs.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p210">
+<img alt="figure" height="240" src="../Images/CH04_F20_Ness.png" width="545"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.20</span> A causal DAG representing smoking’s effect on cancer. The variable for genetics (<em>D</em>) is gray because it is unobserved in the data, so we can’t run tests for conditional independencies involving <em>D</em>. However, we can test other types of constraints.</h5>
+</div>
+<div class="readable-text" id="p211">
+<p>If we have data observing all these variables, we can run conditional independence tests targeting the following d-separations: (<em>C</em> ⊥<em><sub>G</sub></em> <em>T</em> | <em>S</em>), (<em>C</em> ⊥<em><sub>G</sub></em> <em>L</em> | <em>D</em>, <em>T</em>), (<em>C</em> ⊥<em><sub>G</sub></em> <em>L</em> | <em>D</em>, <em>S</em>), (<em>C</em> ⊥<em><sub>G</sub></em> <em>D</em>), (<em>S</em> ⊥<em><sub>G</sub></em> <em>L</em> | <em>D</em>, <em>T</em>), and (<em>T</em> ⊥<em><sub>G</sub></em> <em>D</em> | <em>S</em>). But suppose we don’t have data on the genetics variable (<em>D</em><em> </em>). For example, perhaps measuring this genetics feature requires an infeasibly expensive and invasive laboratory test. Of all the d-separations we listed, the only one not involving <em>D</em> is (<em>C</em> ⊥<em><sub>G</sub></em> <em>T</em> | <em>S</em>). We are down from six to one feasible conditional independence test with which to test our DAG.</p>
+</div>
+<div class="readable-text intended-text" id="p212">
+<p>In general, a proposed causal model can have various implications for the joint probability distributions that are testable with data. The conditional independence implied by the graph structure is one type of testable implication. But some of the model’s implications are testable in cases of latent variables. In this section, we’re going to look at how we can test a DAG with one of these latent variable–related constraints.</p>
+</div>
+<div class="readable-text" id="p213">
+<h3 class="readable-text-h3" id="sigil_toc_id_93"><span class="num-string">4.5.1</span> An example of a testable implication that works with latent variables</h3>
+</div>
+<div class="readable-text" id="p214">
+<p>The causal Markov assumption says d-separations imply conditional independence in the data. So far, we’ve explored direct conditional independence between variables, but when some variables are latent, the graph can imply conditional independence <em>between functions of observed variables</em>. These implications are called “Verma constraints” in the literature, though I will use the less jargony “functional constraints.”</p>
+</div>
+<div class="readable-text intended-text" id="p215">
+<p>To illustrate, the DAG in figure 4.20 with latent variable <em>D</em> has the following functional constraint (for now, don’t worry about how its derived):<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p216">
+<img alt="figure" height="89" src="../Images/ness-ch4-eqs-1x.png" width="325"/>
+</div>
+<div class="readable-text" id="p217">
+<p>Just as the d-separation (<em>C</em> ⊥<em><sub>G</sub></em> <em>T</em> | <em>S</em><em> </em>) implies that the conditional independence statement (<em>C</em> ⊥ <em>T</em> | <em>S</em><em> </em>) should hold for the observational joint distribution, the functional constraint (<em>C</em> ⊥<em><sub>G</sub></em> <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em> </em>)) implies that <em>C</em> is independent of some function <em>h</em>(.) of variables <em>L</em>, <em>C</em>, and <em>T</em> in the observational joint distribution. Both implications are testable since they don’t involve <em>D</em>. We now have two tests we can run instead of one.</p>
+</div>
+<div class="readable-text intended-text" id="p218">
+<p><em>h</em>(.) has two components:</p>
+</div>
+<ul>
+<li class="readable-text" id="p219"> <em>P</em><em> </em>(<em>l</em><em>  </em>|<em>c</em>, <em>s</em>, <em>t</em>) is a function that returns the probability that <em>L</em> = <em>l</em> (suppose <em>l</em> is “true” for “has lung cancer” and “false” for “no lung cancer”), given <em>C</em> = <em>c</em>, <em>S</em> = <em>s</em>, and <em>T</em> = <em>t</em>. </li>
+<li class="readable-text" id="p220"> <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em>) is a function that returns the probability that <em>S</em> = <em>s</em> (suppose <em>s</em> is “low,” “medium,” or “high” depending on how heavily a smoker smokes) given the cost of cigarettes <em>C</em> = <em>c</em>. </li>
+</ul>
+<div class="readable-text" id="p221">
+<p><em>h</em>(.) then sums over all values of <em>S</em>. The function’s output is a random variable that, according to the DAG, should be independent of <em>C</em>. <em>h</em>(<em>l</em>, <em>c</em>, <em>t</em><em> </em>) is a function of <em>P</em>(<em>l</em><em>  </em>|<em>c</em>, <em>s</em>, <em>t</em><em> </em>) and <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em>), and it may feel odd thinking about independence in terms of probability functions. Remember that the independence relation is itself just a function of joint probability distributions.</p>
+</div>
+<div class="readable-text intended-text" id="p222">
+<p>Next, we’ll fit models of <em>P</em><em> </em>(<em>l</em><em>  </em>|<em>c</em>, <em>s</em>, <em>t</em>) and <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em>) from data and test this independence relation. But first, we’ll look at libraries that let us enumerate functional constraints like (<em>C</em> ⊥<sub><em>G</em></sub> <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>)) from a DAG just like we could enumerate d-separations with pgmpy’s <code>get_independencies</code>.</p>
+</div>
+<div class="readable-text" id="p223">
+<h3 class="readable-text-h3" id="sigil_toc_id_94"><span class="num-string">4.5.2</span> Libraries and perspectives on testing functional constraints</h3>
+</div>
+<div class="readable-text" id="p224">
+<p>How do we derive functional constraints like <em>C</em> ⊥<sub><em>G</em></sub> <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>)? Like d-separation, we can derive this type of constraint algorithmically from the graph. One implementation is in the <code>verma.constraints</code> function in the causaleffect R library. This function takes in the DAG with nodes labeled as latent and returns a set of testable constraints just like pgmpy’s <code>get_independencies</code>. For Python, the library Y0 (pronounced “why-not”) has a <code>r_get_verma_constraints</code> function (as of version 0.2.10), which is a wrapper that calls causaleffect’s R code. I’ll omit the Python code here because it requires installing R, but visit www.altdeep.ai/causalAIbook for links to libraries and references.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p225">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Mathematical intuition for functional constraints, and some advice</h5>
+</div>
+<div class="readable-text" id="p226">
+<p>Our goal for this section is only to show that there are ways to test your causal model even when there are latent variables. Functional constraints are one way to do this, but we don’t want to over-index on this particular flavor of testable implication. It is more important to avoid the dangerous mindset of limiting ourselves only to DAGs that are fully observed in the data.</p>
+</div>
+<div class="readable-text" id="p227">
+<p>That said, for the curious, I’ll offer a very high-level intuition for the math. Recall that the local Markov property says that <em>a </em><em>node is conditionally independent of its non-descendants, given its parents</em>. From there, we derive graphical criteria called d-separation that lets us find sets of nodes where this applies, we write a graph algorithm that uses those criteria to enumerate d-separations, and we use that algorithm to enumerate some conditional independence tests we can run.</p>
+</div>
+<div class="readable-text" id="p228">
+<p>For a given node <em>X</em>, let’s say “orphaned cousins” means non-descendants of <em>X</em> that share a latent ancestor of <em>X</em>. Here is, in informal terms, a latent variable analog to the local Markov property: <em>A node is conditionally independent of its non-descendants given its nearest observed ancestors, its orphaned cousins, and other nearest observed ancestors of those cousins</em>. Just as with d-separations, we can derive graphical criteria to identify individual cases where this applies.</p>
+</div>
+<div class="readable-text" id="p229">
+<p>Recall that we can factorize the joint probability distribution such that each factor is the conditional probability of a node’s outcome, given its parents. The probability functions in the functional constraint (like the <em>P</em>(<em>l</em>|<em>c</em>, <em>s</em>, <em>t</em>) and <em>P</em>(<em>s</em>|<em>c</em>) terms in <em>h</em>(<em>l</em>,<em>c</em>,<em>t</em>)) come into the picture once we start marginalizing that factorization over the latent variables and doing subsequent probability math.</p>
+</div>
+<div class="readable-text" id="p230">
+<p>See the references listed at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> if you want to deep dive. But my warning from the previous section holds here—<em>our goal is to falsify our DAG and move on to our target causal inference</em><em>.</em> Beware of falling down statistical, mathematical, and theoretical rabbit holes on the way to that goal.</p>
+</div>
+</div>
+<div class="readable-text" id="p231">
+<p>Now that we have a new testable implication in the form of <em>C</em> ⊥<em><sub>G</sub></em> <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>), let’s test it out.</p>
+</div>
+<div class="readable-text" id="p232">
+<h3 class="readable-text-h3" id="sigil_toc_id_95"><span class="num-string">4.5.3</span> Testing a functional constraint</h3>
+</div>
+<div class="readable-text" id="p233">
+<p>To test (<em>C</em> ⊥<em><sub>G</sub></em> <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>)), we have to calculate <em>h</em>(<em>l</em>, <em>c</em>, <em>t</em><em> </em>) = <em class="obliqued">∑</em><sub>S</sub><em>P</em><em> </em>(<em>l</em><em> </em>|<em>c</em>, <em>s</em>, <em>t</em>)<em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em><em> </em>) for each item in our data. That requires us to model <em>P</em><em> </em>(<em>l</em><em>  </em>| <em>c</em>, <em>s</em>, <em>t</em><em> </em>) and <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em><em> </em>). There are several modeling approaches we could go with, but we’ll use a naive Bayes classifier for this example so we can stick with using the pgmpy and pandas libraries. We’ll take the following steps:</p>
+</div>
+<ol>
+<li class="readable-text" id="p234"> Discretize cost (<em>C</em><em>  </em>) so we can treat it as a discrete variable. </li>
+<li class="readable-text" id="p235"> Use pgmpy to fit a naive Bayes classifier to <em>P</em><em> </em>(<em>l</em><em> </em>| <em>c</em>, <em>s</em>, <em>t</em>) and <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em><em> </em>). </li>
+<li class="readable-text" id="p236"> Write a function that takes in values of <em>L</em>, <em>C</em>, <em>T</em> and calculates <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>). </li>
+<li class="readable-text" id="p237"> Apply that function to each row in the data to get a new column of <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) values. </li>
+<li class="readable-text" id="p238"> Run an independence test between that column and the <em>C</em> column. </li>
+</ol>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p239">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p240">
+<p>The following code uses pgmpy version 0.1.19 because versions up to 0.1.24 (current at the time of writing) have a bug (already reported) that can cause issues with some of the naive Bayes classifier inference code. You don’t need to do this if you use another method of calculating <em>P</em>(<em>l</em>|<em>c</em>, <em>s</em>, <em>t</em>) and <em>P</em>(<em>s</em>|<em>c</em>). For stability, we’ll also use pandas version 1.4.3, which was the version when pgmpy 0.1.19 was current. Note that if you have installed later versions of pgmpy and pandas, you might have to uninstall those versions before installing these, or you could just spin up a new Python environment. Visit <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for links to the Jupyter notebooks with the code and notes on setting up a working environment.</p>
+</div>
+</div>
+<div class="readable-text" id="p241">
+<p>First, we’ll import the data. We’ll also discretize the cost of cigarettes (<em>C</em>) so it is more amenable to modeling with pgmpy.</p>
+</div>
+<div class="browsable-container listing-container" id="p242">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.10</span> Importing and formatting cigarette and cancer data</h5>
+<div class="code-area-container">
+<pre class="code-area">from functools import partial
+import numpy as np
+import pandas as pd
+
+data_url = "https://raw.githubusercontent.com/altdeep/causalML/master
+[CA] /datasets/cigs_and_cancer.csv"
+data = pd.read_csv(data_url)    <span class="aframe-location"/> #1
+cost_lower = np.quantile(data["C"], 1/3)   <span class="aframe-location"/> #2
+cost_upper = np.quantile(data["C"], 2/3)  #2
+def discretize_three(val, lower, upper):  #2
+    if val &lt; lower:   #2
+        return "Low"    #2
+    if val &lt; upper:    #2
+        return "Med"   #2
+    return "High"    #2
+    #2
+data_disc = data.assign(    #2
+    C = lambda df: df['C'].map(    #2
+            partial(   #2
+                discretize_three,   #2
+                lower=cost_lower,   #2
+                upper=cost_upper    #2
+            )   #2
+        )    #2
+)    #2
+data_disc = data_disc.assign(    <span class="aframe-location"/> #3
+    L = lambda df: df['L'].map(str),    #3
+)    #3
+print(data_disc)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Load the CSV file into a pandas ΔataFrame.
+     <br/>#2 Δiscretize cost (C) into a discrete variable with three levels to facilitate conditional impendence tests.
+     <br/>#3 Δiscretize cost (C) into a discrete variable with three levels to facilitate conditional impendence tests.
+     <br/>#4 Turn lung cancer (L) from a Boolean to a string, so the conditional independence test will treat it as a discrete variable.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p243">
+<p>The <code>print(data_disc)</code> line prints out the elements of the <code>data_disc</code> DataFrame.</p>
+</div>
+<div class="browsable-container listing-container" id="p244">
+<div class="code-area-container">
+<pre class="code-area">       C     S     T      L
+0   High   Med   Low   True
+1    Med  High  High  False
+2    Med  High  High   True
+3    Med  High  High   True
+4    Med  High  High   True
+.. ... ... ...  ...
+95   Low  High  High   True
+96  High  High  High  False
+97   Low   Low   Low  False
+98  High   Low   Low  False
+99   Low  High  High   True
+
+[100 rows x 4 columns]</pre>
+</div>
+</div>
+<div class="readable-text" id="p245">
+<p>Now we need to model <em>P</em><em> </em>(<em>l</em><em> </em>| <em>c</em>, <em>s</em>, <em>t</em><em> </em>) and <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em><em> </em>). We’ll opt for a naive Bayes classifier, a probabilistic model that “naively” assumes that, in the case of <em>P</em>(<em>l</em><em> </em>| <em>c</em>, <em>s</em>, <em>t</em>), cost (<em>C</em><em> </em>), smoking (<em>S</em><em> </em>), and tar (<em>T</em><em>  </em>) are conditionally independent given lung cancer status (<em>L</em><em> </em>). According to our causal DAG, that is clearly not true, but that doesn’t matter if all we want is a good way to calculate probability values for <em>L</em> given <em>C</em>, <em>S</em>, and <em>T</em>. A naive Bayes classifier will do that well enough.</p>
+</div>
+<div class="browsable-container listing-container" id="p246">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.11</span> Fit naive Bayes classifier of <em>P</em>(<em>l</em>| <em>c</em>, <em>s</em>, <em>t</em>)</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.inference import VariableElimination
+from pgmpy.models import NaiveBayes
+
+model_L_given_CST = NaiveBayes()   <span class="aframe-location"/> #1
+model_L_given_CST.fit(data_disc, 'L')   #1
+infer_L_given_CST = VariableElimination(model_L_given_CST)   #1
+#1
+def p_L_given_CST(L_val, C_val, S_val, T_val):#1
+    result_out = infer_L_given_CST.query(   #1
+        variables=["L"],    #1
+        evidence={'C': C_val, 'S': S_val, 'T': T_val},    #1
+        show_progress=False    #1
+    )    #1
+    var_outcomes = result_out.state_names["L"]    #1
+    var_values = result_out.values    #1
+    prob = dict(zip(var_outcomes, var_values))    #1
+    return prob[L_val]  #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 We’ll use a naive Bayes classifier in pgmpy to calculate the probability value for a given value of L given values of C, S, and T. In this case, we’ll use variable elimination.
+     <br/>#2 We’ll use a naive Bayes classifier in pgmpy to calculate the probability value for a given value of L given values of C, S, and T. In this case, we’ll use variable elimination.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p247">
+<p>Now we’ll do the same for <em>P</em><em> </em>(<em>s</em><em> </em>|<em>c</em><em> </em>).</p>
+</div>
+<div class="browsable-container listing-container" id="p248">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.12</span> Fit naive Bayes classifier of <em>P</em>(<em>s</em>|<em>c</em>)</h5>
+<div class="code-area-container">
+<pre class="code-area">model_S_given_C = NaiveBayes()    
+model_S_given_C.fit(data_disc, 'S')    
+infer_S_given_C = VariableElimination(model_S_given_C)    
+def p_S_given_C(S_val, C_val):    
+    result_out = infer_S_given_C.query(    
+        variables=['S'],    
+        evidence={'C': C_val},    
+        show_progress=False    
+    )    
+    var_names = result_out.state_names["S"]    
+    var_values = result_out.values    
+    prob = dict(zip(var_names, var_values))    
+    return prob[S_val]</pre>
+</div>
+</div>
+<div class="readable-text" id="p249">
+<p>Now we’ll bring these together to implement the <em>h</em>(<em>L</em>, <em>T</em>, <em>C</em><em> </em>) function. The following code uses a <code>for</code> loop to do the summation over <em>S</em>.</p>
+</div>
+<div class="browsable-container listing-container" id="p250">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.13</span> Combine models to create <em>h</em>(<em>L</em>,<em> T</em>,<em> C</em>)</h5>
+<div class="code-area-container">
+<pre class="code-area">def h_function(L, C, T):   <span class="aframe-location"/> #1
+    summ = 0    <span class="aframe-location"/> #2
+    for s in ["Low", "Med", "High"]:   #2
+        summ += p_L_given_CST(L, C, s, T) * p_S_given_C(s, C)    #2
+    return summ</pre>
+<div class="code-annotations-overlay-container">
+     #1 Implement h(L, C, T).
+     <br/>#2 Implement the summation of P(l|c,s,t) * P(s|c) over s.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p251">
+<p>Now, we’ll calculate the full set of outcomes for set {<em>C</em>, <em>T</em>, <em>L</em><em> </em>}. Given these outcomes, we can calculate the <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) for each of these combinations using the preceding function.</p>
+</div>
+<div class="browsable-container listing-container" id="p252">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.14</span> Calculate the outcome combinations of <em>C</em>, <em>T</em>, and <em>L</em></h5>
+<div class="code-area-container">
+<pre class="code-area">ctl_outcomes = pd.DataFrame(
+    [    <span class="aframe-location"/> #1
+        (C, T, L)     #1
+        for C in ["Low", "Med", "High"]    #1
+        for T in ["Low", "High"]    #1
+        for L in ["False", "True"]     #1
+    ],    #1
+    columns = ['C', 'T', 'L']     #1
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Calculate these values for each possible combination of outcomes of L, C, and T. First, we use list comprehensions to make a ΔataFrame containing all the combinations.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p253">
+<p>Printing this shows all combinations of outcomes for <em>C</em>, <em>T</em>, and <em>L</em>.</p>
+</div>
+<div class="browsable-container listing-container" id="p254">
+<div class="code-area-container">
+<pre class="code-area">       C     T      L
+0    Low   Low  False
+1    Low   Low   True
+2    Low  High  False
+3    Low  High   True
+4    Med   Low  False
+5    Med   Low   True
+6    Med  High  False
+7    Med  High   True
+8   High   Low  False
+9   High   Low   True
+10  High  High  False
+11  High  High   True</pre>
+</div>
+</div>
+<div class="readable-text" id="p255">
+<p>For each of these outcomes, we’ll apply <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em>).</p>
+</div>
+<div class="browsable-container listing-container" id="p256">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.15</span> Calculate <em>h</em>(<em>L</em>,<em> C</em>,<em> T</em>) for each outcome of C, T, L</h5>
+<div class="code-area-container">
+<pre class="code-area">h_dist = ctl_outcomes.assign(    
+    h_func = ctl_outcomes.apply(    
+        lambda row: h_function(    
+            row['L'], row['C'], row['T']), axis = 1    
+    )    
+)    
+print(h_dist)</pre>
+</div>
+</div>
+<div class="readable-text" id="p257">
+<p>Now for each joint outcome of <em>C</em>, <em>T</em>, and <em>L</em>, we have a value of <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em>). </p>
+</div>
+<div class="browsable-container listing-container" id="p258">
+<div class="code-area-container">
+<pre class="code-area">       C     T      L    h_func
+0    Low   Low  False  0.392395
+1    Low   Low   True  0.607605
+2    Low  High  False  0.255435
+3    Low  High   True  0.744565
+4    Med   Low  False  0.522868
+5    Med   Low   True  0.477132
+6    Med  High  False  0.369767
+7    Med  High   True  0.630233
+8   High   Low  False  0.495525
+9   High   Low   True  0.504475
+10  High  High  False  0.344616
+11  High  High   True  0.655384</pre>
+</div>
+</div>
+<div class="readable-text" id="p259">
+<p>Finally, we’ll merge this <code>h_func</code> distribution into the dataset such that for each row of our data, we get a value of <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em> </em>).</p>
+</div>
+<div class="browsable-container listing-container" id="p260">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.16</span> Merge to get a value of <em>h</em>(<em>L</em>,<em> C</em>,<em> T</em>) for each row in the data</h5>
+<div class="code-area-container">
+<pre class="code-area">df_mod = data_disc.merge(h_dist, on=['C', 'T', 'L'], how='left')   <span class="aframe-location"/> #1
+print(df_mod)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Add a column representing the variable h(L, C, T).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p261">
+<p>We see the result with <code>print(df_mod)</code>:</p>
+</div>
+<div class="browsable-container listing-container" id="p262">
+<div class="code-area-container">
+<pre class="code-area">       C     S     T      L    h_func
+0   High   Med   Low   True  0.504475
+1    Med  High  High  False  0.369767
+2    Med  High  High   True  0.630233
+3    Med  High  High   True  0.630233
+4    Med  High  High   True  0.630233
+..   ...   ...   ...    ...       ...
+95   Low  High  High   True  0.744565
+96  High  High  High  False  0.344616
+97   Low   Low   Low  False  0.392395
+98  High   Low   Low  False  0.495525
+99   Low  High  High   True  0.744565
+
+[100 rows x 5 columns]</pre>
+</div>
+</div>
+<div class="readable-text" id="p263">
+<p>The functional constraint says that <em>C</em> and <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) should be independent, so we can look at the evidence of independence between the <code>h_func</code> column and the <em>C</em> column. Since we discretized <em>C</em>, our calculated outcomes for <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) are technically discrete, so we could use a chi-squared test. But <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) is continuous in theory, so instead we’ll use a box plot to visualize dependence between the two variables. The functional constraint says <em>C</em> and <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) should be independent, so we’ll use a box plot that plots values of <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) against values of <em>C</em> to visually inspect whether <em>C</em> and <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em><em>  </em>) look independent.</p>
+</div>
+<div class="browsable-container listing-container" id="p264">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.17</span> Box plot visualizing independence between <em>C</em> and <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em>)</h5>
+<div class="code-area-container">
+<pre class="code-area">df_mod.boxplot("h_func", "C")</pre>
+</div>
+</div>
+<div class="readable-text" id="p265">
+<p>This produces figure 4.21.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p266">
+<img alt="figure" height="881" src="../Images/CH04_F21_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.21</span> A box plot visualization of cost (<em>C</em>) on the <em>x</em>-axis and the function <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em>) on the <em>y</em>-axis (labeled “Sum product”). The overlap of the distributions of the sum product for each value of <em>C</em> supports the functional constraints assertion that these two quantities are independent.</h5>
+</div>
+<div class="readable-text" id="p267">
+<p>The <em>x</em>-axis in figure 4.21 is different levels of cost (low, medium, and high). The <em>y</em>-axis represents values of the sum. Figure 4.21 is a box wand whiskers plot; each box is a representation of the distribution of the sum product for a given value of <em>C</em>. The top and bottom of the boxes are the quartiles of the distribution, the lines in the middle of the boxes are the median, and the shorter horizonal lines are the max and min values (for low cost, the median, upper quartile, and max are quite close). In summary, it looks as though the distributions of the sum product don’t change much across the different levels of cost; that’s what independence is supposed to look like. </p>
+</div>
+<div class="readable-text intended-text" id="p268">
+<p>We can also derive a <em>p</em>-value using an <em>analysis of variance </em>(ANOVA) approach, this time using an F-test rather than a chi-squared test. The following code uses the statsmodels library to run an ANOVA test. </p>
+</div>
+<div class="readable-text print-book-callout" id="p269">
+<p><span class="print-book-callout-head">Note</span>  “PR( &gt;F)” means the probability of seeing an F-statistic for a given variable (in our case, <em>C</em>) is at least as large as the F-statistic calculated from the data, assuming that the variable is independent of <code>sum_product</code> (i.e., the <em>p</em>-value).</p>
+</div>
+<div class="browsable-container listing-container" id="p270">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 4.18</span> Using ANOVA to evaluate independence</h5>
+<div class="code-area-container">
+<pre class="code-area">from statsmodels.formula.api import ols
+import statsmodels.api as sm
+
+model = ols('h_func ~ C', data=df_mod).fit()   <span class="aframe-location"/> #1
+aov_table = sm.stats.anova_lm(model, typ=2)   #1
+print(aov_table["PR(&gt;F)"]["C"])   #1
+
+model = ols('h_func ~ T', data=df_mod).fit()   <span class="aframe-location"/> #2
+aov_table = sm.stats.anova_lm(model, typ=2)    #2
+print(aov_table["PR(&gt;F)"]["T"])    #2
+
+model = ols('h_func ~ L', data=df_mod).fit()    <span class="aframe-location"/> #3
+aov_table = sm.stats.anova_lm(model, typ=2)  #3
+print(aov_table["PR(&gt;F)"]["L"])   #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 A recipe for doing ANOVA using the statmodels library
+     <br/>#2 Returns a high p-value, which supports (fails to falsify) the assertion that h(L, C, T) and C are independent
+     <br/>#3 Just as a sanity check, we run the same test to see whether h(L, C, T) looks independent of T and L. Unlike C, T and L should not be independent of h(L, C, T) and as expected, these tests return much smaller p-values, indicating dependence.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p271">
+<p>We print the <em>p</em>-value for <em>C</em> with <code>print(aov_table["PR(&gt;F)"]["C"])</code> and get ~0.1876. That <em>p</em>-value indicates we can’t reject the null hypothesis of independence, so it looks like the data supports the constraint. We also run the same test for <em>T</em> and <em>L</em> and, as expected, these are much smaller, indicating evidence of dependence. They are lower, both falling below the common .1 threshold where a standard hypothesis test would reject the hypothesis that <em>h</em>(<em>L</em>, <em>C</em>, <em>T</em>) is independent of <em>T</em> and <em>L</em>.</p>
+</div>
+<div class="readable-text" id="p272">
+<h3 class="readable-text-h3" id="sigil_toc_id_96"><span class="num-string">4.5.4</span> Final thoughts on testable implications</h3>
+</div>
+<div class="readable-text" id="p273">
+<p>A DAG’s d-separation and functional constraints imply that certain conditional independencies should hold in the joint probability distribution <em>if</em> the DAG is a good causal model of the DGP. We can falsify the DAG by running statistical tests for conditional independence. </p>
+</div>
+<div class="readable-text intended-text" id="p274">
+<p>More generally, a causal model can have different mathematical implications for the underlying joint probability distribution, and some of these can be tested. For example, if your model assumed the relationship between a cause and effect was linear, you could look for evidence of nonlinearity in the data (we’ll see more about functional causal assumptions in chapter 6). And, of course, you can falsify your model’s implications with experiments (as we’ll see in chapter 7).</p>
+</div>
+<div class="readable-text intended-text" id="p275">
+<p>The better we get at causal modeling, the better we get at testing and falsifying our causal models. But remember, don’t let the statistical and mathematical nuances of testing distract you from your goal of getting a good enough model and moving on to your target causal inference.</p>
+</div>
+<div class="readable-text" id="p276">
+<h2 class="readable-text-h2" id="sigil_toc_id_97"><span class="num-string">4.6</span> Primer on (the perils of) causal discovery</h2>
+</div>
+<div class="readable-text" id="p277">
+<p>In the previous workflow, we proposed a causal DAG, considered what implications (like conditional independence) the DAG had for the observational joint distribution, and then tested those implications with the data. What if we went in the other direction? What if we analyzed the data for statistical evidence of causality induced constraints, and then constructed a causal DAG that is consistent with those constraints?</p>
+</div>
+<div class="readable-text intended-text" id="p278">
+<p>This describes the task of <em>causal discovery</em>: statistical learning of causal DAGs from data. In this section, I’ll provide a brief primer on causal discovery and cover what you need to know to make use of this class of algorithms.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p279">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Beware the false promises of causal discovery</h5>
+</div>
+<div class="readable-text" id="p280">
+<p>Causal discovery algorithms are often presented as magical tools that convert any dataset, no matter how limited in quality, into a causal DAG. That false promise discourages the mindset of modeling the DGP (rather than the data) and falsifying candidate models. It is also why it is hard to find consistent use cases for discovery in practice. This section takes the approach of framing how discovery algorithms work and where they fail, rather than going through a list of algorithms. I’ll conclude with advice about how to effectively incorporate these algorithms into your analysis workflow.</p>
+</div>
+</div>
+<div class="readable-text" id="p281">
+<p>We’ll start with an overview of key ideas that underpin discovery algorithms.</p>
+</div>
+<div class="readable-text" id="p282">
+<h3 class="readable-text-h3" id="sigil_toc_id_98"><span class="num-string">4.6.1</span> Approaches to causal discovery</h3>
+</div>
+<div class="readable-text" id="p283">
+<p>There are several approaches to causal discovery. Some algorithms (often called <em>constraint-based</em> algorithms) do what I just suggested—reverse engineer a graph from evidence of conditional independence in the data. Other algorithms (often called <em>score-based</em> algorithms) turn the causal DAG into an explanatory model of the data and find causal DAGs that have a high goodness-of-fit score. Yet another approach is to assume additional constraints on the functional relationships between parents and children in the causal DAG, as we’ll see with structural causal models in chapter 6.</p>
+</div>
+<div class="readable-text intended-text" id="p284">
+<p>The space of possible DAGs is a discrete space. One class of approaches tries to soften this space into a continuous space and use continuous optimization techniques. The popularity of automatic differentiation libraries for deep learning have accelerated this trend.</p>
+</div>
+<div class="readable-text intended-text" id="p285">
+<p>Because the space of DAGs can be quite large, it is useful to incorporate prior knowledge to constrain the size of that space. This often takes the form of specifying what edges must be present or what must be absent, or of using Bayesian priors on graph structure.</p>
+</div>
+<div class="readable-text intended-text" id="p286">
+<p>Some causal discovery algorithms can work with experimental data. This requires telling the algorithm which variables were set by the experimenter (or as we’ll say starting in chapter 7, which were “intervened upon”).</p>
+</div>
+<div class="readable-text intended-text" id="p287">
+<p>To get started with causal discovery using Python, I recommend the PyWhy libraries for causal discovery such as causal-learn and DoDiscover.</p>
+</div>
+<div class="readable-text" id="p288">
+<h3 class="readable-text-h3" id="sigil_toc_id_99"><span class="num-string">4.6.2</span> Causal discovery, causal faithfulness, and latent variable assumptions</h3>
+</div>
+<div class="readable-text" id="p289">
+<p>The causal Markov property assumes that if our DAG is true, d-separations in that DAG imply conditional independence statements in the joint probability of the variables:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p290">
+<img alt="figure" height="22" src="../Images/ness-ch4-eqs-2x.png" width="214"/>
+</div>
+<div class="readable-text" id="p291">
+<p><em>Causal faithfulness</em> (or just “faithfulness”) is the converse statement—conditional independence in the joint distribution implies d-separation in the graph:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p292">
+<img alt="figure" height="22" src="../Images/ness-ch4-eqs-3x.png" width="214"/>
+</div>
+<div class="readable-text" id="p293">
+<p>Many causal discovery algorithms rely on an assumption that faithfulness holds. It may not.</p>
+</div>
+<div class="readable-text" id="p294">
+<h4 class="readable-text-h4 sigil_not_in_toc">Discovery and faithfulness violations</h4>
+</div>
+<div class="readable-text" id="p295">
+<p>In section 4.4, we used the Markov property to test a candidate DAG; given a d- separation statement that held for the DAG, we ran a statistical test to check for empirical evidence of the conditional independence implied by that d-separation.</p>
+</div>
+<div class="readable-text intended-text" id="p296">
+<p>Imagine you wanted to build your graph by going in reverse. You detect evidence of an instance of conditional independence in your data, and then you limit your space of candidate DAGs to those consistent with the implied d-separation. You do this iteratively until you’ve narrowed down the space of candidate DAGs. Some discovery algorithms do some version of this procedure, and those that do are relying on a faithfulness assumption.</p>
+</div>
+<div class="readable-text print-book-callout" id="p297">
+<p><span class="print-book-callout-head">Note</span>  Algorithms that match evidence of conditional independence to d-separation are often called “constraint-based” discovery algorithms. A well-known example is the PC algorithm. Constraint-based algorithms find DAGs that are <em>constrained</em> to be consistent with the empirical evidence of causality.</p>
+</div>
+<div class="readable-text" id="p298">
+<p>The trouble comes from “faithfulness violations”—special cases where conditional independence in a joint probability distribution does not map to d-separation statements in a ground truth DAG. A simple example of a faithfulness violation is the case of a three-variable system that can decompose as follows: <em>P</em><em> </em>(<em>x</em>, <em>y</em>, <em>z</em><em> </em>) = <em>P</em><em> </em>(<em>x</em>, <em>y</em><em> </em>)<em>P</em><em> </em>(<em>y</em>, <em>z</em><em> </em>)<em>P</em><em> </em>(<em>x</em>, <em>z</em><em> </em>). That is, for any value of one variable, the association between the other two variables is always the same. You could detect this peculiar form of independence in data, but you can’t represent it with d-separation in a DAG. (If you don’t believe me, try.)</p>
+</div>
+<div class="readable-text intended-text" id="p299">
+<p>Researchers worry about these special cases because they mean a discovery algorithm that relies on faithfulness doesn’t generalize to all distributions. When you use these algorithms, you are assuming faithfulness holds for you problem domain, and that’s not something you can test. However, violations of causal faithfulness are not typically the biggest source of headaches in practical causal discovery. That honor is reserved for latent variables.</p>
+</div>
+<div class="readable-text" id="p300">
+<h4 class="readable-text-h4 sigil_not_in_toc">The challenge of latent variables</h4>
+</div>
+<div class="readable-text" id="p301">
+<p>The bigger pain is that most causal discovery algorithms, yet again, have a latent variable problem. To illustrate, suppose the true causal DAG was the DAG in figure 4.22.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p302">
+<img alt="figure" height="166" src="../Images/CH04_F22_Ness.png" width="288"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.22</span> Assume this is the true causal DAG. Here, <em>B</em>, <em>C</em>, and <em>D</em> are conditionally independent, given <em>A</em>.</h5>
+</div>
+<div class="readable-text intended-text" id="p303">
+<p>In this DAG, variables <em>B</em>, <em>C</em>, and <em>D</em> are conditionally independent of one another, given <em>A</em>. Now suppose that <em>A</em> were not observed in the data. With <em>A</em> as a latent variable, the discovery algorithm can’t run tests like <em>B</em> ⊥ <em>C</em> | <em>A</em>. The algorithm will detect a dependence between <em>B</em>, <em>C</em>, and <em>D</em> but will not find conditional independence between the three given <em>A</em>, and it might possibly return a DAG like figure 4.23, which reflects these results.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p304">
+<img alt="figure" height="344" src="../Images/CH04_F23_Ness.png" width="253"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.23</span> If <em>A</em> is latent, conditional independence tests that condition on <em>A</em> can’t be run. The algorithm would detect dependence between <em>B</em>, <em>C</em>, and <em>D</em> but no conditional independence given <em>A</em>, and it might possibly return a graph such as this.</h5>
+</div>
+<div class="readable-text intended-text" id="p305">
+<p>The remedy for this problem is to provide strong domain-specific assumptions about the latent variable structure in the discovery algorithm. A few generic discovery algorithms provide some accommodation for latent variable assumptions (the causal-learn library has a few). But this is rare, because it is hard to make it easy for users to specify domain-specific assumptions while still generalizing across domains.</p>
+</div>
+<div class="readable-text" id="p306">
+<h3 class="readable-text-h3" id="sigil_toc_id_100"><span class="num-string">4.6.3</span> Equivalence classes and PDAGs</h3>
+</div>
+<div class="readable-text" id="p307">
+<p>Let’s suppose our algorithm were to correctly recover all the true conditional independence statements from data and map them back to a true set of d-separation statements (causal faithfulness holds). The problem we face now is that multiple causal DAGs may have the same set of d-separation statements. This set of candidate DAGs is called a <em>Markov equivalence class</em>. The true causal DAG would be one of a possibly large set of members of this class. </p>
+</div>
+<div class="readable-text intended-text" id="p308">
+<p>For example, suppose the DAG on the left of figure 4.24 were the ground truth DAG. The DAG on the right of the graph differs from the correct graph in the edge between <em>A</em> and <em>T</em>. The two graphs have the same set of d-separation. In fact, we can also change the directions of the edges between {<em>L</em>, <em>S</em><em> </em>} and {<em>B</em>, <em>S</em><em> </em>} and still be in the same equivalence class, except for introducing a collider {<em>L</em> → <em>S</em> ← <em>B</em><em> </em>}, because a new collider would change the set of d-separations.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p309">
+<img alt="figure" height="472" src="../Images/CH04_F24_Ness.png" width="1011"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 4.24</span> Supposing the DAG on the left is the ground truth DAG, the (wrong) DAG on the right is in the same Markov equivalence class. The PDAG in the middle represents the equivalence class, where undirected edges represent edges where members disagree on direction.</h5>
+</div>
+<div class="readable-text" id="p310">
+<p>Some discovery algorithms will return a partially directed acyclic graph (PDAG), such as the DAG in the center of figure 4.24. In the PDAG, undirected edges correspond to edges where there is disagreement on the edge’s direction between members of the Markov equivalence class. This is nice, because we get a graphical representation of the equivalence class, and the algorithm can potentially search through the space of PDAGs instead of the larger space of DAGs. </p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p311">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Colliders and discovery</h5>
+</div>
+<div class="readable-text" id="p312">
+<p>Colliders feature prominently in causal discovery because they allow us to orient edges in the DAG from evidence of statistical dependence alone. Suppose we are using data to attempt to construct the ground-truth DAG in figure 4.24. We find evidence of dependence in the data of an edge between <em>A</em> and <em>T</em>. The idea of Markov equivalence means that evidence is not enough to determine the direction of that edge. Generally, evidence of dependence and independence in the data can imply the presence of edges but not their direction.</p>
+</div>
+<div class="readable-text" id="p313">
+<p>Colliders are the exception. It is possible to detect colliders like {<em>T</em> → <em>E</em> ← <em>L</em>} from evidence of independence and dependence alone; if the data suggests <em>T</em> and <em>L</em> are independent, but become dependent when conditioning on <em>E</em>, you have evidence of a collider with directed edges {<em>T</em> → <em>E</em> ← <em>L</em>}. </p>
+</div>
+<div class="readable-text" id="p314">
+<p>Colliders can also force orientation of edges outside of the collider. For example, consider the edge between <em>E</em> and <em>X</em> in the ground-truth DAG in figure 4.23. We might infer the existence of that edge from the following evidence in the data:</p>
+</div>
+<ul>
+<li class="readable-text" id="p315"> <em>E</em> and <em>X</em> are dependent. </li>
+<li class="readable-text" id="p316"> <em>T</em> and <em>X</em> are dependent. </li>
+<li class="readable-text" id="p317"> <em>T</em> and <em>X</em> are independent, given <em>E</em>. </li>
+</ul>
+<div class="readable-text" id="p318">
+<p>An edge between <em>E</em> and <em>X</em> is consistent with that evidence, but should we go with <em>E</em> → <em>X</em> or <em>E</em> ← <em>X</em>? Here, the collider {<em>T</em> → <em>E</em> ← <em>L</em>} helps; it already oriented the edge <em>T</em> → <em>E</em>, so adding <em>E</em> ← <em>X</em> would induce another collider {<em>T</em> → <em>E</em> ← <em>X</em>}. That collider would suggest <em>T</em> and <em>X</em> are independent but become dependent when conditioning on <em>E</em>, which violates the second and third observed items of evidence. So we conclude the edge is oriented as <em>E</em> → <em>X</em> by process of elimination. </p>
+</div>
+<div class="readable-text" id="p319">
+<p>Some causal discovery algorithms essentially algorithmicize this kind of logic. But remember, this logic breaks down when latent variables induce dependence between observed variables.</p>
+</div>
+</div>
+<div class="readable-text" id="p320">
+<p>That said, PDAGs and Markov equivalence classes only capture equivalence between DAGs encoding the same set of conditional independence constraints. If you want to find all graphs that satisfy an additional layer of constraining assumptions, such as all graphs that have the same posterior probability given a certain prior, then the PDAG might not be sufficient.</p>
+</div>
+<div class="readable-text intended-text" id="p321">
+<p>If we go only on conditional independence, data can’t distinguish between members of the Markov equivalence class, because having the same set of d-separations means having the same evidence of conditional independence in the data. This is an example of a <em>lack of causal identification</em>—when our data and a set of causal assumptions are not sufficient to disambiguate between possible answers to a causal question (in this case “what is the right causal DAG?”). We’ll explore causal identification in depth in chapter 10.</p>
+</div>
+<div class="readable-text" id="p322">
+<h3 class="readable-text-h3" id="sigil_toc_id_101"><span class="num-string">4.6.4</span> How to think about causal discovery</h3>
+</div>
+<div class="readable-text" id="p323">
+<p>In section 4.3, I argued that testing for causality induced constraints like conditional independence using off-the-shelf hypothesis testing libraries should be viewed more as a heuristic approach to refuting your causal DAG than a rigorous statistical procedure for validating the DAG. Similarly, I argued that for the practical user, off-the-shelf causal discovery algorithms should be viewed as a tool for exploratory data analysis during a human-driven causal DAG building process. The more you can input various types of domain knowledge and knowledge of latent variables into these algorithms, the better. But even then, they will produce obvious errors. Just as with the hypothesis testing case, avoid rabbit holes of trying to “fix” the discovery algorithm so it doesn’t make these errors. Use causal discovery as one imperfect tool in your broader project of building a good causal DAG and running the subsequent causal inference analysis.</p>
+</div>
+<div class="readable-text" id="p324">
+<h2 class="readable-text-h2" id="sigil_toc_id_102">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p325"> Causal modeling induces conditional independence constraints on the joint probability distribution. D-separation provides a graphical representation of conditional independence constraints. </li>
+<li class="readable-text" id="p326"> Building an intuition for d-separation is important for reasoning about causal effect inference and other queries. </li>
+<li class="readable-text" id="p327"> The colliders might make d-separation confusing, but you can build intuition by using d-separation functions in NetworkX and pgmpy. </li>
+<li class="readable-text" id="p328"> Using traditional conditional independence testing libraries to test d-separation has its challenges. The tests are sensitive to sample size, they don’t work well in many machine learning settings, and their hypotheses are misaligned. </li>
+<li class="readable-text" id="p329"> Because of these challenges, it is best to view the attempts to falsify the DAG using off-the-shelf conditional independence testing libraries as more of a heuristic. Focus on the overall goal of building a good (i.e., hard to refute) causal DAG and moving on to your downstream causal inference task. Avoid fixating on theoretical rigor in statistical hypothesis testing. </li>
+<li class="readable-text" id="p330"> When there are latent variables, a causal DAG may still have testable implications for functions of the observed variables. </li>
+<li class="readable-text" id="p331"> Causal discovery refers to the use of statistical algorithms to recover a causal DAG from data. </li>
+<li class="readable-text" id="p332"> The causal faithfulness property assumes conditional independence in the joint probability distribution maps to a true set of d-separations that hold in the ground truth causal DAG. </li>
+<li class="readable-text" id="p333"> A Markov equivalence class of DAGs is a set of DAGs with the same set of d-separations. Assuming you have the true set of d-separations, the ground truth causal DAG generally shares that set with other (wrong) DAGs. </li>
+<li class="readable-text" id="p334"> Causal discovery is especially vulnerable to latent variables. </li>
+<li class="readable-text" id="p335"> The more you can constrain causal inference with prior assumptions, such as latent structure and which edges cannot possibly exist and which must exist, the better. </li>
+<li class="readable-text" id="p336"> Causal discovery algorithms are useful exploratory data analysis tools in the process of building a causal DAG, but they are not reliable replacements for that process. Again, focus on the overall goal of building a good causal DAG and moving on to the downstream causal inference analysis. Avoid trying to “fix” causal discovery algorithms so they don’t produce obvious errors in your domain. </li>
+</ul>
+</div></body></html>

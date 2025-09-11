@@ -1,0 +1,1125 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">9</span></span> <span class="chapter-title-text"><em>Creating an LLM project: Reimplementing Llama 3</em></span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Implementing Meta’s Llama3 model</li>
+<li class="readable-text" id="p3">Training a simple LLM</li>
+<li class="readable-text" id="p4">Making improvements to it to prepare it for production</li>
+<li class="readable-text" id="p5">Serving the model to a production endpoint you can share with your friends</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<blockquote>
+<div>
+     I am only coming to Princeton to research, not to teach. There is too much education altogether, especially in American schools. The only rational way of educating is to be an example. 
+     <div class="quote-cite">
+       —Albert Einstein 
+     </div>
+</div>
+</blockquote>
+</div>
+<div class="readable-text" id="p7">
+<p>For the first major project in the book, we want to start from scratch. We’ve been showing you how to work with LLMs from end to end, and we are going to put it all together in this chapter. This project includes pretraining a model, roughly following a research paper. We won’t dive too deeply into the actual research; in fact, we’ll take several shortcuts here, as this isn’t the focus of this book. We will, however, showcase how to train the model, prepare it for servings with quantization, finetune it with low-rank adaptation (LoRA) for a specific purpose or task, and deploy it to a production environment you can showcase to your friends. </p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>This chapter will be very dense, but you should be more than prepared to meet the challenge at this point because it’s mainly a data scientist–focused project for production. We chose this project so that you can put all the lessons you’ve learned throughout the book together into one place and leave you with end-to-end, hands-on experience.</p>
+</div>
+<div class="readable-text" id="p9">
+<h2 class="readable-text-h2" id="sigil_toc_id_151"><span class="num-string">9.1</span> Implementing Meta’s Llama</h2>
+</div>
+<div class="readable-text" id="p10">
+<p>“Llama 2: Open Foundation and Fine-Tuned Chat Models” by Touvron et al.<a href="#footnote-141"><sup class="footnote-reference" id="footnote-source-1">1</sup></a> is an awesome paper that covers the development and release of Llama 2, one of the best, almost open source models currently on the market. You may have seen Llama 2 as the first open source model that was good enough to rival OpenAI’s models, at least based on the metrics of the time. Llama 3 is out now, and it has almost completely eclipsed Llama 2 in popularity and may very well be why you picked up this book. </p>
+</div>
+<div class="readable-text intended-text" id="p11">
+<p>Llama 3 is amazing for a couple of reasons—namely, size and availability. With only 70B parameters, pretrained on only 15T tokens, and finetuned on 100K chats, it shouldn’t be able to beat a 176B or a 1.7T parameter model at anything. Unsurprisingly, it usually doesn’t. But it does beat them at one crucial thing: its availability. This feature has given rise to an open source software community that has made tooling and optimizations and even gathers data to make it better. Llama 3 is the ultimate showcase that architecture is less important than data, and it is trained on clean data. </p>
+</div>
+<div class="readable-text intended-text" id="p12">
+<p>And we’re going to implement it.</p>
+</div>
+<div class="readable-text intended-text" id="p13">
+<p>By the end of this chapter, you will build a real model and understand the work that goes into it. Will it be as good as Meta’s Llama 3? Far from it, because we won’t be demonstrating with an adequate amount of data or GPUs. But we want to do more than simply supply you with yet another set of weights that are on some leaderboard somewhere. We want to give you some intuition for the steps required and the potential problems you may face. Instead of training a great model completely from scratch, which is what dozens of other books are tackling right now, we’ll show you how to train a below-average model and productionize it. This approach should have you not only learning more but demonstrating expertise beyond your experience level.</p>
+</div>
+<div class="readable-text" id="p14">
+<h3 class="readable-text-h3" id="sigil_toc_id_152"><span class="num-string">9.1.1</span> Tokenization and configuration</h3>
+</div>
+<div class="readable-text" id="p15">
+<p>By this point, you’ve likely already learned the importance of setting up the problem correctly. We want our models hitting tee-balls out of the park, not going up against an MLB pitcher. With that in mind, we’ll download the same tokenizer that Llama used. If you want, you can come back and experiment with this tokenizer since we are building from scratch. For example, try to use a faster tokenizer like tiktoken—just know you’ll be giving up the model’s ability to do math. You can also train your own version of the SentencePiece model, which should guarantee better results on whatever dataset you want to extend this with. The point is that this model is blank—no pretrained weights at all. So come back and do whatever you’d like after following along. </p>
+</div>
+<div class="readable-text print-book-callout" id="p16">
+<p><span class="print-book-callout-head">NOTE </span> Unlike other chapters where each listing was stand alone, in this chapter, each listing will be part of a larger notebook. You can find this notebook in the code repository accompanying this book.</p>
+</div>
+<div class="readable-text" id="p17">
+<p>Listing 9.1 shows our initial setup for this project, including imports, device settings, and grabbing our tokenizer. While we’ll just be grabbing the tokenizer from Hugging Face, keep in mind that not all tokenizers and models use the same type of tokens. This is important because we’re going to train this model differently than the way the inference tokenizer is set up for. To correct for this discrepancy, we’ll need to add a padding token. Anything would do, but we’ll use <code>"&lt;PAD&gt;"</code> in our example. Once we have that, we’ll make sure to grab the vocab itself (we’ll need it later) and create encoding and decoding functions to help with batch processing. Because we’re using the Hugging Face implementation, this isn’t strictly needed because it has batch tokenization built in, along with a <code>batch_decode</code> method that works great. For learning’s sake, we’ll go through the motions anyway. It’s always good practice to be aware of what you’re doing, and these functions help lock that down.</p>
+</div>
+<div class="readable-text intended-text" id="p18">
+<p>The last part of this listing offers the most flexibility. Here, we set up a master config that will ultimately decide how many parameters our model has, how long it trains, and how much memory it will take per row in our dataset. Our default values are pretty small and designed to give you a good experience regardless of your hardware, including if you’re training on a CPU-only build. Feel free to experiment and crank up the numbers.</p>
+</div>
+<div class="browsable-container listing-container" id="p19">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.1</span> Tokenize and config </h5>
+<div class="code-area-container">
+<pre class="code-area">import torch
+from torch import nn
+from torch.nn import functional as F
+import numpy as np
+from numba import jit
+from matplotlib import pyplot as plt
+import time
+from datetime import timedelta
+import pandas as pd
+from collections import OrderedDict
+from itertools import cycle
+from transformers import AutoTokenizer
+from sentencepiece import SentencePieceProcessor
+from datasets import load_dataset
+
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+device_cap = torch.cuda.get_device_capability()
+device_type = "cuda" if "cuda" in device else "cpu"
+torch.cuda.set_device(device)
+torch.manual_seed(8855)
+print(torch.__version__)
+print(device, device_cap)
+# 2.1.0+cu121
+# cuda:0 (8,6)
+
+
+tokenizer = AutoTokenizer.from_pretrained("./llama3/")     <span class="aframe-location"/> #1
+tokenizer.add_special_tokens({"pad_token": "&lt;PAD&gt;"})
+# tokenizer.pad_token = tokenizer.eos_token          <span class="aframe-location"/> #2
+
+vocab = tokenizer.vocab
+
+
+def encode(example):
+    return tokenizer.encode(example, return_tensors="pt")
+
+
+def decode(example):
+    return tokenizer.batch_decode(
+    example,
+    skip_special_tokens=False,
+    clean_up_tokenization_spaces=True,
+    )[0]
+
+
+print(f"Vocab Size: {len(vocab)}")
+decode(
+    encode(
+    """hello I am a specifically designed long sentence
+       to make sure this is working not only adequately,
+       but good enough for our batch functions"""
+    )
+)
+# Vocab Size: 32001
+#'&lt;s&gt; hello I am a specifically designed long sentence to make sure this is
+working not only adequately, but good enough for our batch functions'
+
+
+MASTER_CONFIG = {
+    "vocab_size": len(vocab),
+    "batch_size": 16,
+    "context_window": 32,
+    "d_model": 288,
+    "hidden_dim": 768,
+    "epochs": 1000,
+    "log_interval": 50,
+    "n_heads": 6,
+    "n_layers": 6,
+}
+GLOBAL_KEEP_TRACK = []</pre>
+<div class="code-annotations-overlay-container">
+     #1 Uses Hugging Face
+     <br/>#2 Optional
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p20">
+<p>As we’ve reiterated a number of times throughout the book, remember that the strategy you use to tokenize and embed your inputs ultimately dictates what your model is able to “see” during training and inference. You should generally do a bit more than just choose a tokenizer; in fact, we’ll see later in this chapter what choosing the Llama 3 tokenizer will do to our inference. </p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>You could opt for training a new tokenizer on your dataset or adding especially important tokens from your dataset to an already-robust tokenizer—preferably one that already generally matches the strategy you want and is trained in the domain you need. If you aren’t sure about any of that, any LLM tokenizer should generally work—that’s what they’re designed for. But don’t be surprised when the model doesn’t perform well when you pick a general tokenizer and want a specific task.</p>
+</div>
+<div class="readable-text" id="p22">
+<h3 class="readable-text-h3" id="sigil_toc_id_153"><span class="num-string">9.1.2</span> Dataset, data loading, evaluation, and generation</h3>
+</div>
+<div class="readable-text" id="p23">
+<p>Let’s get into the most important part of this process, which we will, for the most part, gloss over. There’s only so much we can focus on in one chapter, but we want to reiterate how important your dataset is to the success of your LLM. You’ll want to spend time gathering, evaluating, and cleaning your dataset, but we’ll shortcut that process in the interest of time. Instead, we’ll focus on the steps necessary to train the model—loading, preprocessing, batching, and so forth. As we go through this section, remember that your unique data sources end up future-proofing your model, so consider what data you have access to that no one else does and how you’d set that dataset up for this training.</p>
+</div>
+<div class="readable-text intended-text" id="p24">
+<p>We’ll start by loading a dataset that’s generally popular for creating toy models, TinyStories. If you did the work to explore your data—and we encourage you to do it—you’ll see that this is a smallish dataset for LLMs, containing only 30 million rows, each containing a short story in a single paragraph. It draws from some oft-implemented and widely accepted datasets. While a small dataset for LLMs, it’s likely still too large for many computers, and many readers will likely hit out-of-memory errors if they try to load it into memory wholesale. Here’s the perfect time to use streaming. In listing 9.2, we show you how to pull the dataset from the Hugging Face Hub or <code>dataset.to_iterable_ dataset()</code> if working locally. Both methods allow for much more memory-efficient processing, as the whole dataset isn’t loaded all at once, sacrificing some speed.</p>
+</div>
+<div class="browsable-container listing-container" id="p25">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.2</span> Loading and preparing the data</h5>
+<div class="code-area-container">
+<pre class="code-area">dataset = load_dataset(     <span class="aframe-location"/> #1
+    "text",
+    data_files={
+        "train": ["../../data/TinyStoriesv1andv2-train.txt"],
+        "val": ["../../data/TinyStoriesv1andv2-valid.txt"],
+    },
+    streaming=True,
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Streams from the local files
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p26">
+<p>Once you have your dataset and are able to retrieve an iteration, we’ll do some minimal (truly) cleaning. Then we’ll encode the whole thing so that our training can go quicker down the line. We’ll save the tokenization and attention masks as their own columns, and then we’ll shuffle the dataset and go on to dataloading. A quick note that’s always worth mentioning: when training any machine learning model, if you don’t already have your <code>train</code> and <code>val</code> splits defined, take extra care shuffling your dataset so that none of the data leaks into a split where it shouldn’t be:</p>
+</div>
+<div class="browsable-container listing-container" id="p27">
+<div class="code-area-container">
+<pre class="code-area">clean_dataset = dataset.filter(lambda example: len(example["text"]) &gt; 2)  <span class="aframe-location"/> #1
+
+prompt = "Write a short story. Possible Story: "
+tokenized_prompt = tokenizer(prompt, return_tensors="pt").input_ids
+
+encoded_dataset = clean_dataset.map(
+    lambda examples: tokenizer(
+      [prompt + x for x in examples["text"]],
+       padding=True,
+       return_tensors="pt",
+    ),
+    batched=True,
+)
+train_data = iter(encoded_dataset["train"].shuffle())
+val_data = iter(encoded_dataset["val"].shuffle())
+train_data = cycle(train_data)
+val_data = cycle(val_data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Minimal processing
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p28">
+<p>If you disregard our advice to stream and have a computer that can handle this dataset, know that loading the entire dataset into memory and then preparing it, even using hardware acceleration, takes over 30 minutes and more than 5 GB of memory. So if you have an extra 5 GB of VRAM outside of what you’ll need for your model, you’re good to go ahead and load it however you want. See figure 9.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p29">
+<img alt="figure" height="141" src="../Images/9-1.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.1</span> With over 30 million rows, this dataset is pretty small for what we’re trying to do, but it is still substantial on consumer hardware.</h5>
+</div>
+<div class="readable-text" id="p30">
+<p>We’ll need at least one function to load our data into a ready-to-use format for our model, and we’re opting to use just that. Our <code>get_batches</code> function will take in one row of our data and return a model input and an expected output that can be compared against it for self-supervised learning. No labeling is needed, as we’ll start on a random token, then grab tokens up to our whole context window (32) for our input, and shift one token to the right for our expected output. For our model, we create a scenario that looks like this:</p>
+</div>
+<div class="readable-text prompt" id="p31">
+<p><span class="prompt-head"><span class="prompt-initials">CB</span> <b>input:</b></span> How much wood could a woodchuck chuck if a woodchuck could chuck</p>
+</div>
+<div class="readable-text prompt" id="p32">
+<p><span class="prompt-head"><span class="prompt-initials">CB</span> <b>label:</b></span> How much wood could a woodchuck chuck if a woodchuck could chuck wood?</p>
+</div>
+<div class="readable-text" id="p33">
+<p>This process allows our model to train on our task: guessing the next token in an utterance, given the context of the previous 31 tokens. We use this strategy instead of other strategies like masking because our preferred inputs will never contain information after the input is completed. This way, our model will get better and better at text completion the more and higher-quality data it trains on. Almost all foundation models are pretrained in this manner—only they train for much longer with many more parameters than we will right now:</p>
+</div>
+<div class="browsable-container listing-container" id="p34">
+<div class="code-area-container">
+<pre class="code-area"># @torch.compile     <span class="aframe-location"/> #1
+def get_batches(
+    data,
+    batch_size,
+    context_window,
+    config=MASTER_CONFIG,
+    debug=False,
+):
+    x = []
+    y = []
+    for _ in range(
+        batch_size   <span class="aframe-location"/> #2
+    ):
+        batch_data = next(data)
+
+        ix = torch.randint(        <span class="aframe-location"/> #3
+            0, len(batch_data["input_ids"]) - context_window - 1, (2,)
+        )
+        batch_x = torch.stack(
+            [batch_data["input_ids"][i : i + context_window] for i in ix]
+        ).long()
+        batch_y = torch.stack(
+            [
+                batch_data["input_ids"][i + 1 : i + context_window + 1]
+                     for i in ix
+            ]
+        ).long()
+        x.append(batch_x)
+        y.append(batch_y)
+    x = torch.cat((x), 0).to(device)
+    y = torch.cat((y), 0).to(device)
+    return x, y</pre>
+<div class="code-annotations-overlay-container">
+     #1 Windows users leave commented
+     <br/>#2 Adjust this lower if you're running out of memory.
+     <br/>#3 Pick random starting points.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p35">
+<p>Once we have our data batching taken care of, we need to come up with functions for evaluation and inference so that we can gain insight into how the model is doing during training and so that we can use the model later. For our evaluation, we’ll take some batches and average the loss across them to get our validation loss. This result will not give us a real representation of our model’s performance but will not stop it from being useful for us:</p>
+</div>
+<div class="browsable-container listing-container" id="p36">
+<div class="code-area-container">
+<pre class="code-area">@torch.no_grad()
+def get_loss(model, lora=False, config=MASTER_CONFIG):
+    out = {}
+    model.eval()
+    for name, split in zip(["train", "val"], [train_data, val_data]):
+        losses = []
+        for _ in range(10):
+                xb, yb = get_batches(
+               split,
+               config["batch_size"],
+                 config["context_window"],
+                )
+            _, loss = model(xb, yb)
+            losses.append(loss.item())
+        out[name] = np.mean(losses)
+    model.train()
+    return out</pre>
+</div>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p37">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Questioning your assumptions</h5>
+</div>
+<div class="readable-text" id="p38">
+<p>When working with machine-learning models and other statistical methods, it’s important to understand how your assumptions will affect your results. Averages hamper data representation and understanding because they basically say, “For this comparison, we’re going to grab a made-up number, and we’re going to use that number in place of any of the real ones because it feels central to our distribution.” This approach doesn’t make it bad; made-up numbers often are more predictive than real ones. However, we urge you to be intentional and very open-minded about testing whether the average is the best marker for your users.</p>
+</div>
+</div>
+<div class="readable-text" id="p39">
+<p>For generation, we’ll do something similar but better. Logits are what we get out of our model’s forward method. We created a tokenized version of our prompt previously when we tokenized our dataset, so we’re ready to pass that prompt into our model a number of times and see what comes out. We’ll grab the logits from the model given the prompt and then sample our model’s distribution for our next token and decode.</p>
+</div>
+<div class="readable-text intended-text" id="p40">
+<p>For sampling that distribution, we’ll take the model’s output (logits) for only the very end of the input (the unknown token we want our model to generate) and then divide those logits by the temperature setting (higher temperature setting = smaller logits). Once we have our logits from the last time step, if we use multinomial sampling, we can sample using <code>top_k</code> and/or <code>top_p</code>, which are sampling against the highest probability tokens until you reach a total number of tokens or a total number of probability sums. Once we have that, we use softmax for the tokens we’ve sampled and then argmax to get the next token. If we want more exploration and creativity in our output, we can use multinomial sampling instead. As an exercise, test <code>top_k</code> versus <code>top_p</code> with multinomial and argmax versus multinomial to get an idea of which works best:</p>
+</div>
+<div class="browsable-container listing-container" id="p41">
+<div class="code-area-container">
+<pre class="code-area">@torch.inference_mode()
+def generate(
+    model,
+    config=MASTER_CONFIG,
+    temperature=1.0,
+    top_k=None,
+    max_new_tokens=30,
+    lora=False,
+):
+    idx_list = [tokenized_prompt] * 5
+    idx = torch.cat((idx_list), 0).long().to(device)
+    for _ in range(max_new_tokens):
+        logits = model(idx[:, -config["context_window"] :])    <span class="aframe-location"/> #1
+        last_time_step_logits = logits[
+            :, -1, :
+        ]                     <span class="aframe-location"/> #2
+
+        last_time_step_logits = last_time_step_logits / temperature
+        if top_k is not None:
+            v, _ = torch.topk(
+                last_time_step_logits,
+                min(top_k, last_time_step_logits.size(-1)),
+            )
+            last_time_step_logits[
+                last_time_step_logits &lt; v[:, [-1]]
+            ] = -float("Inf")
+        p = F.softmax(
+            last_time_step_logits, dim=-1
+        )                               <span class="aframe-location"/> #3
+        idx_next = torch.argmax(
+            p, dim=-1, keepdims=True
+        )                                <span class="aframe-location"/> #4
+        idx = torch.cat([idx, idx_next], dim=-1)  # append to the sequence
+    return [tokenizer.decode(x) for x in idx.tolist()]</pre>
+<div class="code-annotations-overlay-container">
+     #1 Calls the model
+     <br/>#2 All the batches (1); last time step, all the logits
+     <br/>#3 Softmax to get probabilities
+     <br/>#4 Sample from the distribution to get the next token
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p42">
+<p>And with that, we’ve concluded our setup! We have utility functions for all of the important parts of the model training, including tokenization, data loading, evaluation, inference, and data processing. If there’s anything you feel should be corrected, great! Do it—this is your project. If you want to use a multinomial for sampling instead of an argmax or want to get rid of the softmax and just argmax over the logits, awesome, go for it. For those of you for whom this is your first time, we know it can be quite a firehose, and we’d encourage you to work through it slowly, but don’t lose too much sleep over it. More than likely, you will not have to come up with what should change for your use case yourself because you’ll be implementing an already-created open source model. That said, it’s still a good idea to understand what’s going on behind the scenes and under the hood so that you know roughly where to look when things go wrong.</p>
+</div>
+<div class="readable-text" id="p43">
+<h3 class="readable-text-h3" id="sigil_toc_id_154"><span class="num-string">9.1.3</span> Network architecture</h3>
+</div>
+<div class="readable-text" id="p44">
+<p>We’ve now completed a ton of setup for training a model but haven’t made a model. Model architecture and training have been iterated upon ad nauseam, so we’ll skip talking about it too much and jump right in. We’ll start with a two-layer feed-forward network with fewer than 20M parameters, and then we’ll upgrade and talk about the changes that turn the model into Llama. We want to be clear about what is actually changing between them so you’ll get a good feel for the pieces involved. Because we aren’t going to be completely replicating Llama 3, but rather approximating it, here’s the official architecture if you’d like to try pretraining it on our dataset: <a href="https://mng.bz/Dp9A">https://mng.bz/Dp9A</a>.</p>
+</div>
+<div class="readable-text intended-text" id="p45">
+<p>In listing 9.3, we make a class for that linear model with a ReLU activation between the two linear layers. Here’s where we’ll also define our actual loss function (because in our <code>get_loss</code> function, we’re just sending inputs to the model). We’ll use cross entropy because we’re comparing unstructured sequences. Instead of getting into information theory for why cross-entropy is the answer to unstructured sequences, the current benchmark in the industry is called perplexity, which uses cross-entropy to figure out whether a model is making sense or not, so this loss function enables us to compete with other models in the industry. </p>
+</div>
+<div class="readable-text intended-text" id="p46">
+<p>There’s one thing that you may have noticed before when we tokenized our dataset: we’re padding in batches and not truncating, meaning each batch size should be the same length. We fully acknowledge that this doesn’t make any sense when pretraining; it’s just helping to speed things up. We do this because our longest length input is 997 tokens, and we don’t want to pad our entire dataset out to 997. Even mitigating that, the most common token in our dataset is still <code>"&lt;PAD&gt;"</code>. If we leave it as is, the model could learn to generate only padding tokens, which seemingly minimizes the loss when predicting the next token. Because we have a tokenizer vocab we just added to, however, we can tell the loss function to <code>ignore_index</code> our <code>tokenizer .pad_token_id</code> so correctly predicting padding tokens doesn’t mistakenly help the loss go down.</p>
+</div>
+<div class="browsable-container listing-container" id="p47">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.3</span> Simple model and training loop </h5>
+<div class="code-area-container">
+<pre class="code-area">class SimpleFeedForwardNN(nn.Module):
+    def __init__(self, config=MASTER_CONFIG):
+        super().__init__()
+        self.config = config
+
+        self.embedding = nn.Embedding(
+            config["vocab_size"], config["d_model"]
+        )
+        self.linear = nn.Sequential(
+            nn.Linear(config["d_model"], config["d_model"]),
+            nn.ReLU(),
+            nn.Linear(config["d_model"], config["vocab_size"]),
+        )
+
+        print(
+            f"model params: {sum([m.numel() for m in self.parameters()])}"
+        )
+
+    def forward(self, idx, targets=None):
+        x = self.embedding(idx)
+        logits = self.linear(x)
+
+        if targets is not None:
+            loss = F.cross_entropy(
+                logits.view(-1, self.config["vocab_size"]),
+                targets.view(-1),
+                ignore_index=tokenizer.pad_token_id,
+                # reduction="sum",
+            )
+            return logits, loss
+
+        else:
+            return logits
+
+
+model = SimpleFeedForwardNN(MASTER_CONFIG).to(device)
+opt_model = torch.compile(model)          <span class="aframe-location"/> #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 Comment this out on Windows.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p48">
+<p>Now that we have our model, we’ll write our training loop. We run the number of passes specified in the epochs portion of the master config, and we get our loss for each pass. The epochs here are more like steps, and we’d encourage you to run epochs through the whole dataset if you have the time. If you stick to the <code>MASTER_CONFIG</code> we set up previously, this original model will end up having 18.5M parameters. You should definitely change it to be the maximum number of parameters that your computer can handle. You can find this number by changing <code>d_model</code> (and <code>vocab_size</code> if you train a bigger tokenizer) in your master config:</p>
+</div>
+<div class="browsable-container listing-container" id="p49">
+<div class="code-area-container">
+<pre class="code-area">def train(
+    model,
+    optimizer,
+    scheduler=None,
+    data=None,
+    config=MASTER_CONFIG,
+    lora=False,
+    print_logs=False,
+):
+    losses = []
+    start_time = time.time()
+    for epoch in range(config["epochs"]):
+        try:
+            optimizer.zero_grad()
+
+                xs, ys = get_batches(
+                    data, config["batch_size"], config["context_window"]
+                )
+                  for i in range(1, config[‘context_window’]+1):
+                          x = xs[:i]
+                          y = ys[:i]
+                    logits, loss = model(xs, targets=ys)
+                    loss.backward()
+                    optimizer.step()
+
+                    if scheduler:
+                            scheduler.step()
+
+            if epoch % config["log_interval"] == 0:
+                batch_time = time.time() - start_time
+                x = get_loss(model, lora=lora)
+                losses += [x]
+                if print_logs:
+                    print(
+                      f"""Epoch {epoch} |
+                         train loss {x['train']:.3f} |
+                         val loss {x['val']:.3f} |
+                         Time {batch_time:.3f} |
+                         ETA: {timedelta(seconds=(batch_time * (config
+                            ['epochs'] - epoch)/config['log_interval']))}"""
+                    )
+                start_time = time.time()
+
+                if scheduler:
+                    print("lr: ", scheduler.get_last_lr())
+        except StopIteration:
+            print(f"Reached end of dataset on step {epoch}")
+            break
+
+    GLOBAL_KEEP_TRACK.append(
+       f"{type(model).__name__} {sum([m.numel() for m in 
+model.parameters()])} Params | Train: {losses[-1]['train']:.3f} | Val: 
+{losses[-1]['val']:.3f}"
+    )
+    print(
+        f"training loss {losses[-1]['train']:.3f} | validation loss: 
+{losses[-1]['val']:.3f}"
+    )
+    return pd.DataFrame(losses).plot(xlabel=”Step // 50”, ylabel=”Loss”)
+
+
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+)
+train(model, optimizer, data=train_data, print_logs=True)
+#Epoch 0 | train loss 10.365 | val loss 10.341 | Time 0.122 | ETA:
+ 0:00:02.431240
+#training loss 4.129 | validation loss: 4.458</pre>
+</div>
+</div>
+<div class="readable-text" id="p50">
+<p>Look, it’s figure 9.2, which was generated from listing 9.3! Try to guess what it will be, and then read the blurb to see if you’re right.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p51">
+<img alt="figure" height="841" src="../Images/9-2.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.2</span> Training a simple neural network on our dataset to generate text</h5>
+</div>
+<div class="readable-text intended-text" id="p52">
+<p>Look at that! That’s a pretty smooth curve when we train for the first time. Considering we only did 1,000 examples from our dataset, we’d encourage you to try for several actual epochs—say, try three going over the whole dataset—and see how things go. You’ll likely get surprisingly decent results; we did. Let’s go ahead and check out what it creates when generating text:</p>
+</div>
+<div class="browsable-container listing-container" id="p53">
+<div class="code-area-container">
+<pre class="code-area">generate(model, config=MASTER_CONFIG)
+# '&lt;s&gt; Write a short story. Possible Story: 3 together thisar andze Lily 
+said exciteded and smiled. Everything because he wasning loved to the time, 
+he did not find like to',
+
+for i in GLOBAL_KEEP_TRACK:
+    print(i)
+# SimpleFeedForwardNN 18547809 Params | Train: 4.129 | Val: 4.458</pre>
+</div>
+</div>
+<div class="readable-text" id="p54">
+<p>Not too shabby! Of course, these aren’t great results, but we weren’t expecting amazing results with our basic model and short training time. Reading the generated tokens, it almost makes sense. We’ll call that a win. Congratulations! We created a language model using a feed-forward network that can return tokens. Now it’s time to get into the changes that make Llama different from a regular feed-forward network.</p>
+</div>
+<div class="readable-text" id="p55">
+<h2 class="readable-text-h2" id="sigil_toc_id_155"><span class="num-string">9.2</span> Simple Llama</h2>
+</div>
+<div class="readable-text" id="p56">
+<p>If you check the full weights and layers as released by Meta, you may notice that what we are building is not exactly the same as what was released. The reason for this is twofold: (1) we’d like to make sure this discussion is still very understandable for people interacting with research for production for the first time, and (2) we’re considering the environments you’ll likely have access to when reading this book. Everything here should fit and run in Kaggle or Colab without problems. With that being the case, we’ll address differences in Llama 3’s architecture and ours so that if you did have the infra and data to replicate the paper for production, you could.<a href="#footnote-142"><sup class="footnote-reference" id="footnote-source-2">2</sup></a></p>
+</div>
+<div class="readable-text intended-text" id="p57">
+<p>Llama is different from a feed-forward network in a few ways: normalization, attention, activation, and number of layers. Without going too deeply into any of them, normalization helps stabilize training, attention helps support larger context lengths and uses information between layers more efficiently, activation helps represent nonlinearities better, and the number of layers increases the amount of information the model is able to represent. One other important thing to note is that we’re adding a scheduler this time around. The scheduler here is responsible for adjusting the learning rate during training, following a “schedule.” This addition helps us with potential exploding gradients and allows the model to converge more quickly.</p>
+</div>
+<div class="readable-text intended-text" id="p58">
+<p>Let’s change our network into a simpler version of Llama 3. Here, we’ll skip over some of the theory and implementation. But look at the notebook in GitHub too—we want you to test it out on your own!</p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.4</span> Simple Llama</h5>
+<div class="code-area-container">
+<pre class="code-area">class LlamaBlock(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.rms = RMSNormalization(
+            (config["d_model"], config["d_model"])
+        )                                                                  <span class="aframe-location"/> #1
+
+        self.attention = RoPEMaskedMultiheadAttention(config).to(device)   #1
+        self.feedforward = nn.Sequential(
+            nn.Linear(config["d_model"], config["hidden_dim"]),
+            SwiGLU(config["hidden_dim"]),                                  #1
+            nn.Linear(config["hidden_dim"], config["d_model"]),
+        )</pre>
+<div class="code-annotations-overlay-container">
+     #1 New
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p60">
+<p>Unlike the original network, we’re creating a whole class for LlamaBlocks, or smaller self-contained networks within our larger one. Now we have <code>RMSNormalization</code>, along with <code>RoPEMaskedMultiheadAttention</code> and a <code>SwiGLU</code> activation instead of <code>ReLU</code>. We’ve included the implementations in the notebook, so feel free to check them out if you are curious.</p>
+</div>
+<div class="readable-text intended-text" id="p61">
+<p>You’ll notice that our forward function is very different from the original feed forward. We’re no longer just embedding and then getting the logits from the embedding. Now we’re normalizing, adding attention, normalizing again, and then adding our logits to what comes out. This process helps the model integrate more nonlinearities into its overall considerations for how the input and desired output can line up:</p>
+</div>
+<div class="browsable-container listing-container" id="p62">
+<div class="code-area-container">
+<pre class="code-area">    def forward(self, x):
+        x = self.rms(x)
+        x = x + self.attention(x)
+
+        x = self.rms(x)
+        x = x + self.feedforward(x)
+        return x</pre>
+</div>
+</div>
+<div class="readable-text" id="p63">
+<p>Here, we can compare the original feed-forward network with this <code>SimpleLlama</code> class to get an idea of what’s changed overall. First, instead of only having one <code>Sequential</code> block of layers, we have a number of <code>LlamaBlocks</code> equal to <code>n_layers</code> in our config, which is <code>8</code>, as you’ll see in the following code snippet. Beyond that, we’re using the SwiGLU activation everywhere instead of a ReLU. SwiGLU adds some ability to handle negative numbers and helps with exploding/vanishing gradients. Other than that, they’re remarkably similar:</p>
+</div>
+<div class="browsable-container listing-container" id="p64">
+<div class="code-area-container">
+<pre class="code-area">class SimpleLlama(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.embedding = nn.Embedding(
+            config["vocab_size"], config["d_model"]
+        )
+        self.llama_blocks = nn.Sequential(
+            OrderedDict(
+                [
+                    (f"llama_{i}", LlamaBlock(config))   <span class="aframe-location"/> #1
+                    for i in range(config["n_layers"])
+                ]
+            )
+        )
+
+        self.ffn = nn.Sequential(
+            nn.Linear(config["d_model"], config["d_model"]),
+            SwiGLU(config["d_model"]),                          <span class="aframe-location"/> #2
+            nn.Linear(config["d_model"], config["vocab_size"]),
+        )
+
+        print(
+            f"model params: {sum([m.numel() for m in self.parameters()])}"
+        )
+
+    def forward(self, idx, targets=None):
+        x = self.embedding(idx)
+        x = self.llama_blocks(x)    <span class="aframe-location"/> #3
+        logits = self.ffn(x)
+
+        if targets is None:
+            return logits
+
+        else:
+            loss = F.cross_entropy(
+                logits.view(-1, self.config["vocab_size"]),
+                targets.view(-1),
+                ignore_index=tokenizer.pad_token_id,
+            )
+            return logits, loss</pre>
+<div class="code-annotations-overlay-container">
+     #1 New
+     <br/>#2 New
+     <br/>#3 New
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p65">
+<p>We can make some slight adjustments to our master config to make the model bigger by increasing the embedding dimension, the number of layers, and the context window. You don’t actually have to make that change to see the performance difference. If you had the compute, data, and time, you could train a viable version of Llama 3 (you can see the results of this training in figure 9.3):</p>
+</div>
+<div class="browsable-container listing-container" id="p66">
+<div class="code-area-container">
+<pre class="code-area">MASTER_CONFIG["epochs"] = 1000
+MASTER_CONFIG["batch_size"] = 16
+MASTER_CONFIG["d_model"] = 768
+MASTER_CONFIG["n_layers"] = 8
+MASTER_CONFIG["context_window"] = 128
+
+llama = SimpleLlama(MASTER_CONFIG).to(device)
+
+llama_optimizer = torch.optim.AdamW(
+    llama.parameters(),
+    betas=(0.9, 0.95),
+    weight_decay=1e-1,
+    eps=1e-9,
+    lr=5e-4,
+)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    llama_optimizer, 1000, eta_min=1e-5
+)                                             <span class="aframe-location"/> #1
+#Epoch 0 | train loss 10.321 | val loss 10.316 | Time 0.622 | ETA: 
+0:00:12.439990
+#lr:  [0.0004999987909744553]
+#training loss 6.216 | validation loss: 6.046 
+generate(
+    llama,
+    config=MASTER_CONFIG,
+    temperature=1.0,
+    top_k=25,
+    max_new_tokens=50,
+)
+#'&lt;s&gt; Write a short story. Possible Story: the Story there One.t day. Back
+ the, went to: her they Possible|. to and a said saw They:. be the She.. a. 
+to They. they. to and to for He was a in with',',
+
+for i in GLOBAL_KEEP_TRACK:
+    print(i)
+#SimpleFeedForwardNN 18547809 Params | Train: 4.129 | Val: 4.458
+#SimpleLlama 187827210 Params | Train: 6.216 | Val: 6.046<span class="aframe-location"/></pre>
+<div class="code-annotations-overlay-container">
+     #1 New
+     <br/>
+</div>
+</div>
+</div>
+<div class="browsable-container figure-container" id="p67">
+<img alt="figure" height="848" src="../Images/9-3.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.3</span> Training simple Llama on our dataset to generate text</h5>
+</div>
+<div class="readable-text" id="p68">
+<p>So we’ve made the 10× jump to over 180M parameters. Did it give us the emergent behavior we were looking for, though? If you look at the generated text, it’s making improvements in that it’s guessing punctuation more often, but almost none are in the correct place. The loss is higher, too, but we’re not particularly worried about that part; if we spruce up our data loading and allow the model to go all the way through the dataset two or three times, that should get lower. Lastly, if we make the model bigger by increasing the context window and number of layers, along with increasing the tokens in our dataset, we should be able to get that emergent behavior. For this dataset and config, you’d have to train ~1,900 times to go through the dataset once, so you’d have to train almost 6,000 times to start taking advantage of the whole dataset. </p>
+</div>
+<div class="readable-text intended-text" id="p69">
+<p>Given a lack of time and resources, we aren’t going to worry that our model isn’t at the top of any leaderboards. Heck, it’s not even good enough to get on one. But we have created a simple model that resembles Llama, and we have done so from scratch. This exercise has given us insights into the process, and you should have an idea of how to make it better. With these things in mind, let’s discuss how to put the model we’ve created into production. </p>
+</div>
+<div class="readable-text" id="p70">
+<h2 class="readable-text-h2" id="sigil_toc_id_156"><span class="num-string">9.3</span> Making it better</h2>
+</div>
+<div class="readable-text" id="p71">
+<p>Now that we have a model and it’s passing all of our internal benchmarks (we’ll pretend that we had some), it’s time to deploy the model and see how it behaves with customers interacting with it. Oh no! The internal tests we had aren’t representative of our production environment! Our first problem is that the model is way too big and slow to even get through the prod environment tests. Models themselves are often looked at as being the main ingredient to success. In contrast, the systems we engineer around models, including the data, are overlooked because “anyone can hire a good MLE to make those.” Unfortunately, that’s now the secret sauce that causes some companies to succeed and others to fail.</p>
+</div>
+<div class="readable-text intended-text" id="p72">
+<p>We’d like to acknowledge to everyone rushing to the comments and GitHub Issues that this model doesn’t work because that isn’t the point of this chapter, and we’d like to point you toward creators like Abi Aryan, Sebastian Raschka, and others who are covering the data science of pretraining LLMs. </p>
+</div>
+<div class="readable-text print-book-callout" id="p73">
+<p><span class="print-book-callout-head">NOTE </span> If you’d like to pretrain a causal language model that generates great content, there are other great resources available. Check out these projects for more information on pretraining your own model: Llama 3 (<a href="https://mng.bz/BgAw">https://mng.bz/BgAw</a>), Megatron LM (<a href="https://mng.bz/dZdg">https://mng.bz/dZdg</a>), Hugging Face Tutorial (<a href="https://mng.bz/V2RN">https://mng.bz/V2RN</a>), and Llama2.c (<a href="https://mng.bz/x6j7">https://mng.bz/x6j7</a>).</p>
+</div>
+<div class="readable-text" id="p74">
+<p>In the spirit of continuing with data scientist–focused production advice, we’ll now cover how to make your model easier to deploy and more effective once it’s out there. Once a data scientist has trained a model and it passes the efficacy tests set, it’s time to think about size.</p>
+</div>
+<div class="readable-text" id="p75">
+<h3 class="readable-text-h3" id="sigil_toc_id_157"><span class="num-string">9.3.1</span> Quantization</h3>
+</div>
+<div class="readable-text" id="p76">
+<p>The first problem you’ll definitely be up against is sheer size. Our 180M parameter model is over 700 MB on disk, which is much bigger than some companies ever plan on serving for any use case. How do you make sure it’s small enough and quick enough to run in AWS lambda or in a CPU-only instance? Compression is one way to help us out here, and quantization is something built into PyTorch! As we’ve stated before, you should get familiar with BitsandBytes, but let’s look at a quick implementation that quantizes the model after training using <code>torch</code>.</p>
+</div>
+<div class="readable-text intended-text" id="p77">
+<p>In the next listing, we take our model, and using PyTorch, we’ll quantize the model to INT8. The rest of the code and functions are simply to compare the model sizes before and after. The important bit is just the first couple of lines. </p>
+</div>
+<div class="browsable-container listing-container" id="p78">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.5</span> Quantization </h5>
+<div class="code-area-container">
+<pre class="code-area">llama.to("cpu")
+qconfig_dict = {
+    torch.nn.Embedding: torch.quantization.float_qparams_weight_only_qconfig,
+    torch.nn.Linear: torch.quantization.default_dynamic_qconfig,
+}
+dynamic_quantized_llama = torch.quantization.quantize_dynamic(   <span class="aframe-location"/> #1
+    llama, qconfig_dict, dtype=torch.qint8
+)
+#SimpleLlama size: 716.504MB
+#SimpleLlama size: 18.000MB</pre>
+<div class="code-annotations-overlay-container">
+     #1 Post training dynamic quantization
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p79">
+<p>You can see at the end that we go from almost 1 GB to 18 MB on disk by just going down to INT8 quantization. And we can go even lower,<a href="#footnote-143"><sup class="footnote-reference" id="footnote-source-3">3</sup></a> which can help you fit almost any model in the chosen production environment; just keep in mind that as you compress weights, perplexity goes up, resulting in less stable and predictable performance of the LLM, even with great prompt engineering.</p>
+</div>
+<div class="readable-text intended-text" id="p80">
+<p>So now that the model is small enough, the MLOps team puts it into the dev environment, and all of the tests pass, so our model finally made it to prod. All is well, right?</p>
+</div>
+<div class="readable-text" id="p81">
+<h3 class="readable-text-h3" id="sigil_toc_id_158"><span class="num-string">9.3.2</span> LoRA</h3>
+</div>
+<div class="readable-text" id="p82">
+<p>What do we do when, one month down the road, we have data showing our model is unable to perform a particular task up to the standards of its environment? We have data drift, and because we’re a startup, we don’t have the money or time to go through the rigorous training process we went through before to train a model from scratch. There’s a bigger problem too: we don’t have enough new data illustrating the new distribution to finetune the model effectively. This situation is perfect for training a LoRA to tweak the model rather than spending all that time training it over again.</p>
+</div>
+<div class="readable-text intended-text" id="p83">
+<p>Listing 9.6 shows you how to train a LoRA model and the adjustments we need to make to our Llama model. This listing shows first what adding a LoRA does to the inputs as they move through the model. The <code>LoRALayer</code> class is shown in clear PyTorch terms by Sebastian Raschka and Lightning.AI, and they have repos going into even more depth (see <a href="https://github.com/rasbt/dora-from-scratch">https://github.com/rasbt/dora-from-scratch</a> and <a href="https://mng.bz/Aa8e">https://mng.bz/Aa8e</a>). Next, it shows how our <code>SimpleLlama</code> class changes after we’ve added a LoRA to it. Lastly, we’ll go through a similar training process using a new instruct dataset and a new <code>get_batches</code> function. As a note, we use several helper functions throughout this listing to simplify it; you can find their definitions in the repository accompanying this book.</p>
+</div>
+<div class="browsable-container listing-container" id="p84">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.6</span> Low-rank adaptation </h5>
+<div class="code-area-container">
+<pre class="code-area">class LoRALayer(nn.Module):                           <span class="aframe-location"/> #1
+    def __init__(self, in_dim, out_dim, rank, alpha):
+        super().__init__()
+        standard_deviation = 1 / torch.sqrt(torch.tensor(rank).float())
+        self.A = nn.Parameter(
+            torch.randn(in_dim, rank) * standard_deviation
+        )
+        self.B = nn.Parameter(torch.zeros(rank, out_dim))
+        self.alpha = alpha
+
+    def forward(self, x):
+        x = self.alpha * (x @ self.A @ self.B)
+        return x
+
+
+class LinearWithLoRA(nn.Module):
+    def __init__(self, linear, rank, alpha):
+        super().__init__()
+        self.linear = linear
+        self.lora = LoRALayer(
+            linear.in_features, linear.out_features, rank, alpha
+        )
+    def forward(self, x):
+        return self.linear(x) + self.lora(x)
+
+
+class LlamaBlock(nn.Module):   <span class="aframe-location"/> #2
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.rms = RMSNormalization(
+            (config["d_model"], config["d_model"])
+        ).to(device)
+
+        self.attention = RoPEMaskedMultiheadAttention(config).to(device)
+        self.feedforward = nn.Sequential(
+            LinearWithLoRA(config["d_model"], config["d_model"]),  <span class="aframe-location"/> #3
+            SwiGLU(config["d_model"]),
+        ).to(device)
+
+    def forward(self, x):
+        x = self.rms(x)
+        x = x + self.attention(x)
+
+        x = self.rms(x)
+        x = x + self.feedforward(x)
+        return x
+
+
+class SimpleLlama(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.embedding = nn.Embedding(
+            config["vocab_size"], config["d_model"]
+        )
+        self.llama_blocks = nn.Sequential(
+            OrderedDict(
+                [
+                    (f"llama_{i}", LlamaBlock(config))
+                    for i in range(config["n_layers"])
+                ]
+            )
+        )
+
+        self.ffn = nn.Sequential(
+            LinearWithLoRA(config["d_model"], config["d_model"]),       <span class="aframe-location"/> #4
+            SwiGLU(config["d_model"]),
+            LinearWithLoRA(config["d_model"], config["vocab_size"]),    <span class="aframe-location"/> #5
+        )
+
+        print(
+            f"model params: {sum([m.numel() for m in self.parameters()])}"
+        )
+
+    def forward(self, idx, targets=None):
+        x = self.embedding(idx)
+        x = self.llama_blocks(x)
+        logits = self.ffn(x)
+
+        if targets is None:
+            return logits
+
+        else:
+            loss = F.cross_entropy(
+                logits.view(-1, self.config["vocab_size"]),
+                targets.view(-1),
+                ignore_index=tokenizer.pad_token_id,
+                reduction="sum",
+            )
+            return logits, loss
+
+dataset = load_dataset(    <span class="aframe-location"/> #6
+    "text",
+    data_files={
+        "train": ["../../data/Lima-train.csv"],
+        "val": ["../../data/Lima-test.csv"],
+    },
+    streaming=True,
+)
+
+encoded_dataset = dataset.map(
+    lambda examples: tokenizer(
+        examples["text"],
+        padding=True,
+        max_length=128,
+        truncation=True,
+       \]] return_tensors="pt",
+    ),
+    batched=True,
+)
+train_data = iter(encoded_dataset["train"].shuffle())
+val_data = iter(encoded_dataset["val"].shuffle())
+train_data = cycle(train_data)
+val_data = cycle(val_data)
+
+llama.to("cpu")         <span class="aframe-location"/> #7
+add_lora(llama)
+llama.to(device)
+
+parameters = [{"params": list(get_lora_params(llama))}]    <span class="aframe-location"/> #8
+lora_optimizer = torch.optim.AdamW(parameters, lr=1e-3)    <span class="aframe-location"/> #9
+
+train(     <span class="aframe-location"/> #10
+    llama,
+    lora_optimizer,
+    scheduler,
+    data=train_data,
+    config=MASTER_CONFIG,
+    lora=True,
+    print_logs=True,
+)
+
+state_dict = llama.state_dict()       <span class="aframe-location"/> #11
+lora_state_dict = {k: v for k, v in state_dict.items() if name_is_lora(k)}
+torch.save(llama.state_dict(), "./llama.pth")
+torch.save(lora_state_dict, "./lora.pth")</pre>
+<div class="code-annotations-overlay-container">
+     #1 What does LoRA actually do?
+     <br/>#2 Shows how the blocks change
+     <br/>#3 New
+     <br/>#4 New
+     <br/>#5 New
+     <br/>#6 New dataset for LoRA
+     <br/>#7 Step 1: Adds LoRA to the trained model
+     <br/>#8 Step 2: Gets the LoRA params instead of the whole model's
+     <br/>#9 Step 3: Initializes optimizer with LoRA params
+     <br/>#10 Step 4: Trains
+     <br/>#11 Step 5: Exports the params
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p85">
+<p>All of that results in two separate state dicts for us to save: the model and the LoRA. You can train LoRAs for a variety of specific tasks for which you may not have a large enough dataset to justify a whole finetuning. LoRA files on disk are usually only kilobytes even for very large models, depending on the size of the rank (in our case, 16).</p>
+</div>
+<div class="readable-text intended-text" id="p86">
+<p>You can inference using a LoRA generally in two ways: you can (1) load the original model’s state dict (ours is loaded within the <code>llama</code> variable), load the LoRA on top of it, and then inference as normal, or (2) merge all of the LoRA layers into the original Llama and essentially create a new model and inference normally. Here, we adopt the second option.<strong/></p>
+</div>
+<div class="browsable-container listing-container" id="p87">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.7</span> Low-rank adaptation </h5>
+<div class="code-area-container">
+<pre class="code-area"># Loading and Inferencing with LoRA
+add_lora(llama)
+
+_ = llama.load_state_dict(lora_state_dict, strict=False)
+
+merge_lora(llama)
+
+generate(llama)</pre>
+</div>
+</div>
+<div class="readable-text" id="p88">
+<p>The generated text is </p>
+</div>
+<div class="browsable-container listing-container" id="p89">
+<div class="code-area-container">
+<pre class="code-area">#'&lt;s&gt; off It the played he had cry bird dayt didn pretty Jack. a she moved
+day to play was andny curiousTC bandierungism feel But'</pre>
+</div>
+</div>
+<div class="readable-text" id="p90">
+<p>We can see that the text still isn’t as coherent as we’d like it to be; however, we can see a definite change in the generation compared to the simple Llama. No more overzealous punctuation, “cry,” and other nonhappy small story words are present, and there are more clearly made-up words. If you train on a more distinct set—say, Shakespeare—you’ll be able to see the difference even more clearly, and the nice thing about LoRA is that you can simply <code>remove_lora()</code> to get the original functionality back.</p>
+</div>
+<div class="readable-text" id="p91">
+<h3 class="readable-text-h3" id="sigil_toc_id_159"><span class="num-string">9.3.3</span> Fully sharded data parallel–quantized LoRA</h3>
+</div>
+<div class="readable-text" id="p92">
+<p>Building upon LoRA, quantized LoRA (QLoRA) allows for efficient fine-tuning of models larger than your GPU. It does this by quantizing the model and then training a LoRA on the frozen version of that quantized model. This technique is desirable when you look at how much memory it takes to finetune full-size models, even in half-precision. As we previously discussed, a 70B parameter model ends up being 140 GB on disk and will take more than five times that much memory to finetune because of the dataset and gradients. With QLoRA, we can train up to 65B parameters on only 48 GB of VRAM—a very noticeable reduction. QLoRA is currently the most effective way of taking an absurdly large model and productionizing it for your use case, and it saves tons of money for that process too.</p>
+</div>
+<div class="readable-text intended-text" id="p93">
+<p>Add to this fully sharded data parallel (FSDP), and you can break the consumer versus enterprise barriers. Some of you have likely been asking where parallelism has been this whole time, and here it is. FSDP allows for both data and model parameter parallelism throughout the entire training process on multiple GPUs, and it takes care of the sharding as well as the rejoining on the other end when order and magnitude matter. It’s amazing work coming from the team that maintains PyTorch.</p>
+</div>
+<div class="readable-text intended-text" id="p94">
+<p>Previously, 48 GB for QLoRA on a 70B parameter model was only possible using an enterprise GPU like an A100. With FSDP, you can take full advantage of parallelism on consumer hardware, like two 3090s, to get the same result. FSDP is native to PyTorch! Unlike our previous efforts in this chapter, we will now abstract a script created by Jeremy Howard and Answer.AI so that you can just run it in one of the cells on a 7B parameter model. Instead of needing to clone an entire GitHub repo, you can install and import <code>fsdp_qlora</code> from PyPI, and we’ve recreated the importable class in the <code>train_utils</code> folder. This code will execute fully parallel QLoRA training on as many GPUs as you have access to.</p>
+</div>
+<div class="browsable-container listing-container" id="p95">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.8</span> FSDP-QLORA training </h5>
+<div class="code-area-container">
+<pre class="code-area">from train_utils import FSDP_QLORA
+
+trainer = FSDP_QLORA(
+    model_name='meta-llama/Llama-2-7b-hf',
+    batch_size=2,
+    context_length=2048,
+    precision='bf16',
+    train_type='qlora',
+    use_gradient_checkpointing=True,
+    dataset='guanaco',
+    reentrant_checkpointing=True,
+    save_model=True,
+    output_dir=”.”
+)
+
+trainer.train_qlora()</pre>
+</div>
+</div>
+<div class="readable-text" id="p96">
+<p>The result of this running is a fully finetuned safetensors model file trained using quantized weights and parallelism. Unlike our bespoke pretrained version, this one works. The safetensors file contains a state dict file for the trained model, similar to the state dict we saved for the <code>SimpleLlama</code>. Both of those state dicts need to be converted into a full model file or a full checkpoint file before they can be uploaded to a place like Hugging Face; otherwise, classes like <code>AutoModel</code> or <code>LlamaForCausalLM</code> won’t be able to load your model later. </p>
+</div>
+<div class="readable-text" id="p97">
+<h2 class="readable-text-h2" id="sigil_toc_id_160"><span class="num-string">9.4</span> Deploy to a Hugging Face Hub Space</h2>
+</div>
+<div class="readable-text" id="p98">
+<p>Spaces are hosted containers where you can put models to allow community access, and they can be much more than that, depending on your needs. Spaces can be the place your company uses to deploy its whole model, as opposed to other cloud-hosting options. Spaces have a free tier and many paid tiers, depending on how compute-intensive your particular application is. Spaces integrate seamlessly with the most popular ML frontend stacks, namely Streamlit, Gradio, and FastAPI. </p>
+</div>
+<div class="readable-text print-book-callout" id="p99">
+<p><span class="print-book-callout-head">NOTE </span> We won’t be giving examples of these ML frontend stacks here, as we’ve given them in previous chapters, but we did include an example app in the notebook for this chapter. For reference, check out the documentation for Gradio (<a href="https://www.gradio.app/guides/quickstart">https://www.gradio.app/guides/quickstart</a>) and Hugging Face (<a href="https://huggingface.co/docs/hub/spaces">https://huggingface.co/docs/hub/spaces</a>).</p>
+</div>
+<div class="readable-text" id="p100">
+<p>With our models, we’ll need to convert their weights and directories into a format easily pushed to the Hugging Face Hub for our Space. We have an easily modified script that you can use to make this conversion. You can also run this on the simple Llama LoRA trained earlier.</p>
+</div>
+<div class="browsable-container listing-container" id="p101">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.9</span> Converting weights for Hugging Face </h5>
+<div class="code-area-container">
+<pre class="code-area">from safetensors import safe_open
+import torch
+from transformers import LlamaForCausalLM, BitsAndBytesConfig
+from peft import get_peft_model, LoraConfig, TaskType
+
+tensors = {}
+with safe_open(
+    "qlora_output/model_state_dict.safetensors",
+    framework="pt",
+    device=0
+) as f:
+    for k in f.keys():
+        tensors[k] = f.get_tensor(k)
+
+for k in tensors:
+    if 'lora' not in k: tensors[k] = None
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=False,
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+model = LlamaForCausalLM.from_pretrained(
+    "meta-llama/Llama-2-7b-hf",
+    use_cache=False,
+    quantization_config=bnb_config
+)
+
+for param in model.parameters():
+    param.requires_grad = False
+
+peft_config = LoraConfig(
+    task_type=TaskType.CAUSAL_LM,
+    inference_mode=False,
+    r=64,
+    lora_alpha=16,
+    lora_dropout=0.1,
+    target_modules=[
+        "k_proj",
+        "q_proj",
+        "v_proj",
+        "up_proj",
+        "down_proj",
+        "gate_proj"
+    ]
+)
+model = get_peft_model(model, peft_config)
+
+list(model.state_dict().keys())[:10]
+
+new_sd = model.state_dict()
+for k in new_sd:
+    if 'lora' in k:
+        new_sd[k] = tensors[k]
+
+model.load_state_dict(new_sd)
+
+model.save_pretrained("lora_adapters")</pre>
+</div>
+</div>
+<div class="readable-text" id="p102">
+<p>If you already have a repo and are logged in to your Hugging Face account, you can go ahead and run <code>model.push_to_hub()</code>. This will create a repo for your model if it doesn’t already exist. The reason you would or wouldn’t push to the hub has to do with whether you want to share your model with the world. If you’d rather have a space where others can try out your model (even for free), we’ll show how to do that next.</p>
+</div>
+<div class="readable-text intended-text" id="p103">
+<p>The first decisions to be made for a Space are how much compute your app requires and how you’ll maintain the code for the Space—with Git or with <code>huggingface-cli</code>. The first question starts with whether a GPU is required for your particular use case; for ours, it is not. However, when you need a speed or scale increase, you will likely need it, especially if you get into multiprocessing to get more performance out of the Space. Once you have your app and you’ve figured out your memory requirements, if you’ve decided to use Git, you’ll make your Space on Hugging Face, and then you’ll clone it the same way you would something on GitHub:</p>
+</div>
+<div class="browsable-container listing-container" id="p104">
+<div class="code-area-container">
+<pre class="code-area">$ git clone https://huggingface.co/spaces/your-username/your-space</pre>
+</div>
+</div>
+<div class="readable-text" id="p105">
+<p>Adding, committing, and pushing are the same as well:</p>
+</div>
+<div class="browsable-container listing-container" id="p106">
+<div class="code-area-container">
+<pre class="code-area">$ git add files-you-need
+$ git commit -m "Initial Commit"
+$ git push</pre>
+</div>
+</div>
+<div class="readable-text" id="p107">
+<p>If you’re not doing it through the CLI, the following listing shows you how.</p>
+</div>
+<div class="browsable-container listing-container" id="p108">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.10</span> Hugging Face Space </h5>
+<div class="code-area-container">
+<pre class="code-area">%pip install huggingface_hub -q
+
+from huggingface_hub import notebook_login, HfApi
+
+notebook_login() #OR huggingface-cli login
+
+api = HfApi()
+api.create_repo(        <span class="aframe-location"/> #1
+    repo_id="your_username/your_repo", repo_type="space", space_sdk="gradio"
+)
+
+stuff_to_save = [
+    "llama.pth",# Your model
+    "lora.pth",# Optional: Your LoRA
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+    "tokenizer.json",
+    "tokenizer.model",
+    "gradio_app.py",
+]
+for thing in stuff_to_save:
+    api.upload_file(
+        path_or_fileobj=f"./llama2/{thing}",
+        path_in_repo=thing,
+        repo_id="your_username/your_repo",
+        repo_type="space",
+    )</pre>
+<div class="code-annotations-overlay-container">
+     #1 If you haven’t created your repo yet
+     <br/>
+</div>
+</div>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p109">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Hugging Face Spaces</h5>
+</div>
+<div class="readable-text" id="p110">
+<p>The models, as we currently have them, require GPUs to load (especially quantized) and run. If you attempt to run on the free tier of HF Spaces, it will error out, as it did for us. You can fix this by upgrading to a paid tier or ZeroGPU. Hugging Face provides a version of a Gradio app that uses its own API only to provision a GPU for the amount of time it takes to complete a task and only when it’s requested. See <a href="https://mng.bz/XV11">https://mng.bz/XV11</a>.</p>
+</div>
+<div class="readable-text" id="p111">
+<p>As an exercise, we encourage you to think through and build out how you might be able to create a Hugging Face Space using our LLM that would run on the free tier, which is considerably easier than when we were first writing this, thanks to ZeroGPU.</p>
+</div>
+</div>
+<div class="readable-text" id="p112">
+<p>And there we have it—a fully functioning hosted instance of any model you want to use or train. You can run either of the two Llama models we trained in the Space, but you’ll need to do a bit of engineering around it depending on your needs. Congratulations on finishing the first project if you ran all of this code with your own environment! This was one of the denser chapters, and making it through with a working example is something to be proud of. Hugging Face provides private solutions to enterprises looking to use Spaces long term, and this is a completely viable production environment.</p>
+</div>
+<div class="readable-text" id="p113">
+<h2 class="readable-text-h2" id="sigil_toc_id_161">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p114"> Choosing an appropriate tokenizer and embedding strategy is one of the first crucial decisions you’ll make when creating a model from scratch, as it determines what the model will see and, therefore, is capable of. </li>
+<li class="readable-text" id="p115"> Your unique data sources future-proof your model. </li>
+<li class="readable-text" id="p116"> The main differences between Llama and a simple feed-forward are the normalization, attention, activation layers, and number of layers. </li>
+<li class="readable-text" id="p117"> Often, the first challenge to productionizing an LLM is its size: quantization to the rescue! </li>
+<li class="readable-text" id="p118"> In production, it’s only a matter of time before you’ll need to update the model. LoRA and QLoRA are perfect solutions to make minor tweaks to your model. </li>
+<li class="readable-text" id="p119"> Fully sharded data parallelism allows us to train QLoRA models cheaply on consumer hardware. </li>
+<li class="readable-text" id="p120"> A great option to deploy and share your LLM project is Hugging Face Hub Spaces due to their ease of use. </li>
+</ul>
+<div class="readable-text footnote-readable-text" id="p121">
+<p><a href="#footnote-source-1"><span class="footnote-definition" id="footnote-141">[1]</span></a> H. Touvron et al., “Llama 2: Open foundation and fine-tuned chat models,” arXiv.org, July 19, 2023, <a href="https://arxiv.org/abs/2307.09288">https://arxiv.org/abs/2307.09288</a>. </p>
+</div>
+<div class="readable-text footnote-readable-text" id="p122">
+<p><a href="#footnote-source-2"><span class="footnote-definition" id="footnote-142">[2]</span></a> <a href="https://ai.meta.com/blog/meta-llama-3/">https://ai.meta.com/blog/meta-llama-3/</a>, <a href="https://arxiv.org/pdf/2307.09288">https://arxiv.org/pdf/2307.09288</a>, <a href="https://arxiv.org/pdf/2302.13971">https://arxiv.org/pdf/2302.13971</a>.</p>
+</div>
+<div class="readable-text footnote-readable-text" id="p123">
+<p><a href="#footnote-source-3"><span class="footnote-definition" id="footnote-143">[3]</span></a> S. Ma et al., “The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits,” arXiv.org, Feb. 27, 2024, <a href="https://arxiv.org/abs/2402.17764">https://arxiv.org/abs/2402.17764</a>. </p>
+</div>
+</div></body></html>

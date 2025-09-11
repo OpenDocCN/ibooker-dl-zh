@@ -1,0 +1,267 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">appendix C</span></span> <span class="chapter-title-text">Multimodal latent spaces</span></h1>
+</div>
+<div class="readable-text" id="p2">
+<p>We haven’t had a good opportunity yet to dig into multimodal latent spaces, but we wanted to correct that here. An example of a multimodal model includes Stable Diffusion, which will turn a text prompt into an image. Diffusion refers to the process of comparing embeddings within two different modalities, and that comparison must be learned. A useful simplification of this process would be imagining all of the text embeddings as a big cloud of points, similar to the embedding visualization we made in chapter 2 (section 2.3), but with billions of words represented. With that cloud, we can then make another cloud of embeddings in a different but related modality—images, for example. </p>
+</div>
+<div class="readable-text intended-text" id="p3">
+<p>We need to make sure there’s some pragmatic relation between the clouds—in our case, having either the text or the image describing the other suffices. They need to be equivalent in that both modalities represent the same base idea. Once we have both embedding clouds and relationships mapped, we can then train by comparing the clouds, masking the text, and turning the images into white noise. Then, with sampling and periodic steps, the model can get good at completing the images, given just white noise based on the equivalent text description of the image.</p>
+</div>
+<div class="readable-text intended-text" id="p4">
+<p>We don’t normally think of these models as language models because the output isn’t text; however, can you imagine trying to use one that didn’t understand language? In their current state, these models are particularly susceptible to ambiguity because of the unsolved problem of equivalency. Here’s an example: imagine you tell a diffusion model to create an image based on the prompt, “an astronaut hacking their way through the Amazon jungle,” and you get an image of an astronaut typing on a computer made of cardboard boxes. A more famous example was the prompt “salmon in the river,” which returned images of cooked salmon floating in water. (The original source is unknown, but you can find an example at <a href="https://mng.bz/EOrJ">https://mng.bz/EOrJ</a>.) Examples like this are why prompt engineering has exploded within the text2X space, where that ambiguity is exacerbated, and the worth of being able to lock down exactly what tokens to pass to the model to get desired results goes up. </p>
+</div>
+<div class="readable-text intended-text" id="p5">
+<p>Going through the entire theory of training these models is out of the scope of this book—heck, we barely fit it into the appendix—but here are some things to look into if you’re interested. Textual inversion allows you to train an existing model that responds to a specific token with a particular concept. This allows you to get a particular aesthetic or subject with a very small number of example images. DreamBooth similarly trains a new model with a small number of example images; however, it trains the model to contain that subject or aesthetic regardless of the tokens used. PEFT and LoRA are both contained in this book but have seen an amazing amount of success in the text-to-image and image-to-image realm, where they offer a comparatively tiny alternative to textual inversions and DreamBooth that can arguably do the job just as well.</p>
+</div>
+<div class="readable-text intended-text" id="p6">
+<p>In the next listing, we’ll dive into this a bit by showing examples of diffusion at work. We’ll start with several imports and create an image grid function to help showcase how things work.</p>
+</div>
+<div class="browsable-container listing-container" id="p7">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing C.1</span> Example txt2Img diffusion </h5>
+<div class="code-area-container">
+<pre class="code-area">from diffusers import (
+    StableDiffusionPipeline,
+    UNet2DConditionModel,
+    AutoencoderKL,
+    DDIMScheduler,
+)
+from torch import autocast
+from PIL import Image
+from transformers import CLIPTextModel, CLIPTokenizer
+import torch
+import numpy as np
+
+from tqdm.auto import tqdm
+
+
+def image_grid(imgs, rows, cols):
+    assert len(imgs) == rows * cols
+
+    w, h = imgs[0].size
+    grid = Image.new("RGB", size=(cols * w, rows * h))
+    for i, img in enumerate(imgs):
+        grid.paste(img, box=(i % cols * w, i // cols * h))
+    return grid</pre>
+</div>
+</div>
+<div class="readable-text" id="p8">
+<p>Now we’ll start by showing you the easiest programmatic way to start using a Stable Diffusion pipeline from Hugging Face. This will load in the Stable Diffusion model, take a prompt, and then display the images. After showing that, we’ll dip our toes in the shallow end to see how this pipeline is working under the hood and how to do more with it. We realize this pipeline does not work the same as latent diffusion, which we will show, but it’s similar enough for our purposes:</p>
+</div>
+<div class="browsable-container listing-container" id="p9">
+<div class="code-area-container">
+<pre class="code-area"># Simple
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+).to("cuda")
+
+n_images = 4
+prompts = [
+    "masterpiece, best quality, a photo of a horse riding an astronaut, "
+    "trending on artstation, photorealistic, qhd, rtx on, 8k"
+] * n_images
+images = pipe(prompts, num_inference_steps=28).images
+
+image_grid(images, rows=2, cols=2)</pre>
+</div>
+</div>
+<div class="readable-text" id="p10">
+<p>After running this pipeline code, you should see a group of images similar to figure C.1. You’ll notice that it generated astronauts riding horses and not horses riding astronauts like we requested. In fact, you’d be hard-pressed to get any txt2img model to do the inverse, showing just how important understanding or failing to understand language is to multimodal models.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p11">
+<img alt="figure" height="900" src="../Images/C-1.png" width="900"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure C.1</span> Images generated from Stable Diffusion with the prompt “horse riding an astronaut”</h5>
+</div>
+<div class="readable-text" id="p12">
+<p>Now that we see what we are building, we’ll go ahead and start building a latent space image pipeline. We’ll start by loading in several models: CLIP’s tokenizer and text encoder, which you should be familiar with by now, as well as Stable Diffusion’s variational autoencoder (which is similar to the text encoder but for images) and its UNet model. We’ll also need a scheduler:</p>
+</div>
+<div class="browsable-container listing-container" id="p13">
+<div class="code-area-container">
+<pre class="code-area"># Detailed
+tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+text_encoder = CLIPTextModel.from_pretrained(
+    "openai/clip-vit-large-patch14"
+).to("cuda")
+vae = AutoencoderKL.from_pretrained(
+    "runwayml/stable-diffusion-v1-5", subfolder="vae"
+).to("cuda")
+model = UNet2DConditionModel.from_pretrained(
+    "runwayml/stable-diffusion-v1-5", subfolder="unet"
+).to("cuda")
+
+scheduler = DDIMScheduler(
+    beta_start = .00085, 
+    beta_end = .012, 
+    beta_schedule = "scaled_linear", 
+    clip_sample = False, set_alpha_to_one = False, 
+    steps_offset = 1
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p14">
+<p>Next, we’ll define three core pieces of our diffusion pipeline. First, we’ll create the <code>get_text_embeds</code> function to get embeddings of our text prompt. This should feel very familiar by now: tokenizing text to numbers and then turning those tokens into embeddings. Next, we’ll create the <code>produce_latents</code> function to turn those text embeddings into latents. Latents are essentially embeddings in the image space. Lastly, we’ll create the <code>decode_img_latents</code> function to decode latents into images. This works similar to how a tokenizer decodes tokens back to text:</p>
+</div>
+<div class="browsable-container listing-container" id="p15">
+<div class="code-area-container">
+<pre class="code-area">def get_text_embeds(prompt):
+    text_input = tokenizer(      <span class="aframe-location"/> #1
+        prompt,
+        padding="max_length",
+        max_length=tokenizer.model_max_length,
+        truncation=True,
+        return_tensors="pt",
+    )
+    with torch.no_grad():
+        text_embeddings = text_encoder(text_input.input_ids.to("cuda"))[0]
+
+    uncond_input = tokenizer(   <span class="aframe-location"/> #2
+        [""] * len(prompt),
+        padding="max_length",
+        max_length=tokenizer.model_max_length,
+        return_tensors="pt",
+    )
+    with torch.no_grad():
+        uncond_embeddings = text_encoder(uncond_input.input_ids.to("cuda"))[
+            0
+        ]
+
+    text_embeddings = torch.cat([uncond_embeddings, text_embeddings])  <span class="aframe-location"/> #3
+    return text_embeddings
+
+def produce_latents(
+    text_embeddings,
+    height=512,
+    width=512,
+    num_inference_steps=28,
+    guidance_scale=11,
+    latents=None,
+    return_all_latents=False,
+):
+    if latents is None:
+        latents = torch.randn(
+            (
+                text_embeddings.shape[0] // 2,
+                model.in_channels,
+                height // 8,
+                width // 8,
+            )
+        )
+    latents = latents.to("cuda")
+
+    scheduler.set_timesteps(num_inference_steps)
+    latents = latents * scheduler.sigmas[0]
+
+    latent_hist = [latents]
+    with autocast("cuda"):
+        for i, t in tqdm(enumerate(scheduler.timesteps)):
+            latent_model_input = torch.cat([latents] * 2)    <span class="aframe-location"/> #4
+            sigma = scheduler.sigmas[i]
+            latent_model_input = latent_model_input / (
+                (sigma**2 + 1) ** 0.5
+            )
+
+            with torch.no_grad():     <span class="aframe-location"/> #5
+                noise_pred = model(
+                    latent_model_input,
+                    t,
+                    encoder_hidden_states=text_embeddings,
+                )["sample"]
+
+            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)    <span class="aframe-location"/> #6
+            noise_pred = noise_pred_uncond + guidance_scale * (
+                noise_pred_text - noise_pred_uncond
+            )
+            latents = scheduler.step(noise_pred, t, latents)["prev_sample"] <span class="aframe-location"/> #7
+            latent_hist.append(latents)
+
+    if not return_all_latents:
+        return latents
+
+    all_latents = torch.cat(latent_hist, dim=0)
+    return all_latents
+
+
+def decode_img_latents(latents):
+    latents = 1 / 0.18215 * latents
+
+    with torch.no_grad():
+        imgs = vae.decode(latents)["sample"]
+
+    imgs = (imgs / 2 + 0.5).clamp(0, 1)
+    imgs = imgs.detach().cpu().permute(0, 2, 3, 1)
+    imgs = (imgs) * 127.5
+    imgs = imgs.numpy().astype(np.uint8)
+    pil_images = [Image.fromarray(image) for image in imgs]
+    return pil_images</pre>
+<div class="code-annotations-overlay-container">
+     #1 Tokenizes text and gets embeddings
+     <br/>#2 Δoes the same for unconditional embeddings
+     <br/>#3 Cat for the final embeddings
+     <br/>#4 Expands the latents to avoid doing two forward passes
+     <br/>#5 Predicts the noise residual
+     <br/>#6 Performs guidance
+     <br/>#7 Computes the previous noisy sample x_t -&amp;gt; x_t-1
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p16">
+<p>Now that we have all our pieces created, we can create the pipeline. This will take a prompt, turn it into text embeddings, convert those to latents, and then decode those latents into images:</p>
+</div>
+<div class="browsable-container listing-container" id="p17">
+<div class="code-area-container">
+<pre class="code-area">def prompt_to_img(
+    prompts,
+    height=512,
+    width=512,
+    num_inference_steps=28,
+    guidance_scale=11,
+    latents=None,
+):
+    if isinstance(prompts, str):
+        prompts = [prompts]
+
+    text_embeds = get_text_embeds(prompts)   <span class="aframe-location"/> #1
+
+    latents = produce_latents(    <span class="aframe-location"/> #2
+        text_embeds,
+        height=height,
+        width=width,
+        latents=latents,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+    )
+
+    imgs = decode_img_latents(latents)     <span class="aframe-location"/> #3
+
+    return imgs
+
+
+imgs = prompt_to_img(
+    ["Super cool fantasy knight, intricate armor, 8k"] * 4
+)
+
+image_grid(imgs, rows=2, cols=2)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Prompts -&amp;gt; text embeddings
+     <br/>#2 Text embeddings -&amp;gt; img latents
+     <br/>#3 Img latents 
+     <span class="regular-symbol">→</span> imgs
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p18">
+<p>At the end, you should see an image grid similar to figure C.2.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p19">
+<img alt="figure" height="900" src="../Images/C-2.png" width="900"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure C.2</span> Images generated from custom Stable Diffusion pipeline with the prompt “fantasy knight, intricate armor.”</h5>
+</div>
+<div class="readable-text" id="p20">
+<p>We hope you enjoyed this very quick tutorial, and as a final exercise, we challenge the reader to figure out how to use the <code>prompt_to_img</code> function to perturb existing image latents to perform an image-to-image task. We promise it will be a challenge to help solidify your understanding. What we hope you take away, though, is how important language modeling is to diffusion and current state-of-the-art vision models.</p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>Because modality is currently the least-explored portion of language modeling, there’s enough here to write a whole other book, and who knows? Maybe we will later. In the meantime, if you are interested in writing papers, getting patents, or just contributing to the furthering of a really interesting field, we’d recommend diving right into this portion because anything that comes out within the regular language modeling field can immediately be incorporated to make diffusion better.</p>
+</div>
+</div></body></html>

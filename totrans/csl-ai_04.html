@@ -1,0 +1,1081 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">3</span> </span> <span class="chapter-title-text">Building a causal graphical model</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Building a causal DAG to model a DGP</li>
+<li class="readable-text" id="p3">Using your causal graph as a communication, computation, and reasoning tool</li>
+<li class="readable-text" id="p4">Building a causal DAG in pgmpy and Pyro </li>
+<li class="readable-text" id="p5">Training a probabilistic machine learning model using the causal DAG as a scaffold</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>In this chapter, we’ll build our first models of the data generating process (DGP) using the <em>causal directed acyclic graph</em> (causal DAG)—a directed graph without cycles, where the edges represent causal relationships. We’ll also look at how to train a statistical model using the causal DAG as a scaffold.</p>
+</div>
+<div class="readable-text" id="p7">
+<h2 class="readable-text-h2" id="sigil_toc_id_53"><span class="num-string">3.1</span> Introducing the causal DAG</h2>
+</div>
+<div class="readable-text" id="p8">
+<p>Let’s assume we can partition the DGP into a set of variables where a given combination of variable values represents a possible state of the DGP. Those variables may be discrete or continuous. They can be univariate, or they can be multivariate vectors or matrices. </p>
+</div>
+<div class="readable-text intended-text" id="p9">
+<p>A causal DAG is a directed graph where the nodes are this set of variables and the directed edges represent the causal relationships between them. When we use a causal DAG to represent the DGP, we assume the edges reflect true causality in the DGP.</p>
+</div>
+<div class="readable-text intended-text" id="p10">
+<p>To illustrate, recall the rock-throwing DGP from chapter 2. We started with Jenny and Brian having a certain amount of inclination to throw rocks at a window, which has a certain amount of strength. If either person’s inclination to throw surpasses a threshold, they throw. The window breaks depending on whether either or both of them throw and the strength of the window.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p11">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p12">
+<p>The code in this chapter was written with pgmpy version 0.1.24, pyro-ppl version 1.8.6, and DoWhy version 0.11.1. Version 0.20.1 of Python’s Graphviz library was used to draw an image of a DAG, and this depends on having the core Graphviz software installed. Comment out the Graphviz code if you would prefer not to set up Graphviz for now.</p>
+</div>
+<div class="readable-text" id="p13">
+<p>See the book’s notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for links to the Jupyter notebooks with the code.</p>
+</div>
+</div>
+<div class="readable-text" id="p14">
+<p>We’ll now create a causal DAG that will visualize this process. As a Python function, the DGP is shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p15">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.1</span> DAG rock-throwing example</h5>
+<div class="code-area-container">
+<pre class="code-area">
+def true_dgp(jenny_inclination, brian_inclination, window_strength):    <span class="aframe-location"/> #1
+   <span class="aframe-location"/> jenny_throws_rock = jenny_inclination &gt; 0.5     #2
+    brian_throws_rock = brian_inclination &gt; 0.5   #2
+    if jenny_throws_rock and brian_throws_rock:    <span class="aframe-location"/> #3
+        strength_of_impact = 0.8    #3
+   <span class="aframe-location"/> elif jenny_throws_rock or brian_throws_rock:     #4
+        strength_of_impact = 0.6    #4
+    else:    <span class="aframe-location"/> #5
+        strength_of_impact = 0.0   #5
+    window_breaks = window_strength &lt; strength_of_impact    <span class="aframe-location"/> #6
+    return jenny_throws_rock, brian_throws_rock, window_breaks</pre>
+<div class="code-annotations-overlay-container">
+     #1 Input variables are numbers between 0 and 1.
+     <br/>#2 Jenny and Brian throw the rock if so inclined.
+     <br/>#3 If both throw the rock, the strength of impact is .8.
+     <br/>#4 If one of them throws, the strength of impact is .6.
+     <br/>#5 If neither throws, the strength of impact is 0.
+     <br/>#6 The window breaks if the strength of impact is greater than the window strength.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p16">
+<p>Figure 3.1 illustrates the rock-throwing DGP as a causal DAG.</p>
+</div>
+<div class="readable-text" id="p17">
+<p>In figure 3.1, each node corresponds to a random variable in the DGP. The directed edges correspond to cause-effect relationships (the source node is the cause and the target node is the effect).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p18">
+<img alt="figure" height="433" src="../Images/CH03_F01_Ness.png" width="447"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.1</span> A causal DAG representing the rock-throwing DGP. In this example, each node corresponds to a random variable in the DGP.</h5>
+</div>
+<div class="readable-text" id="p19">
+<h3 class="readable-text-h3" id="sigil_toc_id_54"><span class="num-string">3.1.1</span> Case study: A causal model for transportation</h3>
+</div>
+<div class="readable-text" id="p20">
+<p>In this chapter, we’ll look at a model of people’s choice of transportation on their daily commutes. This example will make overly strong assumptions (to the point of being borderline offensive) that will help illustrate the core ideas of model building. You’ll find links to the accompanying code and tutorials at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a>. </p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>Suppose you were an urban planning consultant trying to model the relationships between people’s demographic background, the size of the city where they live, their job status, and their decision on how to commute to work each day.</p>
+</div>
+<div class="readable-text intended-text" id="p22">
+<p>You could break down the key variables in the system as follows:</p>
+</div>
+<ul>
+<li class="readable-text" id="p23"> <em>Age (A)</em><em> </em>—The age of an individual </li>
+<li class="readable-text" id="p24"> <em>Gender (S)</em><em> </em>—An individual’s reported gender (using “S” instead of “G,” since “G” is usually reserved for DAGs) </li>
+<li class="readable-text" id="p25"> <em>Education (E)</em><em> </em>—The highest level of education or training completed by an individual </li>
+<li class="readable-text" id="p26"> <em>Occupation (O)</em><em> </em>—An individual’s occupation </li>
+<li class="readable-text" id="p27"> <em>Residence (R)</em><em> </em>—The size of the city the individual resides in </li>
+<li class="readable-text" id="p28"> <em>Travel (T)</em><em> </em>—The means of transport favored by the individual </li>
+</ul>
+<div class="readable-text" id="p29">
+<p>You could then think about the causal relationships between these variables, using knowledge about the domain. Here is a possible narrative:</p>
+</div>
+<ul>
+<li class="readable-text" id="p30"> Educational standards are different across generations. For older people, a high school degree was sufficient to achieve a middle-class lifestyle, but younger people need at least a college degree to achieve the same lifestyle. Thus, age (<em>A</em><em> </em>) is a cause of education (<em>E</em><em>  </em>). </li>
+<li class="readable-text" id="p31"> Similarly, a person’s gender is often a factor in their decision to pursue higher levels of education. So, gender (<em>S</em><em> </em>) is a cause of education (<em>E</em><em>  </em>). </li>
+<li class="readable-text" id="p32"> Many white-collar jobs require higher education. Many credentialed professions (e.g., doctor, lawyer, or accountant) certainly require higher education. So education (<em>E</em><em>  </em>) is a cause of occupation (<em>O</em><em> </em>). </li>
+<li class="readable-text" id="p33"> White-collar jobs that depend on higher levels of education tend to cluster in urban areas. Thus, education (<em>E</em>) is a cause of where people reside (<em>R</em><em> </em>). </li>
+<li class="readable-text" id="p34"> People who are self-employed might work from home and therefore don’t need to commute, while people with employers do. Thus, occupation (<em>O</em><em> </em>) is a cause of transportation (<em>T</em><em>  </em>). </li>
+<li class="readable-text" id="p35"> People in big cities might find it more convenient to commute by walking or using public transportation, while people in small cities and towns rely on cars to get around. Thus, residence (<em>R</em><em>  </em>) is a cause of transportation (<em>T</em><em>  </em>). </li>
+</ul>
+<div class="readable-text" id="p36">
+<p>You could have created this narrative based on your knowledge about the domain, or based on your research into the domain. Alternatively, you could have consulted with a domain expert, such as a social scientist who specializes in this area. Finally, you could reduce this narrative to the causal DAG shown in figure 3.2.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p37">
+<img alt="figure" height="367" src="../Images/CH03_F02_Ness.png" width="480"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.2</span> A causal DAG representing a model of the causal factors behind how people commute to work</h5>
+</div>
+<div class="readable-text" id="p38">
+<p>You could build this causal DAG using the following code.</p>
+</div>
+<div class="browsable-container listing-container" id="p39">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.2</span> Building the transportation DAG in pgmpy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.models import BayesianNetwork
+model = BayesianNetwork(   <span class="aframe-location"/> #1
+       [
+        ('A', 'E'),   <span class="aframe-location"/> #2
+        ('S', 'E'),   #2
+        ('E', 'O'),   #2
+        ('E', 'R'),   #2
+        ('O', 'T'),   #2
+        ('R', 'T')    #2
+     ]
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 pgmpy provides a BayesianNetwork class where we add the edges to the model.
+     <br/>#2 Input the ΔAG as a list of edges (tuples).
+     <br/>#3 Input the ΔAG as a list of edges (tuples).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p40">
+<p>The <code>BayesianNetwork</code> object in pgmpy is built on the <code>DiGraph</code> class from NetworkX, the preeminent graph modeling library in Python.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p41">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Causal abstraction and causal representation learning</h5>
+</div>
+<div class="readable-text" id="p42">
+<p>In modeling, the <em>level of abstraction</em> refers to the level of detail and granularity of the variables in the model. In figure 3.2, there is a mapping between the variables in the data and the variables in the causal DAG, because the level of abstraction in the data generated by the DGP and the level of abstraction of the causal DAG are the same. But it is possible for variables in the data to be at a different levels of abstraction. This is particularly common in machine learning, where we often deal with low-level features, such as pixels.</p>
+</div>
+<div class="readable-text" id="p43">
+<p>When the level of abstraction in the data is lower than the level the modeler wants to work with, the modeler must use domain knowledge to derive the high-level abstractions that will appear as nodes in the DAG. For example, a doctor may be interested in a high-level binary variable node like “Tumor (present/absent),” while the data itself contains low-level variables such as a matrix of pixels from medical imaging technology. </p>
+</div>
+<div class="readable-text" id="p44">
+<p>That doctor must look at each image in the dataset and manually label the high-level tumor variable. Alternatively, a modeler can use analytical means (e.g., math or logic) to map low-level abstractions to high-level ones. Further, they must do so in a way that preserves causal assumptions about the DGP. </p>
+</div>
+<div class="readable-text" id="p45">
+<p>This task of creating high-level variables from lower-level ones in a causally rigorous way is called <em>causal abstraction</em>. In machine learning, the term “feature engineering” applies to the task of computing <em>useful</em> high-level features from lower-level features. Causal abstraction differs in that requirement for causal rigor. You’ll find some sources for causal abstraction information in the book’s notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a>.</p>
+</div>
+<div class="readable-text" id="p46">
+<p>Another approach to learning high-level causal abstractions from lower ones in data is to use deep learning—this is called <em>causal representation learning</em>. We’ll touch briefly on this topic in chapter 5.</p>
+</div>
+</div>
+<div class="readable-text" id="p47">
+<h3 class="readable-text-h3" id="sigil_toc_id_55"><span class="num-string">3.1.2</span> Why use a causal DAG?</h3>
+</div>
+<div class="readable-text" id="p48">
+<p>The causal DAG is the best-known representation of causality, but to understand its value, it’s useful to think about other ways of modeling causality. One alternative is using a mathematical model, such as a set of ordinary differential equations or partial differential equations, as is common in physics and engineering. Another option is to use computational simulators, such as are used in meteorology and climate science. </p>
+</div>
+<div class="readable-text intended-text" id="p49">
+<p>In contrast to those alternatives, a causal DAG requires a much less mathematically detailed understanding of the DGP. A causal DAG only requires you to specify what causes what, in the form of a graph. Graphs are easy for humans to think about; they are the go-to method for making sense of complicated domains. </p>
+</div>
+<div class="readable-text intended-text" id="p50">
+<p>Indeed, there are several benefits of using a causal DAG as a representation of the DGP:</p>
+</div>
+<ul>
+<li class="readable-text" id="p51"> DAGs are useful in communicating and visualizing causal assumptions. </li>
+<li class="readable-text" id="p52"> We have many tools for computing over DAGs. </li>
+<li class="readable-text" id="p53"> Causal DAGs represent time. </li>
+<li class="readable-text" id="p54"> DAGs link causality to conditional independence. </li>
+<li class="readable-text" id="p55"> DAGs can provide scaffolding for probabilistic ML models. </li>
+<li class="readable-text" id="p56"> The parameters in those probabilistic ML models are modular parameters, and they encode causal invariance. </li>
+</ul>
+<div class="readable-text" id="p57">
+<p>Let’s review these benefits one at a time.</p>
+</div>
+<div class="readable-text" id="p58">
+<h3 class="readable-text-h3" id="sigil_toc_id_56"><span class="num-string">3.1.3</span> DAGs are useful in communicating and visualizing causal assumptions</h3>
+</div>
+<div class="readable-text" id="p59">
+<p>A causal DAG is a powerful communication device. Visual communication of information involves highlighting important information at the expense of other information. As an analogy, consider the two maps of the London Underground in figure 3.3. The map on the left is geographically accurate. The simpler map on the right ignores the geographic detail and focuses on the position of each station relative to other stations, which is, arguably, all one needs to find their way around London.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p60">
+<img alt="figure" height="330" src="../Images/CH03_F03_Ness.png" width="919"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.3</span> Visual communication is a powerful use case for a graphical representation. For instance, the map of the London Underground on the left is geographically accurate, while the one on the right trades that accuracy for a clear representation of each station’s position relative to the others. The latter is more useful for train riders than the one with geographic accuracy. Similarly, a causal DAG abstracts away much detail of the causal mechanism to create a simple representation that is easy to reason about visually.</h5>
+</div>
+<div class="readable-text intended-text" id="p61">
+<p>Similarly, a causal DAG highlights causal relationships while ignoring other things. For example, the rock-throwing DAG ignores the if-then conditional logic of how Jenny and Brian’s throws combined to break the window. The transportation DAG says nothing about the types of variables we are dealing with. Should we consider age (<em>A</em><em> </em>) in terms of continuous time, integer years, categories like young/middle-aged/elderly, or intervals like 18–29, 30–44, 45–64, and &gt;65? What are the categories of the transportation variable (<em>T</em><em>  </em>)? Could the occupation variable (<em>O</em><em>  </em>) be a multidimensional tuple like {employed, engineer, works-from-home}? The DAG also fails to capture which of these variables are observed in the data, and the number of data points in that data.</p>
+</div>
+<div class="readable-text" id="p62">
+<h4 class="readable-text-h4 sigil_not_in_toc">Causal DAGs don’t illustrate mechanism</h4>
+</div>
+<div class="readable-text" id="p63">
+<p>A causal DAG also doesn’t visualize interactions between causes. For example, in older generations, women were less likely to go to college than men. In younger generations, the reverse is true. While both age (<em>A</em>) and gender (<em>S</em>) are causes of education (<em>E</em><em>  </em>), you can’t look at the DAG and see anything about how age and gender interact to affect education. </p>
+</div>
+<div class="readable-text intended-text" id="p64">
+<p>More generally, DAGs can’t convey any information about the causal mechanism or <em>how</em> the causes impact the effect. They only establish the <em>what</em> of causality, as in <em>what</em> causes <em>what</em>. Consider, for example, the various logic gates in figure 3.4. The input binary values for <em>A</em> and <em>B</em> determine the output differently depending on the type of logic gate. But if we represent a logic gate as a causal DAG, then all the logic gates have the same causal DAG. We can use the causal DAG as a scaffold for causal graphical models that capture this logic, but we can’t <em>see</em> the logic in the DAG.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p65">
+<img alt="figure" height="473" src="../Images/CH03_F04_Ness.png" width="921"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.4</span> The various kinds of logic gates all have the same causal DAG.</h5>
+</div>
+<div class="readable-text" id="p66">
+<p>This is a strength and a weakness. A causal DAG simplifies matters by communicating what causes what, but not <em>how</em>. However, in some cases (such as logic gates), visualizing the <em>how</em> would be desirable.</p>
+</div>
+<div class="readable-text" id="p67">
+<h4 class="readable-text-h4 sigil_not_in_toc">Causal DAGs represent causal assumptions</h4>
+</div>
+<div class="readable-text" id="p68">
+<p>A causal DAG represents the modeler’s assumptions and beliefs about the DGP, because we don’t have access to that process most of the time. Thus, a causal DAG allows us to visualize our assumptions and communicate them to others. </p>
+</div>
+<div class="readable-text intended-text" id="p69">
+<p>Beyond this visualization and communication, the benefits of a causal DAG are mathematical and computational (I’ll explain these in the following subsections). Causal inference researchers vary in their opinions on the degree to which these mathematical and computational properties of causal DAGs are practically beneficial. However, most agree on the fundamental benefit of visualization and communication of causal assumptions.</p>
+</div>
+<div class="readable-text intended-text" id="p70">
+<p>The assumptions encoded in a causal DAG are strong. Let’s look again at the transportation DAG from figure 3.2, shown again in figure 3.5. Consider the alternatives to that DAG; how many possible DAGs could we draw on this simple six-node system? The answer is 3,781,503, so when we use a causal DAG to communicate our assumptions about this system, we’re communicating our top choice over 3,781,502 alternatives.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p71">
+<img alt="figure" height="367" src="../Images/CH03_F05_Ness.png" width="480"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.5</span> A causal DAG model of transportation choices. This DAG encodes strong assumptions about how these variables do and do not relate to one another.</h5>
+</div>
+<div class="readable-text" id="p72">
+<p>And how about some of those competing DAGs? Some of them seem plausible. Perhaps baby boomers prefer small-town life while millennials prefer city life, implying that there should be an <em>A</em> → <em>R</em> edge. Perhaps gender norms determine preferences and opportunities in certain professions and industries, implying an <em>S</em> → <em>O</em> edge. The assumption that age and gender cause occupation and residence only indirectly through education is a powerful assumption that would provide useful inferences <em>if</em> <em>it is right</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p73">
+<p>But what if our causal DAG is wrong? It seems it is likely to be wrong, given its 3,781,502 competitors. In chapter 4, we’ll use data to show us when the causal assumptions in our chosen DAG fail to hold.</p>
+</div>
+<div class="readable-text" id="p74">
+<h3 class="readable-text-h3" id="sigil_toc_id_57"><span class="num-string">3.1.4</span> We have many tools for computing over DAGs</h3>
+</div>
+<div class="readable-text" id="p75">
+<p>Directed graphs are well-studied objects in math and in computer science, where they are a fundamental data structure. Computer scientists have used graph algorithms to solve many practical problems with theoretical guarantees on how long they will take to arrive at solutions. The programming languages commonly used in data science and machine learning have libraries that implement these algorithms, such as NetworkX in Python. These popular libraries make it easier to write code that works with causal DAGs.</p>
+</div>
+<div class="readable-text intended-text" id="p76">
+<p>We can bring all that theory and tooling to bear on a causal modeling problem when we represent a causal model in the form of a causal DAG. For example, in pgmpy we can train a causal DAG on data to get a directed causal graphical model. Given that model, we can apply algorithms for graph-based probabilistic inference, such as <em>belief propagation</em>, to estimate conditional probabilities defined on variables in the graph. The directed graph structure enables these algorithms to work in typical settings without our needing to configure them to a specific problem or task.</p>
+</div>
+<div class="readable-text intended-text" id="p77">
+<p>In the next chapter, I’ll introduce the concept of <em>d-separation</em>, which is a graphical abstraction for conditional independence and the fundamental idea behind the do-calculus theory for causal inference. D-separation is all about finding paths between nodes in the directed graph, which is something any worthwhile graph library makes easy by default. Indeed, conditional independence is the key idea behind the third benefit of the causal DAG.</p>
+</div>
+<div class="readable-text" id="p78">
+<h3 class="readable-text-h3" id="sigil_toc_id_58"><span class="num-string">3.1.5</span> Causal DAGs can represent time</h3>
+</div>
+<div class="readable-text" id="p79">
+<p>The causal DAG has an implicit representation of time. In more technical terms, the causal DAG provides a <em>partial temporal ordering </em>because causes precede effects in time.</p>
+</div>
+<div class="readable-text intended-text" id="p80">
+<p>For example, consider the graph in figure 3.6. This graph describes a DGP where a change in cloud cover (Cloudy) causes both a change in the state of a weather-activated sprinkler (Sprinkler) and the state of rain (Rain), and these both cause a change in the state of the wetness of the grass (Wet Grass). We know that a change in the state of the weather causes rain and sprinkler activation, and that these both cause a change in the state of the wetness of the grass. However, it is only a <em>partial </em>temporal ordering, because the graph doesn’t tell us which happens first: the sprinkler activation or the rain. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p81">
+<img alt="figure" height="219" src="../Images/CH03_F06_Ness.png" width="343"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.6</span> A causal DAG representing the state of some grass (wet or dry). The DAG gives us a partial temporal ordering over its nodes because causes precede effects in time.</h5>
+</div>
+<div class="readable-text intended-text" id="p82">
+<p>The partial ordering in figure 3.6 may seem trivial, but consider the DAG in figure 3.7. Visualization libraries can use the partial ordering in the hairball-like DAG on the left of figure 3.7 to create the much more readable form on the right.</p>
+</div>
+<div class="browsable-container figure-container" id="p83">
+<img alt="figure" height="487" src="../Images/CH03_F07_Ness.png" width="908"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.7</span> A visualization library can use the DAG’s partial ordering to unravel the hairball-like DAG on the left into the more readable form on the right.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p84">
+<p>Sometimes we need a causal DAG to be more explicit about time. For example, we may be modeling causality in a dynamic setting, such as in the models used in reinforcement learning. In this case, we can make time explicit by defining and labeling the variables of the model, as in figure 3.8. We can represent continuous time with interval variables like “<span class="regular-symbol">Δ</span>.” Chapter 12 will provide some concrete examples.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p85">
+<img alt="figure" height="155" src="../Images/CH03_F08_Ness.png" width="490"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.8</span> If we need a causal DAG to be explicit about time, we can make time explicit in the definition of the variables and labeling of their nodes. We can represent continuous time with interval variables like “<span class="regular-symbol">Δ</span>.”</h5>
+</div>
+<div class="readable-text" id="p86">
+<p>The causal DAG doesn’t allow for any cycles. In some causal systems, relaxing the acyclicity constraint makes sense, such as with systems that have feedback loops, and some advanced causal models allow for cycles. But sticking to the simpler acyclic assumption allows us to leverage the benefits of the causal DAG. </p>
+</div>
+<div class="readable-text intended-text" id="p87">
+<p>If you have cycles, sometimes you can <em>unroll </em>the cycle over time and make the time explicit to get acyclicity. A graph <em>X</em> ⇄ <em>Y</em> can unroll as <em>X</em><sub>0</sub>→<em>Y</em><sub>0</sub> →<em>X</em><sub>1</sub>→<em>Y</em><sub>1</sub> . . . . For example, you may have a cycle between supply, price, and demand, but perhaps you could rewrite this as price at time 0 affects supply and demand at time 1, which then affects price at time 2, etc.</p>
+</div>
+<div class="readable-text" id="p88">
+<h3 class="readable-text-h3" id="sigil_toc_id_59"><span class="num-string">3.1.6</span> DAGs link causality to conditional independence</h3>
+</div>
+<div class="readable-text" id="p89">
+<p>Another benefit of a causal DAG is that it allows us to use causality to reason about conditional independence. Humans have an innate ability to reason in terms of causality—that’s how we get the first and second benefits of causal DAGs. But reasoning probabilistically doesn’t come nearly as easily. As a result, the ability to use causality to reason about conditional independence (a concept from probability) is a considerable feature of DAGs.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p90">
+<img alt="figure" height="367" src="../Images/CH03_F09_Ness.png" width="480"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.9</span> The causal relationships in the transportation DAG encode key assumptions about conditional independence. </h5>
+</div>
+<div class="readable-text intended-text" id="p91">
+<p>Consider the transportation DAG, displayed again in figure 3.9. </p>
+</div>
+<div class="readable-text intended-text" id="p92">
+<p>The six variables in the DAG have a joint distribution <em>P</em><em> </em>(<em>A</em>,<em>S</em>,<em>E</em>,<em>O</em>,<em>R</em>,<em>T</em><em>  </em>). Recall the chain rule from chapter 2, which says that we can factorize any joint probability into a chain of conditional probability factors. For example,<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p93">
+<img alt="figure" height="91" src="../Images/ness-ch3-eqs-0x.png" width="841"/>
+</div>
+<div class="readable-text" id="p94">
+<p>The chaining works for any ordering of the variables. But instead of choosing any ordering, we’ll choose the (partial) ordering of the causal DAG, since that ordering aligns with our assumptions of the causal flow of the variables in the DGP. Looking at figure 3.9, the ordering of variables is {(<em>A</em>, <em>S</em><em>  </em>), <em>E</em>, (<em>O</em>, <em>R</em><em>  </em>), <em>T</em><em>  </em>}. The pairs (<em>A</em>, <em>S</em><em>  </em>) and (<em>O</em>, <em>R</em><em>  </em>) are unordered. If we arbitrarily pick an ordering, letting <em>A</em> come before <em>S</em> and <em>O</em> come before <em>R</em>, we get this:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p95">
+<img alt="figure" height="23" src="../Images/ness-ch3-eqs-1x.png" width="879"/>
+</div>
+<div class="readable-text" id="p96">
+<p>Next, we’ll use the causal DAG to further simplify this factorization. Each factor is a conditional probability, so we’ll simplify those factors by <em>conditioning each node on only its parents</em> in the DAG. In other words, for each variable, we’ll look at that variable’s direct parents in the graph, then we’ll drop everything on the right side of the conditioning bar (|) that isn’t one of those direct parents. If we condition only on parents, we get the following simplification:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p97">
+<img alt="figure" height="59" src="../Images/ness-ch3-eqs-2x.png" width="859"/>
+</div>
+<div class="readable-text" id="p98">
+<p>What is going on here? Why should the causal DAG magically mean we can say <em>P</em><em> </em>(<em>s|a</em><em> </em>) is equal to <em>P</em><em> </em>(<em>s</em><em> </em>) and <em>P</em><em> </em>(<em>r|o,e,s,a</em>) simplifies to <em>P</em><em> </em>(<em>r</em><em> </em><em>|e</em><em> </em>)?<em> </em>As discussed in chapter 2, stating that <em>P</em><em> </em>(<em>s</em><em> </em>|<em>a</em>)<em>=</em><em> </em><em>P</em><em> </em>(<em>s</em><em> </em>) and <em>P</em><em> </em>(<em>t</em><em> </em>|<em>o,r,e,s,a</em>)<em>=</em><em> </em><em>P</em><em> </em>(<em>t</em><em> </em>|<em>o,r</em>) is equivalent to saying that <em>S</em> and <em>A</em> are independent, and <em>T</em> is conditionally independent of <em>E</em>, <em>S</em>, and <em>A</em>, given <em>O</em> and <em>R</em>. In other words, the causal DAG gives us a way to impose conditional independence constraints over the joint probability distribution of the variables in the DGP.</p>
+</div>
+<div class="readable-text intended-text" id="p99">
+<p>Why should we care about things being conditionally independent? Conditional independence makes life as a modeler easier. For example, suppose you were to model the transportation variable <em>T</em> with a predictive model. The predictive model implied by <em>P</em><em> </em>(<em>t</em><em> </em>|<em>o,r,e,s,a</em><em> </em>) requires having features <em>O</em>, <em>R</em>, <em>E</em>, <em>S</em>, and <em>A</em>, while the predictive model implied by <em>P</em><em> </em>(<em>t</em><em> </em>|<em>o,r</em><em> </em>) just requires features <em>O</em> and <em>R</em> to predict <em>T</em>. The latter model will have fewer parameters to learn, have more degrees of freedom, take less space in memory, train faster, etc.</p>
+</div>
+<div class="readable-text intended-text" id="p100">
+<p>But why does a causal DAG give us the right to impose conditional independence? Let’s build some intuition about the connection between causality and conditional independence. Consider the example of using genetic data from family members to draw conclusions about an individual. For example, the Golden State Killer was a California-based serial killer captured using genetic genealogy. Investigators used DNA left by the killer at crime scenes to identify genetic relatives in public databases. They then triangulated from those relatives to find the killer.</p>
+</div>
+<div class="readable-text intended-text" id="p101">
+<p>Suppose you had a close relative and a distant relative on the same line of ancestry. Could the distant relative provide any additional genetic information about you once we had already accounted for that close relative? Let’s simplify a bit by focusing just on blood type. Suppose the close relative was your father, and the distant relative was your paternal grandfather, as in figure 3.10. Indeed, your grandfather’s blood type is a cause of yours. If we saw a large dataset of grandfather/grandchild blood type pairs, we’d see<span class="aframe-location"/> a correlation. However, your father’s blood type is a more direct cause, and the connection between your grandfather’s blood type and yours passes through your father. So, if our goal were to predict your blood type, and we already had your father’s blood type as a predictor, your paternal grandfather’s blood type could provide no additional predictive information. Thus, your blood type and your paternal grandfather’s blood type are conditionally independent, given your father’s blood type.</p>
+</div>
+<div class="browsable-container figure-container" id="p102">
+<img alt="figure" height="310" src="../Images/CH03_F10_Ness.png" width="749"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.10</span> Causality implies conditional independence. Your paternal grandfather’s blood type is a cause of your father’s, which is a cause of yours. You and your paternal grandfather’s blood types are conditionally independent given your father’s blood type because your father’s blood type already contains all the information your grandfather’s type could provide about yours.</h5>
+</div>
+<div class="readable-text intended-text" id="p103">
+<p>The way causality makes correlated variables conditionally independent is called the <em>causal Markov property</em>. In graphical terms, the causal Markov property means that variables are conditionally independent of their non-descendants (e.g., ancestors, uncles/aunts, cousins, etc.) given their parents in the graph.</p>
+</div>
+<div class="readable-text intended-text" id="p104">
+<p>This “non-descendants” definition of the causal Markov property is sometimes called the <em>local Markov property</em>. An equivalent articulation is called the <em>Markov factorization property</em>, which is the property that if your causal DAG is true, you can factorize a joint probability into conditional probabilities of variables, given their parents in the causal DAG:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p105">
+<img alt="figure" height="23" src="../Images/ness-ch3-eqs-3x.png" width="655"/>
+</div>
+<div class="readable-text" id="p106">
+<p>If our transportation DAG is a true representation of the DGP, then the local Markov property should hold. In the next chapter, we’ll see how to test this assumption with data.</p>
+</div>
+<div class="readable-text" id="p107">
+<h3 class="readable-text-h3" id="sigil_toc_id_60"><span class="num-string">3.1.7</span> DAGs can provide scaffolding for probabilistic ML models</h3>
+</div>
+<div class="readable-text" id="p108">
+<p>Many modeling approaches in probabilistic machine learning use a DAG as the model structure. Examples include directed graphical models (aka Bayesian networks) and latent variable models (e.g., topic models). Deep generative models, such as variational autoencoders, often have an underlying directed graph.</p>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>The advantage of building a probabilistic machine learning model on top of a causal graph is, rather obviously, that you have a probabilistic <em>causal</em> machine learning model. You can train it on data, and you can use it for prediction and other inferences, like any probabilistic machine learning model. Moreover, because it is built on top of a causal DAG, it is a causal model, so you can use it to make causal inferences.</p>
+</div>
+<div class="readable-text intended-text" id="p110">
+<p>A benefit that follows from providing scaffolding is that <em>the parameters in those models are modular and encode causal invariance</em>. Before exploring this benefit, let’s first build a graphical model on the transportation DAG.</p>
+</div>
+<div class="browsable-container listing-container" id="p111">
+<div class="code-area-container">
+<pre class="code-area">Building a probabilistic machine learning model on a causal DAG</pre>
+</div>
+</div>
+<div class="readable-text" id="p112">
+<p>Recall our factorization of the joint probability distribution of the transportation variables over the ordering of the variables in the transportation DAG.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p113">
+<img alt="figure" height="23" src="../Images/ness-ch3-eqs-4x.png" width="655"/>
+</div>
+<div class="readable-text" id="p114">
+<p>We have a set of factors, {<em>P</em><em> </em>(<em>a</em><em> </em>)<em>, P</em><em> </em>(<em>s</em><em> </em>)<em>, P</em><em> </em>(<em>e</em><em> </em>|<em>s,a</em><em> </em>)<em>, P</em><em> </em>(<em>o</em><em> </em>|<em>e</em>)<em>, P</em><em> </em>(<em>r</em><em>  </em>|<em>e</em>)<em>, P</em><em> </em>(<em>t</em><em>  </em>|<em>o,r</em><em> </em>)}<em>. </em>From here on, we’ll build on the term “Markov kernel” from chapter 2 and call these factors <em>causal Markov kernels</em>. </p>
+</div>
+<div class="readable-text intended-text" id="p115">
+<p>We’ll build our probabilistic machine learning model by implementing these causal Markov kernels in code and then composing them into one model. Our implementations for each kernel will be able to return a probability value, given input arguments. For example, <em>P</em><em> </em>(<em>a</em><em> </em>) will take an outcome value for <em>A</em> and return a probability value for that outcome. Similarly, <em>P</em><em> </em>(<em>t</em><em> </em>|<em>o,r</em><em> </em>) will take in values for <em>T</em>, <em>O</em>, and <em>R</em> and return a probability value for <em>T</em><em>  </em>=<em> </em><em>t</em>, where <em>t</em> is the queried value. Our implementations will also be able to generate from the causal Markov kernels. To do this, these implementations will require parameters that map the inputs to the outputs. We’ll use standard statistical learning approaches to fit those parameters from the data.</p>
+</div>
+<div class="readable-text" id="p116">
+<h3 class="readable-text-h3" id="sigil_toc_id_61"><span class="num-string">3.1.8</span> Training a model on the causal DAG</h3>
+</div>
+<div class="readable-text" id="p117">
+<p>Consider the DGP for the transportation DAG. What sort of data would this process generate? </p>
+</div>
+<div class="readable-text intended-text" id="p118">
+<p>Suppose we administered a survey covering 500 individuals, getting values for each of the variables in this DAG. The data encodes the variables in our DAG as follows:</p>
+</div>
+<ul>
+<li class="readable-text" id="p119"> <em>Age (A)</em><em> </em>—Recorded as young (“young”) for individuals up to and including 29 years, adult (“adult”) for individuals between 30 and 60 years old (inclusive), and old (“old”) for people 61 and over </li>
+<li class="readable-text" id="p120"> <em>Gender (S)</em><em> </em>—The self-reported gender of an individual, recorded as male (“M”), female (“F”), or other (“O”) </li>
+<li class="readable-text" id="p121"> <em>Education (E)</em><em> </em>—The highest level of education or training completed by the individual, recorded either high school (“high”) or university degree (“uni”) </li>
+<li class="readable-text" id="p122"> <em>Occupation (O)</em><em> </em>—Employee (“emp”) or a self-employed worker (“self”) </li>
+<li class="readable-text" id="p123"> <em>Residence (R)</em><em> </em>—The population size of the city the individual lives in, recorded as small (“small”) or big (“big”) </li>
+<li class="readable-text" id="p124"> <em>Travel (T)</em><em> </em>—The means of transport favored by the individual, recorded as car (“car”), train (“train”), or other (“other”) </li>
+</ul>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p125">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Labeling causal abstractions</h5>
+</div>
+<div class="readable-text" id="p126">
+<p>How we conceptualize the variables of a model matters greatly in machine learning. For example, ImageNet, a database of 14 million images, contains anachronistic and offensive labels for racial categories. Even if renamed to be less offensive, race categories themselves are fluid across time and culture. What are the “correct” labels to use in a predictive algorithm?</p>
+</div>
+<div class="readable-text" id="p127">
+<p>How we define our variables isn’t just a question of politics and census forms. A simple thought experiment by philosopher Nelson Goodman shows how a simple change in label can change a prediction to a contradictory prediction. Suppose you regularly search for gems and record the color of every gem you find. It turns out 100% of the gems in your dataset are green. Now let’s define a new label “grue” to mean “green if observed before now, blue otherwise.” So 100% of your data is “green” or “grue,” depending on your choice of label. Now suppose you predict the future based on extrapolating from the past. Then you can predict the next emerald will be green based on data where all past emeralds were green, or you can predict the next emerald will be “grue” (i.e., <em>blue</em>) based on the data that all past emeralds were “grue.” Obviously, you would never invent such an absurd label, but this thought experiment is enough to show that the inference depends on the abstraction.</p>
+</div>
+<div class="readable-text" id="p128">
+<p>In data science and machine learning, we’re often encouraged to blindly model data and not to think about the DGP. We’re encouraged to take the variable names for granted as columns in a spreadsheet or attributes in a database table. When possible, it is better to choose abstractions that are appropriate to the inference problem and collect or encode data according to that abstraction. When it is not possible, keep in mind that the results of your analysis will depend on how other people have defined the variables.</p>
+</div>
+<div class="readable-text" id="p129">
+<p>In chapter 7, I’ll introduce the idea of “no causation without manipulation”—an idea that provides a useful heuristic for how to define causal variables.</p>
+</div>
+</div>
+<div class="readable-text" id="p130">
+<p>The variables in the transportation data are all <em>categorical</em> variables. In this simple categorical case, we can rely on a graphical modeling library like pgmpy<em>.</em> </p>
+</div>
+<div class="browsable-container listing-container" id="p131">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.3</span> Loading transportation data</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import pandas as pd
+url='https://raw.githubusercontent.com/altdeep/causalML/master/datasets
+<span class="">↪</span>/transportation_survey.csv'   <span class="aframe-location"/> #1
+data = pd.read_csv(url)
+data</pre>
+<div class="code-annotations-overlay-container">
+     #1 We’ll load the data into a pandas ΔataFrame with the read_csv method.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p132">
+<p>This produces the DataFrame in figure 3.11.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p133">
+<img alt="figure" height="972" src="../Images/CH03_F11_Ness.png" width="699"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.11</span> An example of data from the DGP underlying the transportation model. In this case, the data is 500 survey responses.</h5>
+</div>
+<div class="readable-text" id="p134">
+<p>The <code>BayesianNetwork</code> class we initialized in listing 3.2 has a <code>fit</code> method that will learn the parameters of our causal Markov kernels. Since our variables are categorical, our causal Markov kernels will be in the form of conditional probability tables represented by pgmpy’s <code>TabularCPD</code> class. The <code>fit</code> method will fit (“learn”) estimates of the parameters of those conditional probability tables using the data.</p>
+</div>
+<div class="browsable-container listing-container" id="p135">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.4</span> Learning parameters for the causal Markov kernels</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.models import BayesianNetwork
+model = BayesianNetwork(
+      [
+        ('A', 'E'),
+        ('S', 'E'),
+        ('E', 'O'),
+        ('E', 'R'),
+        ('O', 'T'),
+        ('R', 'T')
+     ]
+)
+model.fit(data)   <span class="aframe-location"/> #1
+causal_markov_kernels = model.get_cpds()    <span class="aframe-location"/> #2
+print(causal_markov_kernels)  #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 The fit method on the BayesianNetwork object will estimate parameters from data (a pandas ΔataFrame).
+     <br/>#2 Retrieve and view the causal Markov kernels learned by fit.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p136">
+<p>This returns the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p137">
+<div class="code-area-container">
+<pre class="code-area">[&lt;TabularCPD representing P(A:3) at 0x7fb030dd1050&gt;,
+ &lt;TabularCPD representing P(E:2 | A:3, S:2) at 0x7fb0318121d0&gt;,
+ &lt;TabularCPD representing P(S:2) at 0x7fb03189fe90&gt;,
+ &lt;TabularCPD representing P(O:2 | E:2) at 0x7fb030de85d0&gt;,
+ &lt;TabularCPD representing P(R:2 | E:2) at 0x7fb030dfa890&gt;,
+ &lt;TabularCPD representing P(T:3 | O:2, R:2) at 0x7fb0316c9110&gt;]</pre>
+</div>
+</div>
+<div class="readable-text" id="p138">
+<p>Let’s look at the structure of the causal Markov kernel for the transportation variable <em>T</em>. We can see from printing out the <code>causal_markov_kernels</code> list that <em>T</em> is the last item in the list.</p>
+</div>
+<div class="browsable-container listing-container" id="p139">
+<div class="code-area-container">
+<pre class="code-area">cmk_T = causal_markov_kernels[-1]
+print(cmk_T)</pre>
+</div>
+</div>
+<div class="readable-text" id="p140">
+<p>We get the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p141">
+<div class="code-area-container">
+<pre class="code-area">+----------+---------+----------+---------+----------+
+| O        | O(emp)  | O(emp)   | O(self) | O(self)  |
++----------+---------+----------+---------+----------+
+| R        | R(big)  | R(small) | R(big)  | R(small) |
++----------+---------+----------+---------+----------+
+| T(car)   | 0.70343 | 0.52439  | 0.44444 | 1.0      |
++----------+---------+----------+---------+--------- +
+| T(other) | 0.13480 | 0.08536  | 0.33333 | 0.0      |
++----------+---------+----------+---------+----------+
+| T(train) | 0.16176 | 0.39024  | 0.22222 | 0.0      |
++----------+---------+----------+---------+----------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p142">
+<p>Note that in this printout, I truncated the numbers so the table fits on the page.</p>
+</div>
+<div class="readable-text intended-text" id="p143">
+<p><code>cmk_T</code> is the implementation of the causal Markov kernel <em>P</em><em> </em>(<em>T</em><em> </em><em>|O,R</em><em> </em>) as a conditional probability table, a type of lookup table where, given the values of <em>T</em>, <em>O</em>, and <em>R</em>, we get the corresponding probability mass value. For example, <em>P</em><em> </em>(<em>T</em><em>  </em>=<em> </em>car|<em>O</em><em>  </em>=<em> </em>emp, <em>R</em><em> </em>=<em> </em>big) = 0.7034. Note that these are conditional probabilities. For each combination of values for <em>O</em> and <em>R</em>, there are conditional probabilities for the three outcomes of <em>T</em> that sum to 1. For example, when <em>O</em><em>  </em>=<em> </em>emp and <em>R</em><em>  </em>=<em> </em>big, <em>P</em><em> </em>(<em>T</em><em>  </em>=<em> </em>car| <em>O</em><em>  </em>=<em> </em>emp, <em>R</em><em>  </em>=<em> </em>big) + (<em>P</em><em> </em>(<em>T</em><em>  </em>=<em> </em>other<em> </em>| <em>O</em><em>  </em>=<em> </em>emp, <em>R</em><em>  </em>=<em> </em>big) + <em>P</em><em> </em>(<em>T</em><em>  </em>=<em> </em>train| <em>O</em><em>  </em>=<em> </em>emp, <em>R</em><em>  </em>=<em> </em>big) = 1.</p>
+</div>
+<div class="readable-text intended-text" id="p144">
+<p>The causal Markov kernel in the case of nodes with no parents is just a simple probability table. For example, <code>print(causal_markov_kernels[2])</code> prints the causal Markov kernel for gender (<em>S</em>), the third item in the <code>causal_markov_kernels</code> list.</p>
+</div>
+<div class="browsable-container listing-container" id="p145">
+<div class="code-area-container">
+<pre class="code-area">+------+-------+
+| S(F) | 0.517 |
++------+-------+
+| S(M) | 0.473 |
++------+-------+
+| S(O) | 0.010 |
++------+-------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p146">
+<p>The <code>fit</code> method learns parameters by calculating the proportions of each class in the data. Alternatively, we could use other techniques for parameter learning. </p>
+</div>
+<div class="readable-text" id="p147">
+<h3 class="readable-text-h3" id="sigil_toc_id_62"><span class="num-string">3.1.9</span> Different techniques for parameter learning</h3>
+</div>
+<div class="readable-text" id="p148">
+<p>There are several ways we could go about training these parameters. Let’s look at a few common ways of training parameters in conditional probability tables.</p>
+</div>
+<div class="readable-text" id="p149">
+<h4 class="readable-text-h4 sigil_not_in_toc">Maximum likelihood estimation</h4>
+</div>
+<div class="readable-text" id="p150">
+<p>The learning algorithm I used in the <code>fit</code> method on the <code>BayesianNetwork</code> model object was <em>maximum likelihood estimation</em> (discussed in chapter 2). It is the default parameter learning method, so I didn’t specify “maximum likelihood” in the call to <code>fit</code>. Generally, maximum likelihood estimation seeks the parameter that maximizes the likelihood of seeing the data we use to train the model. In the context of categorical data, maximum likelihood estimation is equivalent to taking proportions of counts in the data. For example, the parameter for <em>P</em>(<em>O</em>=emp|<em>E</em>=high) is calculated as:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p151">
+<img alt="figure" height="56" src="../Images/ness-ch3-eqs-5x.png" width="454"/>
+</div>
+<div class="readable-text" id="p152">
+<h4 class="readable-text-h4 sigil_not_in_toc">Bayesian estimation</h4>
+</div>
+<div class="readable-text" id="p153">
+<p>In chapter 2, I also introduced Bayesian estimation. It is generally mathematically intractable and relies on computationally expensive algorithms (e.g., sampling algorithms and variational inference). A key exception is the case of <em>conjugate priors</em>, where the prior distribution and the target (posterior) distribution have the same canonical form. That means the code implementation can just calculate the parameter values of the target distribution with simple math, without the need for complicated Bayesian inference algorithms.</p>
+</div>
+<div class="readable-text intended-text" id="p154">
+<p>For example, pgmpy implements a <em>Dirichlet conjugate prior</em> for categorical outcomes. For each value of <em>O</em> in <em>P</em><em> </em>(<em>O</em><em> </em>|<em>E</em><em>  </em>=<em> </em>high), we have a probability value, and we want to infer these probability values from the data. A Bayesian approach assigns a prior distribution to these values. A good choice for a prior on a set of probability values is the <em>Dirichlet distribution</em>, because it is defined for a <em>simplex</em>, a set of numbers between zero and one that sum to one. Further it is <em>conjugate</em> to categorical distributions like <em>P</em><em> </em>(<em>O</em><em> </em>|<em>E</em><em>  </em>=<em> </em>high), meaning the posterior distribution on the parameter values is also a Dirichlet distribution. That means we can calculate point estimates of the probability values using simple math, combining counts in the data and parameters in the prior. pgmpy does this math for us.</p>
+</div>
+<div class="browsable-container listing-container" id="p155">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.5</span> Bayesian point estimation with a Dirichlet conjugate prior </h5>
+<div class="code-area-container">
+<pre class="code-area">
+from pgmpy.estimators import BayesianEstimator<span class="aframe-location"/>     #1
+model.fit(
+    data,
+    estimator=BayesianEstimator, <span class="aframe-location"/>   #2
+    prior_type="dirichlet",
+    pseudo_counts=1   <span class="aframe-location"/> #3
+) 
+causal_markov_kernels = model.get_cpds()     <span class="aframe-location"/> #4
+cmk_T = causal_markov_kernels[-1]     #4
+print(cmk_T)  #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Import BayesianEstimator and initialize it on the model and data.
+     <br/>#2 Pass the estimator object to the fit method.
+     <br/>#3 pseudo_counts refers to the parameters of the Δirichlet prior.
+     <br/>#4 Extract the causal Markov kernels and view P(T|O,R).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p156">
+<p>The preceding code prints the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p157">
+<div class="code-area-container">
+<pre class="code-area">+----------+--------------------+-----+--------------------+----------+
+| O        | O(emp)             | ... | O(self)            | O(self)  |
++----------+--------------------+-----+--------------------+----------+
+| R        | R(big)             | ... | R(big)             | R(small) |
++----------+--------------------+-----+--------------------+----------+
+| T(car)   | 0.7007299270072993 | ... | 0.4166666666666667 | 0.5      |
++----------+--------------------+-----+--------------------+----------+
+| T(other) | 0.1362530413625304 | ... | 0.3333333333333333 | 0.25     |
++----------+--------------------+-----+--------------------+----------+
+| T(train) | 0.1630170316301703 | ... | 0.25               | 0.25     |
++----------+--------------------+-----+--------------------+----------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p158">
+<p>In contrast to maximum likelihood estimation, Bayesian estimation of a categorical parameter with a Dirichlet prior acts like a smoothing mechanism. For example, the maximum likelihood parameter estimate says 100% of self-employed people in small towns take a car to work. This is probably extreme. Certainly, some self-employed people bike to work—we just didn’t manage to survey any of them. Some small cities, such as Crystal City in the US state of Virginia (population 22,000), have subway stations. I’d wager at least a few of the entrepreneurs in those cities use the train.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p159">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Causal modelers and Bayesians</h5>
+</div>
+<div class="readable-text" id="p160">
+<p>The Bayesian philosophy goes beyond mere parameter estimation. Indeed, Bayesian philosophy has much in common with DAG-based causal modeling. Bayesians try to encode subjective beliefs, uncertainty, and prior knowledge into “prior” probability distributions on variables in the model. Causal modelers try to encode subjective beliefs and prior knowledge about the DGP into the form of a causal DAG. The two approaches are compatible. Given a causal DAG, you can be Bayesian about inferring the parameters of the probabilistic model you build on top of the causal DAG. You can even be Bayesian about the DAG itself and compute probability distributions over possible DAGs!</p>
+</div>
+<div class="readable-text" id="p161">
+<p>I focus on causality in this book and keep Bayesian discussions to a minimum. But we’ll use the libraries Pyro (and its NumPy-JAX alternative NumPyro) to implement causal models; these libraries provide complete support for Bayesian inference on models as well as parameters. In chapter 11, we’ll look at an example of Bayesian inference of a causal effect using a causal graphical model we build from scratch.</p>
+</div>
+</div>
+<div class="readable-text" id="p162">
+<h4 class="readable-text-h4 sigil_not_in_toc">Other techniques for parameter estimation</h4>
+</div>
+<div class="readable-text" id="p163">
+<p>We need not use a conditional probability table to represent the causal Markov kernels. There are models within the generalized linear modeling framework for modeling categorical outcomes. For some of the variables in the transportation model, we might have used non-categorical outcomes. Age, for example, might have been recorded as an integer outcome in the survey. For variables with numeric outcomes, we might use other modeling approaches. You can also use neural network architectures to model individual causal Markov kernels.</p>
+</div>
+<div class="readable-text intended-text" id="p164">
+<p><em>Parametric assumptions</em> refer to how we specify the outcomes of a node in the DAG (e.g., category or real number) and how we map parents to the outcome (e.g., table or neural network). Note that the causal assumptions encoded by the causal DAG are decoupled from the parametric assumptions for a causal Markov kernel. For example, when we assumed that age was a direct cause of education level and encoded that into our DAG as an edge, we didn’t have to decide if we were going to treat age as an ordered set of classes, as an integer, or as seconds elapsed since birth, etc. Furthermore, we didn’t have to know whether to use a conditional categorical distribution or a regression model. That step comes after we specify the causal DAG and want to implement <em>P</em><em> </em>(<em>E</em><em> </em>|<em>A</em>, <em>S</em><em>  </em>).</p>
+</div>
+<div class="readable-text intended-text" id="p165">
+<p>Similarly, when we make predictions and probabilistic inferences on a trained causal model, the considerations of what inference or prediction algorithms to use, while important, are separate from our causal questions. This separation simplifies our work. Often we can build our knowledge and skill set in causal modeling and reasoning independently of our knowledge of statistics, computational Bayes, and applied machine learning.</p>
+</div>
+<div class="readable-text" id="p166">
+<h3 class="readable-text-h3" id="sigil_toc_id_63"><span class="num-string">3.1.10</span> Learning parameters when there are latent variables</h3>
+</div>
+<div class="readable-text" id="p167">
+<p>Since we are modeling the DGP and not the data, it is likely that some nodes in the causal DAG will not be observed in the data. Fortunately, probabilistic machine learning provides us with tools for learning the parameters of causal Markov kernels of latent variables.</p>
+</div>
+<div class="readable-text" id="p168">
+<h4 class="readable-text-h4 sigil_not_in_toc">Learning latent variables with pgmpy</h4>
+</div>
+<div class="readable-text" id="p169">
+<p>To illustrate, suppose the education variable in the transportation survey data was not recorded. pgmpy gives us a utility for learning the parameters of the causal Markov kernel for latent <em>E</em> using an algorithm called <em>structural expectation maximization</em>, which is a variant of parameter learning with maximum likelihood. </p>
+</div>
+<div class="browsable-container listing-container" id="p170">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.6</span> Training a causal graphical model with a latent variable</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import pandas as pd
+from pgmpy.models import BayesianNetwork
+from pgmpy.estimators import ExpectationMaximization as EM
+url='https://raw.githubusercontent.com/altdeep/causalML/master/datasets
+<span class="">↪</span>/transportation_survey.csv'    <span class="aframe-location"/> #1
+data = pd.read_csv(url)    #1
+data_sans_E = data[['A', 'S', 'O', 'R', 'T']]   <span class="aframe-location"/> #2
+model_with_latent = BayesianNetwork(
+       [
+        ('A', 'E'),
+        ('S', 'E'),
+        ('E', 'O'),
+        ('E', 'R'),
+        ('O', 'T'),
+        ('R', 'T')
+     ],
+     latents={"E"}   <span class="aframe-location"/> #3
+)
+estimator = EM(model_with_latent, data_sans_E)    <span class="aframe-location"/> #4
+cmks_with_latent = estimator.get_parameters(latent_card={'E': 2})    #4
+print(cmks_with_latent[1].to_factor())   <span class="aframe-location"/> #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Δownload the data and convert to a pandas ΔataFrame.
+     <br/>#2 Keep all the columns except education (E).
+     <br/>#3 Indicate which variables are latent when training the model.
+     <br/>#4 Run the structural expectation maximization algorithm to learn the causal Markov kernel for E. You have to indicate the cardinality of the latent variable.
+     <br/>#5 Print out the learned causal Markov kernel for E. Print it as a factor object for legibility.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p171">
+<p>The <code>print</code> line prints a factor object.</p>
+</div>
+<div class="browsable-container listing-container" id="p172">
+<div class="code-area-container">
+<pre class="code-area">+------+----------+------+--------------+
+| E    | A        | S    |   phi(E,A,S) |
++======+==========+======+==============+
+| E(0) | A(adult) | S(F) |       0.1059 |
++------+----------+------+--------------+
+| E(0) | A(adult) | S(M) |       0.1124 |
++------+----------+------+--------------+
+| E(0) | A(old)   | S(F) |       0.4033 |
++------+----------+------+--------------+
+| E(0) | A(old)   | S(M) |       0.2386 |
++------+----------+------+--------------+
+| E(0) | A(young) | S(F) |       0.4533 |
++------+----------+------+--------------+
+| E(0) | A(young) | S(M) |       0.6080 |
++------+----------+------+--------------+
+| E(1) | A(adult) | S(F) |       0.8941 |
++------+----------+------+--------------+
+| E(1) | A(adult) | S(M) |       0.8876 |
++------+----------+------+--------------+
+| E(1) | A(old)   | S(F) |       0.5967 |
++------+----------+------+--------------+
+| E(1) | A(old)   | S(M) |       0.7614 |
++------+----------+------+--------------+
+| E(1) | A(young) | S(F) |       0.5467 |
++------+----------+------+--------------+
+| E(1) | A(young) | S(M) |       0.3920 |
++------+----------+------+--------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p173">
+<p>The outcomes for <em>E</em> are 0 and 1 because the algorithm doesn’t know the outcome names. Perhaps 0 is “high” (high school) and 1 is “uni” (university), but correctly mapping the default outcomes from a latent variable estimation method to the names of those outcomes would require further assumptions.</p>
+</div>
+<div class="readable-text intended-text" id="p174">
+<p>There are other algorithms for learning parameters when there are latent variables, including some that use special parametric assumptions (i.e., functional assumptions about how the latent variables relate to the observed variables).</p>
+</div>
+<div class="readable-text" id="p175">
+<h4 class="readable-text-h4 sigil_not_in_toc">Latent variables and identification</h4>
+</div>
+<div class="readable-text" id="p176">
+<p>In statistical inference, we say a parameter is “identified” when it is theoretically possible to learn its true value given an infinite number of examples in the data. It is “unidentified” if more data doesn’t get you closer to learning its true value. Unfortunately, your data may not be sufficient to learn the causal Markov kernels of the latent variables in your causal DAG. If we did not care about representing causality, we could restrict ourselves to a latent variable graphical model with latent variables that are identifiable from data. But we must build a causal DAG that represents the DGP, even if we can’t identify the latent variables and parameters given the data.</p>
+</div>
+<div class="readable-text intended-text" id="p177">
+<p>That said, even if you have non-identifiable parameters in your causal model, you still may be able to identify the quantity that answers your causal question. Indeed, much of causal inference methodology is focused on robust estimation of causal effects (how much a cause affects an effect) despite having latent “confounders.” We’ll cover this in detail in chapter 11. On the other hand, even if your parameters are identified, the quantity that answers your causal question may not be identified. We’ll cover causal identification in detail in chapter 10.</p>
+</div>
+<div class="readable-text" id="p178">
+<h3 class="readable-text-h3" id="sigil_toc_id_64"><span class="num-string">3.1.11</span> Inference with a trained causal probabilistic machine learning model</h3>
+</div>
+<div class="readable-text" id="p179">
+<p>A probabilistic machine learning model of a set of variables can use computational inference algorithms to infer the conditional probability of an outcome for any subset of the variables, given outcomes for the other variables. We use the variable elimination algorithm for a directed graphical model with categorical outcomes (introduced in chapter 2).</p>
+</div>
+<div class="readable-text intended-text" id="p180">
+<p>For example, suppose we want to compare education levels amongst car drivers to that of train riders. We can calculate and compare <em>P</em><em> </em>(<em>E</em><em> </em>|<em>T</em><em>  </em>) when <em>T</em><em>  </em>=<em> </em>car to when <em>T</em><em> </em>=train by using variable elimination, an inference algorithm for tabular graphical models.</p>
+</div>
+<div class="browsable-container listing-container" id="p181">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.7</span> Inference on the trained causal graphical model</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.inference import VariableElimination   <span class="aframe-location"/> #1
+inference = VariableElimination(model)     
+query1 = inference.query(['E'], evidence={"T": "train"})
+query2 = inference.query(['E'], evidence={"T": "car"})
+print("train")
+print(query1)
+print("car")
+print(query2)</pre>
+<div class="code-annotations-overlay-container">
+     #1 VariableElimination is an inference algorithm specific to graphical models.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p182">
+<p>This prints the probability tables for “train” and “car.”</p>
+</div>
+<div class="browsable-container listing-container" id="p183">
+<div class="code-area-container">
+<pre class="code-area">"train"
++---------+----------+
+| E       |   phi(E) |
++=========+==========+
+| E(high) |   0.6162 |
++---------+----------+
+| E(uni)  |   0.3838 |
++---------+----------+
+"car"
++---------+----------+
+| E       |   phi(E) |
++=========+==========+
+| E(high) |   0.5586 |
++---------+----------+
+| E(uni)  |   0.4414 |
++---------+----------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p184">
+<p>It seems car drivers are more likely to have a university education than train riders: (<em>P</em><em> </em>(<em>E</em><em> </em>='uni'|<em>T</em><em>  </em>='car') &gt; <em>P</em><em> </em>(<em>E</em><em> </em>='uni'|<em>T</em><em> </em>='train'). That inference is based on our DAG-based causal assumption that university education indirectly determines how people get to work.</p>
+</div>
+<div class="readable-text intended-text" id="p185">
+<p>In a tool like Pyro, you have to be a bit more hands-on with the inference algorithm. The following listing illustrates the inference of <em>P</em><em> </em>(<em>E</em><em> </em>|<em>T</em><em> </em>=“train”) using a probabilistic inference algorithm called importance sampling. First, we’ll specify the model. Rather than fit the parameters, we’ll explicitly specify the parameter values we fit with pgmpy.</p>
+</div>
+<div class="browsable-container listing-container" id="p186">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.8</span> Implementing the trained causal model in Pyro</h5>
+<div class="code-area-container">
+<pre class="code-area">import torch
+import pyro
+from pyro.distributions import Categorical
+
+A_alias = ['young', 'adult', 'old']    <span class="aframe-location"/> #1
+S_alias = ['M', 'F']     #1
+E_alias = ['high', 'uni']    #1
+O_alias = ['emp', 'self']   #1
+R_alias = ['small', 'big']    #1
+T_alias = ['car', 'train', 'other']    #1
+
+A_prob = torch.tensor([0.3,0.5,0.2])   <span class="aframe-location"/> #2
+S_prob = torch.tensor([0.6,0.4])    #2
+E_prob = torch.tensor([[[0.75,0.25], [0.72,0.28], [0.88,0.12]],    #2
+                     [[0.64,0.36], [0.7,0.3], [0.9,0.1]]])     #2
+O_prob = torch.tensor([[0.96,0.04], [0.92,0.08]])     #2
+R_prob = torch.tensor([[0.25,0.75], [0.2,0.8]])     #2
+T_prob = torch.tensor([[[0.48,0.42,0.1], [0.56,0.36,0.08]],     #2
+                     [[0.58,0.24,0.18], [0.7,0.21,0.09]]])     #2
+
+def model():   <span class="aframe-location"/> #3
+   A = pyro.sample('age', Categorical(probs=A_prob))    #3
+   S = pyro.sample('gender', Categorical(probs=S_prob))    #3
+   E = pyro.sample('education', Categorical(probs=E_prob[S][A]))    #3
+   O = pyro.sample('occupation', Categorical(probs=O_prob[E]))    #3
+   R = pyro.sample('residence', Categorical(probs=R_prob[E]))   #3
+   T = pyro.sample('transportation', Categorical(probs=T_prob[R][O]))   #3  
+   Return {'A': A, 'S': S, 'E': E, 'O': O, 'R': R, 'T': T}     #3
+
+pyro.render_model(model)    <span class="aframe-location"/> #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 The categorical distribution only returns integers, so it’s useful to write the integers’ mapping to categorical outcome names.
+     <br/>#2 For simplicity, we’ll use rounded versions of parameters learned with the fit method in pgmpy (listing 3.4), though we could have learned the parameters in a training procedure.
+     <br/>#3 When we implement the model in Pyro, we specify the causal ΔAG implicitly using code logic.
+     <br/>#4 We can then generate a figure of the implied ΔAG using pyro.render_model(). Note that we need to have Graphviz installed.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p187">
+<p>The <code>pyro.render_model</code> function draws the implied causal DAG from the Pyro model in figure 3.12. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p188">
+<img alt="figure" height="394" src="../Images/CH03_F12_Ness.png" width="361"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.12</span> You can visualize the causal DAG in Pyro by using the <code>pyro.render_model()</code> function. This assumes you have Graphviz installed.</h5>
+</div>
+<div class="readable-text" id="p189">
+<p>Pyro provides probabilistic inference algorithms, such as importance sampling, that we can apply to our causal model.</p>
+</div>
+<div class="browsable-container listing-container" id="p190">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.9</span> Inference on the causal model in Pyro</h5>
+<div class="code-area-container">
+<pre class="code-area">import numpy as np
+import pyro
+from pyro.distributions import Categorical
+from pyro.infer import Importance, EmpiricalMarginal <span class="aframe-location"/> #1
+import matplotlib.pyplot as plt
+
+conditioned_model = pyro.condition(   <span class="aframe-location"/> #2
+    model,   <span class="aframe-location"/> #3
+    data={'transportation':torch.tensor(1.)}    #3
+)
+
+m = 5000    <span class="aframe-location"/> #4
+posterior = pyro.infer.Importance(   <span class="aframe-location"/> #5
+    conditioned_model,    #5
+    num_samples=m
+).run()    <span class="aframe-location"/> #6
+
+E_marginal = EmpiricalMarginal(posterior, "education")    <span class="aframe-location"/> #7
+E_samples = [E_marginal().item() for _ in range(m)]   #7
+<span class="aframe-location"/>E_unique, E_counts = np.unique(E_samples, return_counts=True)     #8
+E_probs = E_counts / m    #8
+
+plt.bar(E_unique, E_probs, align='center', alpha=0.5)    <span class="aframe-location"/> #9
+plt.xticks(E_unique, E_alias)    #9
+plt.ylabel('probability')    #9
+plt.xlabel('education')     #9
+plt.title('P(E | T = "train") - Importance Sampling')    #9</pre>
+<div class="code-annotations-overlay-container">
+     #1 We’ll use two inference-related classes, Importance and EmpiricalMarginal.
+     <br/>#2 pyro.condition is a conditioning operation on the model.
+     <br/>#3 It takes in the model and evidence for conditioning on. The evidence is a dictionary that maps variable names to values. The need to specify variable names during inference is why we have the name argument in the calls to pyro.sample. Here we condition on T=“train”.
+     <br/>#4 We’ll run an inference algorithm that will generate m samples.
+     <br/>#5 I use an inference algorithm called importance sampling. The Importance class constructs this inference algorithm. It takes the conditioned model and the number of samples.
+     <br/>#6 Run the random process algorithm with the run method. The inference algorithm will generate from the joint probability of the variables we didn’t condition on (everything but T) given the variables we conditioned on (T).
+     <br/>#7 We are interested in the conditional probability distribution of education, so we extract education values from the posterior.
+     <br/>#8 Based on these samples, we produce a Monte Carlo estimation of the probabilities in P(E|T=“train”).
+     <br/>#9 Plot a visualization of the learned probabilities.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p191">
+<p>This produces the plot in figure 3.13. The probabilities shown are close to the results from the pgmpy model, though they’re slightly different due to different algorithms and the rounding of the parameter estimates to two decimal places.</p>
+</div>
+<div class="readable-text intended-text" id="p192">
+<p>This probabilistic inference is not yet causal inference—we’ll look at examples combining causal inference with probabilistic inference starting in chapter 7. In chapter 8, you’ll see how to use probabilistic inference to implement causal inference. For now, we’ll look at the benefit of parameter modularity, and at how parameters encode causal invariance.</p>
+</div>
+<div class="browsable-container figure-container" id="p193">
+<img alt="figure" height="523" src="../Images/CH03_F13_Ness.png" width="664"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.13</span> Visualization of the P(E|T=“train”) distribution<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p194">
+<h2 class="readable-text-h2" id="sigil_toc_id_65"><span class="num-string">3.2</span> Causal invariance and parameter modularity</h2>
+</div>
+<div class="readable-text" id="p195">
+<p>Suppose we were interested in modeling the relationship between altitude and temperature. The two are clearly correlated; the higher up you go, the colder it gets. However, you know temperature doesn’t cause altitude, or heating the air within a city would cause the city to fly. Altitude is the cause, and temperature is the effect. </p>
+</div>
+<div class="readable-text intended-text" id="p196">
+<p>We can come up with a simple causal DAG that we think captures the relationship between temperature and altitude, along with other causes, as shown in figure 3.14. Let’s have <em>A</em> be altitude, <em>C</em> be cloud cover, <em>L</em> be latitude, <em>S</em> be season, and <em>T</em> be temperature. The DAG in figure 3.14 has five causal Markov kernels: {<em>P</em><em> </em>(<em>A</em>), <em>P</em><em> </em>(<em>C</em><em>  </em>), <em>P</em><em> </em>(<em>L</em><em> </em>), <em>P</em><em> </em>(<em>S</em><em>  </em>), <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>A</em>, <em>C</em>, <em>L</em>, <em>S</em><em>  </em>)}.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p197">
+<img alt="figure" height="288" src="../Images/CH03_F14_Ness.png" width="553"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.14</span> A simple model of outdoor temperature</h5>
+</div>
+<div class="readable-text" id="p198">
+<p>To train a causal graphical model on top of this DAG, we need to learn parameters for each of these causal Markov kernels.</p>
+</div>
+<div class="readable-text" id="p199">
+<h3 class="readable-text-h3" id="sigil_toc_id_66"><span class="num-string">3.2.1</span> Independence of mechanism and parameter modularity</h3>
+</div>
+<div class="readable-text" id="p200">
+<p>There are some underlying thermodynamic mechanisms in the DGP underlying the causal Markov kernels in our temperature DAG. For example, the causal Markov kernel <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>A</em>, <em>C</em>, <em>L</em>, <em>S</em><em>  </em>) is the conditional probability induced by the physics-based mechanism, wherein altitude, cloud cover, latitude, and season drive the temperature. That mechanism is distinct from the mechanism that determines cloud cover (according to our DAG). <em>Independence of mechanism</em> refers to this distinction between mechanisms. </p>
+</div>
+<div class="readable-text intended-text" id="p201">
+<p>The independence of the mechanism leads to a property called <em>parameter modularity</em>. In our model, for each causal Markov kernel, we choose a parameterized representation of the causal Markov kernels. If <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>A</em>, <em>C</em>, <em>L</em>, <em>S</em><em>  </em>) and <em>P</em>(<em>C</em><em>  </em>) are distinct mechanisms, then our representations of <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>A</em>, <em>C</em>, <em>L</em>, <em>S</em><em>  </em>) and <em>P</em>(<em>C</em><em>  </em>) are representations of distinct mechanisms. That means we can change one representation without worrying about how that change affects the other representations. Such modularity is atypical in statistical models; you can’t usually change one part of a model and expect the other part to be unaffected.</p>
+</div>
+<div class="readable-text intended-text" id="p202">
+<p>One way this comes in handy is during training. Typically, when you train a model, you optimize all the parameters at the same time. Parameter modularity means you could train the parameters for each causal Markov kernel separately, or train them simultaneously as decoupled sets, allowing you to enjoy some dimensionality reduction during training. In Bayesian terms, the parameter sets are a priori independent (though they are generally dependent in the posterior). This provides a nice causal justification for using an independent prior distribution for each causal Markov kernel’s parameter set. </p>
+</div>
+<div class="readable-text" id="p203">
+<h3 class="readable-text-h3" id="sigil_toc_id_67"><span class="num-string">3.2.2</span> Causal transfer learning, data fusion, and invariant prediction</h3>
+</div>
+<div class="readable-text" id="p204">
+<p>You may not be a climatologist or a meteorologist. Still, you know the relationship between temperature and altitude has something to do with air pressure, climate, sunlight, and such. You also know that whatever the physics of that relationship is, the physics is the same in Katmandu as it is in El Paso. So, when we train a causal Markov kernel on data solely collected from Katmandu, we learn a causal representation of a mechanism that is invariant between Katmandu and El Paso. This invariance helps with transfer learning; we should be able to use that trained causal Markov kernel to make inferences about the temperature in El Paso.</p>
+</div>
+<div class="readable-text intended-text" id="p205">
+<p>Of course, there are caveats to leveraging this notion of causal invariance. For example, this assumes your causal model is correct and that there is enough information about the underlying mechanism in the Katmandu data to effectively apply what you’ve learned about that mechanism in El Paso.</p>
+</div>
+<div class="readable-text intended-text" id="p206">
+<p>Several advanced methods lean heavily on causal invariance and independence of mechanism. For example, <em>causal data fusion </em>uses this idea to learn a causal model by combining multiple datasets. <em>Causal transfer learning </em>uses causal invariance to make causal inferences using data outside the domain of the training data. <em>Causal invariant prediction</em> leverages causal invariance in prediction tasks. See the chapter notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for references.</p>
+</div>
+<div class="readable-text" id="p207">
+<h3 class="readable-text-h3" id="sigil_toc_id_68"><span class="num-string">3.2.3</span> Fitting parameters with common sense</h3>
+</div>
+<div class="readable-text" id="p208">
+<p>In the temperature model, we have an intuition about the physics of the mechanism that induces <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>A</em>, <em>C</em>, <em>L</em>, <em>S</em><em>  </em>). In non-natural science domains, such as econometrics and other social sciences, the “physics” of the system is more abstract and harder to write down. Fortunately, we can rely on similar invariance-based intuition in these non-natural science domains. In these domains, we can still assume the causal Markov kernels correspond to distinct causal mechanisms in the real world, assuming the model is true. For example, recall <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>O</em>, <em>R</em><em>  </em>) in our transportation model. We still assume the underlying mechanism is distinct from the others; if there were changes to the mechanism underlying <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>O</em>, <em>R</em><em>  </em>), only <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>O</em>, <em>R</em><em>  </em>) should change—other kernels in the model should not. If something changes the mechanism underlying <em>P</em><em> </em>(<em>R</em><em>  </em>|<em>E</em><em>  </em>), the causal Markov kernel for <em>R</em>, this change should affect <em>P</em><em> </em>(<em>R</em><em>  </em>|<em>E</em><em>  </em>) but have no effect on the parameters of <em>P</em><em> </em>(<em>T</em><em>  </em>|<em>O</em>, <em>R</em><em>  </em>).</p>
+</div>
+<div class="readable-text intended-text" id="p209">
+<p>This invariance can help us estimate parameters <em>without </em>statistical learning by reasoning about the underlying causal mechanism. For example, let’s look again at the causal Markov kernel <em>P</em><em> </em>(<em>R</em><em>  </em>|<em>E</em><em>  </em>) (recall <em>R</em> is residence, <em>E</em> is education). Let’s try to reason our way to estimates of the parameters of this distribution without using statistical learning.</p>
+</div>
+<div class="readable-text intended-text" id="p210">
+<p>People who don’t get more than a high school degree are more likely to stay in their hometowns. However, people from small towns who attain college degrees are likely to move to a big city where they can apply their credentials to get higher-paying jobs.</p>
+</div>
+<div class="readable-text intended-text" id="p211">
+<p>Now let’s think about US demographics. Suppose a web search tells you that 80% of the US lives in an urban area (<em>P</em><em> </em>(<em>R</em><em>   </em>=<em> </em>big) = .8), while 95% of college degree holders live in an urban area (<em>P</em><em> </em>(<em>R</em><em>  </em>=big|<em>E</em><em>  </em>=<em> </em>uni) = .95). Further, 25% of the overall adult population in the US has a university degree (<em>P</em><em> </em>(<em>E</em><em>  </em>=<em> </em>uni) = .25). Then, with some back-of-the-envelope math, you calculate your probability values as <em>P</em><em> </em>(<em>R</em><em>  </em>=small|<em>E</em><em>  </em>=<em> </em>high)=.25, <em>P</em><em> </em>(<em>R</em><em>  </em>=<em> </em>big|<em>E</em><em>  </em>=<em> </em>high) = .75, <em>P</em><em> </em>(<em>R</em><em>   </em>=small|<em>E</em><em>  </em>=<em> </em>uni) = .05, and <em>P</em><em> </em>(<em>R</em><em>  </em>=<em> </em>big|<em>E</em><em>  </em>=<em> </em>uni) = .95. The ability to calculate parameters in this manner is particularly useful if data is unavailable for parameter learning.</p>
+</div>
+<div class="readable-text" id="p212">
+<h2 class="readable-text-h2" id="sigil_toc_id_69"><span class="num-string">3.3</span> Your causal question scopes the DAG</h2>
+</div>
+<div class="readable-text" id="p213">
+<p>When a modeler meets a problem for the first time, there is often already a set of available data, and a common mistake is to define your DAG using only the variables in that data. Letting the data scope your DAG is attractive, because you don’t have to decide what variables to include in your DAG. But causal modelers model the DGP, not the data. The true causal structure in the world doesn’t care about what happens to be measured in your dataset. In your causal DAG, you should include causally relevant variables whether they are in your dataset or not.</p>
+</div>
+<div class="readable-text intended-text" id="p214">
+<p>But if the data doesn’t define the DAG’s scope, what does? While your data has a fixed set of variables, the variables that could comprise your DGP are only bounded by your imagination. Given a variable, you could include its causes, those causes’ causes, those causes’ causes’ causes, continuing all the way back to Aristotle’s “prime mover,” the single cause of everything. Fortunately, there is no need to go back that far. Let’s look at a procedure you can use to select variables for inclusion in your causal DAG.</p>
+</div>
+<div class="readable-text" id="p215">
+<h3 class="readable-text-h3" id="sigil_toc_id_70"><span class="num-string">3.3.1</span> Selecting variables for inclusion in the DAG</h3>
+</div>
+<div class="readable-text" id="p216">
+<p>Recall that there are several kinds of causal inference questions. As I mentioned in chapter 1, causal effect inference is the most common type of causal question. I use causal effect inference as an example, but this workflow is meant for all types of causal questions.</p>
+</div>
+<ol>
+<li class="readable-text" id="p217"> <em>Include variables central to your causal question(s)</em><em> </em>—The first step is to include all the variables central to your causal question. If you intend to ask multiple questions, include all the variables relevant to those questions. As an example, consider figure 3.15. Suppose that we intend to ask about the causal effect of <em>V</em> on <em>U</em> and <em>Y</em>. These become the first variables we include in the DAG. </li>
+<li class="readable-text" id="p218"> <em>Include any common causes for the variables in step 1</em>—Add any common causes for the variables you included in the first step. In our example, you would start with variables <em>U</em>, <em>V</em> and <em>Y</em> in figure 3.15, and trace back their causal lineages and identify shared ancestors. These shared ancestors are common causes. In figure 3.16, <em>W</em><sub>0</sub>, <em>W</em><sub>1</sub>, and <em>W</em><sub>2</sub> are common causes of <em>V</em>, <em>U</em>, and <em>Y</em>. <br/>
+<div class="browsable-container figure-container" id="p219">
+<img alt="figure" height="100" src="../Images/CH03_F15_Ness.png" width="270"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.15</span> First include variables central to your causal question(s). Here, suppose you are interested in asking questions about <em>V</em>, <em>U</em>, and <em>Y</em>.</h5>
+</div> <br/>
+<div class="browsable-container figure-container" id="p220">
+<img alt="figure" height="323" src="../Images/CH03_F16_Ness.png" width="475"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.16</span> Satisfy causal sufficiency; include common causes to the variables from step 1.</h5>
+</div> <br/> In formal terms, a variable is a common cause <em>Z</em> of a pair of variables <em>X</em> and <em>Y</em> if there is a directed path from <em>Z</em> to <em>X</em> that does not include <em>Y</em> and a directed path from <em>Z</em> to <em>Y</em> that does not include <em>X</em>. The formal principle of including common causes is called <em>causal sufficiency</em>. A set of variables is causally sufficient if it doesn’t exclude any common causes between any pair of variables in the set. Furthermore, once you include a common cause, you don’t have to include earlier common causes on the same paths. For example, figure 3.17 illustrates how we might exclude variables’ earlier common causes.<span class="aframe-location"/><br/>
+<div class="browsable-container figure-container" id="p221">
+<img alt="figure" height="293" src="../Images/CH03_F17_Ness.png" width="784"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.17</span> Once you include a common cause, you don’t have to include any earlier common causes on the same paths to the step 1 variables.</h5>
+</div> <br/>In figure 3.17, <em>W</em><sub>2</sub> is on <em>W</em><sub>0</sub>’s path to <em>Y</em> and <em>U</em>, but we include <em>W</em><sub>0</sub> because it has its own path to <em>V</em>. In contrast, while <em>C</em> is a common cause of <em>V</em>, <em>Y</em>, and <em>U</em>, <em>W</em><sub>0</sub> is on all of <em>C</em>’s paths to <em>V</em>, <em>Y</em> and <em>U</em>, so we can exclude it after including <em>W</em><sub>0</sub>. Similarly, <em>W</em><sub>2</sub> lets us exclude <em>E</em>, and <em>W</em><sub>0</sub> and <em>W</em><sub>2</sub> together let us exclude <em>D</em>.  </li>
+<li class="readable-text" id="p222"> <em>Include variables that may be useful in causal inference statistical analysis</em><em> </em>—Now we include variables that may be useful in statistical methods for the causal inferences you want to make. For example, in figure 3.18, suppose you were interested in estimating the cause effect of <em>V</em> on <em>Y</em>. You might want to include possible “instrumental variables.” We’ll define these formally in part 4 of this book, but for now in a causal effect question, an <em>instrument</em> is a parent of a variable of interest, and it can help in statistical estimation of the causal effect. In figure 3.18, <em>Z</em> can function as an instrumental variable. You do not need to include <em>Z</em> for causal sufficiency, but you might choose to include it to help with quantifying the causal effect.<span class="aframe-location"/>
+<div class="browsable-container figure-container" id="p223">
+<img alt="figure" height="279" src="../Images/CH03_F18_Ness.png" width="704"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.18</span> Include variables that may be useful in the causal inference statistical analysis. <em>W</em>’s are confounders, <em>Z</em>’s are instruments, <em>X</em>’s are effect modifiers, <em>Y</em> is the outcome, <em>V</em> is a treatment, and U is a front door mediator.</h5>
+</div> <br/>Similarly, <em>X</em><sub>0</sub> and <em>X</em><sub>1</sub> could also be of use in the analysis by accounting for other sources of variation in <em>Y</em>. We could potentially use them to reduce variance in the statistical estimation of a causal effect. Alternatively, we may be interested in the <em>heterogeneity </em>of the causal effect (how the causal effect varies) across subsets of the population defined by <em>X</em><sub>0</sub> and <em>X</em><sub>1</sub>. We’ll look at causal effect heterogeneity more closely in chapter 11. </li>
+<li class="readable-text" id="p224"> <em>Include variables that help the DAG communicate a complete story</em><em> </em>—Finally, include any variables that help the DAG better function as a communicative tool. Consider the common cause <em>D</em> in figure 3.19.<span class="aframe-location"/>
+<div class="browsable-container figure-container" id="p225">
+<img alt="figure" height="284" src="../Images/CH03_F19_Ness.png" width="650"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.19</span> Include variables that help the DAG tell a complete story. In this example, despite having excluded <em>D</em> in step 2 (figure 3.17) we still might want to include <em>D</em> if it has communicative value.</h5>
+</div> <br/>In figure 3.17, we concluded that the common cause <em>D</em> could be excluded after including common causes <em>W</em><sub>0</sub> and <em>W</em><sub>2</sub>. But perhaps <em>D</em> is an important variable in how domain experts conceptualize the domain. While it is not useful in quantifying the causal effect of <em>V</em> on <em>U</em> and <em>Y</em>, leaving it out might feel awkward. If so, including it may help the DAG tell a better story by showing how a key variable relates to the variables you included. When your causal DAG tells a convincing story, your causal analysis is more convincing.<p/> </li>
+</ol>
+<div class="readable-text" id="p226">
+<h3 class="readable-text-h3" id="sigil_toc_id_71"><span class="num-string">3.3.2</span> Including variables in causal DAGs by their role in inference</h3>
+</div>
+<div class="readable-text" id="p227">
+<p>Many experts in causal inference de-emphasize writing their assumptions in the form of a causal DAG in favor of specifying a set of relevant variables, according to their <em>role</em> in causal inference calculations. Focusing on variable-role-in-inference over a causal DAG is common in econometrics pedagogy. Examples of such roles include terms I’ve already introduced, such as “common cause,” “instrumental variable,” and “effect modifier.” Again, we’ll define these formally in chapter 11.</p>
+</div>
+<div class="readable-text intended-text" id="p228">
+<p>For now, I want to make clear that this is not a competing paradigm. An economist might say they are interested in the causal effect of <em>V</em> on <em>U</em>, conditional on some “<em>effect modifiers</em>,” and that they plan to “<em>adjust for</em> the influence of <em>common causes”</em> using an “<em>instrumental variable</em>.” These roles all correspond to structure in a causal DAG; common causes of <em>U</em> and <em>V</em> in figure 3.19 are <em>W</em><sub>0</sub>, <em>W</em><sub>1</sub>, and <em>W</em><sub>2</sub>. <em>Z</em> is an instrumental variable, and <em>X</em><sub>0</sub> and <em>X</em><sub>1</sub> are effect modifiers. Assuming variables with these roles are important to your causal effect estimation analysis is implicitly assuming that your DGP follows the causal DAG with this structure.</p>
+</div>
+<div class="readable-text intended-text" id="p229">
+<p>In fact, given a set of variables and their roles, we can construct the implied causal DAG on that set. The DoWhy causal inference library shows us how.</p>
+</div>
+<div class="browsable-container listing-container" id="p230">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 3.10</span> Creating a DAG based on roles in causal effect inference</h5>
+<div class="code-area-container">
+<pre class="code-area">from dowhy import datasets
+
+import networkx as nx
+import matplotlib.pyplot as plt
+
+sim_data = datasets.linear_dataset(    <span class="aframe-location"/> #1
+    beta=10.0,
+    num_treatments=1,   <span class="aframe-location"/> #2
+    num_instruments=2,    <span class="aframe-location"/> #3
+    num_effect_modifiers=2,    <span class="aframe-location"/> #4
+    num_common_causes=5,    <span class="aframe-location"/> #5
+    num_frontdoor_variables=1,  <span class="aframe-location"/> #6
+    num_samples=100,
+
+)
+
+dag = nx.parse_gml(sim_data['gml_graph'])    <span class="aframe-location"/> #7
+pos = {    #7
+ 'X0': (600, 350),    #7
+ 'X1': (600, 250),    #7
+ 'FD0': (300, 300),   #7
+ 'W0': (0, 400),   #7
+ 'W1': (150, 400),   #7
+ 'W2': (300, 400),   #7
+ 'W3': (450, 400),   #7
+ 'W4': (600, 400),   #7
+ 'Z0': (10, 250),    #7
+ 'Z1': (10, 350),    #7
+ 'v0': (100, 300),   #7
+ 'y': (500, 300)     #7
+}    #7
+options = {    #7
+    "font_size": 12,    #7
+    "node_size": 800,   #7
+    "node_color": "white",   #7
+    "edgecolors": "black",   #7
+    "linewidths": 1,    #7
+    "width": 1,    #7
+}    #7
+nx.draw_networkx(dag, pos, **options)    #7
+ax = plt.gca()   #7
+ax.margins(x=0.40)    #7
+plt.axis("off")   #7
+plt.show() #7</pre>
+<div class="code-annotations-overlay-container">
+     #1 datasets.linear_ dataset generates a ΔAG from the specified variables.
+     <br/>#2 Add one treatment variable, like V in figure 3.19.
+     <br/>#3 Z in figure 3.19 is an example of an instrumental variable; a variable that is a cause of the treatment, but its only causal path to the outcome is through the treatment. Here we create two instruments.
+     <br/>#4 X
+     <sub>0</sub> and X
+     <sub>1</sub> in figure 3.19 are examples of “effect modifiers” that help model heterogeneity in the causal effect. ΔoWhy defines these as other causes of the outcome (though they needn’t be). Here we create two effect modifiers.
+     <br/>#5 We add 5 common causes, like the three W
+     <sub>0</sub>, W
+     <sub>1</sub>, and W
+     <sub>2</sub> in figure 3.19. Unlike the nuanced structure between these variables in figure 3.19, the structure here will be simple.
+     <br/>#6 Front door variables are on the path between the treatment and the effect, like U in figure 3.19. Here we add one.
+     <br/>#7 This code extracts the graph, creates a plotting layout, and plots the graph.
+     <br/>#8 This code extracts the graph, creates a plotting layout, and plots the graph.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p231">
+<p>This code produces the DAG pictured in figure 3.20.</p>
+</div>
+<div class="readable-text" id="p232">
+<p> This role-based approach produces a simple template causal DAG. It won’t give you the nuance that we have in figure 3.19, and it will exclude the good storytelling variables that we added in step 4, like <em>D</em> in figure 3.19. But it will be enough for tackling the predefined causal effect query. It’s a great tool to use when working with collaborators who are skeptical of DAGs but are comfortable talking about variable roles. But don’t believe claims that this approach is DAG-free. The DAG is just implicit in the assumptions underlying the specification of the roles.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p233">
+<img alt="figure" height="439" src="../Images/CH03_F20_Ness.png" width="419"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 3.20</span> A causal DAG built by specifying variables by their role in causal effect inference</h5>
+</div>
+<div class="readable-text intended-text" id="p234">
+<p> Such a template method could be used for other causal queries as well. You can also use this approach to get a basic causal DAG in a first step, which you could then build upon to produce a more nuanced graph.</p>
+</div>
+<div class="readable-text" id="p235">
+<h2 class="readable-text-h2" id="sigil_toc_id_72"><span class="num-string">3.4</span> Looking ahead: Model testing and combining causal graphs with deep learning</h2>
+</div>
+<div class="readable-text" id="p236">
+<p>The big question when building a causal DAG is “what if my causal DAG is wrong?” How can we be confident in our selected DAG? In the next chapter, we’ll look at how to use data to stress test our causal DAG. A key insight will be that while data can never prove that a causal DAG is right, it can help show when it is wrong. You’ll also learn about causal discovery, a set of algorithms for learning causal DAGs from data.</p>
+</div>
+<div class="readable-text intended-text" id="p237">
+<p>In this chapter, we explored building a simple causal graphical model on the DAG structure using pgmpy. Throughout the book, you’ll see how to build more sophisticated causal graphical models that leverage neural networks and automatic differentiation. Even in those more sophisticated models, the causal Markov property and the benefits of the DAG including causal invariance, and parameter modularity will still hold.</p>
+</div>
+<div class="readable-text" id="p238">
+<h2 class="readable-text-h2" id="sigil_toc_id_73">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p239"> The causal directed acyclic graph (DAG) can represent our causal assumptions about the data generating process (DGP). </li>
+<li class="readable-text" id="p240"> The causal DAG is a useful tool for visualizing and communicating your causal assumptions. </li>
+<li class="readable-text" id="p241"> DAGs are fundamental data structures in computer science, and they admit many fast algorithms we can bring to bear on causal inference tasks. </li>
+<li class="readable-text" id="p242"> DAGs link causality to conditional independence via the causal Markov property. </li>
+<li class="readable-text" id="p243"> DAGs can provide scaffolding for probabilistic ML models. </li>
+<li class="readable-text" id="p244"> We can use various methods for statistical parameter learning to train a probabilistic model on top of a DAG. These include maximum likelihood estimation and Bayesian estimation. </li>
+<li class="readable-text" id="p245"> Given a causal DAG, the modeler can choose from a variety of parameterizations of the causal Markov kernels in the DAG, ranging from conditional probability tables to regression models to neural networks. </li>
+<li class="readable-text" id="p246"> A causally sufficient set of variables contains all common causes between pairs in that set. </li>
+<li class="readable-text" id="p247"> You can build a causal DAG by starting with a set of variables of interest, expanding that to a causally sufficient set, adding variables useful to causal inference analysis, and finally adding any variables that help the DAG communicate a complete story. </li>
+<li class="readable-text" id="p248"> Each causal Markov kernel represents a distinct causal mechanism that determines how the child node is determined by its parents (assuming the DAG is correct). </li>
+<li class="readable-text" id="p249"> “Independence of mechanism” refers to how mechanisms are distinct from the others—a change to one mechanism does not affect the others. </li>
+<li class="readable-text" id="p250"> When you build a generative model on the causal DAG, the parameters of each causal Markov kernel represents an encoding of the underlying causal mechanism. This leads to “parameter modularity,” which enables you to learn each parameter set separately and even use common sense reasoning to estimate parameters instead of data. </li>
+<li class="readable-text" id="p251"> The fact that each causal Markov kernel represents a distinct causal mechanism provides a source of invariance that can be leveraged in advanced tasks, like transfer learning, data fusion, and invariant prediction. </li>
+<li class="readable-text" id="p252"> You can specify a DAG by the roles variables play in a specific causal inference task. </li>
+</ul>
+</div></body></html>

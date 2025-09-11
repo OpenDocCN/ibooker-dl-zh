@@ -1,0 +1,1565 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">9</span> </span> <span class="chapter-title-text">The general counterfactual inference algorithm</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Implementing the general counterfactual inference algorithm</li>
+<li class="readable-text" id="p3">Directly implementing a parallel world DAG as a causal graphical model</li>
+<li class="readable-text" id="p4">Using a variational inference to implement the algorithm</li>
+<li class="readable-text" id="p5">Building counterfactual deep generative models of images</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>The previous chapter taught you how to formalize counterfactuals and use the parallel world graph to reason across possible worlds. In this chapter, I’ll introduce an algorithm for inferring counterfactual queries. Then I’ll present three case studies showing implementations of the algorithm using different probabilistic ML approaches.</p>
+</div>
+<div class="readable-text intended-text" id="p7">
+<p>I call the algorithm we’ll discuss in this chapter the “general” algorithm for probabilistic counterfactual inference because you can infer any counterfactual query with this algorithm. The catch is that you need an SCM. Moreover, differences between your SCM and the ground-truth SCM can lead to inaccuracies in your counterfactual inferences. We’ll look more closely at this issue when we discuss identification in chapter 10, where you’ll also learn ways of inferring counterfactuals without knowing the ground-truth SCM. In this chapter, you’ll see the power of this SCM-based approach, especially in machine learning.</p>
+</div>
+<div class="readable-text" id="p8">
+<h2 class="readable-text-h2" id="sigil_toc_id_209"><span class="num-string">9.1</span> Algorithm walkthrough</h2>
+</div>
+<div class="readable-text" id="p9">
+<p>In this section, we’ll do a high-level walkthrough of the general algorithm probabilistic counterfactual inference. The algorithm has three steps commonly called <em>abduction</em>, <em>action</em>, and <em>prediction</em>:</p>
+</div>
+<ol>
+<li class="readable-text" id="p10"> <em>Abduction</em><em> </em>—Infer the distribution of the exogenous variables given the factual conditions. </li>
+<li class="readable-text" id="p11"> <em>Action</em><em> </em>—Implement the hypothetical condition as an ideal intervention (graph surgery) in the hypothetical world. </li>
+<li class="readable-text" id="p12"> <em>Prediction</em><em> </em>—Use the conditional distribution on the exogenous variables from step 1 to derive the distributions of the hypothetical outcomes. </li>
+</ol>
+<div class="readable-text" id="p13">
+<p>I’ll illustrate how we can perform these steps using the parallel world graph for our online gaming example, shown again as a parallel world graph in figure 9.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p14">
+<img alt="figure" height="404" src="../Images/CH09_F01_Ness.png" width="302"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.1</span> A parallel world graph for the online gaming example</h5>
+</div>
+<div class="readable-text" id="p15">
+<p> Recall that in this example, guild member <em>G</em> is a cause of side-quest engagement <em>E</em> and in-game purchases <em>I</em>. Side-quest engagement is also a cause of in-game purchases.</p>
+</div>
+<div class="readable-text print-book-callout" id="p16">
+<p><span class="print-book-callout-head">Note</span>  This example changes the condition <em>I</em> &lt; $50 used in chapter 8 to <em>I</em> = $50 in order to make the explanations a bit less verbose. Either condition would work with the algorithm we’re discussing.</p>
+</div>
+<div class="readable-text" id="p17">
+<p>Let’s suppose our counterfactual question is “For a player with low side-quest engagement and $50 of in-game purchases, what would their level of in-game purchases be if their side-quest engagement were high?” The corresponding query is <em>P</em>(<em>IE</em> =“high”|<em>E</em>=“low”, <em>I</em>=50). Let’s examine how to apply the algorithm to this query.</p>
+</div>
+<div class="readable-text" id="p18">
+<h3 class="readable-text-h3" id="sigil_toc_id_210"><span class="num-string">9.1.1</span> Abduction: Infer the exogenous variables given the observed endogenous variables</h3>
+</div>
+<div class="readable-text" id="p19">
+<p>The term “abduction” refers to doing <em>abductive inference</em>, meaning we’re inferring causes from observed outcomes. In our online gaming SCM, we want to infer the latent exogenous variables (<em>N</em><sub><em>G</em></sub>, <em>N</em><sub><em>E</em></sub>, and <em>N</em><sub><em>I</em></sub>) from the factual conditions (<em>E</em>=“low” and <em>I</em>=50).</p>
+</div>
+<div class="readable-text intended-text" id="p20">
+<p>In our probabilistic modeling approach, we treat the exogenous variables as latent variables and target them with probabilistic inference. In our example, we infer <em>N</em><sub><em>E</em></sub> from observing <em>E</em>=“low”. Figures 9.2 and 9.3 illustrate the d-connected paths to inference of <em>N</em><sub><em>G</em></sub> and <em>N</em><sub><em>I</em></sub>, respectively.</p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>As you can see in figure 9.2, we have a path from <em>E</em> to <em>N</em><sub><em>G</em></sub> through the path <em>E</em>←<em>G</em>←<em>N</em><sub><em>G</em></sub>. Further, observing both <em>E</em> and <em>I</em> opens a collider path to <em>N</em><sub><em>G</em></sub>: <em>E</em>→<em>I</em>←<em>G</em>←<em>N</em><sub><em>G</em></sub>. Similarly, in figure 9.3, observing <em>E</em> and <em>I</em> also opens a collider path to <em>N</em><sub><em>I</em></sub> via <em>E</em>→<em>I</em>←<em>N</em><sub><em>I</em></sub>.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p22">
+<img alt="figure" height="436" src="../Images/CH09_F02_Ness.png" width="670"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.2</span> To infer the counterfactual outcomes, we infer the exogenous variables conditional on observed outcomes in the actual world. There is a path from <em>E</em> to <em>N</em><em><sub>G</sub></em> through the path <em>E</em>←<em>G</em>←<em>N</em><em><sub>G</sub></em>. Also, observing <em>E</em> and <em>I</em> opens a collider path <em>E</em>→<em>I</em>←<em>G</em>←<em>N</em><em><sub>G</sub></em>.<span class="aframe-location"/></h5>
+</div>
+<div class="browsable-container figure-container" id="p23">
+<img alt="figure" height="436" src="../Images/CH09_F03_Ness.png" width="303"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.3</span> Observing <em>E</em> and <em>I</em> opens a collider path to <em>N</em><em><sub>I</sub></em> via <em>E</em>→<em>I</em>←<em>N</em><em><sub>I</sub></em>.</h5>
+</div>
+<div class="readable-text intended-text" id="p24">
+<p>Finally, observing <em>E</em> has a directly connecting path to <em>N</em><sub><em>E</em></sub>, as shown in figure 9.4.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p25">
+<img alt="figure" height="432" src="../Images/CH09_F04_Ness.png" width="303"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.4</span> <em>E</em> is a direct child of <em>N</em><em><sub>E</sub></em>, so observing <em>E</em> gives direct information about <em>N</em><em><sub>E</sub></em>.</h5>
+</div>
+<div class="readable-text intended-text" id="p26">
+<p>Our SCM is a probabilistic model. In the abduction step, we use this model to infer <em>P</em><em> </em>(<em>N</em><sub><em>G</em></sub>, <em>N</em><sub><em>E</em></sub>, <em>N</em><sub><em>I</em></sub><em> </em>| <em>E</em><em> </em>=<em> </em>“low”, <em>I</em><em> </em>=<em> </em>50). That inference will follow these paths of dependence.</p>
+</div>
+<div class="readable-text" id="p27">
+<h3 class="readable-text-h3" id="sigil_toc_id_211"><span class="num-string">9.1.2</span> Action: Implementing the hypothetical causes</h3>
+</div>
+<div class="readable-text" id="p28">
+<p>Recall from chapter 8 that we use the ideal intervention to implement hypothetical conditions. Our hypothetical condition is “if their side-quest engagement were high,” and we implement this with an ideal intervention that sets <em>E</em> to “high” in the hypothetical world. Since we’re using a graph, we implement the intervention with graph surgery as in figure 9.5.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p29">
+<img alt="figure" height="458" src="../Images/CH09_F05_Ness.png" width="565"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.5</span> Implement the hypothetical condition as an ideal intervention (via graph surgery) in the hypothetical world.</h5>
+</div>
+<div class="readable-text" id="p30">
+<p>Now the parallel worlds differ. Note that the probability distributions on the exogenous variables have been updated with information from the actual world during the abduction step. In the final step, we’ll propagate this information through this modified hypothetical world.</p>
+</div>
+<div class="readable-text" id="p31">
+<h3 class="readable-text-h3" id="sigil_toc_id_212"><span class="num-string">9.1.3</span> Prediction: Inferring hypothetical outcomes</h3>
+</div>
+<div class="readable-text" id="p32">
+<p>We’re working with an SCM, so the values of the variables in the hypothetical world are set deterministically by the exogenous variables. Having updated the exogenous variable distributions conditional on observations in the actual world, we’ll now propagate that actual world information from the exogenous variables to the endogenous variables in the hypothetical world. If we hadn’t applied the intervention in the hypothetical world, the hypothetical world would mirror everything we observed in the actual world by the law of consistency (see the definition in chapter 8). However, since we applied an intervention in the hypothetical world, the hypothetical variable distributions downstream of that intervention can differ from those in the actual world.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p33">
+<img alt="figure" height="518" src="../Images/CH09_F06_Ness.png" width="316"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.6</span> Paths for inferring the hypothetical distribution of <em>I</em> from the conditional distribution <em>P</em>(<em>N</em><em><sub>G</sub></em>, <em>N</em><em><sub>E</sub></em>, <em>N</em><em><sub>I</sub></em>| <em>E</em>=“low”, <em>I</em>=50) on the exogenous variables, given the observed actual world outcomes</h5>
+</div>
+<div class="readable-text intended-text" id="p34">
+<p>In our gaming example, our query <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=“high”</sub>|<em>E</em><em> </em>=<em> </em>“low”, <em>I</em> = 50) targets the hypothetical value of <em>I</em><sub><em>E</em></sub><sub>=“high”</sub>. Figure 9.6 illustrates the path of inference from the exogenous variables to the hypothetical value of <em>I</em><sub><em>E</em></sub><em> </em><sub>=</sub><em> </em><sub>“high”</sub>. Note that in this example, the paths of influence only come from <em>N</em><sub><em>G</em></sub> and <em>N</em><sub><em>I</em></sub>, since the intervention on <em>E</em> cut <em>N</em><sub><em>E</em></sub>’s bridge to the hypothetical world.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p35">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Be careful about d-connection and d-separation on parallel world graphs</h5>
+</div>
+<div class="readable-text" id="p36">
+<p>Recall that with a causal DAG, we can use a graphical criterion called d-separation/d-connection to reason about conditional independence in the data generating process using a causal DAG. Indeed, this is what I do when I highlight paths of inference to <em>I</em><em><sub>E</sub></em><sub>=“high”</sub> given <em>E</em> and <em>I</em> via <em>N</em><em><sub>I</sub></em> and <em>N</em><em><sub>G</sub></em>. I do this to explain the abduction and prediction steps of the algorithm. However, in general, one cannot rely on d-separation and d-connection to reason about the dependence between endogenous variables across worlds. That’s because the law of consistency requires that the same endogenous variables across worlds must have the same value (unless one of the pairs is impacted by an intervention). Two variables always having the same value is a <em>perfect</em> dependence; the rules of d-separation do not capture that dependence on the parallel world graph. </p>
+</div>
+<div class="readable-text" id="p37">
+<p>In the next chapter, I’ll introduce <em>counterfactual graphs</em>, a causal DAG derived from a parallel world graph where the connections between d-separation and independence hold across worlds.</p>
+</div>
+</div>
+<div class="readable-text" id="p38">
+<p>We can see how information flows during inference from factual conditions <em>E</em>=“low” and <em>I</em>=50 in the actual world, through the exogenous variables, to our target variable <em>I</em><sub><em>E</em></sub><sub>=“high”</sub> in the hypothetical world. How we implement the inference depends on our preference for inference algorithms. For example, suppose <em>f</em><sub><em>G</em></sub>, and <em>f</em><sub><em>I</em></sub> represent the SCM’s assignment functions for <em>G</em> and <em>I</em>. We could use a simple forward-sampling algorithm:</p>
+</div>
+<ol>
+<li class="readable-text" id="p39"> Draw a sample of exogenous values <em>n</em><sub><em>G</em></sub>, <em>n</em><sub><em>E</em></sub>, and <em>n</em><sub><em>I</em></sub> from <em>P</em><em> </em>(<em>N</em><sub><em>G</em></sub>, <em>N</em><sub><em>E</em></sub>, <em>N</em><sub><em>I</em></sub><em> </em>| <em>E</em><em> </em>=<em> </em>“low”, <em>I</em><em> </em>=<em> </em>50). </li>
+<li class="readable-text" id="p40"> Derive a sample of the hypothetical value of guild membership <em>g</em><sup>*</sup> = <em>f</em><sub><em>G</em></sub>(<em>n</em><sub><em>G</em></sub>). </li>
+<li class="readable-text" id="p41"> Derive a sample of the hypothetical value of in-game purchases <em>i</em><sup>*</sup> =<em> f</em><sub><em>I</em></sub>(<em>E</em><em> </em>=<em> </em>“high”, <em>g</em><sup>*</sup>, <em>n</em><sub><em>I</em></sub>). </li>
+<li class="readable-text" id="p42"> Repeat many times to get samples from the distribution <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=“high”</sub>|<em>E</em><em> </em>=<em> </em>“low”, <em>I</em> = 50). </li>
+<li class="readable-text" id="p43"> This would give us samples from our target <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=“high”</sub>|<em>E</em><em> </em>=<em> </em>“low”, <em>I</em> = 50). </li>
+</ol>
+<div class="readable-text" id="p44">
+<h3 class="readable-text-h3" id="sigil_toc_id_213"><span class="num-string">9.1.4</span> Counterfactual Monte Carlo</h3>
+</div>
+<div class="readable-text" id="p45">
+<p>The output of the general probabilistic counterfactual inference algorithm produces samples from a distribution. Recall from chapter 2 that once you can sample from a distribution, you can apply the Monte Carlo techniques to make inferences based on that distribution. That same is true with counterfactual distributions.</p>
+</div>
+<div class="readable-text intended-text" id="p46">
+<p>For example, in chapter 8, I introduced the idea of regret, where we compare counterfactual outcomes. For our player who had low engagement and only spent $50, we might ask how much <em>more</em> their in-game purchases would have been had engagement been high. Given the gamer spent $50, we can define a regret variable as <em>R</em><sub><em>E</em></sub><sub>=</sub><sub><em>e</em></sub> = <em>I</em><sub><em>E</em></sub><sub>=</sub><sub><em>e</em></sub> – 50. By taking our samples from <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=“high” </sub>|<em>E</em><em> </em>=<em> </em>“low”, <em>I</em><em> </em>=<em> </em>50) and subtracting 50, we get samples from <em>P</em><em> </em>(<em>R</em><sub><em>E</em></sub><sub>=“high” </sub>|<em>E</em>=“low”, <em>I</em> = 50). We can also take the average of those differences to estimate expected regret <em>E</em><em> </em>(<em>R</em><sub><em>E</em></sub><sub>=“high” </sub>|<em>E</em><em> </em>=<em> </em>“low”, <em>I</em> = 50). Note that <em>E</em><em> </em>(…) here refers to the expectation operator, not to side-quest engagement.</p>
+</div>
+<div class="readable-text intended-text" id="p47">
+<p>When we want to use these counterfactual Monte Carlo techniques in automated decision-making algorithms, we are typically posing counterfactual questions about <em>policies</em>. Suppose, for example, a recommendation algorithm recommends certain content to a player based on their profile. We can contrast the amount of in-game purchases they made under one recommendation policy to the amount they would have made under a different policy. We can then adjust the recommendation algorithm in a way that would have minimized cumulative regret across players. We’ll look at automated decision-making more closely in chapter 12.</p>
+</div>
+<div class="readable-text intended-text" id="p48">
+<p>Next, we’ll explore a few case studies of various ways to implement this algorithm in code.</p>
+</div>
+<div class="readable-text" id="p49">
+<h3 class="readable-text-h3" id="sigil_toc_id_214"><span class="num-string">9.1.5</span> Introduction to the case studies</h3>
+</div>
+<div class="readable-text" id="p50">
+<p>There are several ways we can implement this algorithm using modern probabilistic ML tools. In sections 9.2–9.4, we’ll explore three case studies.</p>
+</div>
+<div class="readable-text" id="p51">
+<h4 class="readable-text-h4 sigil_not_in_toc">Monty Hall problem</h4>
+</div>
+<div class="readable-text" id="p52">
+<p>The first case study will focus on the Monty Hall problem discussed earlier in section 6.3. We’ll use the pgmpy library to implement a full parallel-world graphical SCM. We’ll use pgmpy’s <code>TabularCPD</code> to implement SCM assignment functions, something it wasn’t designed to do. In exchange for this awkwardness, we’ll be able to leverage pgmpy’s graph-based inference algorithm (<code>VariableElimination</code>) to collapse the abduction and prediction steps into one inference step. Using graph-based inference will save us from implementing an inference algorithm for abduction; we only have to build the model, apply the action step, and run inference.</p>
+</div>
+<div class="readable-text" id="p53">
+<h4 class="readable-text-h4 sigil_not_in_toc">Femur length and height</h4>
+</div>
+<div class="readable-text" id="p54">
+<p>Next, we’ll revisit the forensics example from section 6.1, where we have an SCM in which femur length is a cause of height. This example will show us how to do the abduction step with variational inference, a modern and popular probabilistic inference technique that works well with cutting-edge deep learning frameworks.</p>
+</div>
+<div class="readable-text intended-text" id="p55">
+<p>In this example, we’ll implement the SCM in Pyro, a PyTorch-based library for probabilistic ML. Using Pyro will feel less awkward than pgmpy because Pyro modeling abstractions are more flexible. The trade-off is that we must write explicit inference code for the abduction step.</p>
+</div>
+<div class="readable-text intended-text" id="p56">
+<p>The example is simple: the data is small, each variable has only one dimension, and the relationships are linear. However, we can use the same variational inference-based abduction technique with the large, high-dimensional, and nonlinear data settings where variational inference shines.</p>
+</div>
+<div class="readable-text" id="p57">
+<h4 class="readable-text-h4 sigil_not_in_toc">Semantic image editing with counterfactuals</h4>
+</div>
+<div class="readable-text" id="p58">
+<p>In the final case study, we’ll examine how we’d apply the counterfactual inference algorithm using a pretrained generative image model in PyTorch. While the Monty Hall and femur length problems are simple problems with simple math, this case study demonstrates the use of the algorithm on a modern problem with image generation in deep generative AI.</p>
+</div>
+<div class="readable-text" id="p59">
+<h2 class="readable-text-h2" id="sigil_toc_id_215"><span class="num-string">9.2</span> Case study 1: Monty Hall problem</h2>
+</div>
+<div class="readable-text" id="p60">
+<p>We’ll start by revisiting the SCM for the Monty Hall problem. Summarizing again, there is a game show where the player starts with a choice of three doors. Behind one door is a car. The player picks a door, say the first door, and the host, who knows what’s behind the doors, opens another door, say the third, which does not have the car. The host gives the player the opportunity to switch doors. In this case, since the player picked the first door and the host revealed that the car is not behind the third door, the player can switch to the second door. The question is whether a strategy of staying with the original choice or switching doors is better. </p>
+</div>
+<div class="readable-text intended-text" id="p61">
+<p>The answer is, counterintuitively to many, that a switching strategy is better—two times out of three, the switching strategy leads to a win. Figure 9.7 illustrates the possible outcomes of switching.</p>
+</div>
+<div class="browsable-container figure-container" id="p62">
+<img alt="figure" height="779" src="../Images/CH09_F07_Ness.png" width="1017"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.7</span> The Monty Hall problem. Assuming the player initially chooses the first door, two out of three times the switching strategy will lead to a win. This illustration assumes the first door is chosen, but the results are the same regardless of the initial choice of door.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p63">
+<p>We’ll explore two counterfactual questions:</p>
+</div>
+<ul>
+<li class="readable-text" id="p64"> For a player who stayed with their first door and lost, what is the probability that they would have won if they switched doors? </li>
+<li class="readable-text" id="p65"> For a player who lost, what is the probability that they would have won if they switched doors? </li>
+</ul>
+<div class="readable-text" id="p66">
+<p>We’ll answer these questions with the following steps:</p>
+</div>
+<ol>
+<li class="readable-text" id="p67"> Build the parallel world model as a generative graphical model in pgmpy. </li>
+<li class="readable-text" id="p68"> Condition on evidence in one world to do inference of outcomes in the other. </li>
+</ol>
+<div class="readable-text" id="p69">
+<p>Before we start, we’ll download some tools to help us with the analysis. Listing 9.1 downloads some helper functions for working with pgmpy: the <code>do</code> function for implementing ideal interventions and <code>clone</code> for duplicating a <code>TabularCPD</code> object. Also, to generate the visualizations, you’ll need to install the Graphviz visualization library.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p70">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p71">
+<p>The code in this chapter was tested with pgmpy version 0.1.25 and Pyro version 1.9.1. I use Matplotlib 3.7 for plotting. Plotting of the DAGs relies on Graphviz. </p>
+</div>
+<div class="readable-text" id="p72">
+<p>Graphviz installation depends on your environment. Using Ubuntu 22.04, I installed graphvizl via libgraphviz-dev, and then I installed the Python libraries Graphviz version 0.20.3, PyGraphviz version 1.13, and NetworkX version 3.3. </p>
+</div>
+<div class="readable-text" id="p73">
+<p>Depending on your environment, you may need to install pydot version 3.0. Graphviz and pydot are for plotting only, so if you get stuck, you could forgo plotting in the rest of the code.</p>
+</div>
+</div>
+<div class="browsable-container listing-container" id="p74">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.1</span> Installing Graphviz and helper functions</h5>
+<div class="code-area-container">
+<pre class="code-area">import graphviz    <span class="aframe-location"/> #1
+import networkx as nx   #1
+from networkx.drawing.nx_agraph import write_dot     #1
+def plot_graph(G):    #1
+    dot_format = nx.nx_pydot.to_pydot(G).to_string()    #1 
+    return graphviz.Source(dot_format)   #1
+
+import requests    <span class="aframe-location"/> #2
+def download_code(url):     #2
+    response = requests.get(url)     #2
+    if response.status_code == 200:   #2
+        code_content = response.text   #2
+        print("Code fetched successfully.")    #2
+        return code_content    #2
+    else:    #2
+        print("Failed to fetch code.")   #2
+        return None     #2
+
+url_do = (     <span class="aframe-location"/> #3
+    "https://raw.githubusercontent.com/altdeep/"      #3
+    "causalML/master/book/pgmpy_do.py"    #3
+)     #3
+code_do = download_code(url_do)      #3
+
+url_clone = (    <span class="aframe-location"/> #4
+    "https://raw.githubusercontent.com/altdeep/"      #4
+    "causalML/master/book/chapter%209/hyp_function.py"      #4
+)      #4
+code_clone = download_code(url_clone)     #4
+
+print(code_do)    <span class="aframe-location"/> #5
+print(code_clone)      #5
+#exec(code_do)      #5
+#exec(code_clone)     #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Install Graphviz libraries for visualization, and create a helper function for plotting graphs. This was tested in Ubuntu 22.04.3 but may depend on your environment. If you have trouble, you can forgo graph plotting and run the rest of the code.
+     <br/>#2 Helper function for downloading some utilities from GitHub
+     <br/>#3 Download code for a “do” function for applying ideal interventions.
+     <br/>#4 Download code for a “clone” helper function for cloning assignment functions across worlds.
+     <br/>#5 It’s good security practice to inspect the downloaded code before executing. Uncomment the “exec” calls to execute the downloaded code.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p75">
+<p>Next, we’ll build the full parallel world model as a graphical model. Our first step is to specify the exogenous variable distributions.</p>
+</div>
+<div class="readable-text" id="p76">
+<h3 class="readable-text-h3" id="sigil_toc_id_216"><span class="num-string">9.2.1</span> Specifying the exogenous variables</h3>
+</div>
+<div class="readable-text" id="p77">
+<p>We want to implement the model as an SCM, so we’ll create exogenous variables with distributions that entail all the random elements of the game. In other words, given the outcomes of these random elements and the host’s and player’s choices, the outcome of the game will be deterministic.</p>
+</div>
+<div class="readable-text intended-text" id="p78">
+<p>Specifically, we’ll introduce two rolls of three-sided dice and a coin flip. We’ll call the first die roll <em>Car Door Die Roll</em>; it selects a door for placement of the car. The player rolls the second die, a variable we’ll call <em>1st Choice Die Roll</em>, to select the player’s first door selection. Both dice rolls assign a 1/3 probability to each outcome. Next, we have a coin flip, which we’ll just call <em>Coin Flip</em>, which I’ll explain shortly.</p>
+</div>
+<div class="browsable-container listing-container" id="p79">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.2</span> Model building: Specify distributions for exogenous variables</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.factors.discrete.CPD import TabularCPD
+
+p_door_with_car = TabularCPD(    <span class="aframe-location"/> #1
+    variable='Car Door Die Roll',     #1
+    variable_card=3,     #1
+    values=[[1/3], [1/3], [1/3]],     #1
+    state_names={'Car Door Die Roll': ['1st', '2nd', '3rd']}     #1
+)     #1
+
+p_player_first_choice = TabularCPD(   <span class="aframe-location"/> #2
+    variable='1st Choice Die Roll',     #2
+    variable_card=3,     #2
+    values=[[1/3], [1/3], [1/3]],    #2
+    state_names={'1st Choice Die Roll': ['1st', '2nd', '3rd']}    #2
+)     #2
+
+p_coin_flip = TabularCPD(       <span class="aframe-location"/> #3
+    variable='Coin Flip',     #3
+    variable_card=2,     #3
+    values=[[.5], [.5]],     #3
+    state_names={'Coin Flip': ['tails', 'heads']}     #3
+)     #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Prior distribution on exogenous variable for the three-sided die roll that selects which door gets the car
+     <br/>#2 Prior distribution on the exogenous variable for the three-sided die roll that selects the player’s first choice of door
+     <br/>#3 Prior distribution on the exogenous variable for the coin flip. The host flips a coin that determines which door the host chooses to reveal as carless and whether the player chooses a stay or switch strategy.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p80">
+<p>Next, we’ll build assignment functions for our endogenous variables.</p>
+</div>
+<div class="readable-text" id="p81">
+<h3 class="readable-text-h3" id="sigil_toc_id_217"><span class="num-string">9.2.2</span> Specifying the assignment functions for the endogenous variables</h3>
+</div>
+<div class="readable-text" id="p82">
+<p>Our endogenous variables will be <em>Host Door Selection</em>, <em>Strategy</em> (whether taking a switch or stay strategy), <em>2nd Choice</em> (choosing door 1, 2, 3 based on one’s strategy), and <em>Win or Lose</em> (the outcome of the game).</p>
+</div>
+<div class="readable-text intended-text" id="p83">
+<p>Our definition of the SCM in chapter 6 assumes a one-to-one pairing between endogenous and exogenous variables—we typically make that assumption of independent exogenous variables because if we knew of a common cause, we’d usually model it explicitly. Here, we’ll relax that assumption and match each exogenous variable to two endogenous variables:</p>
+</div>
+<ul>
+<li class="readable-text" id="p84"> <em>1st Choice Die Roll</em> will drive <em>Host Door Selection</em> and <em>2nd Choice</em> </li>
+<li class="readable-text" id="p85"> <em>Coin Flip</em> will drive <em>Host Door Selection</em> and <em>Strategy</em> </li>
+<li class="readable-text" id="p86"> <em>Car Door Die Roll</em> will drive <em>Host Door Selection</em> and <em>Win or Lose</em> </li>
+</ul>
+<div class="readable-text" id="p87">
+<p>We’ll use this simplified approach of matching one exogenous variable to two endogenous variables because it will require less code. This shortcut works well in this case because the exogenous variables precisely encode all the exogenous random elements of the game—these elements completely determine the game’s outcome. We could use the traditional formulation (where each endogenous variable has a unique exogenous variable) and get the same results.</p>
+</div>
+<div class="readable-text intended-text" id="p88">
+<p>Let’s walk through the steps of the game and then construct the DAG.</p>
+</div>
+<div class="readable-text" id="p89">
+<h4 class="readable-text-h4 sigil_not_in_toc">Strategy</h4>
+</div>
+<div class="readable-text" id="p90">
+<p>The player will use <em>Coin Flip</em> as the basis of their <em>Strategy</em> decision—if the host flips heads, the player will adopt a switch door strategy. Otherwise, they’ll adopt a strategy of keeping their original choice.</p>
+</div>
+<div class="browsable-container listing-container" id="p91">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.3</span> Create the assignment function for <em>Strategy</em></h5>
+<div class="code-area-container">
+<pre class="code-area">f_strategy = TabularCPD(    
+    variable='Strategy',    
+    variable_card=2,    
+    values=[[1, 0], [0, 1]],    
+    evidence=['Coin Flip'],    
+    evidence_card=[2],    
+    state_names={    
+        'Strategy': ['stay', 'switch'],    
+        'Coin Flip': ['tails', 'heads']}    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p92">
+<h4 class="readable-text-h4 sigil_not_in_toc">Host door selection</h4>
+</div>
+<div class="readable-text" id="p93">
+<p><em>Host Door Selection</em> depends on which door has the car (<em>Car Door Die Roll</em>) and the player’s initial choice of door (<em>1st Choice Die Roll</em>). The host will use <em>Coin Flip</em> to select a door from two available doors in the event that the winning door and the first choice door are the same. If <em>Coin Flip</em> is heads, they’ll choose the right-most door, otherwise the left-most.</p>
+</div>
+<div class="browsable-container listing-container" id="p94">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.4</span> Create the assignment function for <em>Host Door Selection</em></h5>
+<div class="code-area-container">
+<pre class="code-area">f_host_door_selection = TabularCPD(    
+    variable='Host Door Selection',    
+    variable_card=3,    
+    values=[    
+        [0,0,0,0,1,1,0,1,1,0,0,0,0,0,1,0,1,0],    
+        [1,0,1,0,0,0,1,0,0,0,0,1,0,0,0,1,0,1],    
+        [0,1,0,1,0,0,0,0,0,1,1,0,1,1,0,0,0,0]    
+    ],    
+    evidence=['Coin Flip',    
+              'Car Door Die Roll',    
+              '1st Choice Die Roll'],    
+    evidence_card=[2, 3, 3],    
+    state_names={    
+        'Host Door Selection':['1st', '2nd', '3rd'],    
+        'Coin Flip': ['tails', 'heads'],    
+        'Car Door Die Roll': ['1st', '2nd', '3rd'],    
+        '1st Choice Die Roll': ['1st', '2nd', '3rd']    
+    }    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p95">
+<h4 class="readable-text-h4 sigil_not_in_toc">2nd choice</h4>
+</div>
+<div class="readable-text" id="p96">
+<p><em>2nd Choice</em>, the player’s choice of which door to pick in the second round, depends on <em>Strategy</em>, <em>Host Door Selection</em> (the player can’t switch to the door the host opened), and <em>1st Choice Die Roll</em> (the player must stay with or switch from the door selected in the first round).</p>
+</div>
+<div class="browsable-container listing-container" id="p97">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.5</span> Create an assignment function for <em>2nd Choice</em></h5>
+<div class="code-area-container">
+<pre class="code-area">f_second_choice = TabularCPD(    
+    variable='2nd Choice',    
+    variable_card=3,    
+    values=[    
+        [1,0,0,1,0,0,1,0,0,0,0,0,0,0,1,0,1,0],    
+        [0,1,0,0,1,0,0,1,0,1,0,1,0,1,0,1,0,1],    
+        [0,0,1,0,0,1,0,0,1,0,1,0,1,0,0,0,0,0]    
+    ],    
+    evidence=['Strategy', 'Host Door Selection',    
+              '1st Choice Die Roll'],    
+    evidence_card=[2, 3, 3],    
+    state_names={    
+        '2nd Choice': ['1st', '2nd', '3rd'],    
+        'Strategy': ['stay', 'switch'],    
+        'Host Door Selection': ['1st', '2nd', '3rd'],    
+        '1st Choice Die Roll': ['1st', '2nd', '3rd']    
+    }    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p98">
+<h4 class="readable-text-h4 sigil_not_in_toc">Win or Lose</h4>
+</div>
+<div class="readable-text" id="p99">
+<p><em>Win or Lose</em> depends on which door the player picked in <em>2nd Choice</em> and whether that door is the winning door (<em>Car Door Die Roll</em>).</p>
+</div>
+<div class="browsable-container listing-container" id="p100">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.6</span> Create an assignment function for <em>Win or Lose</em></h5>
+<div class="code-area-container">
+<pre class="code-area">f_win_or_lose = TabularCPD(    
+    variable='Win or Lose',    
+    variable_card=2,    
+    values=[    
+        [1,0,0,0,1,0,0,0,1],    
+        [0,1,1,1,0,1,1,1,0],    
+    ],  
+    evidence=['2nd Choice', 'Car Door Die Roll'],    
+    evidence_card=[3, 3],    
+    state_names={  
+        'Win or Lose': ['win', 'lose'],    
+        '2nd Choice': ['1st', '2nd', '3rd'],    
+        'Car Door Die Roll': ['1st', '2nd', '3rd']  
+    }    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p101">
+<p>With the exogenous variable distributions and the assignment functions complete, we can build the full parallel world graphical model.</p>
+</div>
+<div class="readable-text" id="p102">
+<h3 class="readable-text-h3" id="sigil_toc_id_218"><span class="num-string">9.2.3</span> Building the parallel world graphical model</h3>
+</div>
+<div class="readable-text" id="p103">
+<p>We can now begin building the full parallel world model. First we’ll add the edges that are in the graph.</p>
+</div>
+<div class="browsable-container listing-container" id="p104">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.7</span> Build the parallel world graphical model</h5>
+<div class="code-area-container">
+<pre class="code-area">exogenous_vars = ["Car Door Die Roll",   <span class="aframe-location"/> #1
+                  "Coin Flip",    #1
+                  "1st Choice Die Roll"]   #1
+endogenous_vars = ["Host Door Selection",    #1
+                   "Strategy",    #1
+                   "2nd Choice", "Win or Lose"]   #1
+
+actual_world_edges = [    <span class="aframe-location"/> #2
+    ('Coin Flip', 'Host Door Selection'),     #2
+    ('Coin Flip', 'Strategy'),    #2
+    ('Car Door Die Roll', 'Host Door Selection'),   #2
+    ('1st Choice Die Roll', 'Host Door Selection'),     #2
+    ('1st Choice Die Roll', '2nd Choice'),     #2
+    ('Host Door Selection', '2nd Choice'),     #2
+    ('Strategy', '2nd Choice'),     #2
+    ('2nd Choice', 'Win or Lose'),     #2
+    ('Car Door Die Roll', 'Win or Lose')     #2
+]     #2
+
+possible_world_edges = [    <span class="aframe-location"/> #3
+    (a + " Hyp" if a in endogenous_vars else a,     #3
+     b + " Hyp" if b in endogenous_vars else b)     #3
+    for a, b in actual_world_edges     #3
+]     #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Specify lists of the exogenous and endogenous variables in the causal DAG.
+     <br/>#2 Specify the edges of the SCM.
+     <br/>#3 Clone the edges for the hypothetical world.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p105">
+<p>Next, we’ll compile and plot the graph.</p>
+</div>
+<div class="browsable-container listing-container" id="p106">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.8</span> Compiling and visualizing the parallel world graph</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.models import BayesianNetwork
+
+twin_world_graph = BayesianNetwork(    <span class="aframe-location"/> #1
+    actual_world_edges +     #1
+    possible_world_edges     #1
+)   #1
+
+twin_world_graph.add_cpds(   <span class="aframe-location"/> #2
+    p_door_with_car,   <span class="aframe-location"/> #3
+    p_player_first_choice,     #3
+    p_coin_flip,     #3
+    f_strategy,    <span class="aframe-location"/> #4
+    f_host_door_selection,    #4
+    f_second_choice,   #4
+    f_win_or_lose, #4
+    clone(f_strategy),  <span class="aframe-location"/> #5
+    clone(f_host_door_selection),     #5
+    clone(f_second_choice),    #5
+    clone(f_win_or_lose),     #5
+) 
+
+plot_graph(twin_world_graph)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Create the parallel world graph.
+     <br/>#2 Plot the parallel world graph.
+     <br/>#3 Add probability distributions on exogenous variables.
+     <br/>#4 Add assignment functions from the SCM.
+     <br/>#5 Clone the assignment functions.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p107">
+<p>The preceding code prints the parallel world graph in figure 9.8.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p108">
+<img alt="figure" height="334" src="../Images/CH09_F08_Ness.png" width="1017"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.8</span> The full parallel world graph for our counterfactual question. Hypothetical world variables have the suffix “Hyp.”</h5>
+</div>
+<div class="readable-text" id="p109">
+<p>Before we answer our counterfactual questions, we’ll do a quick sanity check to confirm that our model can generate the result that the switching strategy leads to a win two-thirds of the time.</p>
+</div>
+<div class="browsable-container listing-container" id="p110">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.9</span> Confirm correct probability of winning given a switch strategy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.inference import VariableElimination   <span class="aframe-location"/> #1
+infer = VariableElimination(twin_world_graph)   #1
+strategy_outcome = infer.query(   <span class="aframe-location"/> #2
+    ['Win or Lose'],    #2
+    evidence={"Strategy": "switch"}    #2
+)   #2
+print(strategy_outcome)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Instantiate the inference algorithm with variable elimination.
+     <br/>#2 Infer the probability distribution of “Win or Lose” given that the player uses a switch strategy.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p111">
+<p>This prints the following table.</p>
+</div>
+<div class="browsable-container listing-container" id="p112">
+<div class="code-area-container">
+<pre class="code-area">+-------------------+--------------------+
+| Win or Lose       |   phi(Win or Lose) |
++===================+====================+
+| Win or Lose(win)  |             0.6667 |
++-------------------+--------------------+
+| Win or Lose(lose) |             0.3333 |
++-------------------+--------------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p113">
+<p>As we expect, we win two-thirds of the time when we adopt a strategy of switching doors.</p>
+</div>
+<div class="readable-text" id="p114">
+<h3 class="readable-text-h3" id="sigil_toc_id_219"><span class="num-string">9.2.4</span> Running the counterfactual inference algorithm</h3>
+</div>
+<div class="readable-text" id="p115">
+<p>Finally, we’ll use inference to answer our counterfactual questions:</p>
+</div>
+<ul>
+<li class="readable-text" id="p116"> For a player who stayed with their first door and lost, what is the probability that they would have won if they switched doors? </li>
+<li class="readable-text" id="p117"> For a player who lost, what is the probability that they would have won if they switched doors? </li>
+</ul>
+<div class="readable-text" id="p118">
+<p>Again, we use variable elimination as our choice of inference algorithm. We’ll use the <code>do</code> function to do the action step and implement the hypothetical condition of switching. Then we’ll use the <code>VariableElimination</code> inference algorithm to do the abduction and prediction steps all in one go.</p>
+</div>
+<div class="browsable-container listing-container" id="p119">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.10</span> Infer the counterfactual distributions</h5>
+<div class="code-area-container">
+<pre class="code-area">cf_model = do(twin_world_graph, {'Strategy Hyp': 'switch'})    <span class="aframe-location"/> #1
+infer = VariableElimination(cf_model)   <span class="aframe-location"/> #2
+
+cf_dist1 = infer.query(    <span class="aframe-location"/> #3
+    ['Win or Lose Hyp'],    #3
+    evidence={'Strategy': 'stay', 'Win or Lose': 'lose'}    #3
+)   
+print(cf_dist1)
+
+cf_dist2 = infer.query(   <span class="aframe-location"/> #4
+    ['Win or Lose Hyp'],    #4
+    evidence={'Win or Lose': 'lose'}    #4
+)   
+print(cf_dist2)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Action step: Set “Strategy Hyp” to “switch” using “do”, an implementation of an ideal intervention.
+     <br/>#2 Apply variable elimination as our inference algorithm on the parallel world graph.
+     <br/>#3 This inference query answers “For a player who used the stay strategy and lost, would they have won if they used the switch strategy?” Conditional on “Strategy == stay” and “Win or Lose == lose,” we infer the probability distribution of “Win or Lose Hyp” on the parallel world graph.
+     <br/>#4 This inference query answers “For a player who lost, would they have won if they used the switch strategy?” Conditional on “Win or Lose == lose,” we infer the probability distribution of “Win or Lose Hyp” on the parallel world graph.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p120">
+<p>For the question “For a player who stayed with their first door and lost, what is the probability that they would have won if they switched doors?” we have the following probability table:</p>
+</div>
+<div class="browsable-container listing-container" id="p121">
+<div class="code-area-container">
+<pre class="code-area">+-----------------------+------------------------+
+| Win or Lose Hyp       |   phi(Win or Lose Hyp) |
++=======================+========================+
+| Win or Lose Hyp(win)  |                 1.0000 |
++-----------------------+------------------------+
+| Win or Lose Hyp(lose) |                 0.0000 |
++-----------------------+------------------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p122">
+<p>The result of the first question is obvious. If the player lost on a stay strategy, their first choice did not have the car. Therefore, one of the other two doors must have had the car. Of those two, the host would have had to open the one without the car. The remaining door would then have had the car. That is the only door the player could switch to on a switch strategy. So, conditional on losing with a stay strategy, the chances they would have won with a switch strategy are 100%.</p>
+</div>
+<div class="readable-text intended-text" id="p123">
+<p>For the question “For a player who lost, what is the probability that they would have won if they switched doors?” we have the following probability table:</p>
+</div>
+<div class="browsable-container listing-container" id="p124">
+<div class="code-area-container">
+<pre class="code-area">+-----------------------+------------------------+
+| Win or Lose Hyp       |   phi(Win or Lose Hyp) |
++=======================+========================+
+| Win or Lose Hyp(win)  |                 0.6667 |
++-----------------------+------------------------+
+| Win or Lose Hyp(lose) |                 0.3333 |
++-----------------------+------------------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p125">
+<p>The answer to the second question extends from the first. We know from the original results of the model that if a player lost, there is a 2/3 chance they used a stay strategy. As we saw from the first question, in this case, flipping to a switch strategy has a 100% chance of winning. There is a 1/3 chance it was a stay strategy, in which case, by the consistency rule, there is 100% chance of losing.</p>
+</div>
+<div class="readable-text intended-text" id="p126">
+<p>Using pgmpy’s graphical model inference algorithms enables counterfactual reasoning for discrete variable problems like the Monty Hall problem. In the next case study, we will solve the abduction step with variational inference, which generalizes to a broader class of problems and leverages modern deep learning.</p>
+</div>
+<div class="readable-text" id="p127">
+<h2 class="readable-text-h2" id="sigil_toc_id_220"><span class="num-string">9.3</span> Case study 2: Counterfactual variational inference</h2>
+</div>
+<div class="readable-text" id="p128">
+<p>In this next case study, we’ll implement the counterfactual inference algorithm using a generative model in the PyTorch-based probabilistic modeling library Pyro. Here we’ll focus on the example of a forensic SCM where femur length is a cause of human height (discussed earlier in section 6.1).</p>
+</div>
+<div class="readable-text intended-text" id="p129">
+<p>In the Monty Hall example, all the variables were discrete, and the exogenous causes completely captured the game’s random elements. That allowed us to implement the SCM (albeit awkwardly) using <code>TabularCPD</code> for assignment functions in pgmpy, and then explicitly create a parallel world graphical model. Once that was accomplished, the graphical modeling inference algorithm <code>VariableElimination</code> handled the abduction and prediction steps for us.</p>
+</div>
+<div class="readable-text intended-text" id="p130">
+<p>In contrast, our second case study presents an approach that generalizes to more types of problems. We’ll use the PyTorch-based deep probabilistic modeling library Pyro. We’ll handle the abduction step using variational inference, a popular inference algorithm in the deep learning era.</p>
+</div>
+<div class="readable-text intended-text" id="p131">
+<p>In this example, we’ll use this modeling approach to contrast two questions:</p>
+</div>
+<ul>
+<li class="readable-text" id="p132"> A conditional hypothetical: “What would an individual’s height be if their femur length was 46 cm?” <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>) </li>
+<li class="readable-text" id="p133"> A parallel-world counterfactual: “An individual’s femur is 44 cm, and their height is 165 cm. What would their height be if femur length was 46 cm?” <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>|<em>F</em>=44, <em>H</em>=165) </li>
+</ul>
+<div class="readable-text" id="p134">
+<p>In both cases, we infer a distribution on <em>H</em><sub><em>F</em></sub><sub>=46</sub> (where <em>H</em> is height and <em>F</em> is femur length), but in the counterfactual case, we condition on having observed <em>F</em>=44 and <em>H</em>=165. Implementing code that contrasts these two distributions on <em>H</em><sub><em>F</em></sub><sub>=46</sub> will help us understand what makes counterfactual queries unique.</p>
+</div>
+<div class="readable-text" id="p135">
+<h3 class="readable-text-h3" id="sigil_toc_id_221"><span class="num-string">9.3.1</span> Building the model<span class="aframe-location"/></h3>
+</div>
+<div class="readable-text" id="p136">
+<p>To make things more interesting, we’ll modify the model by adding a variable for biological sex, which drives both femur length and height. Figure 9.9 illustrates the new causal DAG. Notice that our questions do not mention anything about sex, so we’ll expect to see sex-related variance in our distributions <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>) and <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>|<em>F</em>=44, <em>H</em>=165).</p>
+</div>
+<div class="browsable-container figure-container" id="p137">
+<img alt="figure" height="359" src="../Images/CH09_F09_Ness.png" width="253"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.9</span> The causal DAG for the relationship between femur length and height. Both are driven by biological sex.</h5>
+</div>
+<div class="readable-text intended-text" id="p138">
+<p>The following code below implements the model in Pyro. Note the creation and use of a <code>PseudoDelta</code> distribution function. Endogenous variables are deterministic functions of the exogenous variables, but for variational inference to work, we must assign the endogenous variables a distribution using <code>pyro.sample</code>. We could use the Dirac delta distribution, which would assign all probability value to the output of a variable’s assignment function. But gradient-based optimization won’t work in this case. Instead, we’ll approximate inference with a “pseudo-delta” distribution—a normal distribution with a very small scale parameter.</p>
+</div>
+<div class="browsable-container listing-container" id="p139">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.11</span> Implement the femur SCM in Pyro</h5>
+<div class="code-area-container">
+<pre class="code-area">from torch import tensor
+from pyro.distributions import Bernoulli, Normal
+from pyro import sample
+
+from functools import partial   <span class="aframe-location"/> #1
+PseudoDelta = partial(Normal, scale=.01)   #1
+
+<span class="aframe-location"/>def f_sex(N_sex):    #2
+    return sample("sex", Bernoulli(N_sex))    #2
+
+def f_femur(sex, N_femur):    <span class="aframe-location"/> #3
+    if sex == tensor(1.0):     #3
+        μ = 43.7 + 2.3 * N_femur     #3
+    else:     #3
+        μ = 40.238 + 1.9 * N_femur    #3
+    return sample("femur", PseudoDelta(μ))     #3
+
+def f_height(femur, sex, N_height):    <span class="aframe-location"/> #4
+    if sex == tensor(1.0):     #4
+        μ = 61.41 + 2.21 * femur + 7.62 * N_height     #4
+    else:  #4
+        μ = 54.1 + 2.47 * femur + 7 * N_height    #4
+    return sample("height", PseudoDelta(μ))    #4
+
+def model(exogenous):
+    N_sex = sample("N_sex", exogenous['N_sex'])   <span class="aframe-location"/> #5
+    N_femur = sample("N_femur", exogenous['N_femur'])    #5
+    N_height = sample("N_height", exogenous['N_height'])     #5
+    sex = f_sex(N_sex)   <span class="aframe-location"/> #6
+    femur = f_femur(sex, N_femur)   #6
+    height = f_height(femur, sex, N_height)    #6
+    return sex, femur, height
+
+exogenous = {   <span class="aframe-location"/> #7
+    'N_sex': Bernoulli(.5),    #7
+    'N_femur': Normal(0., 1.),     #7
+    'N_height': Normal(0., 1.),    #7
+}   #7</pre>
+<div class="code-annotations-overlay-container">
+     #1 Enable approximate inference with a “pseudo-delta” distribution to emulate a deterministic delta distribution.
+     <br/>#2 The assignment function for biological sex
+     <br/>#3 The assignment function for femur length in cm. The assignment uses two linear functions, one for each sex.
+     <br/>#4 The assignment function for height. Again, it uses two linear functions, one for each sex.
+     <br/>#5 Sample from the exogenous variable prior distributions
+     <br/>#6 Obtain the endogenous variables given the exogenous variables.
+     <br/>#7 Specify the prior distributions for the exogenous variables.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p140">
+<p>Again, there are three steps to our counterfactual inference algorithm:</p>
+</div>
+<ol>
+<li class="readable-text" id="p141"> Abduction </li>
+<li class="readable-text" id="p142"> Action </li>
+<li class="readable-text" id="p143"> Prediction </li>
+</ol>
+<div class="readable-text" id="p144">
+<p>Unlike our pgmpy model, we won’t need to clone all the variables for the parallel world. We’ll just use the intervention operator <code>pyro.do</code> to apply the intervention and get an intervention model. For <em>P</em><em> </em>(<em>H</em><sub><em>F</em></sub><em> </em><sub>=</sub><em> </em><sub>46</sub>), we’ll generate from the intervention model based on samples from <em>P</em><em> </em>(<em>N</em><sub><em>Sex</em></sub>, <em>N</em><sub><em>Femur</em></sub>, <em>N</em><sub><em>Height</em></sub><em> </em>). For the counterfactual distribution, we’ll do the abduction step using a variational inference algorithm to learn <em>P</em><em> </em>(<em>N</em><sub><em>Sex</em></sub>, <em>N</em><sub><em>Femur</em></sub>, <em>N</em><sub><em>Height</em></sub>|F=44, H=165). Then we’ll generate from the intervention model again, but this time based on samples from <em>P</em><em> </em>(<em>N</em><sub><em>Sex</em></sub>, <em>N</em><sub><em>Femur</em></sub>, <em>N</em><sub><em>Height</em></sub><em> </em>|F<em> </em>=<em> </em>44, H<em> </em>=<em> </em>165).</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p145">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Dealing with intractable likelihoods</h5>
+</div>
+<div class="readable-text" id="p146">
+<p>We use variational inference to do the abduction step, inferring the exogenous variables given observed endogenous variables. Variational inference is a likelihood-based technique. Typically, we get likelihoods by sampling from a distribution and then getting the probability value for that sampled value using the distribution’s probability mass/density function. But we can’t do that for SCMs because endogenous variable values are set by the assignment functions rather than being sampled. The code in this forensic example uses sampling from a “pseudo”-Dirac delta distribution, meaning a normal distribution with a very small scale parameter. This approach, which provides likelihood values from a normal distribution, falls into a class of methods called <em>approximate Bayesian computation</em><em>, a</em>nd it shares some of the trade-offs with other members of that class.</p>
+</div>
+<div class="readable-text" id="p147">
+<p>One alternative is to use <em>amortized inference</em>. In this method, you sample many exogenous variable values and use these to calculate many endogenous variable values. Finally, you use these samples to train a model that predicts the exogenous variable value, given the endogenous variable value. You then use this trained model during the abduction step.</p>
+</div>
+<div class="readable-text" id="p148">
+<p>Dealing with intractable likelihoods is a broader challenge in probabilistic machine learning, which is beyond the scope of this book. See the chapter notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for links to additional references and resources.</p>
+</div>
+</div>
+<div class="readable-text" id="p149">
+<h3 class="readable-text-h3" id="sigil_toc_id_222"><span class="num-string">9.3.2</span> Implementing an intervention with pyro.do</h3>
+</div>
+<div class="readable-text" id="p150">
+<p>Now let’s pose the conditional hypothetical, “What would height be if femur length was 46 cm?” Figure 9.10 illustrates the modified DAG representing the ideal intervention that sets femur length to 46.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p151">
+<img alt="figure" height="366" src="../Images/CH09_F10_Ness.png" width="336"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.10</span> We represent the hypothetical condition with an ideal intervention and graph surgery on the causal DAG.</h5>
+</div>
+<div class="readable-text" id="p152">
+<p>In Pyro, we’ll apply <code>pyro.do</code> to the original model and get an intervention model. We’ll then repeatedly call the algorithm with the prior on the exogenous variable distribution and return generated endogenous values. We’ll repeat this several times and visualize the intervention distribution on height with a histogram.</p>
+</div>
+<div class="browsable-container listing-container" id="p153">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.12</span> Sampling from the intervention distribution of “if femur length were 46cm”</h5>
+<div class="code-area-container">
+<pre class="code-area">import matplotlib.pyplot as plt
+import pyro
+
+int_model = pyro.do(model, data={"femur": tensor(46.0)})   <span class="aframe-location"/> #1
+int_samples = []    <span class="aframe-location"/> #2
+for _ in range(10000):   #2
+    _, _, int_height = int_model(exogenous)     #2
+    int_samples.append(float(int_height))    #2
+
+plt.hist(    <span class="aframe-location"/> #3
+    int_samples,     #3
+    bins=20,    #3
+    alpha=0.5,   #3
+    label="Intervention Samples",    #3
+    density=True     #3
+)    #3
+plt.ylim(0., .35)    #3
+plt.legend()  #3
+plt.xlabel("Height")    #3
+plt.show()    #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Implement the hypothetical condition “...if femur length were 46 cm” with pyro.do, which returns a new model that implements the intervention.
+     <br/>#2 Sample from the intervention distribution.
+     <br/>#3 Visualize the intervention distribution with a histogram of samples.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p154">
+<p>Figure 9.11 shows the resulting histogram of samples from <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>). We’ll contrast this with the histogram from <em>P</em>(<em>H</em><sub><em>F</em></sub><sub>=46</sub>|<em>F</em>=44, <em>H</em>=165).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p155">
+<img alt="figure" height="871" src="../Images/CH09_F11_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.11</span> This histogram of samples visualizes the interventional distribution—the <em>x</em>-axis corresponds to different ranges of height values, and the <em>y</em>-axis is proportions of the sampled heights that fall within each range. </h5>
+</div>
+<div class="readable-text" id="p156">
+<p>Now we’ll do the counterfactual inference.</p>
+</div>
+<div class="readable-text" id="p157">
+<h3 class="readable-text-h3" id="sigil_toc_id_223"><span class="num-string">9.3.3</span> Implementing the abduction step with variational inference<span class="aframe-location"/></h3>
+</div>
+<div class="browsable-container figure-container" id="p158">
+<img alt="figure" height="432" src="../Images/CH09_F12_Ness.png" width="343"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.12</span> The parallel world graph for the femur length counterfactual</h5>
+</div>
+<div class="readable-text" id="p159">
+<p>Our conditional hypothetical question was, “What would an individual’s height be if their femur length was 46 cm?” Now we want to answer the counterfactual: “An individual’s femur is 44 cm, and their height is 165 cm. What would their height be if their femur length was 46 cm?” In other words, we want to extend <em>P</em><em> </em>(<em>H</em><sub><em>F</em></sub><em> </em><sub>=</sub><em> </em><sub>46</sub>) to <em>P</em><em> </em>(<em>H</em><sub><em>F</em></sub><em> </em><sub>=</sub><em> </em><sub>46</sub><em> </em>|<em>F</em>=44, <em>H</em>=165). Figure 9.12 illustrates the corresponding parallel world graph.</p>
+</div>
+<div class="readable-text intended-text" id="p160">
+<p>Following the counterfactual inference algorithm, we need to do the abduction step and infer <em>P</em><em> </em>(<em>N</em><sub><em>Sex</em></sub><em> </em>, <em>N</em><sub><em>Femur</em></sub><em> </em>, <em>N</em><sub><em>Height</em></sub><em> </em>|<em>F</em><em> </em>=<em> </em>44, <em>H</em><em> </em>=<em> </em>165). We’ll use variational inference, where we’ll specify a <em>guide function</em>—a function with trainable parameters representing a distribution <em>Q</em>(<em>N</em><sub><em>Sex</em></sub><em> </em>, <em>N</em><sub><em>Femur</em></sub><em> </em>, <em>N</em><sub><em>Height</em></sub><em> </em>). The training procedure optimizes the parameters of the guide such that <em>Q</em>(<em>N</em><sub><em>Sex</em></sub>, <em>N</em><sub><em>Femur</em></sub>, <em>N</em><sub><em>Height</em></sub>) closely approximates <em>P</em><em> </em>(<em>N</em><sub><em>Sex</em></sub>, <em>N</em><sub><em>Femur</em></sub>, <em>N</em><sub><em>Height</em></sub><em> </em>|<em>F</em><em> </em>=<em> </em>44, <em>H</em><em> </em>=<em> </em>165).</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p161">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Refresher: Proposal distributions and Pyro’s guide function</h5>
+</div>
+<div class="readable-text" id="p162">
+<p>Pyro’s use of “guide functions” enables the developer to write their own proposal distributions that “propose” values for variables in the target distributions. Sampling-based inference algorithms (e.g., importance sampling or MCMC) use the proposal to generate samples and then operate on the samples so they represent the target distribution. Variational inference optimizes the parameters of the proposal distribution such that it becomes close to (or “approximates”) the target distribution. In contrast to pgmpy’s automatic inference algorithms, guide functions let the developer “guide” inference as they see fit. </p>
+</div>
+</div>
+<div class="browsable-container listing-container" id="p163">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.13</span> Specifying the guide function for variational inference</h5>
+<div class="code-area-container">
+<pre class="code-area">import torch.distributions.constraints as constraints
+from pyro.primitives import param
+from pyro.distributions import Delta
+
+def guide(exogenous):  <span class="aframe-location"/> #1
+    p = param("p", tensor(.5),    <span class="aframe-location"/> #2
+              constraint=constraints.unit_interval)   #2
+    n_sex = sample("N_sex", Bernoulli(p))   #2
+    sex = sample("sex", Bernoulli(n_sex))   <span class="aframe-location"/> #3
+    n_femur_loc = param("n_femur_loc", tensor(0.0))    <span class="aframe-location"/> #4
+    n_femur_scale = param(     #4
+        "n_femur_scale",    #4
+        tensor(1.0),     #4
+        constraint=constraints.positive    #4
+    )     #4
+    femur_dist = Normal(n_femur_loc, n_femur_scale)   <span class="aframe-location"/> #5
+    n_femur = sample("N_femur", femur_dist)     #5
+    n_height_loc = param("n_height_loc", tensor(0.0))    #5
+    n_height_scale = param(    #5
+        "n_height_scale",   #5
+        tensor(1.0),     #5
+        constraint=constraints.positive    #5
+    )     #5
+    height_dist =  Normal(n_height_loc, n_height_scale) #5
+    n_height = sample("N_height", height_dist)     #5
+    femur = sample("femur", Delta(n_femur))    <span class="aframe-location"/> #6
+    height = sample("height", Delta(n_height))     #6</pre>
+<div class="code-annotations-overlay-container">
+     #1 The exogenous prior distribution is passed to the guide function. The function won’t use this argument, but the signatures of the guide and the model functions must match.
+     <br/>#2 The guide function tries to approximate P(N_sex|femur, height) from a Bernoulli distribution. Optimization targets the parameter of this Bernoulli distribution.
+     <br/>#3 n_sex is either 0 or 1. When passed as a parameter to a Bernoulli, the outcome is deterministic.
+     <br/>#4 The guide function tries to approximate P(N_femur|femur, height) from a normal distribution. Optimization targets the location and scale parameters of this normal distribution.
+     <br/>#5 The guide function tries to approximate P(N_height|femur, height), also from a normal distribution.
+     <br/>#6 Since we condition on femur and height, they are not needed in the guide function. But it is useful to have them in case we want to condition on different outcomes in a new analysis.
+     <br/>
+</div>
+</div>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p164">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Deterministic abduction</h5>
+</div>
+<div class="readable-text" id="p165">
+<p>A special case of the abduction step is when both of the following are true:</p>
+</div>
+<ol>
+<li class="readable-text" id="p166"> You observe all the endogenous variables. </li>
+<li class="readable-text" id="p167"> The SCM assignment functions are invertible. </li>
+</ol>
+<div class="readable-text" id="p168">
+<p>In that case, given observations of all the endogenous variables, you can calculate exact point values for the exogenous variables with the inverted assignment functions. Consequently, you apply the assignment functions in the hypothetical world to get point values of the hypothetical outcomes. However, most practical examples fall in the following general case:</p>
+</div>
+<ol>
+<li class="readable-text" id="p169"> You only condition on some endogenous variables. </li>
+<li class="readable-text" id="p170"> The SCM assignment functions are not invertible. </li>
+</ol>
+</div>
+<div class="readable-text" id="p171">
+<p>In our abduction step, we first condition the model on observed values of femur and height.</p>
+</div>
+<div class="browsable-container listing-container" id="p172">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.14</span> Conditioning on actual values of femur and height</h5>
+<div class="code-area-container">
+<pre class="code-area">conditioned_model = pyro.condition(    
+    model,    
+    data={"femur": tensor(44.0), "height": tensor(165.0)}    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p173">
+<p>Next, we infer the exogenous variable, given femur and height, using variational inference.</p>
+</div>
+<div class="browsable-container listing-container" id="p174">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.15</span> Implementing the abduction step with variational inference</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.infer import SVI, Trace_ELBO
+from pyro.optim import Adam
+
+pyro.util.set_rng_seed(123)   <span class="aframe-location"/> #1
+pyro.clear_param_store()    <span class="aframe-location"/> #2
+svi = SVI(    <span class="aframe-location"/> #3
+          model=conditioned_model,
+          guide=guide,
+          optim=Adam({"lr": 0.003}),   <span class="aframe-location"/> #4
+          loss=Trace_ELBO()    <span class="aframe-location"/> #5
+)
+
+<span class="aframe-location"/>losses = []    #6
+num_steps = 5000    <span class="aframe-location"/> #7
+for t in range(num_steps):    #7
+    losses.append(svi.step(exogenous))    #7
+
+plt.plot(losses)    <span class="aframe-location"/> #8
+plt.title("Loss During Training")    #8
+plt.xlabel("step")    #8
+plt.ylabel("loss")     #8</pre>
+<div class="code-annotations-overlay-container">
+     #1 Set a seed for reproducibility.
+     <br/>#2 Clear any current parameter values.
+     <br/>#3 Initialize the stochastic variational inference algorithm.
+     <br/>#4 Optimize the parameters with a learning rate of .003.
+     <br/>#5 Use (negative) evidence lower bound (ELBO) as the loss function.
+     <br/>#6 Initialize a list to store loss values for plotting.
+     <br/>#7 Run the optimization for 5,000 steps. The SVI’s step object has the same signature as the model and the guide, so any model/guide arguments must be passed in here.
+     <br/>#8 Plot the loss during training.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p175">
+<p>Figure 9.13 shows loss during training indicating variational inference converged.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p176">
+<img alt="figure" height="896" src="../Images/CH09_F13_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.13</span> Loss during optimization of the parameters of the distribution approximating <em>P</em>(<em>N</em><em><sub>Sex</sub></em>, <em>N</em><em><sub>Femur</sub></em>, <em>N</em><em><sub>Height</sub></em>|<em>F</em>=44, <em>H</em>=165)</h5>
+</div>
+<div class="readable-text" id="p177">
+<p>After training is completed, we extract the optimized parameters for our updated exogenous variable distribution.</p>
+</div>
+<div class="browsable-container listing-container" id="p178">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.16</span> Extract parameters of updated exogenous distribution</h5>
+<div class="code-area-container">
+<pre class="code-area">n_sex_p = param("p").item()    <span class="aframe-location"/> #1
+n_femur_loc = param("n_femur_loc").item()   #1
+n_femur_scale = param("n_femur_scale").item()   #1
+n_height_loc = param("n_height_loc").item()   #1
+n_height_scale = param("n_height_scale").item()  #1
+
+exogenous_posterior = {   <span class="aframe-location"/> #2
+    'N_sex': Bernoulli(n_sex_p),   #2
+    'N_femur': Normal(n_femur_loc, n_femur_scale),   #2
+    'N_height': Normal(n_height_loc, n_height_scale),     #2
+}     #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 Extract the parameter values.
+     <br/>#2 Do the abduction by using the optimized parameters to create new “posterior” exogenous variable distributions.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p179">
+<p>One thing to note is that while we typically specify independent prior distributions for exogenous variables in an SCM, exogenous variables are generally conditionally dependent given endogenous variables (because of collider paths!). However, I wrote a guide function that samples the exogenous variables independently, ignoring this conditional dependence. Writing a guide that treats dependent variables as independent is convenient and is common practice, but doing so will add some bias to the results. You can avoid this by doing the extra work of writing a guide function that maintains the dependencies implied by the graph.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p180">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Counterfactual modeling with ChiRho</h5>
+</div>
+<div class="readable-text" id="p181">
+<p>ChiRho is a causal extension of Pyro that seeks to more seamlessly blend the probabilistic modeling approach of Pyro with causal inference. ChiRho has parallel world abstractions and abstractions for implementing counterfactual inference with normalizing flows and the variational inference approach discussed in this example. As an extension to Pyro, the modeling techniques discussed in this case study will also work with ChiRho.</p>
+</div>
+</div>
+<div class="readable-text" id="p182">
+<h3 class="readable-text-h3" id="sigil_toc_id_224"><span class="num-string">9.3.4</span> Implementing the action and prediction steps</h3>
+</div>
+<div class="readable-text" id="p183">
+<p>In the Monty Hall example, we built the parallel world model explicitly. In this example, we can just perform the action step by using <code>pyro.do</code> to get the hypothetical world model, and sample from this model using the updated exogenous variable distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p184">
+<p>We’ll repeat the procedure of generating samples from the intervention model that set femur length to 46 cm. Recall that we already created the intervention model in listing 9.11 with this line:</p>
+</div>
+<div class="browsable-container listing-container" id="p185">
+<div class="code-area-container">
+<pre class="code-area">int_model = pyro.do(model, data={"femur": tensor(46.0)})</pre>
+</div>
+</div>
+<div class="readable-text" id="p186">
+<p>To sample from the intervention distribution, we called <code>int_model</code> on our original <code>exogenous</code> variable distribution. Now, for the prediction step, we’ll call it again, this time with <code>exogenous_posterior</code> instead of <code>exogenous</code>, because <code>exogenous_posterior</code> encodes all the information from the actual world.</p>
+</div>
+<div class="browsable-container listing-container" id="p187">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.17</span> Sampling from the counterfactual distribution</h5>
+<div class="code-area-container">
+<pre class="code-area">cf_samples = []    
+for _ in range(10000):    
+    _, _, cf_height = int_model(exogenous_posterior)    
+    cf_samples.append(float(cf_height))</pre>
+</div>
+</div>
+<div class="readable-text" id="p188">
+<p>Finally, we overlay a histogram of samples from the counterfactual distribution against the interventional distribution histogram in figure 9.14, and we can see the clear differences between these distributions.</p>
+</div>
+<div class="browsable-container listing-container" id="p189">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.18</span> Comparing the interventional and counterfactual distributions</h5>
+<div class="code-area-container">
+<pre class="code-area">plt.hist(    
+    int_samples,    
+    bins=20,    
+    alpha=0.5,    
+    label="Intervention Samples",    
+    density=True    
+)
+plt.hist(    
+    cf_samples,   
+    bins=20,    
+    alpha=0.5,    
+    label="Counterfactual Samples", 
+    density=True    
+)  
+plt.ylim(0., .35)    
+plt.legend()    
+plt.xlabel("Height")    
+plt.show()</pre>
+</div>
+</div>
+<div class="readable-text" id="p190">
+<p>The resulting plot, shown in figure 9.14, contrasts histograms of the interventional and counterfactual samples.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p191">
+<img alt="figure" height="866" src="../Images/CH09_F14_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.14</span> Histograms of generated samples from the interventional and counter-factual distributions encoded by the causal model</h5>
+</div>
+<div class="readable-text" id="p192">
+<p>Figure 9.14 illustrates how the counterfactual distribution generally has much less spread than an interventional distribution representing the same hypothetical conditions. The counterfactual distribution essentially filters the interventional distribution down to cases where the conditions observed in the actual world are true. In this case, we have two height bell curves corresponding to two sexes. Those bell curves have a stronger overlap in the interventional distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p193">
+<p>In a final example, we’ll evaluate how to run the counterfactual inference algorithm in the context of a generative AI image model.</p>
+</div>
+<div class="readable-text" id="p194">
+<h2 class="readable-text-h2" id="sigil_toc_id_225"><span class="num-string">9.4</span> Case study 3: Counterfactual image generation with a deep generative model</h2>
+</div>
+<div class="readable-text" id="p195">
+<p>In generative AI, the user provides an input, and the algorithm generates some output. For example, suppose I wanted to write a script for an alternative history where Harriet Tubman was a pirate captain. I turned to a generative image model for some concept art, posing the text question, “What would Harriet Tubman look like as a pirate captain?” The model generated the image in figure 9.15.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p196">
+<img alt="figure" height="750" src="../Images/CH09_F15_Ness.png" width="750"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.15</span> The output of a generative AI image model, given the natural language input prompt “What would Harriet Tubman look like as a pirate captain?”</h5>
+</div>
+<div class="readable-text" id="p197">
+<p><strong> </strong>The question itself is a counterfactual—Harriet Tubman was not a pirate. We’ll explore natural language counterfactuals with large language models in chapter 13. Here, we’ll reason counterfactually about the image in figure 9.15.</p>
+</div>
+<div class="readable-text intended-text" id="p198">
+<p> Suppose I like this image, but I want to make an edit—I want to change this image to remove the glasses. One way of doing this is to use a tool like “in-fill,” where I select the pixels with the glasses and indicate that I want whatever is in the pixels to go away. This would be directly editing the form of the image.</p>
+</div>
+<div class="readable-text intended-text" id="p199">
+<p>An alternative approach would be <em>semantic editing</em>, where rather than manipulating the pixels in the image, I manipulate some latent representation of the image corresponding to “glasses.” In effect, I pose the counterfactual question, “what would this image look like if the subject were not wearing glasses?” Figure 9.16 contrasts the original and “counterfactual” versions of the image.</p>
+</div>
+<div class="browsable-container figure-container" id="p200">
+<img alt="figure" height="550" src="../Images/CH09_F16_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.16</span> Given the generated image on the left, the user might prompt the generative AI with the counterfactual question, “What would this image look like without the glasses?” They would expect something like the image on the right, where conceptual elements of the image not causally downstream of glasses removal should be unaffected.</h5>
+</div>
+<div class="readable-text intended-text" id="p201">
+<p>This is an attractive use case, as manipulating underlying concepts is often preferable to manipulating form, especially when the edits you want to make aren’t all located in the same specific area of pixels. This is especially attractive if our conceptual model is a causal model, so the downstream causal consequences of changing a concept are reflected in the image, while the law of consistency prevents change in the parts of the image that should be unaffected by the change in concept. <span class="aframe-location"/></p>
+</div>
+<div class="readable-text intended-text" id="p202">
+<p>With this use case in mind, this section will use our counterfactual algorithm to implement a form of semantic editing. We’ll start with the actual image. In the abduction step, we’ll infer some latent representation of the image. In the action step, we’ll propose the desired edit, and in the prediction step, we’ll generate the new image.</p>
+</div>
+<div class="readable-text intended-text" id="p203">
+<p>In this example, we’ll use an SCM built with a variational autoencoder in PyTorch. We’ll also use a simple dataset called dSprites for proof of concept. The dSprites data demonstrates the idea and is simple enough to train a model quickly on an ordinary laptop. See the chapter notes at <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for references with more practical counterfactual image modeling examples.</p>
+</div>
+<div class="readable-text" id="p204">
+<h3 class="readable-text-h3" id="sigil_toc_id_226"><span class="num-string">9.4.1</span> The dSprites data<span class="aframe-location"/></h3>
+</div>
+<div class="readable-text" id="p205">
+<p>The dSprites dataset consists of 2D shapes, each rendered in 8 possible positions, 6 possible scales, and 40 possible rotations. The shapes are composed of 5 independent factors: shape, scale, rotation, <em>x</em>-position, and <em>y</em>-position. Figure 9.17 demonstrates samples from the dataset.</p>
+</div>
+<div class="browsable-container figure-container" id="p206">
+<img alt="figure" height="330" src="../Images/CH09_F17_Ness.png" width="869"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.17</span> The dSprites data features images causally determined by five independent causal factors: shape, scale, rotation, <em>x</em>-position, and <em>y</em>-position.</h5>
+</div>
+<div class="readable-text" id="p207">
+<p>We’ll treat each of these factors as causes of an image variable, as illustrated in the causal DAG in figure 9.18.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p208">
+<img alt="figure" height="387" src="../Images/CH09_F18_Ness.png" width="549"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.18</span> The causal DAG for a dSprites image, displayed as a plate model to highlight the shape of <em>N</em><em><sub>I</sub></em> and <em>I</em>. <em>N</em><em><sub>i</sub></em> is the exogenous variable for the image. The model is trained with an encoder-decoder framework that uses a 50 <span class="regular-symbol">×</span> 1 dimensional image encoding to represent <em>N</em><em><sub>I</sub></em>.</h5>
+</div>
+<div class="readable-text" id="p209">
+<p>In the following code, we load a specific image from the dSprites dataset.</p>
+</div>
+<div class="browsable-container listing-container" id="p210">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.19</span> Load a dSprites image</h5>
+<div class="code-area-container">
+<pre class="code-area">import torch
+from matplotlib import pyplot as plt
+
+import io  <span class="aframe-location"/> #1
+import urllib.request    #1
+import numpy as np     #1
+url = ('https://github.com/altdeep/causalML/blob/master/'    #1
+       'book/chapter%209/sprites_example.npz?raw=true')    #1
+with urllib.request.urlopen(url) as response:    #1
+    data = response.read()    #1
+file = io.BytesIO(data)    #1
+npzfile = np.load(file)    #1
+img_dict = dict(npzfile)     #1
+img = torch.tensor(img_dict['image'].astype(np.float32) )   <span class="aframe-location"/> #2
+plt.imshow(img, cmap='Greys_r', interpolation='nearest')     #2
+plt.axis('off')  #2
+plt.title('original')     #2
+plt.show()    #2
+causal_factor = torch.from_numpy(img_dict['label']).unsqueeze(0)    <span class="aframe-location"/> #3
+print(causal_factor)     #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Download dSprites example from GitHub and load it.
+     <br/>#2 Plot the dSprites image.
+     <br/>#3 The causal factors of the example are [0 0 1 13 26 14], the first element is always 0, and the second element corresponds to “square” and is represented by 0. The remaining elements correspond to scale, orientation, and X and Y positions.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p211">
+<p>This plots the image in figure 9.19.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p212">
+<img alt="figure" height="642" src="../Images/CH09_F19_Ness.png" width="645"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.19</span> A single example from the dSprites data</h5>
+</div>
+<div class="readable-text intended-text" id="p213">
+<p>Printing <code>causal_factor</code> produces <code>tensor ([[ 0, 0, 1, 13, 26, 14</code><span class="code-char">]])</span>. The first element is 0 for all examples in the data. The second element of the causal factor vector corresponds to shape. Square, ellipse, and heart are represented by 0, 1, and 2, respectively. The image contains a square (<em>P</em><em>  </em>=<em>  </em>0) with scale <em>S</em><em> </em>=<em> </em>1, orientation <em>O</em>=13, and position <em>X</em><em> </em>=<em> </em>26 and <em>Y</em><em> </em>=<em> </em>14. </p>
+</div>
+<div class="readable-text intended-text" id="p214">
+<p>In this case study, we’ll ask, “What would this image look like if the shape were a heart instead of a square?” This suggests the parallel-world network in figure 9.20.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p215">
+<img alt="figure" height="421" src="../Images/CH09_F20_Ness.png" width="709"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.20</span> The parallel world graph implied by the question “Given the image, what would it look like if the shape were a heart?” </h5>
+</div>
+<div class="readable-text" id="p216">
+<p>First, we’ll load a pretrained encoder to map from the image to the exogenous variable for the causal factors. In this simple model, we’ll assume the assignment functions for the exogenous variables of the causal factors are identity functions, i.e., the causal factors and their exogenous variables will have the same values. Let’s start by initializing the encoder.</p>
+</div>
+<div class="browsable-container listing-container" id="p217">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.20</span> Load the encoder of causal factors</h5>
+<div class="code-area-container">
+<pre class="code-area">import requests
+import torch.nn as nn
+
+CARDINALITY = [1, 3, 6, 40, 32, 32]   <span class="aframe-location"/> #1
+
+class EncoderCausalFactors(nn.Module):    <span class="aframe-location"/> #2
+    def __init__(self, image_dim, factor_dim):
+        super(EncoderCausalFactors, self).__init__()
+        self.image_dim = image_dim
+        self.factor_dim = factor_dim
+        hidden_dim = 1000    <span class="aframe-location"/> #3
+        self.fc1 = nn.Linear(image_dim, hidden_dim)   <span class="aframe-location"/> #4
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)   #4
+        self.fc3 = nn.Linear(hidden_dim, factor_dim)    #4
+        self.softplus = nn.Softplus()  #4
+        self.sigmoid = nn.Sigmoid()    <span class="aframe-location"/> #5
+
+    def forward(self, img):
+       <span class="aframe-location"/> img = img.reshape(-1, self.image_dim)    #6
+        hidden1 = self.softplus(self.fc1(img))    <span class="aframe-location"/> #7
+        hidden2 = self.softplus(self.fc2(hidden1))    #7
+        p_loc = self.sigmoid(self.fc3(hidden2))    <span class="aframe-location"/> #8
+        return p_loc    #8
+
+encoder_n_causal_factors = EncoderCausalFactors(<span class="aframe-location"/> #9
+    image_dim=64*64,   #9
+    factor_dim=sum(CARDINALITY)   #9
+)  #9</pre>
+<div class="code-annotations-overlay-container">
+     #1 Cardinality in each dimensionality of the causal factors
+     <br/>#2 Encoder for the vector of exogenous parents of the causal factors
+     <br/>#3 The hidden layers have a length of 1,000.
+     <br/>#4 Using linear transforms passed through Softplus activation functions
+     <br/>#5 The final activation is a sigmoid function.
+     <br/>#6 Flatten the image.
+     <br/>#7 Calculate the hidden layers.
+     <br/>#8 The output layer generates a probability vector that Is used as the parameter of a OneHotCategorical distribution.
+     <br/>#9 Initialize the encoder. The image dimension is 64 
+     <span class="regular-symbol">×</span> 64 pixels, and the six elements of the causal factor vector are one-hot encoded into a vector of length 1 + 3 + 6 + 40 + 32 + 32 = 114.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p218">
+<p>Next, we’ll download and load pretrained weights into this encoder from the book’s GitHub repo.</p>
+</div>
+<div class="browsable-container listing-container" id="p219">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.21</span> Download and load pretrained weights into the encoder of causal factors</h5>
+<div class="code-area-container">
+<pre class="code-area">url = ('https://github.com/altdeep/causalML/raw/master/'    
+       'book/chapter%209/sprites-model-encoder-causal-factors.pt')    
+response = requests.get(url)    
+response.raise_for_status()    
+with open('temp_weights.pt', 'wb') as f:    
+    f.write(response.content)    
+state_dict = torch.load(    
+    'temp_weights.pt',    
+    map_location=torch.device('cpu')    
+)    
+encoder_n_causal_factors.load_state_dict(state_dict)</pre>
+</div>
+</div>
+<div class="readable-text" id="p220">
+<p>First, we’ll test that the encoder can recover the causal factors from the image.</p>
+</div>
+<div class="browsable-container listing-container" id="p221">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.22</span> Generate examples of causal exogenous factors</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro import distributions as dist
+
+def decode_one_hot(factor_encoded, cardinality=CARDINALITY):  <span class="aframe-location"/>
+    split = [   
+        torch.split(element, cardinality)    <span class="aframe-location"/> #1
+        for element in factor_encoded   #1
+    ]   #1
+    labels = [[int(torch.argmax(vec)) for vec in item]    #1
+              for item in split]    #1
+    return torch.tensor(labels)   #1
+
+def sample_one_hot(p_encoded, cardinality=CARDINALITY):    <span class="aframe-location"/> #2
+    split = [torch.split(element, cardinality)    #2
+             for element in p_encoded]  #2
+    sample_list = [   #2
+        [     #2
+            dist.OneHotCategorical(p_vec).sample()    #2
+            for p_vec in item    #2
+        ] for item in split  #2
+    ]     #2
+    sample = torch.stack([    #2
+        torch.cat(samples, -1)     #2
+        for samples in sample_list    #2
+    ])    #2
+    return sample     #2
+
+inferred_cause_p = encoder_n_causal_factors.forward(img)    <span class="aframe-location"/> #3
+sampled_factors = sample_one_hot(     #3
+    inferred_cause_p   #3
+)     #3
+print(decode_one_hot(sampled_factors))     #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Helper function that decodes the one-hot encoded output of the encoder
+     <br/>#2 Samples from the output probability vector of encoder_causal_factors
+     <br/>#3 Use the encoder to predict causal factors.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p222">
+<p>Encoding the sampled image prints the causal factors: <code>[ 0, 0, 1, 13, 26, 14].</code> The encoder accurately recovers the causal factors from the image.</p>
+</div>
+<div class="readable-text intended-text" id="p223">
+<p>Next, we’ll initialize an encoder that we’ll use for inference of <em>N</em><sub><em>I</em></sub>, the exogenous variable for the image. This encoder takes an image and an instance of the causal factor vector as an input.</p>
+</div>
+<div class="browsable-container listing-container" id="p224">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.23</span> An encoder for inference of <em>N</em><em><sub>I</sub></em></h5>
+<div class="code-area-container">
+<pre class="code-area">class EncoderNImage(nn.Module):    <span class="aframe-location"/> #1
+    def __init__(self, image_dim, factor_dim, n_image_dim):
+        super(EncoderNImage, self).__init__()
+        self.image_dim = image_dim
+        self.factor_dim = factor_dim
+        self.n_image_dim = n_image_dim
+        hidden_dim = 1000
+        self.fc1 = nn.Linear(
+            self.image_dim + self.factor_dim, hidden_dim  <span class="aframe-location"/> #2
+        )    #2
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)     #2
+        self.fc31 = nn.Linear(hidden_dim, n_image_dim)     #2
+        self.fc32 = nn.Linear(hidden_dim, n_image_dim)     #2
+        self.softplus = nn.Softplus()    #2
+
+    def forward(self, img, factor):
+        img = img.reshape(-1, self.image_dim)   <span class="aframe-location"/> #3
+       <span class="aframe-location"/> inputs = torch.cat((img, factor), -1)    #4
+        hidden1 = self.softplus(self.fc1(inputs))   <span class="aframe-location"/> #5
+        hidden2 = self.softplus(self.fc2(hidden1))     #5
+        n_image_loc = self.fc31(hidden2)    <span class="aframe-location"/> #6
+        n_image_scale = torch.exp(self.fc32(hidden2))    #6
+        return n_image_loc, n_image_scale    #6
+
+encoder_n_image = EncoderNImage(    <span class="aframe-location"/> #7
+    image_dim=64*64,    #7
+    factor_dim=sum(CARDINALITY),     #7
+    n_image_dim=50     #7
+)     #7</pre>
+<div class="code-annotations-overlay-container">
+     #1 Encoder used for inference of N
+     <sub>I</sub>, which serves as both the exogenous variable for the image in causal terms, and the encoding of the image in VAE terms
+     <br/>#2 Using linear transforms passed into a Softplus activation function
+     <br/>#3 Flatten the image.
+     <br/>#4 Concatenate the image and the causal factor vector.
+     <br/>#5 Calculate the hidden layers.
+     <br/>#6 Calculate the location and scale parameter of multivariate normal distribution on N
+     <sub>I</sub>.
+     <br/>#7 Initialize the encoder.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p225">
+<p>The encoder of the noise variable requires the causal factors to be one-hot encoded, so we’ll create a helper function to do just that.</p>
+</div>
+<div class="browsable-container listing-container" id="p226">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.24</span> Create a function for one-hot encoding</h5>
+<div class="code-area-container">
+<pre class="code-area">def encode_one_hot(factor, cardinality=CARDINALITY):    
+    new_factor = []    
+    for i, factor_length in enumerate(cardinality):    
+        new_factor.append(    
+            torch.nn.functional.one_hot(    
+                factor[:,i].to(torch.int64), int(factor_length)    
+            )    
+        )    
+    new_factor = torch.cat(new_factor, -1)    
+    return new_factor.to(torch.float32)</pre>
+</div>
+</div>
+<div class="readable-text" id="p227">
+<p>Again, we’ll download and load pretrained weights for the encoder.</p>
+</div>
+<div class="browsable-container listing-container" id="p228">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.25</span> Load pretrained weights for encoder for inference of <em>N</em><em><sub>I</sub></em> </h5>
+<div class="code-area-container">
+<pre class="code-area">weight_url = ("https://github.com/altdeep/causalML/raw/master/"   <span class="aframe-location"/> #1
+              "book/chapter%209/sprites-model-encoder-n-image.pt")   #1
+response = requests.get(weight_url)   #1
+response.raise_for_status()   #1
+with open('temp_weights.pt', 'wb') as f:   #1
+    f.write(response.content)   #1
+state_dict = torch.load(  #1
+    'temp_weights.pt',   #1
+    map_location=torch.device('cpu')   #1
+)    #1
+encoder_n_image.load_state_dict(state_dict)    #1
+n_image_loc, n_image_scale = encoder_n_image.forward(    <span class="aframe-location"/> #2
+    img,    #2
+    encode_one_hot(causal_factor)     #2
+)    #2
+n_image = torch.normal(n_image_loc, n_image_scale)   <span class="aframe-location"/> #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Load the pretrained weights. 
+     <br/>#2 Pass the image and causal factors into the encoder, and obtain N
+     <sub>I</sub> location and scale parameters.
+     <br/>#3 Generate from the posterior distribution on N
+     <sub>I</sub>.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p229">
+<p>Finally, we’ll load a decoder that maps from <em>N</em><sub><em>I</em></sub> and a causal factor back to an image. In causal terms, the decoder is part of the assignment function for the image.</p>
+</div>
+<div class="browsable-container listing-container" id="p230">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.26</span> Load and initialize the decoder that maps causes and <em>N</em><em><sub>I</sub></em> to images</h5>
+<div class="code-area-container">
+<pre class="code-area">class Decoder(nn.Module):    <span class="aframe-location"/> #1
+    def __init__(self, image_dim, factor_dim, n_image_dim):
+        super(Decoder, self).__init__()
+        hidden_dim = 1000
+        self.fc1 = nn.Linear(n_image_dim + factor_dim, hidden_dim)    <span class="aframe-location"/> #2
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)   #2
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)   #2
+        self.fc4 = nn.Linear(hidden_dim, image_dim)    #2
+        self.softplus = nn.Softplus()    #2
+        self.sigmoid = nn.Sigmoid()   #2
+
+    def forward(self, n_image, factor):
+        inputs = torch.cat((n_image, factor), -1)    <span class="aframe-location"/> #3
+        hidden1 = self.softplus(self.fc1(inputs))    <span class="aframe-location"/> #4
+        hidden2 = self.softplus(self.fc2(hidden1))     #4
+        hidden3 = self.softplus(self.fc3(hidden2))     #4
+        p_img = self.sigmoid(self.fc4(hidden3))    <span class="aframe-location"/> #5
+        return p_img     #5
+
+decoder = Decoder(    <span class="aframe-location"/> #6
+    image_dim=64*64,    #6
+    factor_dim=sum(CARDINALITY),   #6
+    n_image_dim=50    #6
+)     #6</pre>
+<div class="code-annotations-overlay-container">
+     #1 The decoder maps from causal factors and N_image to generate a parameter for a multivariate Bernoulli distribution on images.
+     <br/>#2 The model uses linear transforms, a Softplus activate for hidden layers, and sigmoid activate on the output layer.
+     <br/>#3 The network concatenates n_image and factors in the input layer.
+     <br/>#4 The input is passed through three hidden layers with Softplus activation functions.
+     <br/>#5 The output is a probability parameter passed to a multivariate Bernoulli distribution on image pixels.
+     <br/>#6 Initialize the encoder.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p231">
+<p>Again, we’ll download and load pretrained weights into the decoder.</p>
+</div>
+<div class="browsable-container listing-container" id="p232">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.27</span> Download and load the decoder weights</h5>
+<div class="code-area-container">
+<pre class="code-area">dcdr_url = ("https://github.com/altdeep/causalML/raw/master/"    
+       "book/chapter%209/sprites-model-decoder.pt")    
+response = requests.get(dcdr_url)    
+response.raise_for_status()    
+with open('temp_weights.pt', 'wb') as f:    
+    f.write(response.content)    
+state_dict = torch.load(    
+    'temp_weights.pt',    
+    map_location=torch.device('cpu')    
+)    
+decoder.load_state_dict(state_dict)</pre>
+</div>
+</div>
+<div class="readable-text" id="p233">
+<p>Before we generate the counterfactual image, we’ll create a helper function to plot it.</p>
+</div>
+<div class="browsable-container listing-container" id="p234">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.28</span> Helper function for plotting the counterfactual image</h5>
+<div class="code-area-container">
+<pre class="code-area">def compare_reconstruction(original, generated):    
+    fig = plt.figure()    
+    ax0 = fig.add_subplot(121)    
+    plt.imshow(    
+        original.cpu().reshape(64, 64),    
+        cmap='Greys_r',    
+        interpolation='nearest'    
+    )    
+    plt.axis('off')    
+    plt.title('actual')    
+    ax1 = fig.add_subplot(122)    
+    plt.imshow(    
+        generated.reshape(64, 64),    
+        cmap='Greys_r', interpolation='nearest')    
+    plt.axis('off')    
+    plt.title('counterfactual')    
+    plt.show()</pre>
+</div>
+</div>
+<div class="readable-text" id="p235">
+<p>Now, we’ll specify the SCM. We’ll write a <code>p_n_image</code> function that generates from <em>P</em>(<em>N</em><sub><em>image</em></sub>) and an <code>f_image</code> assignment function for the image.</p>
+</div>
+<div class="browsable-container listing-container" id="p236">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.29</span> Create an exogenous distribution and assignment function for the image</h5>
+<div class="code-area-container">
+<pre class="code-area">def p_n_image(n_image_params):   <span class="aframe-location"/> #1
+    n_image_loc, n_image_scale, n_unif_upper = n_image_params    <span class="aframe-location"/> #2
+    n_image_norm = dist.Normal(    <span class="aframe-location"/> #3
+        n_image_loc, n_image_scale     #3
+    ).to_event(1).sample()     #3
+    n_image_unif = dist.Uniform(0, n_unif_upper).expand(    <span class="aframe-location"/> #4
+        torch.Size([1, 64*64])    #4
+    ).sample()    #4
+    n_image = n_image_norm, n_image_unif   <span class="aframe-location"/> #5
+    return n_image
+
+def f_image(factor, n_image):   <span class="aframe-location"/> #6
+    n_image_norm, n_image_unif = n_image    <span class="aframe-location"/> #7
+    p_output = decoder.forward(    <span class="aframe-location"/> #8
+        n_image_norm,     #8
+        encode_one_hot(factor)     #8
+    )
+    sim_img = (n_image_unif &lt;= p_output).int()    <span class="aframe-location"/> #9
+    return sim_img</pre>
+<div class="code-annotations-overlay-container">
+     #1 A function that generates a variate from the N_image exogenous distribution
+     <br/>#2 The parameters of N_image’s distribution include location and scale parameters for a normal distribution and the upper bound of a uniform distribution.
+     <br/>#3 Sample a normal random variate from the normal distribution.
+     <br/>#4 Sample a uniform random variate from a uniform distribution.
+     <br/>#5 Combine these into a single n_image object.
+     <br/>#6 Assignment function for the image
+     <br/>#7 The exogenous noise variable decomposes into one normal and one uniform random variate.
+     <br/>#8 The normal random variate is passed through the decoder to get a probability vector for the pixels.
+     <br/>#9 Each pixel is set deterministically with an indicator function that returns 1 if an element of the uniform variate is less than the corresponding element of the probability vector, or otherwise returns 0.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p237">
+<p>Finally, we can run through the steps of the counterfactual inference algorithm to answer the question, “What would this image look like if it was a heart?”</p>
+</div>
+<div class="browsable-container listing-container" id="p238">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 9.30</span> Generate a counterfactual image</h5>
+<div class="code-area-container">
+<pre class="code-area">def abduct(img, factor, smoother=1e-3):    <span class="aframe-location"/> #1
+    n_image_loc, n_image_scale = encoder_n_image.forw<span class="aframe-location"/>ard(     #2
+        img, encode_one_hot(factor)    #2
+    )   #2
+    n_unif_upper = decoder.forward(    <span class="aframe-location"/> #3
+        n_image_loc,     #3
+        encode_one_hot(factor)     #3
+    )     #3
+    n_unif_upper = n_unif_upper * (1 - 2 * smoother) + smoother     #3
+    p_image_params = n_image_loc, n_image_scale, n_unif_upper    <span class="aframe-location"/> #4
+    return p_image_params
+
+def do_action(factor, element=1, val=2):    <span class="aframe-location"/> #5
+    intervened_factor = factor.clone()   #5
+    intervened_factor[0][element] = val    #5
+    return intervened_factor     #5
+
+def predict(intervened_factor, n_image_params):    <span class="aframe-location"/> #6
+    n_image = p_n_image(n_image_params)    #6
+    sim_img = f_image(intervened_factor, n_image)     #6
+    return sim_img    #6
+
+def counterfactual(img, factor):   <span class="aframe-location"/> #7
+    p_image_params = abduct(img, factor)    #7
+    intervened_factor = do_action(factor)   #7
+    pred_recon = predict(intervened_factor, p_image_params)    #7
+    compare_reconstruction(img, pred_recon)    #7
+
+counterfactual(img, causal_factor)   <span class="aframe-location"/> #8</pre>
+<div class="code-annotations-overlay-container">
+     #1 Abduction step: infer the exogenous variable given the image.
+     <br/>#2 Infer the parameters of N_I. First, this includes two parameters of a normal distribution.
+     <br/>#3 Second, we infer the upper bound of a uniform distribution and apply smoothing so it is not exactly 1 or 0.
+     <br/>#4 Combine these together into one inferred parameter set.
+     <br/>#5 Action step: Apply the intervention that sets the shape element to “heart” (represented by the integer 2).
+     <br/>#6 Prediction step: Generate n_image from P(N_image), and pass this through an assignment function to generate an image.
+     <br/>#7 Apply all three steps: abduct the n_image, apply the intervention, and forward generate the counterfactual image.
+     <br/>#8 Plot the result.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p239">
+<p>Figure 9.21 shows the results.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p240">
+<img alt="figure" height="377" src="../Images/CH09_F21_Ness.png" width="825"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 9.21</span> The original (left) and counterfactually generated image (right)</h5>
+</div>
+<div class="readable-text" id="p241">
+<p>This is a proof of concept—there is additional nuance in counterfactual image generation. I’m cheating a bit with this dSprites example. The counterfactual generation works because the causal factors are independent and because the data is quite simple. For counterfactual image generation to work in general, we need to understand and satisfy certain assumptions.</p>
+</div>
+<div class="readable-text" id="p242">
+<h3 class="readable-text-h3" id="sigil_toc_id_227"><span class="num-string">9.4.2</span> Assumptions needed for counterfactual image generation</h3>
+</div>
+<div class="readable-text" id="p243">
+<p>In the next chapter, we’ll tackle the problem of identification. Identification is determining what causal questions we can answer, given our modeling assumptions and the data available to us. The counterfactual inference algorithm assumes you have the ground-truth SCM. If you can make that assumption, you can use the algorithm to answer any counterfactual (or interventional) query.</p>
+</div>
+<div class="readable-text intended-text" id="p244">
+<p>In most cases, we can’t practicably assume we have the ground-truth SCM. At best, you’ll have an SCM that acts as an approximation of the ground truth. For example, the true process that generated the dSprites images certainly didn’t involve a decoder neural network—we used deep learning with this decoder architecture to approximate that process. As you’ll see in the next chapter, such learned approximations are not guaranteed to produce counterfactuals faithful to the ground-truth data generating process.</p>
+</div>
+<div class="readable-text intended-text" id="p245">
+<p>But there is something special about the counterfactual generation of images and other media modalities (e.g., text, audio, video). In these cases, mathematical guarantees are less critical when we can simply <em>look</em> (read, listen, etc.) at the generated counterfactual media and evaluate whether it aligns with what we imagine it <em>should</em> be. Does the image in figure 9.21 look like what you imagined replacing the square with a heart would look like? Does the image of pirate captain Harriet Tubman without the spectacles align with your expectations? If so, the tool is quite useful, even without identification guarantees. Here, utility is in terms of aligning with human counterfactual imagination rather than ground-truth accuracy. I have the concept image of Captain Tubman that I wanted, and I can move on to my next creative task.</p>
+</div>
+<div class="readable-text" id="p246">
+<h2 class="readable-text-h2" id="sigil_toc_id_228">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p247"> The counterfactual inference algorithm requires an SCM and involves three steps: abduction, action, and prediction. </li>
+<li class="readable-text" id="p248"> In the abduction step, we infer the exogenous variables, given observed endogenous variables. </li>
+<li class="readable-text" id="p249"> In the action step, we use an ideal intervention to implement the hypothetical condition in the counterfactual query. </li>
+<li class="readable-text" id="p250"> In the prediction step, we predict the hypothetical outcomes given the hypothetical condition and the distribution of the exogenous variables learned in the abduction step. </li>
+<li class="readable-text" id="p251"> We can implement the counterfactual inference algorithm using different probabilistic machine learning frameworks. </li>
+<li class="readable-text" id="p252"> We can use a causal graphical modeling library like pgmpy to directly implement a generative SCM on a parallel world graph, and use graphical model inference algorithms with graph surgery to infer the counterfactual query. </li>
+<li class="readable-text" id="p253"> We can use modern probabilistic deep learning techniques such as variational inference and normalizing flows to do the abduction step of the counterfactual inference algorithm. </li>
+<li class="readable-text" id="p254"> Deep generative models can often be modified to enable counterfactual generation of media (text, images, audio, video, etc.). While there may be identification questions, you can typically examine the generated counterfactual artifact and validate that it matches your expectations. </li>
+</ul>
+</div></body></html>

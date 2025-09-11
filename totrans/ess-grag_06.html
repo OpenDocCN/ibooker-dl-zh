@@ -1,0 +1,1167 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">7</span> </span> <span class="chapter-title-text">Microsoft’s GraphRAG implementation</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Introducing Microsoft's GraphRAG</li>
+<li class="readable-text" id="p3">Extracting and summarizing entities and relationships</li>
+<li class="readable-text" id="p4">Calculating and summarizing communities of entities</li>
+<li class="readable-text" id="p5">Implementing global and local search techniques</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>In chapter 6, you learned how to extract structured information from legal documents to build a knowledge graph. In this chapter, you will explore a slightly different extraction and processing pipeline using Microsoft’s GraphRAG (Edge et al., 2024) approach. This end-to-end example still constructs a knowledge graph but places greater emphasis on natural language summarization of entities and their relationships. The whole pipeline is visualized in figure 7.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p7">
+<img alt="figure" height="684" src="../Images/7-1.png" width="1100"/>
+<h5 class="figure-container-h5"><strong><span class="num-string">Figure 7.1</span> Microsoft’s GraphRAG pipeline. (Image from Edge et al., 2024, licensed under CC BY 4.0)</strong></h5>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>A key innovation of Microsoft’s GraphRAG (MS GraphRAG: <a href="https://github.com/microsoft/graphrag">https://github.com/microsoft/graphrag</a>) is its use of an LLM to build a knowledge graph through a two-stage process. In the first stage, entities and relationships are extracted and summarized from source documents to form the foundation of the knowledge graph, as illustrated in the steps up to the Knowledge Graph in figure 7.1. What distinguishes MS GraphRAG is that, once the knowledge graph has been constructed, graph communities are detected, and domain-specific summaries are generated for groups of closely related entities. This layered approach transforms fragmented pieces of information from various text chunks into a cohesive and organized representation of information about specified entities, relationships, and communities. </p>
+</div>
+<div class="readable-text intended-text" id="p9">
+<p>These entity- and community-level summaries can then be used to provide relevant information in response to user queries in a RAG application. With such a structured knowledge graph, multiple retrieval approaches can be applied. In this chapter, you’ll explore both global and local search retrieval approaches described in the MS GraphRAG paper.</p>
+</div>
+<div class="readable-text" id="p10">
+<h2 class="readable-text-h2"><span class="num-string">7.1</span> Dataset selection</h2>
+</div>
+<div class="readable-text" id="p11">
+<p>MS GraphRAG is designed to process unstructured text documents by extracting key entities and generating summaries that connect information across multiple text chunks. To ensure meaningful insights, our dataset should not only be rich in entity information but also contain entity data spread across multiple chunks. Since entity types are a configurable aspect of MS GraphRAG, they must be defined in advance. Relevant entities typically include people, organizations, and locations but can also extend to domain-specific concepts such as genes and pathways in medicine or legal clauses in law. </p>
+</div>
+<div class="readable-text intended-text" id="p12">
+<p>To make an informed decision about the entity types, it is important to explore the dataset and identify the types of questions you want to answer. The choice of entity types shapes the entire downstream process, influencing extraction, linking, and summarization quality.</p>
+</div>
+<div class="readable-text intended-text" id="p13">
+<p>For example, the MS GraphRAG paper utilized datasets from podcasts and news articles. In both cases, entities such as people, organizations, and locations are commonly mentioned. Additionally, depending on the subject, such as gaming or healthy lifestyle podcasts, you may want to include domain-specific entities, like game titles, health conditions, or nutritional concepts, to ensure comprehensive extraction and analysis.</p>
+</div>
+<div class="readable-text intended-text" id="p14">
+<p>Here we use <em>The Odyssey</em> to evaluate MS GraphRAG, as it features a rich narrative with people, gods, mystical weapons, and more. Moreover, key entities such as Ulysses appear across multiple text chunks, making it a suitable dataset for testing entity extraction and cross-chunk summarizations.</p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>In the remainder of this chapter, you’ll implement the MS GraphRAG method. To follow along, you’ll need access to a running, blank Neo4j instance. This can be a local installation or a cloud-hosted instance; just make sure it’s empty. You can follow the implementation directly in the accompanying Jupyter notebook available at <a href="https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch07.ipynb">https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch07.ipynb</a>.</p>
+</div>
+<div class="readable-text intended-text" id="p16">
+<p>Let’s dive in. </p>
+</div>
+<div class="readable-text" id="p17">
+<h2 class="readable-text-h2"><span class="num-string">7.2</span> Graph indexing</h2>
+</div>
+<div class="readable-text" id="p18">
+<p>Here you will construct the knowledge graph and generate entity and community summaries. Throughout this construction, you’ll explore key considerations at each step, including entity selection, graph connectivity, and how these choices influence the quality of summaries and queries. </p>
+</div>
+<div class="readable-text intended-text" id="p19">
+<p>Start by loading <em>The Odyssey</em> from the Gutenberg project (<a href="https://www.gutenberg.org/ebooks/1727">https://www.gutenberg.org/ebooks/1727</a>). </p>
+</div>
+<div class="browsable-container listing-container" id="p20">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.1</span> Loading The Odyssey</h5>
+<div class="code-area-container">
+<pre class="code-area">url = "https://www.gutenberg.org/cache/epub/1727/pg1727.txt"
+response = requests.get(url)</pre>
+</div>
+</div>
+<div class="readable-text" id="p21">
+<p>With the text prepared, you can now walk through the MS GraphRAG pipeline.</p>
+</div>
+<div class="readable-text" id="p22">
+<h3 class="readable-text-h3"><span class="num-string">7.2.1</span> Chunking</h3>
+</div>
+<div class="readable-text" id="p23">
+<p><em>The Odyssey</em> consists of 24 books of varying lengths. Your first task is to remove prefaces and footnotes and then divide the text into individual books, as demonstrated in the following listing. This approach follows the narrative’s natural divisions, providing a semantically meaningful way to structure the text.</p>
+</div>
+<div class="browsable-container listing-container" id="p24">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.2</span> Removing preface and footnotes and splitting into books</h5>
+<div class="code-area-container">
+<pre class="code-area">def chunk_into_books(text: str) -&gt; List[str]:
+    return (
+        text.split("PREFACE TO FIRST EDITION")[2]
+        .split("FOOTNOTES")[0]
+        .strip()
+        .split("\nBOOK")[1:]
+    )
+
+books = chunk_into_books(response.text)</pre>
+</div>
+</div>
+<div class="readable-text" id="p25">
+<p>Now you need to check the number of tokens in each book to determine whether further chunking is necessary. The code in the following listing provides basic statistics on the token counts of the books.</p>
+</div>
+<div class="browsable-container listing-container" id="p26">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.3</span> Counting the number of tokens in books</h5>
+<div class="code-area-container">
+<pre class="code-area">token_count = [num_tokens_from_string(el) for el in books]
+print(
+    f"""There are {len(token_count)} books with token sizes:
+- avg {sum(token_count) / len(token_count)}
+- min {min(token_count)}
+- max {max(token_count)}
+"""
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p27">
+<p>The token counts across the 24 books vary significantly, with an average of 6,515 tokens, a minimum of 4,459, and a maximum of 10,760. Given this range, further chunking is necessary to ensure that no individual section exceeds reasonable token limits.</p>
+</div>
+<div class="readable-text intended-text" id="p28">
+<p>But what are reasonable chunk sizes? The researchers behind MS GraphRAG compared different chunk sizes and analyzed their effect on the overall number of extracted entities. The results of this comparison are shown in figure 7.2.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p29">
+<img alt="figure" height="259" src="../Images/7-2.png" width="802"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 7.2</span> Impact of chunk size and self-reflection iterations on entity extraction. (Image from Edge et al., 2024, licensed under CC BY 4.0)</h5>
+</div>
+<div class="readable-text" id="p30">
+<p>The results in figure 7.2 show that smaller chunk sizes tend to extract more entity references overall. The line representing a 600-token chunk size is consistently the highest, while the 2,400-token chunk size is the lowest. This suggests that breaking text into smaller chunks allows the LLM to detect more entities compared to using larger chunks. Additionally, figure 7.2 shows that increasing the number of self-reflection iterations, meaning additional extraction passes on the same document, leads to more entity references being detected across all chunk sizes. This pattern indicates that repeated passes enable the LLM to extract more entities that may have been missed in earlier iterations.</p>
+</div>
+<div class="readable-text intended-text" id="p31">
+<p>Say you have decided to chunk the books using a 1,000-word limit (based on whitespace splitting) with an overlap of 40 words, as shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p32">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.4</span> Chunking the books</h5>
+<div class="code-area-container">
+<pre class="code-area">chunked_books = [chunk_text(book, 1000, 40) for book in books]</pre>
+</div>
+</div>
+<div class="readable-text" id="p33">
+<p>The books are chunked, and you can move on to the next step. </p>
+</div>
+<div class="readable-text" id="p34">
+<h3 class="readable-text-h3"><span class="num-string">7.2.2</span> Entity and relationship extraction</h3>
+</div>
+<div class="readable-text" id="p35">
+<p>The first step is to extract entities and relationships. We can borrow the MS GraphRAG prompts from the appendix of their paper. The instruction section of the prompt for entity and relationship extraction is shown in “Instructions for entity and relationship extraction.” </p>
+</div>
+<div class="readable-text prompt" id="p36">
+<p><strong>Instructions for entity and relationship extraction</strong></p>
+</div>
+<div class="readable-text prompt" id="p37">
+<p>-Goal-</p>
+</div>
+<div class="readable-text prompt" id="p38">
+<p>Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.</p>
+</div>
+<div class="readable-text prompt" id="p39">
+<p>-Steps-</p>
+</div>
+<ol class="response">
+<li class="readable-text buletless-item" id="p40"> Identify all entities. For each identified entity, extract the following information: 
+    <ul>
+<li> entity_name: Name of the entity, capitalized </li>
+<li> entity_type: One of the following types: [{entity_types}] </li>
+<li> entity_description: Comprehensive description of the entity’s attributes and activities </li>
+</ul> </li>
+<li class="readable-text" id="p41" style="list-style: none;"> Format each entity as ("entity"{tuple_delimiter}&lt;entity_name&gt;{tuple_delimiter} &lt;entity_type&gt;{tuple_delimiter}&lt;entity_description&gt;) </li>
+</ol>
+<ol class="response faux-ol-li" style="list-style: none;">
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p42"><span class="faux-ol-li-counter">2. </span> From the entities identified in step 1, identify all pairs of (source_entity, target_ entity) that are <strong>clearly related</strong> to each other. For each pair of related entities, extract the following information: 
+    <ul>
+<li> source_entity: name of the source entity, as identified in step 1 </li>
+<li> target_entity: name of the target entity, as identified in step 1 </li>
+<li> relationship_description: explanation as to why you think the source entity and the target entity are related to each other </li>
+<li> relationship_strength: a numeric score indicating strength of the relationship between the source entity and target entity </li>
+</ul></li>
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p43" style="list-style: none;">Format each relationship as ("relationship"{tuple_delimiter}&lt;source_entity&gt; {tuple_delimiter}&lt;target_entity&gt;{tuple_delimiter}&lt;relationship_description&gt; {tuple_delimiter}&lt;relationship_strength&gt;) </li>
+</ol>
+<ol class="response faux-ol-li" style="list-style: none;">
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p44"><span class="faux-ol-li-counter">3. </span> Return output in English as a single list of all the entities and relationships identified in steps 1 and 2. Use <strong>{record_delimiter}</strong> as the list delimiter. </li>
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p45"><span class="faux-ol-li-counter">4. </span> When finished, output {completion_delimiter} </li>
+</ol>
+<div class="readable-text" id="p46">
+<p>Instructions for entity and relationship extraction focuses on extracting structured knowledge from a text document by identifying entities of specified types and their relationships. The list of entity types is passed in as a variable <code>entity_types</code>. The prompt instructs the LLM to extract entities, classify them by type, and provide detailed descriptions. Then it identifies clearly related entity pairs, explains their connection, and assigns a relationship strength score. Finally, it returns all extracted entities and relationships in a structured, delimited format. This is only part of the full prompt, which also includes few-shot examples and output examples, but those are too extensive to include in the book.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p47">
+<h5 class="callout-container-h5 readable-text-h5">Exercise 7.1</h5>
+</div>
+<div class="readable-text" id="p48">
+<p>Before running the extraction, take a moment to consider which entity types would be most useful for <em>The Odyssey</em>. Since the list of entity types must be predefined, think about the key elements of the narrative such as characters, places, objects, and events that you want to extract. Try to define a set of entity types that would capture the most meaningful relationships in the text.</p>
+</div>
+</div>
+<div class="readable-text" id="p49">
+<p>For extracting meaningful entities from <em>The Odyssey</em>, say you have decided to use the following entity types:</p>
+</div>
+<ul>
+<li class="readable-text" id="p50"> <code>PERSON</code> </li>
+<li class="readable-text" id="p51"> <code>ORGANIZATION</code> </li>
+<li class="readable-text" id="p52"> <code>LOCATION</code> </li>
+<li class="readable-text" id="p53"> <code>GOD</code> </li>
+<li class="readable-text" id="p54"> <code>EVENT</code> </li>
+<li class="readable-text" id="p55"> <code>CREATURE</code> </li>
+<li class="readable-text" id="p56"> <code>WEAPON_OR_TOOL</code> </li>
+</ul>
+<div class="readable-text" id="p57">
+<p>Some entity types, like <code>PERSON</code> and <code>GOD</code>, are relatively unambiguous since they refer to well-defined categories of humans and deities. However, others, like <code>EVENT</code> and <code>LOCATION</code>, are more ambiguous. An <code>EVENT</code> can refer to anything from a single action to an entire war, making it difficult to establish a strict boundary for classification. Similarly, <code>LOCATION</code> can refer to a broad category like a country, a specific city, or even a named place within a city. This variability makes consistent classification more challenging but also leaves more flexibility for the LLM.</p>
+</div>
+<div class="readable-text intended-text" id="p58">
+<p>With these predefined entity types, you will now implement the extraction function.</p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.5</span> Entity and relationship extraction</h5>
+<div class="code-area-container">
+<pre class="code-area"> ENTITY_TYPES = ["PERSON", "ORGANIZATION", "LOCATION",
+  "GOD", "EVENT", "CREATURE", "WEAPON_OR_TOOL"]
+def extract_entities(text: str) -&gt; List[Dict]:     <span class="aframe-location"/> #1
+    messages = [
+        {"role": "user",
+        "content": ch07_tools.create_extraction_prompt(ENTITY_TYPES, text)}, <span class="aframe-location"/> #2
+    ]
+
+    output = chat(messages, model = "gpt-4o")<span class="aframe-location"/> #3
+
+    return ch07_tools.parse_extraction_output(output)<span class="aframe-location"/> #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Selects entity types
+     <br/>#2 Passes extraction prompt as user message
+     <br/>#3 LLM API call
+     <br/>#4 Parses output as a dictionary
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p60">
+<p>The code in listing 7.5 extracts entities and relationships by first defining the entity types to be identified. It then generates an extraction prompt using these types and the input text, sends the prompt to the LLM, and processes the response into a structured dictionary format.</p>
+</div>
+<div class="readable-text intended-text" id="p61">
+<p>Using the function in listing 7.5, you will extract entities and relationships for only the first book of <em>The Odyssey</em>. If desired, you can increase the number of books to analyze a larger portion of the text. The code for this extraction is shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p62">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.6</span> Extracting entities and relationships</h5>
+<div class="code-area-container">
+<pre class="code-area"> number_of_books = 1
+for book_i, book in enumerate(                                     <span class="aframe-location"/> #1
+    tqdm(chunked_books[:number_of_books], desc="Processing Books")  #1
+):                                                                  #1
+    for chunk_i, chunk in enumerate(tqdm(book, desc=f"Book {book_i}", leave=False)):
+
+        nodes, relationships = extract_entities(chunk)<span class="aframe-location"/> #2
+
+        neo4j_driver.execute_query(<span class="aframe-location"/> #3
+            ch07_tools.import_nodes_query,
+            data=nodes,
+            book_id=book_i,
+            text=chunk,
+            chunk_id=chunk_i,
+        )
+
+        neo4j_driver.execute_query(<span class="aframe-location"/> #4
+            ch07_tools.import_relationships_query,
+            data=relationships
+        )</pre>
+<div class="code-annotations-overlay-container">
+     #1 Defines the number of books to be processed
+     <br/>#2 Extracts entities and relationships
+     <br/>#3 Imports entities
+     <br/>#4 Imports relationships
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p63">
+<p>The function in listing 7.6 processes a set number of books, extracting entities and relationships from each chunk. It then imports the entities into Neo4j, followed by their relationships, building a structured graph representation of the text.</p>
+</div>
+<div class="readable-text intended-text" id="p64">
+<p>Begin by reviewing the extracted entities and relationships. You can count the total number of entities and relationships using the code in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p65">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.7</span> Counting the number of extracted nodes and relationships</h5>
+<div class="code-area-container">
+<pre class="code-area">data, _, _ = neo4j_driver.execute_query(
+    """MATCH (:`__Entity__`)
+    RETURN 'entity' AS type, count(*) AS count
+    UNION
+    MATCH ()-[:RELATIONSHIP]-&gt;()
+    RETURN 'relationship' AS type, count(*) AS count
+    """
+)
+print([el.data() for el in data])</pre>
+</div>
+</div>
+<div class="readable-text" id="p66">
+<p>The graph contains 66 entities and 182 relationships, though these numbers may vary between executions. MS GraphRAG focuses on extracting detailed descriptions of both entities and their relationships. For example, let’s examine the extracted descriptions for the character <code>ORESTES</code>. </p>
+</div>
+<div class="browsable-container listing-container" id="p67">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.8</span> Examining generated descriptions of <code>ORESTES</code></h5>
+<div class="code-area-container">
+<pre class="code-area">data, _, _ = neo4j_driver.execute_query(
+    """MATCH (n:PERSON)
+WHERE n.name = "ORESTES"
+RETURN n.description AS description"""
+)
+print([el.data()['description'] for el in data])</pre>
+</div>
+</div>
+<div class="readable-text" id="p68">
+<p>When examining the extracted descriptions for the character <code>ORESTES</code>, as shown in listing 7.8, the results might look like this:</p>
+</div>
+<ul>
+<li class="readable-text" id="p69"> Orestes is Agamemnon’s son who killed Aegisthus. </li>
+<li class="readable-text" id="p70"> Orestes is a person who was expected to take revenge on Aegisthus. </li>
+<li class="readable-text" id="p71"> Orestes is praised for avenging his father’s murder by killing Aegisthus. </li>
+<li class="readable-text" id="p72"> Orestes is the son of Agamemnon who killed Aegisthus. </li>
+<li class="readable-text" id="p73"> Orestes is a person who was expected to take revenge on Aegisthus. </li>
+<li class="readable-text" id="p74"> Orestes is praised for avenging his father’s murder by killing Aegisthus. </li>
+</ul>
+<div class="readable-text" id="p75">
+<p>While some descriptions repeat the same facts, they collectively contain all the key details and ensure no important information is lost across different text chunks for a specific entity.</p>
+</div>
+<div class="readable-text intended-text" id="p76">
+<p>Similarly, a single pair of entities can have multiple relationships. You can explore the entity pair with the highest number of relationships using the code in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p77">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.9</span> Examining generated relationship descriptions</h5>
+<div class="code-area-container">
+<pre class="code-area">data, _, _ = neo4j_driver.execute_query(
+    """MATCH (n:__Entity__)-[:RELATIONSHIP]-(m:__Entity__)
+WITH n,m, count(*) AS countOfRels
+ORDER BY countOfRels DESC LIMIT 1
+MATCH (n)-[r:RELATIONSHIP]-(m)
+RETURN n.name AS source, m.name AS target, countOfRels, collect(r.description) AS descriptions
+"""
+)
+print([el.data() for el in data])</pre>
+</div>
+</div>
+<div class="readable-text" id="p78">
+<p>The entity pair with the most relationships is Telemachus and Minerva, with a total of 14 relationships. Their interactions span various moments in the narrative, highlighting Minerva’s role as a divine guide and mentor to Telemachus.</p>
+</div>
+<div class="readable-text intended-text" id="p79">
+<p>The following are five of the extracted relationship descriptions:</p>
+</div>
+<ul>
+<li class="readable-text" id="p80"> Telemachus spoke quietly to Minerva during the banquet. </li>
+<li class="readable-text" id="p81"> Minerva, in disguise, advises and encourages Telemachus, giving him courage and making him think of his father. </li>
+<li class="readable-text" id="p82"> Minerva brings sleep to Telemachus’s mother, showing her divine influence. </li>
+<li class="readable-text" id="p83"> Minerva is speaking to Telemachus, offering him guidance and reassurance. </li>
+<li class="readable-text" id="p84"> Minerva, disguised as Mentes, is greeted by Telemachus at the gate. </li>
+</ul>
+<div class="readable-text" id="p85">
+<p>While some descriptions contain overlapping details, they reinforce Minerva’s role as a mentor and divine protector, gradually shaping Telemachus’ journey. </p>
+</div>
+<div class="readable-text" id="p86">
+<h3 class="readable-text-h3"><span class="num-string">7.2.3</span> Entity and relationship summarization</h3>
+</div>
+<div class="readable-text" id="p87">
+<p>To avoid inconsistencies, redundancies, and fragmentation in the extracted knowledge, MS GraphRAG merges multiple descriptions of the same entity or relationship using LLMs to generate concise summaries. Instead of treating each description separately, the model synthesizes information from all descriptions, ensuring that key contextual details are preserved in a single, enriched representation. This approach enhances clarity, reduces duplication, and provides a more complete understanding of entities and their relationships. </p>
+</div>
+<div class="readable-text intended-text" id="p88">
+<p>Once again, you can reuse the summarization prompt from the paper, as shown in “Instructions for entity and relationship summarization.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p89">
+<p><strong>Instructions for entity and relationship summarization</strong></p>
+</div>
+<div class="readable-text response" id="p90">
+<p>You are a helpful assistant responsible for generating a comprehensive summary of the data provided below. Given one or two entities, and a list of descriptions, all related to the same entity or group of entities. Please concatenate all of these into a single, comprehensive description. Make sure to include information collected from all the descriptions. If the provided descriptions are contradictory, please resolve the contradictions and provide a single, coherent summary. Make sure it is written in third person, and include the entity names so we have the full context.</p>
+</div>
+<div class="readable-text response" id="p91">
+<p>#######</p>
+</div>
+<div class="readable-text response" id="p92">
+<p>-Data-</p>
+</div>
+<div class="readable-text response" id="p93">
+<p>Entities: {entity_name}</p>
+</div>
+<div class="readable-text response" id="p94">
+<p>Description List: {description_list}</p>
+</div>
+<div class="readable-text response" id="p95">
+<p>#######</p>
+</div>
+<div class="readable-text response" id="p96">
+<p>Output:</p>
+</div>
+<div class="readable-text" id="p97">
+<p>The prompt in “Instructions for entity and relationship summarization” guides the LLM to generate a single, coherent summary by merging multiple descriptions of an entity or a pair of entities. It ensures that all relevant details are included while resolving contradictions and removing redundancies. The output is written in third person and explicitly names the entities to maintain clarity and context.</p>
+</div>
+<div class="readable-text intended-text" id="p98">
+<p>Using the prompt in “Instructions for entity and relationship summarization,” you can generate summaries for all entities that have more than a single description. The code to summarize entity descriptions can be found in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p99">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.10</span> Entity summarization</h5>
+<div class="code-area-container">
+<pre class="code-area"> candidates_to_summarize, _, _ = neo4j_driver.execute_query(
+    """MATCH (e:__Entity__) WHERE size(e.description) &gt; 1   <span class="aframe-location"/> #1
+    RETURN e.name AS entity_name, e.description AS description_list"""
+)
+summaries = []
+for candidate in tqdm(candidates_to_summarize, desc="Summarizing entities"):
+
+    messages = [<span class="aframe-location"/> #2
+        {
+            "role": "user",
+            "content": ch07_tools.get_summarize_prompt(
+                candidate["entity_name"], candidate["description_list"]
+            ),
+        },
+    ]
+
+    summary = chat(messages, model="gpt-4o")<span class="aframe-location"/> #3
+    summaries.append(
+        {"entity": candidate["entity_name"], "summary": summary}
+    )
+ch07_tools.import_entity_summary(neo4j_driver, summaries)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Gets all entities that have more than a single description
+     <br/>#2 Constructs prompt
+     <br/>#3 Generates entity summary
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p100">
+<p>The code in listing 7.10 queries the Neo4j database to find entities with multiple descriptions and then uses an LLM to generate a unified summary. You can review the summarized description of <code>ORESTES</code> by running the code in the following listing. </p>
+</div>
+<div class="browsable-container listing-container" id="p101">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.11</span> Inspecting the generated summary for <code>ORESTOS</code></h5>
+<div class="code-area-container">
+<pre class="code-area">summary, _, _ = neo4j_driver.execute_query(
+    """MATCH (n:PERSON)
+WHERE n.name = "ORESTES"
+RETURN n.summary AS summary""")
+print(summary[0]['summary'])</pre>
+</div>
+</div>
+<div class="readable-text" id="p102">
+<p>The results are shown in “Generated summary for ORESTES.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p103">
+<p><b>Generated summary for ORESTES</b></p>
+</div>
+<div class="readable-text prompt" id="p104">
+<p>Orestes is the son of Agamemnon, known for avenging his father’s death by killing Aegisthus. He was expected to take revenge on Aegisthus, who was responsible for Agamemnon’s murder. Orestes is praised for fulfilling this expectation and successfully killing Aegisthus, his father’s murderer.</p>
+</div>
+<div class="readable-text" id="p105">
+<p>The summarization process has successfully generated a cohesive and enriched description of an entity, as demonstrated by “Generated summary for ORESTES.” By merging multiple descriptions, we ensure that key details are preserved while reducing redundancy.</p>
+</div>
+<div class="readable-text intended-text" id="p106">
+<p>Next, we will apply the same summarization approach to relationships, consolidating multiple relationship descriptions into a single, comprehensive summary. The results are shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p107">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.12</span> Relationship summarization</h5>
+<div class="code-area-container">
+<pre class="code-area"> rels_to_summarize, _, _ = neo4j_driver.execute_query(
+    """MATCH (s:__Entity__)-[r:RELATIONSHIP]-(t:__Entity__) <span class="aframe-location"/> #1
+    WHERE id(s) &lt; id(t)
+    WITH s.name AS source, t.name AS target,
+           collect(r.description) AS description_list,
+           count(*) AS count
+    WHERE count &gt; 1
+    RETURN source, target, description_list"""
+)
+rel_summaries = []
+for candidate in tqdm(rels_to_summarize, desc="Summarizing relationships"):
+    entity_name = f"{candidate['source']} relationship to {candidate['target']}"
+
+    messages = [<span class="aframe-location"/> #2
+        {
+            "role": "user",
+            "content": ch07_tools.get_summarize_prompt(
+                entity_name, candidate["description_list"]
+            ),
+        },
+    ]
+
+    summary = chat(messages, model="gpt-4o")<span class="aframe-location"/> #3
+    rel_summaries.append({"source": candidate["source"], "target": candidate["target"], "summary": summary})  
+ch07_tools.import_rels_summary(neo4j_driver, summaries)<span class="aframe-location"/> #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Retrieves pairs of nodes with more than a single relationship
+     <br/>#2 Constructs prompt
+     <br/>#3 Generates the relationship summary using an LLM
+     <br/>#4 Stores results to Neo4j
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p108">
+<p>The code in listing 7.12 identifies pairs of entities in the database that share multiple relationships and consolidates their descriptions into a single summary using an LLM. By merging relationship descriptions, the process ensures that key interactions between entities are captured comprehensively while eliminating redundancy. Once generated, the summarized relationships are stored back into the database.</p>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>You can evaluate the generated relationship between <code>TELEMACHUS</code> and <code>MINERVA</code>, as shown in the following listing. </p>
+</div>
+<div class="browsable-container listing-container" id="p110">
+<h5 class="listing-container-h5 browsable-container-h5"><strong><span class="num-string">Listing 7.13</span> Evaluating the summarized relationship between <code>TELEMACHUS</code> and <code>MINERVA</code></strong></h5>
+<div class="code-area-container">
+<pre class="code-area">data, _, _ = neo4j_driver.execute_query(
+    """MATCH (n:__Entity__)-[r:SUMMARIZED_RELATIONSHIP]-(m:__Entity__)
+WHERE n.name = 'TELEMACHUS' AND m.name = 'MINERVA'
+RETURN r.summary AS description
+"""
+)
+print(data[0]["description"])</pre>
+</div>
+</div>
+<div class="readable-text" id="p111">
+<p>The results of code in listing 7.13 can be found in “Generated summary for relationship between TELEMACHUS and MINERVA.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p112">
+<p><b>Generated summary for the relationship between TELEMACHUS and MINERVA</b></p>
+</div>
+<div class="readable-text prompt" id="p113">
+<p>Minerva plays a crucial role in the life of Telemachus, offering guidance and support as he embarks on his quest to find his father, Ulysses. During a banquet, Telemachus speaks quietly to Minerva, indicating a close and trusting relationship. Minerva, often in disguise, such as when she appears as Mentes, advises and encourages Telemachus, instilling in him the courage and determination to seek information about his father. She provides counsel regarding his intended voyage, demonstrating her commitment to his cause. Additionally, Minerva’s divine influence is evident when she brings sleep to Telemachus’s mother, further showcasing her protective and supportive role in Telemachus’s life.</p>
+</div>
+<div class="readable-text" id="p114">
+<p>With the consolidated summaries for both entities and relationships, you have successfully completed the first stage of MS GraphRAG indexing. By merging information across text chunks, you have created a more coherent and enriched representation of the extracted knowledge.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p115">
+<h5 class="callout-container-h5 readable-text-h5">Considerations for entity and relationship summarization</h5>
+</div>
+<div class="readable-text" id="p116">
+<p>When working with larger datasets, you may encounter so-called super nodes. Super nodes are entities that appear in numerous chunks and have an overwhelming number of relationships. For example, if you were to process all of Ancient Greek history, a node like <code>Athens</code> would accumulate a vast number of relationships and descriptions. Without a ranking mechanism, summarizing such nodes could lead to excessively long outputs, or worse, some descriptions might not even fit within the prompt. To handle this, you would need to implement a filtering or ranking strategy to prioritize the most relevant descriptions, ensuring that the summary remains concise and informative.</p>
+</div>
+</div>
+<div class="readable-text" id="p117">
+<p>Now you are ready to move on to the next stage. </p>
+</div>
+<div class="readable-text" id="p118">
+<h3 class="readable-text-h3"><span class="num-string">7.2.4</span> Community detection and summarization</h3>
+</div>
+<div class="readable-text" id="p119">
+<p>The second stage of the graph-indexing process focuses on community detection and summarization. A community is a group of entities that are more densely connected to each other than to the rest of the graph. Community detection results are illustrated in figure 7.3. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p120">
+<img alt="figure" height="649" src="../Images/7-3.png" width="927"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 7.3</span> Example of community detection results</h5>
+</div>
+<div class="readable-text" id="p121">
+<p>Figure 7.3 illustrates a graph where nodes are grouped into distinct communities, each representing a set of densely connected entities with stronger internal relationships. Some communities are well integrated into the overall graph, while others appear more isolated, forming disconnected subgraphs. Identifying these clusters helps reveal underlying structures, themes, or key groups within the dataset. For example, in a narrative like <em>The Odyssey</em>, a community might form around characters involved in a particular event or location. By detecting and summarizing these communities, we can capture higher-level relationships and insights that go beyond individual entity connections.</p>
+</div>
+<div class="readable-text intended-text" id="p122">
+<p>The code in listing 7.14 applies the Louvain method, a community detection algorithm, to identify groups of densely connected entities within the graph. (Leiden was used in the original paper implementation and is also available in the GDS library) The detected communities are then stored as a node property for downstream processing.</p>
+</div>
+<div class="browsable-container listing-container" id="p123">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.14</span> Calculating communities using the Louvain algorithm</h5>
+<div class="code-area-container">
+<pre class="code-area">community_distribution = ch07_tools.calculate_communities(neo4j_driver)
+print(f"""There are {community_distribution['communityCount']} communities with distribution:
+  {community_distribution['communityDistribution']}""")</pre>
+</div>
+</div>
+<div class="readable-text" id="p124">
+<p>The Louvain method was used to detect 9 communities in the graph, with sizes ranging from 2 to 13 nodes. The number and size of detected communities from listing 7.14 can change depending on the graph structure, such as the number of extracted entities and relationships. Additionally, Louvain is not deterministic, meaning that even with the same input, the detected communities may vary slightly between runs due to the algorithm’s optimization process.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p125">
+<h5 class="callout-container-h5 readable-text-h5">Hierarchical community structure</h5>
+</div>
+<div class="readable-text" id="p126">
+<p>The MS GraphRAG paper uses the hierarchical nature of the Louvain algorithm to capture community structures at multiple levels of granularity. This allows for analyzing both broad and fine-grained communities within large graphs. However, since we are working with a smaller graph, we will focus on a single level of community detection and skip the hierarchical aspect.</p>
+</div>
+</div>
+<div class="readable-text" id="p127">
+<p>Now you can apply the summarization prompt to generate concise overviews of each detected community. The instruction part of the prompt is available in “Instructions for community summarization.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p128">
+<p><strong>Instructions for community summarization</strong></p>
+</div>
+<div class="readable-text prompt" id="p129">
+<p>You are an AI assistant that helps a human analyst to perform general information discovery. Information discovery is the process of identifying and assessing relevant information associated with certain entities (e.g., organizations and individuals) within a network.</p>
+</div>
+<div class="readable-text prompt" id="p130">
+<p># Goal Write a comprehensive report of a community, given a list of entities that belong to the community as well as their relationships and optional associated claims. The report will be used to inform decision-makers about information associated with the community and their potential impact. The content of this report includes an overview of the community’s key entities, their legal compliance, technical capabilities, reputation, and noteworthy claims.</p>
+</div>
+<div class="readable-text prompt" id="p131">
+<p># Report Structure</p>
+</div>
+<div class="readable-text prompt" id="p132">
+<p>The report should include the following sections:</p>
+</div>
+<ul class="response">
+<li class="readable-text" id="p133"> TITLE: community’s name that represents its key entities - title should be short but specific. When possible, include representative named entities in the title. </li>
+<li class="readable-text" id="p134"> SUMMARY: An executive summary of the community’s overall structure, how its entities are related to each other, and significant information associated with its entities. </li>
+<li class="readable-text" id="p135"> IMPACT SEVERITY RATING: a float score between 0-10 that represents the severity of IMPACT posed by entities within the community. IMPACT is the scored importance of a community. </li>
+<li class="readable-text" id="p136"> RATING EXPLANATION: Give a single sentence explanation of the IMPACT severity rating. </li>
+<li class="readable-text" id="p137"> DETAILED FINDINGS: A list of 5-10 key insights about the community. Each insight should have a short summary followed by multiple paragraphs of explanatory text grounded according to the grounding rules below. Be comprehensive. </li>
+</ul>
+<div class="readable-text" id="p138">
+<p>The prompt in “Instructions for community summarization” guides the AI assistant in generating structured summaries of detected communities, ensuring they capture key entities, relationships, and notable insights. The goal is to produce high-quality summaries that can be effectively used downstream for RAG.</p>
+</div>
+<div class="readable-text intended-text" id="p139">
+<p>The full prompt for community summarization includes output instructions and a few-shot example to maintain consistency and relevance in the generated summaries.</p>
+</div>
+<div class="readable-text intended-text" id="p140">
+<p>With the communities identified and a structured summarization prompt in place, we can now generate comprehensive summaries for each detected community. These community summaries consolidate key entities, relationships, and significant insights.</p>
+</div>
+<div class="readable-text intended-text" id="p141">
+<p>The code in the following listing processes the detected communities and applies the summarization prompt to generate meaningful descriptions.</p>
+</div>
+<div class="browsable-container listing-container" id="p142">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.15</span> Generating community summaries</h5>
+<div class="code-area-container">
+<pre class="code-area">community_info, _, _ = neo4j_driver.execute_query(ch07_tools.community_info_query)<span class="aframe-location"/> #1
+
+communities = []
+for community in tqdm(community_info, desc="Summarizing communities"):
+
+    messages = [<span class="aframe-location"/> #2
+        {
+            "role": "user",
+            "content": ch07_tools.get_summarize_community_prompt(
+                community["nodes"], community["rels"]
+            ),
+        },
+    ]
+
+    summary = chat(messages, model="gpt-4o")<span class="aframe-location"/> #3
+    communities.append(
+        {    
+            "community": json.loads(ch07_tools.extract_json(summary)),<span class="aframe-location"/> #4
+            "communityId": community["communityId"],
+            "nodes": [el["id"] for el in community["nodes"]],
+        }
+    )  
+neo4j_driver.execute_query(ch07_tools.import_community_query, data=communities)<span class="aframe-location"/> #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Retrieves community information from database
+     <br/>#2 Constructs prompt
+     <br/>#3 LLM call
+     <br/>#4 Parses output into dictionary
+     <br/>#5 Stores results to the database
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p143">
+<p>You can now examine an example of a generated community summary using the code shown in listing 7.16. This will provide a concrete example of how the summarization process captures key entities, relationships, and insights within a community.</p>
+</div>
+<div class="browsable-container listing-container" id="p144">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.16</span> Retrieving an example community summary</h5>
+<div class="code-area-container">
+<pre class="code-area">data, _, _ = neo4j_driver.execute_query(
+    """MATCH (c:__Community__)
+WITH c, count {(c)&lt;-[:IN_COMMUNITY]-()} AS size
+ORDER BY size DESC LIMIT 1
+RETURN c.title AS title, c.summary AS summary
+"""
+)
+print(f"Title: {data[0]['title']})
+print(f"Summary: {data[0]["summary"]}")</pre>
+</div>
+</div>
+<div class="readable-text" id="p145">
+<p>The results can be found in the “Generated summary” for relationship between <code>TELEMACHUS</code> and <code>MINERVA</code>.</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p146">
+<p><b>Generated community summary</b></p>
+</div>
+<div class="readable-text prompt" id="p147">
+<p>Minerva, Telemachus, and the Ithacan Household The community centers around Minerva, Telemachus, and the household of Ulysses, with significant interactions involving divine guidance, familial loyalty, and the challenges posed by suitors. Minerva plays a pivotal role in advising Telemachus, who is determined to find his father and restore order to his home. The relationships among these entities highlight themes of wisdom, courage, and resilience.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p148">
+<h5 class="callout-container-h5 readable-text-h5">Handling large communities in bigger graphs</h5>
+</div>
+<div class="readable-text" id="p149">
+<p>When dealing with larger graphs, communities can become too large to process efficiently. If a community contains too many entities and relationships, including all of them in the summarization prompt may exceed token limits or produce excessively long summaries. To address this, a ranking mechanism should be implemented to select only the most relevant entities and relationships. This ensures that the summary remains concise, informative, and useful for downstream RAG applications.</p>
+</div>
+</div>
+<div class="readable-text" id="p150">
+<p>Congratulations! You have successfully completed the graph-indexing step. </p>
+</div>
+<div class="readable-text" id="p151">
+<h2 class="readable-text-h2"><span class="num-string">7.3</span> Graph retrievers</h2>
+</div>
+<div class="readable-text" id="p152">
+<p>With the graph-indexing process complete, we now move on to the graph retriever stage. This stage focuses on retrieving relevant information from the structured graph to answer queries effectively. While there are many possible retrieval strategies, we will focus on two primary approaches: local search and global search. Local search retrieves information from entities closely connected within a detected community, whereas global search considers the entire graph structure to find the most relevant information. </p>
+</div>
+<div class="readable-text" id="p153">
+<h3 class="readable-text-h3"><span class="num-string">7.3.1</span> Global search</h3>
+</div>
+<div class="readable-text" id="p154">
+<p>Global search in GraphRAG uses community summaries as intermediate responses to efficiently answer queries that require aggregating information across the entire dataset. Instead of retrieving individual chunks of text based on vector similarity, this method utilizes precomputed community-level summaries to generate a structured response. A global search search diagram is visualized in figure 7.4. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p155">
+<img alt="figure" height="479" src="../Images/7-4.png" width="874"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 7.4</span> Global search</h5>
+</div>
+<div class="readable-text" id="p156">
+<p>The process in figure 7.4 follows a map-reduce approach:</p>
+</div>
+<ul>
+<li class="readable-text" id="p157"> <em>Map step</em>—Given a user query and, optionally, the conversation history, GraphRAG retrieves LLM-generated community reports from a specified level in the graph’s community hierarchy. In your implementation, the graph is structured with a single level of communities, meaning all detected groups exist at the same hierarchical depth. These reports are segmented into manageable text chunks, and each chunk is processed by the LLM to produce an intermediate response. Each response consists of a list of key points, each accompanied by a numerical importance rating. </li>
+<li class="readable-text" id="p158"> <em>Reduce step</em>—The most important points across all intermediate responses are filtered and aggregated. These refined insights then serve as the final context for the LLM, which synthesizes a cohesive answer to the user query. By structuring the dataset into semantically meaningful clusters, GraphRAG enables efficient and cohesive retrieval, even for broad, thematic queries. </li>
+</ul>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p159">
+<h5 class="callout-container-h5 readable-text-h5">Community hierarchy structure</h5>
+</div>
+<div class="readable-text" id="p160">
+<p>The quality of the response depends on the level of the community hierarchy chosen for sourcing community reports. Lower-level communities provide detailed reports, leading to more thorough responses, but they also increase the number of LLM calls and processing time. Higher-level communities, with more abstracted summaries, may be more efficient but risk losing granularity. Balancing detail and efficiency is key to optimizing global search performance.</p>
+</div>
+</div>
+<div class="readable-text" id="p161">
+<p>The map step uses the following system prompt, as shown in “The system prompt for the map part of the retriever.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p162">
+<p><strong>The system prompt for the map part of the retriever</strong></p>
+</div>
+<div class="readable-text prompt" id="p163">
+<p>—Role—</p>
+</div>
+<div class="readable-text prompt" id="p164">
+<p>You are a helpful assistant responding to questions about data in the tables provided.</p>
+</div>
+<div class="readable-text prompt" id="p165">
+<p>—Goal—</p>
+</div>
+<div class="readable-text prompt" id="p166">
+<p>Generate a response consisting of a list of key points that responds to the user’s question, summarizing all relevant information in the input data tables.</p>
+</div>
+<div class="readable-text prompt" id="p167">
+<p>You should use the data provided in the data tables below as the primary context for generating the response. If you don’t know the answer or if the input data tables do not contain sufficient information to provide an answer, just say so. Do not make anything up.</p>
+</div>
+<div class="readable-text prompt" id="p168">
+<p>Each key point in the response should have the following element: </p>
+</div>
+<ul class="response">
+<li class="readable-text" id="p169"> Description: A comprehensive description of the point. </li>
+<li class="readable-text" id="p170"> Importance Score: An integer score between 0-100 that indicates how important the point is in answering the user’s question. An 'I don’t know' type of response should have a score of 0. </li>
+</ul>
+<div class="readable-text prompt" id="p171">
+<p>The response should be JSON formatted as follows: {{ "points": [ {{"description": "Description of point 1 [Data: Reports (report ids)]", "score": score_value}}, {{"description": "Description of point 2 [Data: Reports (report ids)]", "score": score_value}} ] }}</p>
+</div>
+<div class="readable-text prompt" id="p172">
+<p>The response shall preserve the original meaning and use of modal verbs such as “shall”, “may” or “will”.</p>
+</div>
+<div class="readable-text prompt" id="p173">
+<p>Points supported by data should list the relevant reports as references as follows: “This is an example sentence supported by data references [Data: Reports (report ids)]”</p>
+</div>
+<div class="readable-text prompt" id="p174">
+<p><strong>Do not list more than 5 record ids in a single reference</strong>. Instead, list the top 5 most relevant record ids and add “+more” to indicate that there are more.</p>
+</div>
+<div class="readable-text prompt" id="p175">
+<p>For example: “Person X is the owner of Company Y and subject to many allegations of wrongdoing [Data: Reports (2, 7, 64, 46, 34, +more)]. He is also CEO of company X [Data: Reports (1, 3)]”</p>
+</div>
+<div class="readable-text prompt" id="p176">
+<p>where 1, 2, 3, 7, 34, 46, and 64 represent the id (not the index) of the relevant data report in the provided tables.</p>
+</div>
+<div class="readable-text prompt" id="p177">
+<p>Do not include information where the supporting evidence for it is not provided.</p>
+</div>
+<div class="readable-text prompt" id="p178">
+<p>—Data tables—</p>
+</div>
+<div class="readable-text prompt" id="p179">
+<p>{context_data}</p>
+</div>
+<div class="readable-text" id="p180">
+<p>The map system prompt instructs the LLM to extract key points from the provided context in response to a user query. Each key point includes a description and an importance score (0–100) reflecting its relevance to the query. The response is formatted as JSON, with references to supporting data report IDs. If insufficient information is available, the response must indicate so without speculation.</p>
+</div>
+<div class="readable-text intended-text" id="p181">
+<p>Now you will examine the reduce step of the retriever, as shown in “The system prompt for the reduce part of the retriever.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p182">
+<p><strong>The system prompt for the reduce part of the retriever</strong></p>
+</div>
+<div class="readable-text prompt" id="p183">
+<p>—Role—</p>
+</div>
+<div class="readable-text prompt" id="p184">
+<p>You are a helpful assistant responding to questions about a dataset by synthesizing perspectives from multiple analysts.</p>
+</div>
+<div class="readable-text prompt" id="p185">
+<p>—Goal—</p>
+</div>
+<div class="readable-text prompt" id="p186">
+<p>Generate a response of the target length and format that responds to the user’s question, summarize all the reports from multiple analysts who focused on different parts of the dataset.</p>
+</div>
+<div class="readable-text prompt" id="p187">
+<p>Note that the analysts' reports provided below are ranked in the <strong>descending order of importance</strong>.</p>
+</div>
+<div class="readable-text prompt" id="p188">
+<p>If you don’t know the answer or if the provided reports do not contain sufficient information to provide an answer, just say so. Do not make anything up.</p>
+</div>
+<div class="readable-text prompt" id="p189">
+<p>The final response should remove all irrelevant information from the analysts' reports and merge the cleaned information into a comprehensive answer that provides explanations of all the key points and implications appropriate for the response length and format.</p>
+</div>
+<div class="readable-text prompt" id="p190">
+<p>Add sections and commentary to the response as appropriate for the length and format. Style the response in markdown.</p>
+</div>
+<div class="readable-text prompt" id="p191">
+<p>The response shall preserve the original meaning and use of modal verbs such as “shall”, “may” or “will”.</p>
+</div>
+<div class="readable-text prompt" id="p192">
+<p>The response should also preserve all the data references previously included in the analysts' reports, but do not mention the roles of multiple analysts in the analysis process.</p>
+</div>
+<div class="readable-text prompt" id="p193">
+<p><strong>Do not list more than 5 record ids in a single reference</strong>. Instead, list the top 5 most relevant record ids and add “+more” to indicate that there are more.</p>
+</div>
+<div class="readable-text prompt" id="p194">
+<p>For example:</p>
+</div>
+<div class="readable-text prompt" id="p195">
+<p>“Person X is the owner of Company Y and subject to many allegations of wrongdoing [Data: Reports (2, 7, 34, 46, 64, +more)]. He is also CEO of company X [Data: Reports (1, 3)]”</p>
+</div>
+<div class="readable-text prompt" id="p196">
+<p>where 1, 2, 3, 7, 34, 46, and 64 represent the id (not the index) of the relevant data record.</p>
+</div>
+<div class="readable-text prompt" id="p197">
+<p>Do not include information where the supporting evidence for it is not provided.</p>
+</div>
+<div class="readable-text prompt" id="p198">
+<p>—Target response length and format—</p>
+</div>
+<div class="readable-text prompt" id="p199">
+<p>{response_type}</p>
+</div>
+<div class="readable-text" id="p200">
+<p>The reduce system prompt directs the LLM to synthesize key points from multiple analyst reports, which are ranked by importance. The response must be formatted in Markdown, be structured appropriately for the target length and format, and exclude irrelevant details. It preserves all referenced data while avoiding speculative answers. The final output integrates and refines insights from the reports into a coherent, comprehensive response.</p>
+</div>
+<div class="readable-text intended-text" id="p201">
+<p>Now we can combine the map and reduce prompts into a global search function.</p>
+</div>
+<div class="browsable-container listing-container" id="p202">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.17</span> Global search</h5>
+<div class="code-area-container">
+<pre class="code-area">def global_retriever(query: str, rating_threshold: float = 5) -&gt; str:
+
+    community_data, _, _ = neo4j_driver.execute_query(<span class="aframe-location"/> #1
+        """
+    MATCH (c:__Community__)
+    WHERE c.rating &gt;= $rating
+    RETURN c.summary AS summary
+    """,
+        rating=rating_threshold,
+    )
+    print(f"Got {len(community_data)} community summaries")
+    intermediate_results = []
+    for community in tqdm(community_data, desc="Processing communities"):
+
+        intermediate_messages = [<span class="aframe-location"/> #2
+            {
+                "role": "system",
+                "content": ch07_tools.get_map_system_prompt(community["summary"]),
+            },
+            {
+                "role": "user",
+                "content": query,
+            },
+        ]
+        intermediate_response = chat(intermediate_messages, model="gpt-4o")
+        intermediate_results.append(intermediate_response)
+
+    final_messages = [<span class="aframe-location"/> #3
+        {
+            "role": "system",
+            "content": ch07_tools.get_reduce_system_prompt(intermediate_results),
+        },
+        {"role": "user", "content": query},
+    ]
+    summary = chat(final_messages, model="gpt-4o")
+    return summary</pre>
+<div class="code-annotations-overlay-container">
+     #1 Gets all communities above the rating threshold
+     <br/>#2 For each community, gets an intermediate response
+     <br/>#3 Generates a final answer using all the intermediate responses as context
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p203">
+<p>The <code>global_retriever</code> function in listing 7.17 implements the global search method by using community summaries to generate a structured response. It follows a three-step process:</p>
+</div>
+<ol>
+<li class="readable-text" id="p204"> <em>Retrieve relevant communities </em>—The function queries a Neo4j database to retrieve community summaries where the rating meets or exceeds the specified threshold. This ensures that only the most relevant communities contribute to the final answer. </li>
+<li class="readable-text" id="p205"> <em>Generate intermediate responses </em>—For each community, an intermediate response is generated using the map system prompt. The model processes the community summary alongside the user’s query to extract key points. </li>
+<li class="readable-text" id="p206"> <em>Aggregate and generate final answer </em>—The reduce system prompt is then applied to synthesize all intermediate responses into a coherent final answer, ensuring that the most important points are retained and properly structured. </li>
+</ol>
+<div class="readable-text" id="p207">
+<p>Now we can test this function with an example.</p>
+</div>
+<div class="browsable-container listing-container" id="p208">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.18</span> Global search example</h5>
+<div class="code-area-container">
+<pre class="code-area">print(global_retriever("What is this story about?"))</pre>
+</div>
+</div>
+<div class="readable-text" id="p209">
+<p>The results of the listing 7.18 can be found in “Response for ‘What is this story about?’ using global search.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p210">
+<p><b>Response for 'What is this story about?' using global search</b></p>
+</div>
+<div class="readable-text prompt" id="p211">
+<p>The story revolves around the intricate dynamics of a community involving key figures such as Minerva, Telemachus, and the household of Ulysses. Central themes include divine guidance, familial loyalty, and the challenges posed by suitors. Minerva plays a crucial role in advising Telemachus, who is determined to find his father, Ulysses, and restore order to his home. The relationships among the characters emphasize themes of wisdom, courage, and resilience.</p>
+</div>
+<div class="readable-text prompt" id="p212">
+<p>Additionally, the narrative highlights the role of Mentes, the chief of the Taphians, who is recognized as the son of Anchialus. Mentes is involved in a voyage to Temesa, known for its iron cargo, and claims kingship over the Taphians [Data: Reports (1)]. The story also centers around Odysseus, a key figure in Greek mythology, and his connections with other significant entities such as the Achaeans, Laertes, and the gods. The relationships in the story underscore the impact of divine intervention on human affairs, showcasing how the gods influence the lives of Greek heroes [Data: Reports (1, 2, 3, 4, 5)].</p>
+</div>
+<div class="readable-text prompt" id="p213">
+<p>Furthermore, the narrative explores the mythological elements involving Olympian Jove, Aegisthus, Agamemnon, Orestes, and Mercury. It highlights themes of divine intervention, betrayal, and vengeance. Olympian Jove discusses the actions of Aegisthus, notorious for his betrayal and murder of Agamemnon, while Orestes avenges his father’s death by killing Aegisthus, despite warnings from Mercury [Data: Reports (1, 2, 3, 4, 5)]. These interconnected stories weave a rich tapestry of mythological and heroic elements, emphasizing the enduring legacy and challenges faced by these legendary figures.</p>
+</div>
+<div class="readable-text" id="p214">
+<p>The response in “Response for ‘What is this story about?’ using global search” generated by the global search method provides a structured summary of the story by synthesizing key themes and relationships from multiple chunks. It highlights the central figures Minerva, Telemachus, and Ulysses—along with their roles in the narrative, emphasizing divine guidance, familial loyalty, and challenges faced by the household of Ulysses.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p215">
+<h5 class="callout-container-h5 readable-text-h5">Exercise 7.2</h5>
+</div>
+<div class="readable-text" id="p216">
+<p>Try running different types of queries using the global search function. Ask broad questions that require synthesizing information across multiple community summaries, such as “What are the central conflicts in this story?”</p>
+</div>
+</div>
+<div class="readable-text" id="p217">
+<h3 class="readable-text-h3"><span class="num-string">7.3.2</span> Local search</h3>
+</div>
+<div class="readable-text" id="p218">
+<p>The local search method enhances LLM responses by combining structured knowledge graph data with unstructured text from source documents. This approach is particularly effective for entity-focused queries, such as “What are the healing properties of chamomile?” where a deep understanding of a specific entity and its relationships is required. The local search approach can be found in figure 7.5. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p219">
+<img alt="figure" height="534" src="../Images/7-5.png" width="1012"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 7.5</span> Local search</h5>
+</div>
+<div class="readable-text intended-text" id="p220">
+<p>When a user submits a query, the system visualized in figure 7.5 first identifies semantically related entities within the knowledge graph using vector search. These entities act as entry points for retrieving relevant information, including directly connected entities, relationships, and summaries from community reports. Additionally, text chunks from the input documents associated with these entities are also extracted. The retrieved data is ranked and filtered to fit within a constrained context window, ensuring that only the most relevant information is included in the final response.</p>
+</div>
+<div class="readable-text intended-text" id="p221">
+<p>To implement local search, we first need to calculate text embeddings for entities and create a vector index. This allows us to efficiently retrieve the most relevant entities based on the user’s query. By embedding entity descriptions and relationships into a vector space, we can use similarity search to identify which entities are most closely related to the input. Once these relevant entities are found, they serve as entry points for retrieving additional structured and unstructured data. The code for computing these embeddings and constructing the vector index is shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p222">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.19</span> Generate text embeddings for all entities in the database</h5>
+<div class="code-area-container">
+<pre class="code-area"> entities, _, _ = neo4j_driver.execute_query(
+    """
+MATCH (e:__Entity__)
+RETURN e.summary AS summary, e.name AS name  <span class="aframe-location"/> #1
+"""
+)  
+data = [{"name": el["name"], "embedding": embed(el["summary"])[0]} for el in entities]    <span class="aframe-location"/> #2
+neo4j_driver.execute_query(<span class="aframe-location"/> #3
+    """
+UNWIND $data AS row
+MATCH (e:__Entity__ {name: row.name})
+CALL db.create.setNodeVectorProperty(e, 'embedding', row.embedding)
+""",
+    data=data,
+)   <span class="aframe-location"/> #4
+neo4j_driver.execute_query(
+    """
+CREATE VECTOR INDEX entities IF NOT EXISTS
+FOR (n:__Entity__)
+ON (n.embedding)
+""",
+    data=data,
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Retrieves entities and their summaries
+     <br/>#2 Calculates embeddings based on entity summaries
+     <br/>#3 Stores embeddings to the database
+     <br/>#4 Creates vector index entities
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p223">
+<p>The code in listing 7.19 retrieves all entities from the database along with their summaries, computes text embeddings for each entity based on its summary, and stores the embeddings back into the database. Finally, it creates a vector index to enable efficient similarity search on entity embeddings.</p>
+</div>
+<div class="readable-text intended-text" id="p224">
+<p>The local search is finally implemented as a Cypher statement that expands the initial set of relevant nodes, identified through vector search, to include their connected entities, text chunks, summaries, and relationships. This Cypher statement is shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p225">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.20</span> Cypher statement for local search</h5>
+<div class="code-area-container">
+<pre class="code-area">local_search_query = """
+CALL db.index.vector.queryNodes('entities', $k, $embedding)
+YIELD node, score
+WITH collect(node) as nodes  <span class="aframe-location"/> #1
+WITH collect {
+    UNWIND nodes as n
+    MATCH (n)&lt;-[:HAS_ENTITY]-&gt;(c:__Chunk__)
+    WITH c, count(distinct n) as freq
+    RETURN c.text AS chunkText
+    ORDER BY freq DESC
+    LIMIT $topChunks
+} AS text_mapping,  
+collect {<span class="aframe-location"/> #2
+    UNWIND nodes as n
+    MATCH (n)-[:IN_COMMUNITY]-&gt;(c:__Community__)
+    WITH c, c.rank as rank, c.weight AS weight
+    RETURN c.summary
+    ORDER BY rank, weight DESC
+    LIMIT $topCommunities
+} AS report_mapping,  
+collect {<span class="aframe-location"/> #3
+    UNWIND nodes as n
+    MATCH (n)-[r:SUMMARIZED_RELATIONSHIP]-(m)
+    WHERE m IN nodes
+    RETURN r.summary AS descriptionText
+    ORDER BY r.rank, r.weight DESC
+    LIMIT $topInsideRels
+} as insideRels,  
+collect {<span class="aframe-location"/> #4
+    UNWIND nodes as n
+    RETURN n.summary AS descriptionText
+} as entities
+RETURN {Chunks: text_mapping, Reports: report_mapping,
+       Relationships: insideRels,
+       Entities: entities} AS text
+"""</pre>
+<div class="code-annotations-overlay-container">
+     #1 Fetches related text chunks
+     <br/>#2 Fetches related community descriptions
+     <br/>#3 Fetches related relationships
+     <br/>#4 Fetches entity summaries
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p226">
+<p>All retrieved objects in listing 7.20, such as text chunks, community descriptions, relationships, and entity summaries, are ranked and limited to ensure the prompt remains manageable. Text chunks are ranked by how frequently they are associated with relevant entities and limited to the top <code>topChunks</code>. Community descriptions are ordered by rank and weight, selecting only the <code>topCommunities</code>. Relationships are ranked by their importance and limited to <code>topInsideRels</code>. Finally, entity summaries are retrieved without additional ranking constraints. This ensures only the most relevant information is included in the response. </p>
+</div>
+<div class="readable-text intended-text" id="p227">
+<p>Lastly, you need to define the summarizing prompt, which is again borrowed from the paper and shown in “The system prompt for the local search.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p228">
+<p><b>The system prompt for the local search</b></p>
+</div>
+<div class="readable-text prompt" id="p229">
+<p>—Role—</p>
+</div>
+<div class="readable-text prompt" id="p230">
+<p>You are a helpful assistant responding to questions about data in the tables provided.</p>
+</div>
+<div class="readable-text prompt" id="p231">
+<p>—Goal—</p>
+</div>
+<div class="readable-text prompt" id="p232">
+<p>Generate a response of the target length and format that responds to the user’s question, summarizing all information in the input data tables appropriate for the response length and format, and incorporating any relevant general knowledge.</p>
+</div>
+<div class="readable-text prompt" id="p233">
+<p>If you don’t know the answer, just say so. Do not make anything up.</p>
+</div>
+<div class="readable-text prompt" id="p234">
+<p>Points supported by data should list their data references as follows:</p>
+</div>
+<div class="readable-text prompt" id="p235">
+<p>“This is an example sentence supported by multiple data references [Data: &lt;dataset name&gt; (record ids); &lt;dataset name&gt; (record ids)].”</p>
+</div>
+<div class="readable-text prompt" id="p236">
+<p>Do not list more than 5 record ids in a single reference. Instead, list the top 5 most relevant record ids and add “+more” to indicate that there are more.</p>
+</div>
+<div class="readable-text prompt" id="p237">
+<p>For example:</p>
+</div>
+<div class="readable-text prompt" id="p238">
+<p>“Person X is the owner of Company Y and subject to many allegations of wrongdoing [Data: Sources (15, 16), Reports (1), Entities (5, 7); Relationships (23); Claims (2, 7, 34, 46, 64, +more)].”</p>
+</div>
+<div class="readable-text prompt" id="p239">
+<p>where 15, 16, 1, 5, 7, 23, 2, 7, 34, 46, and 64 represent the id (not the index) of the relevant data record.</p>
+</div>
+<div class="readable-text prompt" id="p240">
+<p>Do not include information where the supporting evidence for it is not provided.</p>
+</div>
+<div class="readable-text prompt" id="p241">
+<p>—Target response length and format—</p>
+</div>
+<div class="readable-text prompt" id="p242">
+<p>{response_type}</p>
+</div>
+<div class="readable-text prompt" id="p243">
+<p>—Data tables—</p>
+</div>
+<div class="readable-text prompt" id="p244">
+<p>{context_data}</p>
+</div>
+<div class="readable-text" id="p245">
+<p>This system prompt in “The system prompt for the local search” is designed to generate responses based on structured data tables while maintaining accuracy and transparency. It instructs the assistant to synthesize information relevant to the user’s query, ensuring that claims are supported by explicit data references. The format for citing data sources enforces a structured approach, limiting the number of record IDs per reference while indicating additional supporting records when applicable. The prompt also emphasizes that if an answer is not found in the provided data, the assistant should explicitly state so rather than fabricate information.</p>
+</div>
+<div class="readable-text intended-text" id="p246">
+<p>With this in place, you can now implement local search.</p>
+</div>
+<div class="browsable-container listing-container" id="p247">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.21</span> Local search implementation</h5>
+<div class="code-area-container">
+<pre class="code-area">def local_search(query: str) -&gt; str:
+
+    context, _, _ = neo4j_driver.execute_query(<span class="aframe-location"/> #1
+        local_search_query,
+        embedding=embed(query)[0],
+        topChunks=topChunks,
+        topCommunities=topCommunities,
+        topInsideRels=topInsideRels,
+        k=k_entities,
+    )
+
+    context_str = str(context[0]["text"])<span class="aframe-location"/> #2
+
+    local_messages = [<span class="aframe-location"/> #3
+        {
+            "role": "system",
+            "content": ch07_tools.get_local_system_prompt(context_str),
+        },
+        {
+            "role": "user",
+            "content": query,
+        },
+    ]
+
+    final_answer = chat(local_messages, model="gpt-4o")<span class="aframe-location"/> #4
+    return final_answer</pre>
+<div class="code-annotations-overlay-container">
+     #1 Fetches context using the local search Cypher statement
+     <br/>#2 Stringifies context
+     <br/>#3 Constructs prompt
+     <br/>#4 Generates final answer
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p248">
+<p>Listing 7.21 implements local search by first retrieving relevant context from the knowledge graph using vector search and the Cypher query. The extracted context is then converted into a string and incorporated into a structured prompt designed to guide the LLM in generating an informed response. Finally, the prompt is sent to the model to produce the final answer.</p>
+</div>
+<div class="readable-text intended-text" id="p249">
+<p>You can now test this implementation with an example.</p>
+</div>
+<div class="browsable-container listing-container" id="p250">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 7.22</span> Local search implementation</h5>
+<div class="code-area-container">
+<pre class="code-area">print(local_search("Who is Ulysses?"))</pre>
+</div>
+</div>
+<div class="readable-text" id="p251">
+<p>The results of the listing 7.22 can be found in “Response for ‘Who is Ulysses?’ using local search.”</p>
+</div>
+<div class="readable-text prompt prompt-header" id="p252">
+<p><b>Response for “Who is Ulysses?” using local search</b></p>
+</div>
+<div class="readable-text prompt" id="p253">
+<p>The story revolves around the intricate dynamics of a community involving key figures such as Minerva, Telemachus, and the household of Ulysses. Central themes include divine guidance, familial loyalty, and the challenges posed by suitors. Minerva plays a crucial role in advising Telemachus, who is determined to find his father, Ulysses, and restore order to his home. The relationships among the characters emphasize themes of wisdom, courage, and resilience.</p>
+</div>
+<div class="readable-text prompt" id="p254">
+<p>Additionally, the narrative highlights the role of Mentes, the chief of the Taphians, who is recognized as the son of Anchialus. Mentes is involved in a voyage to Temesa, known for its iron cargo, and claims kingship over the Taphians [Data: Reports (1)]. The story also centers around Odysseus, a key figure in Greek mythology, and his connections with other significant entities such as the Achaeans, Laertes, and the gods. The relationships in the story underscore the impact of divine intervention on human affairs, showcasing how the gods influence the lives of Greek heroes [Data: Reports (1, 2, 3, 4, 5)].</p>
+</div>
+<div class="readable-text prompt" id="p255">
+<p>Furthermore, the narrative explores the mythological elements involving Olympian Jove, Aegisthus, Agamemnon, Orestes, and Mercury. It highlights themes of divine intervention, betrayal, and vengeance. Olympian Jove discusses the actions of Aegisthus, notorious for his betrayal and murder of Agamemnon, while Orestes avenges his father’s death by killing Aegisthus, despite warnings from Mercury [Data: Reports (1, 2, 3, 4, 5)]. These interconnected stories weave a rich tapestry of mythological and heroic elements, emphasizing the enduring legacy and challenges faced by these legendary figures.</p>
+</div>
+<div class="readable-text" id="p256">
+<p>The response in “Response for 'Who is Ulysses?' using local search” demonstrates how local search retrieves and synthesizes relevant information from the knowledge graph to provide a detailed, well-supported answer. By incorporating connected entities, relationships, and community summaries, the system ensures that responses capture both narrative context and factual depth.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p257">
+<h5 class="callout-container-h5 readable-text-h5">Exercise 7.3</h5>
+</div>
+<div class="readable-text" id="p258">
+<p>Try running different types of queries using the local search function.</p>
+</div>
+</div>
+<div class="readable-text" id="p259">
+<p>With such a graph index, different retriever strategies can be implemented. For example, community summaries could be embedded separately and used as a standalone vector retriever, allowing for more targeted retrieval depending on the query’s focus.</p>
+</div>
+<div class="readable-text intended-text" id="p260">
+<p>Congratulations! You have successfully implemented complete MS GraphRAG. </p>
+</div>
+<div class="readable-text" id="p261">
+<h2 class="readable-text-h2">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p262"> MS GraphRAG uses a two-stage process where entities and relationships are first extracted and summarized from source documents, followed by community detection and summarization to create a cohesive knowledge representation. </li>
+<li class="readable-text" id="p263"> The extraction process uses LLMs to identify entities, classify them by predefined types (e.g., <code>PERSON</code>, <code>GOD</code>, <code>LOCATION</code>), and generate detailed descriptions of both entities and their relationships, including relationship strength scores. </li>
+<li class="readable-text" id="p264"> Entity and relationship descriptions from multiple text chunks are consolidated through LLM-based summarization to create unified, nonredundant representations that preserve key information. </li>
+<li class="readable-text" id="p265"> The system detects communities of densely connected entities using algorithms like the Louvain method and then generates community-level summaries to capture higher-level themes and relationships. </li>
+<li class="readable-text" id="p266"> Global search uses community summaries to answer broad, thematic queries through a map-reduce approach. </li>
+<li class="readable-text" id="p267"> Local search combines vector similarity search with graph traversal to answer entity-focused queries. </li>
+<li class="readable-text" id="p268"> The effectiveness of retrieval depends on factors like chunk size, entity type selection, and community detection parameters, with smaller chunks generally leading to more comprehensive entity extraction. </li>
+<li class="readable-text" id="p269"> The system handles potential scaling challenges through ranking mechanisms for managing large numbers of entities, relationships, and communities while maintaining context relevance. </li>
+</ul>
+</div></body></html>

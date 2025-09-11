@@ -1,0 +1,1182 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">14</span> </span> <span class="chapter-title-text">Question answering with a fine-tuned large language model</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers </h3>
+<ul>
+<li class="readable-text" id="p2">Building a question-answering application using an LLM</li>
+<li class="readable-text" id="p3">Curating a question-answering dataset for training</li>
+<li class="readable-text" id="p4">Fine-tuning a Transformer-based LLM</li>
+<li class="readable-text" id="p5">Integrating a deep-learning-based NLP pipeline to extract and rank answers from search results</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>We covered the basics of semantic search using Transformers in chapter 13, so we’re now ready to attempt one of the hardest problems in search: question answering. </p>
+</div>
+<div class="readable-text intended-text" id="p7">
+<p><em>Question answering</em> is the process of returning an answer for a searcher’s query, rather than just a list of search results. There are two types of question-answering approaches: extractive and abstractive. <em>Extractive question answering</em> is the process of finding exact answers to questions from your documents. It returns snippets of your documents containing the likely answer to the user’s question so they don’t need to sift through search results. In contrast, <em>abstractive question answering</em> is the process of generating responses to a user’s question either as a summary of multiple documents or directly from an LLM with no source documents. In this chapter, we’ll focus primarily on extractive question answering, saving abstractive question answering for chapter 15.</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>By solving the question-answering problem, you will accomplish three things:</p>
+</div>
+<ul>
+<li class="readable-text" id="p9"> You’ll better understand the Transformer tooling and ecosystem that you started learning about in chapter 13. </li>
+<li class="readable-text" id="p10"> You’ll learn how to fine-tune a large language model to a specific task. </li>
+<li class="readable-text" id="p11"> You’ll merge your search engine with advanced natural language techniques. </li>
+</ul>
+<div class="readable-text" id="p12">
+<p>In this chapter, we’ll show you how to provide direct answers to questions and produce a working question-answering application. The query types we’ll address are single clause <em>who</em>, <em>what</em>, <em>when</em>, <em>where</em>, <em>why</em>, and <em>how</em> questions. We’ll also continue using the Stack Exchange outdoors dataset from the last chapter. Our goal is to enable users to ask a <em>previously unseen question</em> and get a short answer in response, eliminating the need for users to read through multiple search results to find the answer themselves. </p>
+</div>
+<div class="readable-text" id="p13">
+<h2 class="readable-text-h2" id="sigil_toc_id_209"><span class="num-string">14.1</span> Question-answering overview</h2>
+</div>
+<div class="readable-text" id="p14">
+<p>Traditional search returns lists of documents or pages in response to a query, but people may often be looking for a quick answer to their question. In this case, we want to save people from having to dig for an answer in blocks of text when a straightforward one exists in our content. </p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>In this section, we’ll introduce the question-answering task and then define the retriever-reader pattern for implementing question-answering.</p>
+</div>
+<div class="readable-text" id="p16">
+<h3 class="readable-text-h3" id="sigil_toc_id_210"><span class="num-string">14.1.1</span> How a question-answering model works</h3>
+</div>
+<div class="readable-text" id="p17">
+<p>Let’s look at how a question-answering model works in practice. Specifically, we’re implementing <em>extractive question answering</em>, which finds the best answer to a question in a given text. For example, take the following question:</p>
+</div>
+<div class="readable-text intended-text" id="p18">
+<p>Q: <code>What are minimalist shoes?</code></p>
+</div>
+<div class="readable-text" id="p19">
+<p>Extractive question answering works by looking through a large document that probably contains the answer, and it identifies the answer for you.</p>
+</div>
+<div class="readable-text intended-text" id="p20">
+<p>Let’s look at a document that might contain the answer to our question. We provide the question <code>What</code> <code>are</code> <code>minimalist</code> <code>shoes?</code> and the following document text (the context) to a model:</p>
+</div>
+<div class="browsable-container listing-container" id="p21">
+<div class="code-area-container">
+<pre class="code-area">There was actually a project done on the definition of what a minimalist shoe
+is and the result was "Footwear providing minimal interference with the 
+natural movement of the foot due to its high flexibility, low heel to toe 
+drop, weight and stack height, and the absence of motion control and stability
+devices". If you are looking for a simpler definition, this is what Wikipedia
+says, Minimalist shoes are shoes intended to closely approximate barefoot 
+running conditions. 1 They have reduced cushioning, thin soles, and are of 
+lighter weight than other running shoes, allowing for more sensory contact 
+for the foot on the ground while simultaneously providing the feet with some protection from ground hazards and conditions (such as pebbles and dirt). Oneexample of minimalistic shoes would be the Vibram FiveFingers shoes which 
+look like this.</pre>
+</div>
+</div>
+<div class="readable-text" id="p22">
+<p>The document can be broken into many small parts, known as <em>spans</em>, and the model extracts the best span as the answer. A working question-answering model will evaluate the question and context and may produce this span as the answer:</p>
+</div>
+<div class="readable-text intended-text" id="p23">
+<p>A: <code>shoes intended to closely approximate barefoot running conditions</code></p>
+</div>
+<div class="readable-text" id="p24">
+<p>But how does the model know the probability of whether any given span is the answer? We could try to look at different spans and see if they all somehow represent the answer, but that would be very complicated. Instead, the problem can be simplified by first learning the probability of whether each token in the context is the start of the answer and also the probability of whether each token in the context is the end of the answer. Since we are only looking at the probability for one token to represent the start, and another the end, the problem is easier to understand and solve. Our tokens are treated as discrete values, and the extractive question-answering model is trained to learn a <em>probability mass function</em> (PMF), which is a function that gives the probability that a discrete random variable is exactly equal to some value. This is different than measuring values that are continuous and are used in probability distributions, as we discussed with the continuous beta distribution in chapter 11. The main difference between the two is that our tokens are discrete values. </p>
+</div>
+<div class="readable-text intended-text" id="p25">
+<p>Using this strategy, we can train one model that will learn two probability mass functions—one for the starting token of the answer span, and one for the ending token of the answer span. You may have caught before that we said the model “<em>may</em> produce” the previous answer. Since models trained with different data and hyperparameters will give different results, the specific answer provided for a question can vary based on the model’s training parameters.</p>
+</div>
+<div class="readable-text intended-text" id="p26">
+<p>To illustrate how this works, we’ll start with a model that someone has already trained for the extractive question-answering task. The model will output the likelihood of whether the token is the start or the end of an answer span. When we identify the most likely start and end of the answer, that’s our answer span. The pretrained model we’ll use is <code>deepset/roberta-base-squad2</code>, available from the Hugging Face organization and trained by the Deepset team. We will pass the question and context through this model and pipeline in listings 14.1 through 14.3 to determine the answer span start and end probabilities, as well as the final answer. Figure 14.1 demonstrates how this process works by <em>tokenizing</em> the question and context input, <em>encoding</em> that input, and <em>predicting</em> the most appropriate answer span. </p>
+</div>
+<div class="browsable-container figure-container" id="p27">
+<img alt="figure" height="779" src="../Images/CH14_F01_Grainger.png" width="1012"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.1</span> Extractive question-answering prediction process</h5>
+</div>
+<div class="readable-text intended-text" id="p28">
+<p>In the figure, you can see that the question and context are first combined into a pair for tokenization. Tokenization is then performed on the pair, obtaining token inputs for the model. The model accepts those inputs and then outputs two sequences: the first sequence is the probabilities for whether each token in the context is the start of an answer, and the second sequence is the probabilities for whether each token in the context is the end of an answer. The start and end probability sequences are then combined to get the most likely answer span.<span class="aframe-location"/></p>
+</div>
+<div class="readable-text intended-text" id="p29">
+<p>The following listing walks through the first step of this process: tokenization.</p>
+</div>
+<div class="browsable-container listing-container" id="p30">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.1</span> Loading the tokenizer and model</h5>
+<div class="code-area-container">
+<pre class="code-area">from transformers import AutoTokenizer, AutoModelForQuestionAnswering
+model_name = "deepset/roberta-base-squad2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForQuestionAnswering.from_pretrained(model_name)</pre>
+</div>
+</div>
+<div class="readable-text" id="p31">
+<p>The model name in listing 14.1 is a public model specifically pretrained for extractive question answering. With the model and tokenizer ready, we can now pass in a question and answer pair, shown in the following listing. The response will show that the number of tokens is equal to the number of start and end probabilities.</p>
+</div>
+<div class="browsable-container listing-container" id="p32">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.2</span> Tokenizing a question and context</h5>
+<div class="code-area-container">
+<pre class="code-area">question = "What are minimalist shoes"
+context = """There was actually a project done on the definition of what a
+minimalist shoe is and the result was "Footwear providing minimal
+interference with the natural movement of the foot due to its high
+flexibility, low heel to toe drop, weight and stack height, and the absence
+of motion control and stability devices". If you are looking for a simpler
+definition, this is what Wikipedia says, Minimalist shoes are shoes intended
+to closely approximate barefoot running conditions. 1 They have reduced
+cushioning, thin soles, and are of lighter weight than other running shoes,
+allowing for more sensory contact for the foot on the ground while
+simultaneously providing the feet with some protection from ground
+hazards and conditions (such as pebbles and dirt).
+One example of minimalistic shoes would be the Vibram FiveFingers
+shoes which look like this."""
+
+inputs = tokenizer(question, context, add_special_tokens=True,
+                   return_tensors="pt")
+input_ids = inputs["input_ids"].tolist()[0]
+
+outputs = model(**inputs)
+start_logits_norm = normalize(outputs[0].detach().numpy())
+end_logits_norm = normalize(outputs[1].detach().numpy())
+
+print(f"Total number of tokens: {len(input_ids)}")
+print(f"Total number of start probabilities: {start_logits_norm.shape[1]}")
+print(f"Total number of end probabilities: {end_logits_norm.shape[1]}")</pre>
+</div>
+</div>
+<div class="readable-text" id="p33">
+<p>Response:</p>
+</div>
+<div class="browsable-container listing-container" id="p34">
+<div class="code-area-container">
+<pre class="code-area">Total number of tokens: 172
+Total number of start probabilities: 172
+Total number of end probabilities: 172</pre>
+</div>
+</div>
+<div class="readable-text" id="p35">
+<p>The inputs are obtained by tokenizing the question and context together. The outputs are obtained by making a forward pass with the inputs through the model. The <code>outputs</code> variable is a two-item list. The first item contains the start probabilities, and the second item contains the end probabilities. </p>
+</div>
+<div class="readable-text intended-text" id="p36">
+<p>Figure 14.2 visually demonstrates the probabilities for whether each token in the context is likely the start of an answer span, and figure 14.3 likewise demonstrates<span class="aframe-location"/> whether each token is likely the end of an answer span (darker highlighting indicates a higher probability).<strong><span class="aframe-location"/></strong></p>
+</div>
+<div class="browsable-container figure-container" id="p37">
+<img alt="figure" height="321" src="../Images/CH14_F02_Grainger.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.2</span> Probabilities for whether the token is the start of an answer span</h5>
+</div>
+<div class="browsable-container figure-container" id="p38">
+<img alt="figure" height="322" src="../Images/CH14_F03_Grainger.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.3</span> Probabilities for whether the token is the end of an answer span</h5>
+</div>
+<div class="readable-text" id="p39">
+<p>Note that each token has a start probability (in figure 14.2) and an end probability (in figure 14.3) at its respective index. We also normalized the start and end probabilities at each index to be between <code>0.0</code> and <code>1.0</code>, which makes them easier to think about and calculate. We call these start and end probability lists <em>logits</em>, since they are lists of statistical probabilities. </p>
+</div>
+<div class="readable-text intended-text" id="p40">
+<p>For example, for the 17th token (<code>_definition</code>), the probability of this token being the start of the answer is ~<code>0.37</code>, and the probability of it being the end of the answer is ~<code>0.20</code>. Since we’ve normalized both lists, the start of our answer span is the token where <code>start_logits_norm</code> <code>==</code> <code>1.0</code>, and the end of the answer span is where <code>end_logits_norm == 1.0</code>.</p>
+</div>
+<div class="readable-text intended-text" id="p41">
+<p>The following listing demonstrates both how to generate the token lists in figures 14.2 and 14.3, as well as how to extract the final answer span.</p>
+</div>
+<div class="browsable-container listing-container" id="p42">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.3</span> Identifying an answer span from a tokenized context</h5>
+<div class="code-area-container">
+<pre class="code-area">start_tokens = []
+end_tokens = []
+terms = tokenizer.convert_ids_to_tokens(input_ids)
+start_token_id = 0
+end_token_id = len(terms)
+for i, term in enumerate(terms):
+  start_tokens.append(stylize(term, [0, 127, 255], start_logits_norm[0][i]))
+  end_tokens.append(stylize(term, [255, 0, 255], end_logits_norm[0][i]))
+  if start_logits_norm[0][i] == 1.0:
+    start_token_id = i
+  if end_logits_norm[0][i] == 1.0:
+    end_token_id = i + 1
+
+answer = terms[start_token_id:end_token_id]
+display(HTML(f'&lt;h3&gt;{clean_token(" ".join(answer))}&lt;/h3&gt;')) <span class="aframe-location"/> #1
+display(HTML(f'&lt;pre&gt;{" ".join(start_tokens)}&lt;/pre&gt;')) <span class="aframe-location"/> #2
+<span class="aframe-location"/>display(HTML(f'&lt;pre&gt;{" ".join(end_tokens)}&lt;/pre&gt;'))  #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Extracting the answer span, shown in the following output
+     <br/>#2 The start probabilities, shown in figure 14.2
+     <br/>#3 The end probabilities, shown in figure 14.3
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p43">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p44">
+<div class="code-area-container">
+<pre class="code-area">_shoes _intended _to _closely _approximate _bare foot _running _conditions</pre>
+</div>
+</div>
+<div class="readable-text" id="p45">
+<p>By fitting the start and end probability mass functions during training to a dataset of question, context, and answer triples, we create a model that can provide probabilities for the most likely answers to new questions and contexts. We then use this model in listing 14.3 to perform a probability search to identify the most likely span in the text that answers the question.</p>
+</div>
+<div class="readable-text intended-text" id="p46">
+<p>In practice, it works as follows:</p>
+</div>
+<ol>
+<li class="readable-text" id="p47"> We pick a minimum and maximum span size—where a span is a set of continuous words. For example, the answer might be one word long or, like the previous answer, it could be eight words long. We need to set those span sizes up front. </li>
+<li class="readable-text" id="p48"> For each span, we check the probability of whether or not the span is the correct answer. The answer is the span with the highest probability. </li>
+<li class="readable-text" id="p49"> When we’re done checking all the spans, we present the correct answer. </li>
+</ol>
+<div class="readable-text" id="p50">
+<p>Building the model requires lots of question/context/answer triples and a way to provide these triples to the model so that calculations can be performed. Enter the Transformer encoder, which you should already be familiar with from chapter 13. We first encode lots of training data using an LLM that produces dense vectors. Then we train a neural network to learn the probability mass function of whether a given span’s encoding answers the question using positive and negative training examples.</p>
+</div>
+<div class="readable-text intended-text" id="p51">
+<p>We’ll see how to fine-tune a question-answering model later in the chapter, but first we need to address a very important detail: When someone asks a question, where do we get the context?</p>
+</div>
+<div class="readable-text" id="p52">
+<h3 class="readable-text-h3" id="sigil_toc_id_211"><span class="num-string">14.1.2</span> The retriever-reader pattern</h3>
+</div>
+<div class="readable-text" id="p53">
+<p>In reading about how extractive question answering works, you may have thought “so, for every question query, I need to check the probabilities of every span in the entire corpus?” No! That would be extremely slow and unnecessary, since we already have a really fast and accurate way of getting relevant documents that probably contain the answer: search. </p>
+</div>
+<div class="readable-text intended-text" id="p54">
+<p>What we’re really going to make is a very powerful text highlighter. Think of the entire question-answering system as an automatic reference librarian of sorts. It knows what document contains your answer, and then it reads that document’s text so it can point the exact answer out to you.</p>
+</div>
+<div class="readable-text intended-text" id="p55">
+<p>This is known as the retriever-reader pattern. This pattern uses one component to retrieve and rank the candidate documents (running a query against the search engine) and another component to read the spans of the most relevant documents and extract the appropriate answer. This is very similar to how highlighting works in Lucene-based search engines like Solr, OpenSearch, or Elasticsearch: the unified highlighter will find the best passage(s) containing the analyzed query terms and use them as the context. It then identifies the exact location of the queried keywords in that context to show the end user the surrounding context.</p>
+</div>
+<div class="readable-text intended-text" id="p56">
+<p>We’re going to build something similar to a highlighter, but instead of showing the context containing the user’s queried keywords, our question-answering highlighter will answer questions like this:</p>
+</div>
+<div class="browsable-container listing-container" id="p57">
+<div class="code-area-container">
+<pre class="code-area">Q: What are minimalist shoes?
+A: shoes intended to closely approximate barefoot running conditions</pre>
+</div>
+</div>
+<div class="readable-text" id="p58">
+<p>Let’s look at the full context. When we ask <code>What are minimalist shoes?</code> we first use the <em>retriever</em> to get the document that is the most likely to contain the answer. In this case, this document (abridged here, but shown in full in section 14.1.1) was returned:</p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<div class="code-area-container">
+<pre class="code-area">There was actually a project done on the definition... this is what Wikipedia
+says, Minimalist shoes are shoes intended to closely approximate barefoot 
+running conditions. 1 They have reduced cushioning, thin soles, ...</pre>
+</div>
+</div>
+<div class="readable-text" id="p60">
+<p>With the document in hand, the <em>reader</em> then scans it and finds the text that is most likely to answer the question.</p>
+</div>
+<div class="readable-text intended-text" id="p61">
+<p>Aside from using fancy Transformers to find the correct answer, we’re taking a step beyond basic search in that we’ll actually use question/answer reader confidence as a reranker. So if we’re not sure which document is the most likely to contain the answer during the retriever step, we’ll have the reader look through a bunch of documents and see which is the best answer from all of them. The “bunch of documents” will be our reranking window, which we can set to any size.</p>
+</div>
+<div class="readable-text intended-text" id="p62">
+<p>Keep in mind, though, that analyzing documents in real time is not efficient. We shouldn’t ask the reader to look at 100 documents—that’s going to take too long. We’ll limit it to a much smaller number, like 3 or 5. Limiting the reader window forces us to make sure our search engine is very accurate. The results must be relevant, as a retriever that doesn’t get relevant candidates in the top 5 window size won’t give the reader anything useful to work with.</p>
+</div>
+<div class="readable-text intended-text" id="p63">
+<p>The retriever-reader has two separated concerns, so we can even replace our retriever with something else. We’ve shown how you can use a lexical search engine with out-of-the-box ranking (BM25, as covered in chapter 3), but you can also try it with a dense vector index of embeddings, as covered in chapter 13.</p>
+</div>
+<div class="readable-text intended-text" id="p64">
+<p>Before we can take live user questions, we’ll also need to train a question-answering model to predict the best answer from a context. The full set of steps we’ll walk through for building our question-answering application is as follows:</p>
+</div>
+<ol>
+<li class="readable-text" id="p65"> <em>Set up a retriever using our search engine</em><em> </em>—We’ll use a simple high-recall query for candidate answers for our example. </li>
+<li class="readable-text" id="p66"> <em>Wrangle and label the data appropriately</em><em> </em>—This includes getting the data into the correct format, and getting a first pass at our answers from the base pretrained model. Then we’ll take that first pass and manually fix it and mark what examples to use for training and testing. </li>
+<li class="readable-text" id="p67"> <em>Understand the nuances of the data structures</em><em> </em>—We’ll use an existing data structure that will represent our training and test data in the correct format for a fine-tuning task. </li>
+<li class="readable-text" id="p68"> <em>Fine-tune the model</em><em> </em>—Using the corrections we made in the previous step, we’ll train a fine-tuned question-answering model for better accuracy than the baseline. </li>
+<li class="readable-text" id="p69"> <em>Use the model as the reader at query time</em><em> </em>—We’ll put everything together that lets us request a query, get candidates from the search engine, read/rerank the answers from the model, and show them as a response. </li>
+</ol>
+<div class="readable-text" id="p70">
+<p>Figure 14.4 shows the flow of the entire architecture for our retriever, reader, and reranker:</p>
+</div>
+<ol>
+<li class="readable-text" id="p71"> A question is asked by a user, and documents are queried in the retriever (search engine) using the question. </li>
+<li class="readable-text" id="p72"> The search engine matches and ranks to get the top-<em>k</em> most relevant documents for the reader. </li>
+<li class="readable-text" id="p73"> The original question is paired with each top-<em>k</em> retrieved context and sent into the QA pipeline. </li>
+<li class="readable-text" id="p74"> The question/context pairs are tokenized and encoded into spans by the reader, which then predicts the top-<em>n</em> most likely answer spans, with their probabilities for likeliness as the score.<span class="aframe-location"/> </li>
+</ol>
+<div class="browsable-container figure-container" id="p75">
+<img alt="figure" height="746" src="../Images/CH14_F04_Grainger.png" width="1011"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.4</span> Retriever-reader pattern for extractive question answering</h5>
+</div>
+<ol class="faux-ol-li" style="list-style: none;">
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p76"><span class="faux-ol-li-counter">5. </span> The reranker sorts the score for each top-<em>n</em> answer span in descending order. </li>
+<li class="readable-text faux-li has-faux-ol-li-counter" id="p77"><span class="faux-ol-li-counter">6. </span> The top ranked answer from the reranker is the accepted answer and is shown to the user. </li>
+</ol>
+<div class="readable-text" id="p78">
+<p>To accomplish all of this, we need to tune the retriever, wrangle data to train the reader model, fine-tune the reader model using that data, and build a reranker. Strategies for tuning the retriever (the search engine) have already been covered thoroughly in this book, so for our next step, we’ll wrangle the data. </p>
+</div>
+<div class="readable-text" id="p79">
+<h2 class="readable-text-h2" id="sigil_toc_id_212"><span class="num-string">14.2</span> Constructing a question-answering training dataset</h2>
+</div>
+<div class="readable-text" id="p80">
+<p>In this section, we’ll create a dataset we can use to train our question-answering model. This involves several steps:</p>
+</div>
+<ul>
+<li class="readable-text" id="p81"> Gathering and cleaning a dataset to fit the question-answering problem space to our content </li>
+<li class="readable-text" id="p82"> Automatically creating a silver set (a semi-refined dataset that needs further labeling) from an existing model and corpus </li>
+<li class="readable-text" id="p83"> Manually correcting the silver set to produce the golden set (a trustworthy dataset we can use for training) </li>
+<li class="readable-text" id="p84"> Splitting the dataset for training, testing, and validation of a fine-tuned model </li>
+</ul>
+<div class="readable-text" id="p85">
+<p>We’ll start with our Stack Exchange outdoors dataset because its data is already well-suited to a question-and-answer application. We need question/answer pairs to use when fine-tuning a base model.</p>
+</div>
+<div class="readable-text intended-text" id="p86">
+<p>The outdoors dataset is already well-formatted and in bite-size question-and-answer chunks. With the power of Transformers, we can take off-the-shelf tools and models and construct the solution relatively quickly. This is far easier than trying to construct a question/answer dataset from something else, like the book <em>Great Expectations</em>. If you’re working with long-form text, such as a book or lengthy documents, you’d need to first split the text into paragraphs and manually devise questions for the paragraphs.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p87">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Golden sets and silver sets</h5>
+</div>
+<div class="readable-text" id="p88">
+<p>In machine learning, a <em>golden set</em> is an accurately labeled dataset that is used to train, test, and validate models. We treat golden sets as highly valuable assets, since gathering them often requires significant manual effort. The accuracy and usability of a trained model are limited by the accuracy and breadth of the golden set. Thus, the longer you spend growing and verifying your golden set, the better the model.</p>
+</div>
+<div class="readable-text" id="p89">
+<p>To reduce some of the effort required in labeling data, we can save time by letting a machine try to generate a labeled dataset for us. This automatically generated set of labeled data is called a <em>silver set</em>, and it prevents us from having to start from scratch.</p>
+</div>
+<div class="readable-text" id="p90">
+<p>A silver set is not as trustworthy as a golden set. Since we automatically obtain a silver set through machine-automated processes that aren’t as accurate as humans, there will be mistakes. Thus, a silver set should ideally be improved with a manual audit and corrections to increase its accuracy. Using silver sets to bootstrap your training dataset can save a lot of time and mental effort in the long term, and it can help you scale your training data curation.</p>
+</div>
+</div>
+<div class="readable-text" id="p92">
+<h3 class="readable-text-h3" id="sigil_toc_id_213"><span class="num-string">14.2.1</span> Gathering and cleaning a question-answering dataset</h3>
+</div>
+<div class="readable-text" id="p93">
+<p>On to our first step: let’s construct a dataset we can label and use to train a model. For this dataset, we need questions with associated contexts that contain their answers. Listing 14.4 shows how to get the questions and the contexts that contain answers in rows of a pandas dataframe. We need to construct two queries: one to get the community questions, and one to get the accepted community answers to those questions. We will only be using question/answer pairs that have an accepted answer. We will execute the two queries separately and join the two together.</p>
+</div>
+<div class="readable-text intended-text" id="p94">
+<p>The model that we are using refers to the content from which we pluck our answer as a context. Remember, we’re not generating answers, we’re just finding the most appropriate answer inside a body of text.</p>
+</div>
+<div class="browsable-container listing-container" id="p95">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.4</span> Pulling training questions from Solr</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_questions():
+  question_types = ["who", "what", "when", <span class="aframe-location"/> #1
+                    "where", "why", "how"]  #1
+  questions = []
+  for type in question_types:
+    request = {"query": type,
+               "query_fields": ["title"],
+               "return_fields": ["id", "url", "owner_user_id",
+                                 "title", "accepted_answer_id"],
+               "filters": [("accepted_answer_id", "*")], <span class="aframe-location"/> #2
+               "limit": 10000}
+    docs = outdoors_collection.search(**request)["docs"]
+    questions += [document for document <span class="aframe-location"/>in docs  #3
+                  if document["title"].lower().startswith(type)]  #3
+  return questions</pre>
+<div class="code-annotations-overlay-container">
+     #1 Narrows the scope of question types that we retrieve
+     <br/>#2 Only retrieves questions that have accepted answers
+     <br/>#3 Only uses titles starting with a question type
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p96">
+<p>With the list of questions from listing 14.4, we next need to get contexts associated with each question. Listing 14.5 returns a dataframe with the following columns: <code>id</code>, <code>url</code>, <code>question</code>, and <code>context</code>. We’ll use the <code>question</code> and <code>context</code> to generate the training and evaluation data for our question-answering model in the coming sections.</p>
+</div>
+<div class="browsable-container listing-container" id="p97">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.5</span> Searching for accepted answer contexts</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_answers_from_questions(questions, batch_size=500):
+  answer_ids = list(set([str(q["accepted_answer_id"]) <span class="aframe-location"/> #1
+                         for q in questions]))  #1
+  batches = math.ceil(len(answer_ids) / batch_size) <span class="aframe-location"/> #2
+  answers = {}
+
+  for n in range(0, batches): <span class="aframe-location"/> #3
+    ids = answer_ids[n * batch_size:(n + 1) * batch_size]
+    request = {"query": "(" + " ".join(ids) + ")",
+               "query_fields": "id",
+               "limit": batch_size,
+               "filters": [("post_type", "answer")],
+               "order_by": [("score", "desc")]}
+    docs = outdoors_collection.search(**request)["docs"]
+    answers |= {int(d["id"]): d["body"] for d in docs}
+  return answers
+
+def get_context_dataframe(questions):
+  answers = get_answers_from_questions(questions)<span class="aframe-location"/> #4
+  contexts = {"id": [], "question": [], "context": [], "url": []}
+  for question in questions:
+    contexts["id"].append(question["id"])
+    contexts["url"].append(question["url"])
+    contexts["question"].append(question["title"]),
+    if question["accepted_answer_id"] in answers:
+      context = answers[question["accepted_answer_id"]]
+    else:
+      context = "Not found"
+    contexts["context"].append(context)
+  return pandas.DataFrame(contexts)
+
+questions = get_questions() <span class="aframe-location"/> #5
+contexts = get_context_dataframe(questions) <span class="aframe-location"/> #6
+display(contexts[0:5])</pre>
+<div class="code-annotations-overlay-container">
+     #1 Gets a list of all distinct answer ids
+     <br/>#2 Calculates the number of search requests that need to be made
+     <br/>#3 Aggregates all answers
+     <br/>#4 Retrieves all answer data for questions
+     <br/>#5 Load the questions from listing 14.4.
+     <br/>#6 Load the contexts for each question.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p98">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p99">
+<div class="code-area-container">
+<pre class="code-area">id    question                               context
+4410  Who places the anchors that rock c...  There are two distinct styl...
+5347  Who places the bolts on rock climb...  What you're talking about i...
+20662 Who gets the bill if you activate ...  Almost always the victim ge...
+11587 What sort of crane, and what sort ...  To answer the snake part of...
+7623  What knot is this one? What are it...  Slip knot It's undoubtably ...</pre>
+</div>
+</div>
+<div class="readable-text" id="p100">
+<p>We encourage you to examine the full output for the question and context pairs to appreciate the variety of input and language used. We also included the original URL if you’d like to visit the Stack Exchange outdoors website and explore the source data yourself in the Jupyter notebook.</p>
+</div>
+<div class="readable-text" id="p101">
+<h3 class="readable-text-h3" id="sigil_toc_id_214"><span class="num-string">14.2.2</span> Creating the silver set: Automatically labeling data from a pretrained model</h3>
+</div>
+<div class="readable-text" id="p102">
+<p>Now that we have our dataset, we have to label it. For the training to work, we need to tell the model what the correct answer is inside of the context (document), given the question. An LLM exists that already does a decent job at selecting answers: <code>deepset/roberta-base-squad2</code>. This model was pretrained by the Deepset company using the SQuAD2 dataset and is freely available on their Hugging Face page (<a href="https://huggingface.co/deepset">https://huggingface.co/deepset</a>). SQuAD is the <em>Stanford Question Answering Dataset</em>, which is a large public dataset made up of thousands of question and answer pairs. The Deepset team started with the RoBERTa architecture (covered in chapter 13) and fine-tuned a model based on this dataset for the task of question answering.</p>
+</div>
+<div class="readable-text print-book-callout" id="p103">
+<p><span class="print-book-callout-head">NOTE</span>  It’s a good idea to familiarize yourself with the Hugging Face website (<a href="https://huggingface.co">https://huggingface.co</a>). The Hugging Face community is very active and has provided thousands of free pretrained models, available for use by anyone.</p>
+</div>
+<div class="readable-text" id="p104">
+<p>Our strategy is to use the best pretrained model available to attempt to answer all the questions first. We’ll call these answers “guesses” and the entire automatically labeled dataset the “silver set”. Then we will go through the silver set guesses and correct them ourselves, to get a “golden set”.</p>
+</div>
+<div class="readable-text intended-text" id="p105">
+<p>Listing 14.6 shows our question-answering function, which uses a Transformers pipeline type of <code>question-answering</code> and the <code>deepset/roberta-base-squad2</code> model. We use these to construct a pipeline with an appropriate tokenizer and target device (either CPU or GPU). This gives us everything we need to pass in raw data and obtain the silver set, as illustrated in figure 14.5.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p106">
+<img alt="figure" height="428" src="../Images/CH14_F05_Grainger.png" width="1011"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.5</span> Obtaining the silver set and golden set from a prepared dataframe</h5>
+</div>
+<div class="readable-text" id="p107">
+<p>In Python, we create a function called <code>answer_questions</code> that accepts the list of contexts that we extracted from our retriever. This function runs each question and context through the pipeline to generate the answer and appends it to the list. We won’t presume that they’re actually answers at this point, because many of them will be incorrect (as you’ll see when you open the file). We will only count something as an <em>answer</em> when it’s been vetted by a person. This is the nature of upgrading a silver set to a golden set.</p>
+</div>
+<div class="readable-text intended-text" id="p108">
+<p>The <code>device</code> (CPU or GPU) will be chosen automatically based on whether you have a GPU available to your Docker environment or not. Now is a good time to mention that if you’re running or training these models on a CPU-only home computer or Docker configuration, you may be waiting a while for the inference of all the data to be complete. If you’re not using a GPU, feel free to skip running listings 14.6–14.7, as we have already provided the output needed to run later listings in this notebook’s dataset.</p>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>Listing 14.6 generates the silver set to extract out the most likely answers for our pairs of question and accepted answer contexts loaded previously in listing 14.5.</p>
+</div>
+<div class="browsable-container listing-container" id="p110">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.6</span> Generating answers given question/context pairs</h5>
+<div class="code-area-container">
+<pre class="code-area">from transformers import pipeline <span class="aframe-location"/> #1
+import torch
+import tqdm <span class="aframe-location"/> #2
+
+def get_processor_device(): <span class="aframe-location"/> #3
+  return 0 if torch.cuda.is_available() else -1  #3
+
+def answer_questions(contexts, k=10):
+  nlp = pipeline("question-answering", model=model_name, <span class="aframe-location"/> #4
+                 tokenizer=model_name, device=device)  #4
+  guesses = []
+  for _, row in tqdm.tqdm(contexts[0:k].iterrows(), total=k): <span class="aframe-location"/> #5
+    result = nlp({"question": row["question"], <span class="aframe-location"/> #6
+                  "context": row["context"]})  #6
+    guesses.append(result)
+  return guesses
+
+model_name = "deepset/roberta-base-squad2"
+device = get_processor_device() <span class="aframe-location"/> #7
+
+guesses = answer_questions(contexts, k=len(contexts))
+display_guesses(guesses)</pre>
+<div class="code-annotations-overlay-container">
+     #1 This is the pipeline that we illustrated in figure 14.1.
+     <br/>#2 tqdm prints the progress of the operation as a progress bar.
+     <br/>#3 Process with GPU (CUDA) if available; otherwise use the CPU.
+     <br/>#4 This is the pipeline that we illustrated in figure 14.1.
+     <br/>#5 tqdm prints the progress of the operation as a progress bar.
+     <br/>#6 Gets the answer (and confidence score) for every question/context pair
+     <br/>#7 Process with GPU (CUDA) if available; otherwise use the CPU.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p111">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p112">
+<div class="code-area-container">
+<pre class="code-area">score     start  end   answer
+0.278927  474    516   a local enthusiast or group of enthusiasts
+0.200848  81     117   the person who is creating the climb
+0.018632  14     24    the victim
+...
+0.247008  227    265   the traditional longbow made from wood
+0.480407  408    473   shoes intended to closely approximate barefoot run...
+0.563754  192    232   a tube of lightweight, stretchy material</pre>
+</div>
+</div>
+<div class="readable-text" id="p113">
+<p>Congratulations, we have now obtained the silver set! In the next section, we’ll improve it.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p114">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">GPU recommended</h5>
+</div>
+<div class="readable-text" id="p115">
+<p>Feel free to run these listings on your personal computer, but be warned—some of them take a while on a CPU. The total execution time for listing 14.6, for example, was reduced by about 20 times when running on a GPU versus a mid-market CPU during our tests.</p>
+</div>
+<div class="readable-text" id="p116">
+<p>Note that the fine-tuning examples later in the chapter will benefit significantly from having a GPU available. If you cannot access a GPU for those listings, that’s okay—we’ve trained the model and already included it for you as part of the outdoors dataset. You can follow along in the listings to see how the model is trained, and if you don’t have a GPU available, you can just skip running them. You can also use free services such as Google Colab or rent a server with a GPU from a cloud provider, which is typically a few US dollars per hour.</p>
+</div>
+<div class="readable-text" id="p118">
+<p>If you’re interested in learning more about GPUs and why they are better suited to tasks such as training models, we recommend checking out <em>Parallel and High Performance Computing</em> by Robert Robey and Yuliana Zamora (Manning, 2021).</p>
+</div>
+</div>
+<div class="readable-text" id="p119">
+<h3 class="readable-text-h3" id="sigil_toc_id_215"><span class="num-string">14.2.3</span> Human-in-the-loop training: Manually correcting the silver set to produce a golden set</h3>
+</div>
+<div class="readable-text" id="p120">
+<p>The silver set CSV file (question-answering-squad2-guesses.csv) is used as a first pass at attempting to answer the questions. We’ll use this with human-in-the-loop manual correction and labeling of the data to refine the silver set into the golden set.</p>
+</div>
+<div class="readable-text print-book-callout" id="p121">
+<p><span class="print-book-callout-head">NOTE</span>  No Python code can generate a golden set for you. The data <em>must</em> be labeled by an intelligent person (or perhaps one day an AI model highly optimized for making relevance judgments) with an understanding of the domain. All further listings will use this golden set. We are giving you a break, though, since we already labeled the data for you. For reference, it took 4 to 6 hours to label about 200 guesses produced by the <code>deepset/roberta-base -squad2</code> model.</p>
+</div>
+<div class="readable-text" id="p122">
+<p>Labeling data yourself will give you a deeper appreciation for the difficulty of this NLP task. We <em>highly</em> encourage you to label even more documents and rerun the fine-tuning tasks coming up. Having an appreciation for the effort needed to obtain quality data, and the effect it has on the model accuracy, is a lesson you can only learn through experience.</p>
+</div>
+<div class="readable-text intended-text" id="p123">
+<p>Before diving in and just labeling data, however, we need to have a plan for how and what to label. For each row, we need to classify it and, if necessary, write the correct answer ourselves into another column.</p>
+</div>
+<div class="readable-text intended-text" id="p124">
+<p>Here is the key, as shown in figure 14.6, which we used for all the labeled rows in the <code>class</code> field:</p>
+</div>
+<ul>
+<li class="readable-text" id="p125"> <code>-2</code> = This is a negative example (an example where we know the guess is wrong!). </li>
+<li class="readable-text" id="p126"> <code>-1</code> = Ignore this question, as it is too vague or we are missing some information. For example, <code>What is this bird?</code> We can’t answer without a picture of the bird, so we don’t even try. </li>
+<li class="readable-text" id="p127"> <code>0</code> = This is an example that has been corrected by a person to highlight a better answer span in the same context. The guess given by <code>deepset/roberta-base -squad2</code> was incorrect or incomplete, so we changed it. </li>
+<li class="readable-text" id="p128"> <code>1</code> = This is an example that was given a correct answer by <code>deepset/roberta -base-squad2</code>, so we did not change the answer. </li>
+<li class="readable-text" id="p129"> (blank) = We didn’t check this row, so we’ll ignore it.<span class="aframe-location"/> </li>
+</ul>
+<div class="browsable-container figure-container" id="p130">
+<img alt="figure" height="285" src="../Images/CH14_F06_Grainger.png" width="529"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.6</span> Legend of label classes</h5>
+</div>
+<div class="readable-text" id="p131">
+<p>You should open the outdoors_golden_answers.csv file and look through the rows yourself. Understand the ratio of questions that we labeled as <code>0</code> and <code>1</code>. You can even try opening the file in pandas and doing a little bit of analysis to familiarize yourself with the golden set.</p>
+</div>
+<div class="readable-text" id="p132">
+<h3 class="readable-text-h3" id="sigil_toc_id_216"><span class="num-string">14.2.4</span> Formatting the golden set for training, testing, and validation</h3>
+</div>
+<div class="readable-text" id="p133">
+<p>Now that we have labeled data, we’re almost ready to train our model, but first we need to get the data into the right format for the training and evaluation pipeline. Once our data is in the right format, we’ll also need to split it into training, testing, and validation sets for use when training the model to ensure it does not overfit our data.</p>
+</div>
+<div class="readable-text" id="p134">
+<h4 class="readable-text-h4 sigil_not_in_toc">Converting the labeled data into a standardized data format</h4>
+</div>
+<div class="readable-text" id="p135">
+<p>Hugging Face provides a library called <code>datasets</code>, which we’ll use to prepare our data. The <code>datasets</code> library can accept the names of many publicly available datasets and provide a standard interface for working with them. The SQuAD2 dataset is one of the available datasets, but since our golden set is in a custom format, we first need to convert it to the standardized <code>datasets</code> configuration format shown in the following listing.</p>
+</div>
+<div class="browsable-container listing-container" id="p136">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.7</span> Transforming a golden dataset into SQuAD formatting</h5>
+<div class="code-area-container">
+<pre class="code-area">from datasets import Dataset, DatasetDict
+
+def get_training_data(filename):
+  golden_answers = pandas.read_csv(filename)
+  golden_answers = golden_answers[golden_answers["class"] != None]
+  qa_data = []
+  for _, row in golden_answers.iterrows():
+    answers = row["gold"].split("|")
+    starts = [row["context"].find(a) for a in answers]
+    missing = -1 in starts
+    if not missing:
+      row["title"] = row["question"]
+      row["answers"] = {"text": answers, "answer_start": starts}
+      qa_data.append(row)
+  columns = ["id", "url", "title", "question", "context", "answers"]
+  df = pandas.DataFrame(qa_data, columns=columns) \ <span class="aframe-location"/> #1
+             .sample(frac=1, random_state=0)  #1
+  train_split = int(len(df) * 0.75) <span class="aframe-location"/> #2
+  eval_split = (int((len(df) - train_split) / 1.25) +  <span class="aframe-location"/> #3
+                train_split - 1)  #3
+  train_dataset = Dataset.from_pandas(df[:train_split])
+  test_dataset = Dataset.from_pandas(df[train_split:eval_split])
+  validation_dataset = Dataset.from_pandas(df[eval_split:]) <span class="aframe-location"/> #4
+  return DatasetDict({"train": train_dataset, <span class="aframe-location"/> #5
+                      "test": test_dataset,  #5
+                      "validation": validation_dataset})  #5
+
+datadict = get_training_data("data/outdoors/outdoors_golden_answers.csv")
+model_path = "data/question-answering/question-answering-training-set"
+datadict.save_to_disk(model_path)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Randomly sorts all the examples
+     <br/>#2 75% of the examples will be used for training. This will give us 125 training samples.
+     <br/>#3 20% of the examples will be used for testing. We subtract 1 from train_split to allow for 125/32/10 records on the three splits.
+     <br/>#4 The remaining 5% of the examples will be used for validation holdout. This will be 10 samples.
+     <br/>#5 SQuAD requires three groups of data: train, test, and validation
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p137">
+<p>The first part of the function in listing 14.7 loads the CSV into a pandas dataframe and does some preprocessing and formatting. Once formatted, the data is split up into three parts and converted.</p>
+</div>
+<div class="readable-text intended-text" id="p138">
+<p>The object returned and saved from listing 14.7 is a dataset dictionary (a <code>datadict</code>) that contains our three slices for training, testing, and validation. For our data table, with the split defined in <code>get_training_data</code>, we have 125 training examples, 32 testing examples, and 10 validation examples.</p>
+</div>
+<div class="readable-text" id="p139">
+<h4 class="readable-text-h4 sigil_not_in_toc">Avoiding overfitting with a test set and holdout validation set</h4>
+</div>
+<div class="readable-text" id="p140">
+<p><em>Overfitting</em> a model means you trained it to only memorize the training examples provided. This means it won’t generalize well enough to handle previously unseen data.</p>
+</div>
+<div class="readable-text intended-text" id="p141">
+<p>To prevent overfitting, we needed to split our dataset into separate training, testing, and validation slices, as we did in listing 14.7. The testing and the holdout validation sets are used to measure the success of the model after it is trained. After you’ve gone through the process from end to end, consider labeling some more data and doing different splits across the training, testing, and validation slices to see how the model performs.</p>
+</div>
+<div class="readable-text intended-text" id="p142">
+<p>We use a training/test split to give some data to the model training and some to test the outcome. We iteratively tune hyperparameters for the model training to achieve higher accuracy (measured using a loss function) when the model is applied to the test set.</p>
+</div>
+<div class="readable-text intended-text" id="p143">
+<p>The holdout validation set is the real-world proxy for unseen data, and it’s not checked until the end. After training and testing are completed, you then validate the final model version by applying it against the holdout examples. If this score is much lower than the final test accuracy, you’ve overfit your model.</p>
+</div>
+<div class="readable-text print-book-callout" id="p144">
+<p><span class="print-book-callout-head">NOTE</span>  The number of examples we’re using is quite small (125 training examples, 32 testing examples, and 10 holdout validation examples) compared to what you’d use for fine-tuning data for a customer-facing system. As a general rule of thumb, aim for about 500 to 2,000 labeled examples. Sometimes you can get away with less, but typically the more you have the better. This will take considerable time investment, but it’s well worth the effort.</p>
+</div>
+<div class="readable-text" id="p145">
+<h2 class="readable-text-h2" id="sigil_toc_id_217"><span class="num-string">14.3</span> Fine-tuning the question-answering model</h2>
+</div>
+<div class="readable-text" id="p146">
+<p>We’ll now walk through obtaining a better model by fine-tuning the existing <code>deepset/roberta-base-squad2</code> model with our golden set. </p>
+</div>
+<div class="readable-text intended-text" id="p147">
+<p>Unfortunately, this next notebook can be quite slow to run on a CPU. If you are going through the listings on a machine that is CUDA-capable and can configure your Docker environment to use the GPUs, then you should be all set! Otherwise, we recommend you use a service like Google Colab, which offers easy running of Jupyter notebooks on GPUs at no cost, or another cloud computing or hosting provider that has a CUDA device ready to go. You can load the notebook directly from Google Colab and run it without any other dependencies aside from our dataset. A link is provided above listing 14.8 in the associated notebook.</p>
+</div>
+<div class="readable-text print-book-callout" id="p148">
+<p><span class="print-book-callout-head">TIP</span>  As we noted previously, if you don’t want to go through the hassle of setting up a GPU-compatible environment, you can also follow along with listings 14.8–14.13 without running them, since we have already trained the model and included it for you to use. However, if you can, we do encourage you to go through the effort of getting GPU access and training the model yourself to see how the process works and to enable you to tinker with the hyperparameters. Figure 4.7 shows the kind of speedup that GPUs can provide for massively parallel computations like language model training.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p149">
+<img alt="figure" height="291" src="../Images/CH14_F07_Grainger.png" width="393"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.7</span> A V100 GPU (commonly available with cloud providers) has 640 tensor compute cores, compared to a 4-core x86-64 CPU. A Tesla T4 has 2,560 tensor compute cores. Individually, CPU cores are more powerful, but most GPUs have two to three orders of magnitude more cores than a CPU. This is important when doing massively parallel computations for millions of model parameters.</h5>
+</div>
+<div class="readable-text" id="p150">
+<p>The first thing we need to do is require access to the GPU device. The code in the following listing will initialize and return the device ID of the available processor. If a GPU is configured and available, we should see that device’s ID. If you are using Colab and having any problems with listing 14.8, you may need to change the runtime type to <code>GPU</code> in the settings.</p>
+</div>
+<div class="browsable-container listing-container" id="p151">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.8</span> Detecting and initializing a GPU device</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_processor_type():
+  gpu_device = torch.device("cuda:0")
+  cpu_device = torch.device("cpu")
+  return gpu_device or cpu_device
+
+def get_processor_device():
+  return 0 if torch.cuda.is_available() else -1
+
+print("Processor: " + str(get_processor_type()))
+print("Device id: " + str(get_processor_device()))</pre>
+</div>
+</div>
+<div class="readable-text" id="p152">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p153">
+<div class="code-area-container">
+<pre class="code-area">Processor: device(type='cuda', index=0)
+Device id: 0</pre>
+</div>
+</div>
+<div class="readable-text" id="p154">
+<p>We have a GPU (in this listing output, at least). In the response, <code>device(type='cuda',</code> <code>index=0)</code> is what we were looking for. If a GPU isn’t available when you run the listing, <code>device(type='cpu')</code> will be returned instead, indicating that the CPU will be used for processing. If you have more than one capable device available to the notebook, it will list each of them with an incrementing numerical id. You can access the device later in training by specifying an <code>id</code> (in our case, <code>0</code>).</p>
+</div>
+<div class="readable-text intended-text" id="p155">
+<p>With our device ready to go, we will next load and tokenize our previously labeled dataset from listing 14.7.</p>
+</div>
+<div class="readable-text" id="p156">
+<h3 class="readable-text-h3" id="sigil_toc_id_218"><span class="num-string">14.3.1</span> Tokenizing and shaping our labeled data</h3>
+</div>
+<div class="readable-text" id="p157">
+<p>The model trainer doesn’t recognize words; it recognizes tokens that exist in the RoBERTa vocabulary. We covered tokenization in chapter 13, where we used it as an initial step when encoding documents and queries into dense vectors for semantic search. Similarly, we need to tokenize our question-answering dataset before we can use it to train the model. The model accepts token values as the input parameters, just like any other Transformer model. </p>
+</div>
+<div class="readable-text intended-text" id="p158">
+<p>The following listing shows how we’ll tokenize the data prior to model training.</p>
+</div>
+<div class="browsable-container listing-container" id="p159">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.9</span> Tokenizing our training set</h5>
+<div class="code-area-container">
+<pre class="code-area"># This function adapted from:
+# https://github.com/huggingface/notebooks/blob/master/examples/
+#question_answering.ipynb
+# Copyright 2001, Hugging Face. Apache 2.0 Licensed.
+from datasets import load_from_disk
+from transformers import RobertaTokenizerFast
+
+file = "data/question-answering/question-answering-training-set"
+datadict = datasets.load_from_disk(file)<span class="aframe-location"/> #1
+tokenizer = from_pretrained("roberta-base")<span class="aframe-location"/> #2
+...
+
+
+
+def tokenize_dataset(examples):
+  maximum_tokens = 384 <span class="aframe-location"/> #3
+  document_overlap = 128 <span class="aframe-location"/> #4
+  pad_on_right = tokenizer.padding_side == "right"<span class="aframe-location"/> #5
+  tokenized_examples = tokenizer( <span class="aframe-location"/> #6
+    examples["question" if pad_on_right  #6
+                        else "context"],  #6
+    examples["context" if pad_on_right  #6
+                       else "question"],  #6
+    truncation="only_second" if pad_on_right  #6
+                             else "only_first",  #6
+    max_length=maximum_tokens,  #6
+    stride=document_overlap,  #6
+    return_overflowing_tokens=True,  #6
+    return_offsets_mapping=True,  #6
+    padding="max_length"  #6
+  ) 
+  ... <span class="aframe-location"/> #7
+  return tokenized_examples
+
+tokenized_datasets = datadict.map( <span class="aframe-location"/> #8
+  tokenize_dataset,  #8
+  batched=True,  #8
+  remove_columns=datadict["train"].column_names)  #8</pre>
+<div class="code-annotations-overlay-container">
+     #1 Loads the datadict we created in listing 14.7 from our golden set
+     <br/>#2 Loads a pretrained tokenizer (roberta-base)
+     <br/>#3 This will be the number of tokens in both the question and context.
+     <br/>#4 Sometimes we need to split the context into smaller chunks, so these chunks will overlap by this many tokens.
+     <br/>#5 Add padding tokens to the end for question/context pairs that are shorter than the model input size.
+     <br/>#6 Performs the tokenization for each of the examples
+     <br/>#7 Additional processing to identify start and end positions for questions and contexts. See the notebook for the full algorithm.
+     <br/>#8 Invokes the tokenizer on each example in our golden dataset
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p160">
+<p>We load a tokenizer (trained on the <code>roberta-base</code> model), load our <code>question -answering-training-set</code> golden set from disk (data/question-answering/question -answering-training-set/), and then run the examples from the golden set through the tokenizer to generate a <code>tokenized_datasets</code> object with the training and test datasets we’ll soon pass to the model trainer. </p>
+</div>
+<div class="readable-text intended-text" id="p161">
+<p>For each context, we generate a list of tensors with a specific number of embeddings per tensor and a specific number of floats per embedding. The shape of the tensors containing the tokens must be the same for all the examples we provide to the trainer and evaluator. We accomplish this with a window-sliding technique. </p>
+</div>
+<div class="readable-text intended-text" id="p162">
+<p><em>Window sliding</em> is a technique that involves splitting a long list of tokens into many sublists of tokens, but where each sublist after the first shares an overlapping number of tokens with the previous sublist. In our case, <code>maximum_tokens</code> defines the size of each sublist, and <code>document_overlap</code> defines the overlap. This window-sliding process is demonstrated in figure 14.8.</p>
+</div>
+<div class="readable-text intended-text" id="p163">
+<p>Figure 14.8 demonstrates very small <code>maximum_tokens</code> (<code>24</code>) and <code>document_overlap</code> (<code>8</code>) numbers for illustration purposes, but the real tokenization process splits the contexts into tensors of <code>384</code> tokens with an overlap of <code>128</code>.</p>
+</div>
+<div class="readable-text intended-text" id="p164">
+<p>The window-sliding technique also makes use of <em>padding</em> to ensure that each tensor is the same length. If the number of tokens in the last tensor of the context is less than the maximum (<code>384</code>), then the rest of the positions in the tensor are filled with an empty marker token so that the final tensor size is also <code>384</code>.</p>
+</div>
+<div class="browsable-container figure-container" id="p165">
+<img alt="figure" height="549" src="../Images/CH14_F08_Grainger.png" width="1027"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.8</span> Visualizing the sliding window technique that splits one context into tensors of the same shape<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p166">
+<p>Knowing how the contexts are processed is important, as it can affect both accuracy and processing time. If we’re trying to identify answers in lengthy documents, the window-sliding process may reduce accuracy, particularly if the <code>maximum_tokens</code> and <code>document_overlap</code> are small and thus fragment the context too much. Long documents will also get sliced up into multiple tensors that collectively take longer to process. Most of the contexts in the outdoors dataset fit into the maximums we specified, but these trade-offs are important to consider in other datasets when choosing your <code>maximum_tokens</code> and <code>document_overlap</code> parameters. </p>
+</div>
+<div class="readable-text" id="p167">
+<h3 class="readable-text-h3" id="sigil_toc_id_219"><span class="num-string">14.3.2</span> Configuring the model trainer</h3>
+</div>
+<div class="readable-text" id="p168">
+<p>We have one last step before we train our model: we need to specify <em>how</em> training and evaluation will happen. </p>
+</div>
+<div class="readable-text intended-text" id="p169">
+<p>When training our model, we need to specify the base model and training arguments (hyperparameters), as well as our training and testing datasets. You’ll want to understand the following key concepts when configuring the hyperparameters for the model trainer:</p>
+</div>
+<ul>
+<li class="readable-text" id="p170"> <em>Epochs</em><em> </em>—The number of times the trainer will iterate over the dataset. More epochs help reinforce the context and reduce loss over time. Having too many epochs will likely overfit your model, though, and 3 epochs is a common choice when fine-tuning Transformers. </li>
+<li class="readable-text" id="p171"> <em>Batch sizes</em><em> </em>—The number of examples that will be trained/evaluated at once. A higher batch size might produce a better model. This setting is constrained by GPU core count and available memory, but common practice is to fit as much in a batch as possible to make the most of the available resources. </li>
+<li class="readable-text" id="p172"> <em>Warmups</em><em> </em>—When training a model, it can be helpful to slowly tune the model initially, so that the early examples don’t have an undue influence on the model’s learned parameters. Warmup steps allow gradual improvements to the model (the <em>learning rate</em>), which helps prevent the trainer from overfitting on early examples. </li>
+<li class="readable-text" id="p173"> <em>Decay</em><em> </em>—Weight decay is used to reduce overfitting by multiplying each weight by this constant value at each step. It is common to use 0.01 as the weight decay, but this can be changed to a higher value if the model is quickly overfitting or to a lower value if you don’t see improvement fast enough. </li>
+</ul>
+<div class="readable-text" id="p174">
+<p>Listing 4.10 demonstrates configuring the model trainer. The hyperparameters (<code>training_args</code>) we’ve specified in the listing are those used by SQuAD2 by default, but feel free to adjust any of them to see how it improves the quality of the question-answering model for your own questions. </p>
+</div>
+<div class="readable-text intended-text" id="p175">
+<p>When trying to choose the best settings, a common technique is to perform a grid search over these hyperparameters. A <em>grid search</em> is a process that automatically iterates over parameter values and tests how adjusting each of them in different combinations improves the quality of the trained models. We include a grid search example in the accompanying notebooks, should you wish to dive deeper into parameter tuning, but for now we’ll proceed with the hyperparameters specified in listing 14.10. </p>
+</div>
+<div class="browsable-container listing-container" id="p176">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.10</span> Initializing the trainer and its hyperparameters</h5>
+<div class="code-area-container">
+<pre class="code-area">from transformers import RobertaForQuestionAnswering, TrainingArguments,
+                         Trainer, default_data_collator
+
+model = RobertaForQuestionAnswering.from_pretrained(
+  "deepset/roberta-base-squad2")
+
+training_args = TrainingArguments(
+  evaluation_strategy="epoch", <span class="aframe-location"/> #1
+  num_train_epochs=3, <span class="aframe-location"/> #2
+  per_device_train_batch_size=16, <span class="aframe-location"/> #3
+ <span class="aframe-location"/> per_device_eval_batch_size=64,  #4
+  warmup_steps=500, <span class="aframe-location"/> #5
+ <span class="aframe-location"/> weight_decay=0.01, #6
+  logging_dir="data/question-answering/logs",
+  output_dir="data/question-answering/results")
+
+trainer = Trainer(
+  model=model, <span class="aframe-location"/> #7
+  args=training_args, <span class="aframe-location"/> #8
+  data_collator=default_data_collator,
+  tokenizer=tokenizer,
+  train_dataset=tokenized_datasets["train"],<span class="aframe-location"/> #9
+  eval_dataset=tokenized_datasets["test"]) <span class="aframe-location"/> #10</pre>
+<div class="code-annotations-overlay-container">
+     #1 Evaluates loss per epoch
+     <br/>#2 Total number of training epochs
+     <br/>#3 Batch size per device during training
+     <br/>#4 Batch size for evaluation
+     <br/>#5 Number of warmup steps for learning rate scheduler
+     <br/>#6 Strength of weight decay
+     <br/>#7 The instantiated Hugging Face Transformers model to be trained
+     <br/>#8 Training arguments
+     <br/>#9 Specifies the training dataset
+     <br/>#10 Specifies the evaluation dataset
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p177">
+<h3 class="readable-text-h3" id="sigil_toc_id_220"><span class="num-string">14.3.3</span> Performing training and evaluating loss</h3>
+</div>
+<div class="readable-text" id="p178">
+<p>With our hyperparameters all set, it’s now time to train the model. The following listing runs the previously configured trainer, returns the training output showing the model’s performance, and saves the model. </p>
+</div>
+<div class="browsable-container listing-container" id="p179">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.11</span> Training and saving the model</h5>
+<div class="code-area-container">
+<pre class="code-area">trainer.train()
+model_name = "data/question-answering/roberta-base-squad2-fine-tuned"
+trainer.save_model(model_name)</pre>
+</div>
+</div>
+<div class="readable-text" id="p180">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p181">
+<div class="code-area-container">
+<pre class="code-area">[30/30 00:35, Epoch 3/3]
+Epoch   Training Loss   Validation Loss     Runtime     Samples Per Second
+1       No log          2.177553            1.008200    43.642000
+2       No log          2.011696            1.027800    42.811000
+3       No log          1.938573            1.047700    41.996000
+
+TrainOutput(global_step=30, training_loss=2.531823984781901,
+            metrics={'train_runtime': 37.1978,
+                     'train_samples_per_second': 0.806,
+                     'total_flos': 133766734473216, 'epoch': 3.0})</pre>
+</div>
+</div>
+<div class="readable-text" id="p182">
+<p>A <em>loss function</em> is a decision function that uses the error to give a quantified estimate of how bad a model is. Lower loss means a higher-quality model. What we’re looking for is a gradual reduction in loss with each epoch, which indicates that the model is continuing to get better with more training. We went from a validation loss of <code>2.178</code> to <code>2.012</code> to <code>1.939</code> on our testing set. The numbers are all getting smaller at a steady rate (no huge jumps), and that’s a good sign. </p>
+</div>
+<div class="readable-text intended-text" id="p183">
+<p>The overall training loss for this freshly fine-tuned model is <code>2.532</code>, and the validation loss on our testing set is <code>1.939</code>. Given the constraints of our small fine-tuning dataset and hyperparameter configuration, a validation loss as small as <code>1.939</code> is quite good. </p>
+</div>
+<div class="readable-text" id="p184">
+<h3 class="readable-text-h3" id="sigil_toc_id_221"><span class="num-string">14.3.4</span> Holdout validation and confirmation</h3>
+</div>
+<div class="readable-text" id="p185">
+<p>How do we know if our trained model can be used successfully for real-world question answering? Well, we need to test the model against our holdout validation dataset. Recall that the holdout validation set is the third dataset (with only 10 examples) in our <code>datadict</code> from listing 14.9. </p>
+</div>
+<div class="readable-text intended-text" id="p186">
+<p>Figure 14.9 underscores the purpose of the holdout validation set. We want the loss from the evaluation of our holdout set to be as good as our validation loss of <code>1.939</code> from listing 14.11. If our holdout loss turns out higher, that would be a red flag that we may have overfit! Let’s see how our model performs in the following listing.</p>
+</div>
+<div class="browsable-container figure-container" id="p187">
+<img alt="figure" height="434" src="../Images/CH14_F09_Grainger.png" width="532"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 14.9</span> Holdout set: answering previously unseen questions with our trained mode</h5>
+</div>
+<div class="browsable-container listing-container" id="p188">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.12</span> Evaluating the trained model on the holdout examples</h5>
+<div class="code-area-container">
+<pre class="code-area">evaluation = trainer.evaluate(eval_dataset=tokenized_datasets["validation"])
+display(evaluation)</pre>
+</div>
+</div>
+<div class="readable-text" id="p189">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p190">
+<div class="code-area-container">
+<pre class="code-area">{"eval_loss": 1.7851890325546265,
+ "eval_runtime": 2.9417,
+ "eval_samples_per_second": 5.099,
+ "eval_steps_per_second": 0.34,
+ "epoch": 3.0}</pre>
+</div>
+</div>
+<div class="readable-text" id="p191">
+<p>The <code>eval_loss</code> of <code>1.785</code> from testing our holdout validation set looks great. It’s even better than the training and testing loss. This means that our model is working well and is likely not overfitting the training or testing data.</p>
+</div>
+<div class="readable-text intended-text" id="p192">
+<p>Feel free to continue training and improving the model, but we’ll continue with this as the fully trained model that we’ll integrate into the reader for our question-answering system. </p>
+</div>
+<div class="readable-text" id="p193">
+<h2 class="readable-text-h2" id="sigil_toc_id_222"><span class="num-string">14.4</span> Building the reader with the new fine-tuned model</h2>
+</div>
+<div class="readable-text" id="p194">
+<p>Now that our reader’s model training is completed, we’ll integrate it into a question-answering pipeline to produce our finalized reader that can extract answers from questions and contexts. The following listing demonstrates how we can load our model into a <code>question-answering</code> pipeline provided by the <code>transformers</code> library. </p>
+</div>
+<div class="browsable-container listing-container" id="p195">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.13</span> Loading the fine-tuned outdoors question-answering model</h5>
+<div class="code-area-container">
+<pre class="code-area">device = get_processor_device()
+model_name = "data/question-answering/roberta-base-squad2-fine-tuned"
+nlp2 = pipeline("question-answering", model=model_name,
+                tokenizer=model_name, device=device)</pre>
+</div>
+</div>
+<div class="readable-text" id="p196">
+<p>With the question-answering pipeline loaded, we’ll extract some answers from some question/context pairs. Let’s use our 10-document holdout validation set used earlier in section 14.3.4. The holdout examples were not used to train or to test the model, so they should be a good litmus test for how well our model works in practice.</p>
+</div>
+<div class="readable-text intended-text" id="p197">
+<p>In the following listing, we test the accuracy of our question-answering model on the holdout validation set examples.</p>
+</div>
+<div class="browsable-container listing-container" id="p198">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.14</span> Evaluating the fine-tuned question-answering model</h5>
+<div class="code-area-container">
+<pre class="code-area">def answer_questions(examples):
+  answers = []
+  success = 0
+  for example in examples:
+    question = {"question": example["question"][0],
+                "context": example["context"][0]}
+    answer = nlp2(question)
+    label = example["answers"][0]["text"][0]
+    result = answer["answer"]
+    print(question["question"])
+    print("Label:", label)
+    print("Result:", result)
+    print("----------")
+    success += 1 if label == result else 0
+    answers.append(answer)
+  print(f"{success}/{len(examples)} correct")
+
+datadict["validation"].set_format(type="pandas", output_all_columns=True)
+validation_examples = [example for example in datadict["validation"]]
+answer_questions(validation_examples)</pre>
+</div>
+</div>
+<div class="readable-text" id="p199">
+<p>Output:</p>
+</div>
+<div class="browsable-container listing-container" id="p200">
+<div class="code-area-container">
+<pre class="code-area">How to get pine sap off my teeth
+Label: Take a small amount of margarine and rub on the sap
+Result: Take a small amount of margarine and rub on the sap
+
+Why are backpack waist straps so long?
+Label: The most backpacks have only one size for everyone
+Result: The most backpacks have only one size for everyone
+
+...
+
+How efficient is the Altai skis "the Hok"?
+Label: you can easily glide in one direction (forward) and if you try to
+       glide backwards, the fur will "bristle up"
+Result: you can easily go uphill, without (much) affecting forward gliding performance
+
+7/10 Correct</pre>
+</div>
+</div>
+<div class="readable-text" id="p201">
+<p>Successfully extracting 7 out of 10 correct answers is an impressive result. Congratulations, you’ve now fine-tuned an LLM for a real-world use case! This completes the <code>reader</code> component of our architecture, but we still need to combine it with a <code>retriever</code> that finds the initial candidate contexts to pass to the <code>reader</code>. In the next section, we’ll incorporate the retriever (our search engine) to finalize the end-to-end question-answering system. </p>
+</div>
+<div class="readable-text" id="p202">
+<h2 class="readable-text-h2" id="sigil_toc_id_223"><span class="num-string">14.5</span> Incorporating the retriever: Using the question-answering model with the search engine</h2>
+</div>
+<div class="readable-text" id="p203">
+<p>Next, we’ll implement a rerank operation using the reader confidence score to rank the top answers. Here’s an outline of the steps we’ll go through in this exercise:</p>
+</div>
+<ol>
+<li class="readable-text" id="p204"> Query the outdoors index from a search collection tuned for high recall. </li>
+<li class="readable-text" id="p205"> Pair our question with the top-<em>K</em> document results and infer answers and scores with the question-answering NLP inference pipeline. </li>
+<li class="readable-text" id="p206"> Rerank the answer predictions by descending score. </li>
+<li class="readable-text" id="p207"> Return the correct answer and top results using the parts created in steps 1 through 3. </li>
+</ol>
+<div class="readable-text" id="p208">
+<p>See figure 14.4 for a refresher on this application flow.</p>
+</div>
+<div class="readable-text" id="p209">
+<h3 class="readable-text-h3" id="sigil_toc_id_224"><span class="num-string">14.5.1</span> Step 1: Querying the retriever</h3>
+</div>
+<div class="readable-text" id="p210">
+<p>Our goal in the first retrieval stage is recall. Specifically, what are all the possibly relevant documents that may contain our answer? We rely on the already-tuned search collection to give us that recall so that we can pass quality documents into our reranking stage. </p>
+</div>
+<div class="readable-text intended-text" id="p211">
+<p>The following listing implements our <code>retriever</code> function, which can accept a question and return an initial list of relevant documents to consider as potential contexts for the answer. </p>
+</div>
+<div class="browsable-container listing-container" id="p212">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.15</span> Retriever function that searches for relevant answers</h5>
+<div class="code-area-container">
+<pre class="code-area">nlp = spacy.load("en_core_web_sm") <span class="aframe-location"/> #1
+nlp.remove_pipe("ner")
+
+def get_query_from_question(question):
+  words = [token.text for token in nlp(question)
+           if not (token.lex.is_stop or token.lex.is_punct)]
+  return " ".join(words)
+
+def retriever(question):
+  contexts = {"id": [], "question": [], "context": [], "url": []}
+  query = get_query_from_question(question)<span class="aframe-location"/> #2
+  request = {"query": query,
+             "query_fields": ["body"],
+             "return_fields": ["id", "url", "body"],
+             "filters": [("post_type", "answer")], <span class="aframe-location"/> #3
+             "limit": 5}
+  docs = outdoors_collection.search(**request)["docs"]
+  for doc in docs:
+    contexts["id"].append(doc["id"])
+    contexts["url"].append(doc["url"])
+    contexts["question"].append(question)
+    contexts["context"].append(doc["body"])
+  return pandas.DataFrame(contexts)
+
+example_contexts = retriever('What are minimalist shoes?')
+display_contexts(example_contexts)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Uses the English spaCy NLP model
+     <br/>#2 Converts the question to a query by removing stop words and focusing on important parts of speech (see the notebook for the implementation)
+     <br/>#3 Only gets answer documents (not questions)
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p213">
+<p>Response:</p>
+</div>
+<div class="browsable-container listing-container" id="p214">
+<div class="code-area-container">
+<pre class="code-area">id     question                    context
+18376  What are minimalist shoes?  Minimalist shoes or "barefoot" shoes are shoes...
+18370  What are minimalist shoes?  There was actually a project done on the defin...
+16427  What are minimalist shoes?  One summer job, I needed shoes to walk on a ro...
+18375  What are minimalist shoes?  The answer to this question will vary on your...
+13540  What are minimalist shoes?  Barefoot Shoes Also known as minimalist shoes,...</pre>
+</div>
+</div>
+<div class="readable-text" id="p215">
+<p>One problem we face when using the question as the query is noise. There are lots of documents that have the terms “who”, “what”, “when”, “where”, “why”, and “how”, as well as other stop words and less important parts of speech. Although BM25 may do a good job of deprioritizing these terms in a ranking function, we know those are not the key terms a user is searching for, so we remove them in the <code>get_query_from_question</code> function to reduce noise. We covered part of speech tagging with spaCy previously in chapters 5 and 13, so we won’t repeat the implementation here (you can find it in the notebook). </p>
+</div>
+<div class="readable-text intended-text" id="p216">
+<p>With a good set of documents returned from the search engine that may contain the answers to the user’s question, we can now pass those documents as contexts to the <code>reader</code> model. </p>
+</div>
+<div class="readable-text" id="p217">
+<h3 class="readable-text-h3" id="sigil_toc_id_225"><span class="num-string">14.5.2</span> Step 2: Inferring answers from the reader model</h3>
+</div>
+<div class="readable-text" id="p218">
+<p>We now can use the <code>reader</code> model to infer answers to the question from each of the top <em>N</em> contexts. Listing 14.16 implements our generic <code>reader</code> interface, which accepts the output from the <code>retriever</code> from step 1. The model and pipeline loading for the <code>retriever</code> follow the same process as in listing 14.13, while the rest of the <code>reader</code> implementation specifically handles generating candidate answers (along with scores for each answer) from the passed-in contexts. </p>
+</div>
+<div class="browsable-container listing-container" id="p219">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.16</span> Reader function that incorporates our fine-tuned model</h5>
+<div class="code-area-container">
+<pre class="code-area">from transformers import pipeline
+
+device = get_processor_device()
+model_name = "data/question-answering/roberta-base-squad2-fine-tuned"
+qa_nlp = pipeline("question-answering", model=model_name, <span class="aframe-location"/> #1
+                  tokenizer=model_name, device=device)  #1
+
+def reader(contexts):
+  answers = []
+  for _, row in contexts.iterrows(): <span class="aframe-location"/> #2
+    answer = qa_nlp({"question": row["question"],  #2
+                     "context": row["context"]})  #2
+    answer["id"] = row["id"] <span class="aframe-location"/> #3
+    answer["url"] = row["url"]  #3
+    answers.append(answer)  #2
+  return answers</pre>
+<div class="code-annotations-overlay-container">
+     #1 Creates a spaCy pipeline using our fine-tuned model
+     <br/>#2 Invokes the reader pipeline to extract a candidate answer from each context
+     <br/>#3 Returns additional metadata about where each answer was found
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p220">
+<p>The <code>reader</code> returns an answer from each context based upon our fine-tuned model, along with the <code>id</code>, <code>url</code>, and <code>score</code> for the answer. </p>
+</div>
+<div class="readable-text" id="p221">
+<h3 class="readable-text-h3" id="sigil_toc_id_226"><span class="num-string">14.5.3</span> Step 3: Reranking the answers</h3>
+</div>
+<div class="readable-text" id="p222">
+<p>Listing 14.17 shows a straightforward function that reranks the answers by simply sorting them by the score (the probability mass function outputs) from the <code>reader</code> model. The top answer is the most likely and is therefore shown first. You can show one answer, or you can show all that are returned by the reader. Indeed, sometimes it might be useful to give the question-asker multiple options and let them decide. This increases the odds of showing a correct answer, but it also takes up more space in the browser or application presenting the answers, so it may require a user experience trade-off. </p>
+</div>
+<div class="browsable-container listing-container" id="p223">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.17</span> The reranker sorts on scores from the reader</h5>
+<div class="code-area-container">
+<pre class="code-area">def reranker(answers):
+  return sorted(answers, key=lambda k: k["score"], reverse=True)</pre>
+</div>
+</div>
+<div class="readable-text" id="p224">
+<p>We should note that your reranker could be more sophisticated, potentially incorporating multiple conditional models or even attempting to combine multiple answers together (such as overlapping answers from multiple contexts). For our purposes, we’ll just rely on the top score. </p>
+</div>
+<div class="readable-text" id="p225">
+<h3 class="readable-text-h3" id="sigil_toc_id_227"><span class="num-string">14.5.4</span> Step 4: Returning results by combining the retriever, reader, and reranker</h3>
+</div>
+<div class="readable-text" id="p226">
+<p>We’re now ready to assemble all the components of our question-answering (QA) system. The hard part is done, so we can put them in one function, aptly named <code>ask</code>, which will accept a query and print out the answer. </p>
+</div>
+<div class="browsable-container listing-container" id="p227">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 14.18</span> QA function combining retriever, reader, and reranker</h5>
+<div class="code-area-container">
+<pre class="code-area">def ask(question):
+  documents = retriever(question)
+  answers = reader(documents)
+  reranked = reranker(answers)
+  print_answer(question, reranked)
+
+ask('What is the best mosquito repellent?')
+ask('How many miles can a person hike day?')
+ask('How much water does a person need per day?')</pre>
+</div>
+</div>
+<div class="readable-text" id="p228">
+<p>Response:</p>
+</div>
+<div class="browsable-container listing-container" id="p229">
+<div class="code-area-container">
+<pre class="code-area">What is the best mosquito repellent?
+1116   DEET (0.606)
+1056   thiamine (0.362)
+569    Free-standing bug nets (0.158)
+1076   Insect repellent is not 100% effective (0.057)
+829    bear-spray (0.05)
+
+How many miles can a person hike day?
+17651 20-25 (0.324)
+19609 12 miles (0.164)
+19558 13 (0.073)
+13030 25-35 (0.065)
+4536 13 miles (0.022)
+
+How much water does a person need per day?
+1629 3 liters (0.46)
+193 MINIMUM a gallon (0.235)
+20634 0.4 to 0.6 L/day (0.207)
+11679 4 litres (0.084)
+11687 carry water (0.037)</pre>
+</div>
+</div>
+<div class="readable-text" id="p230">
+<p>These results look pretty good. Note that in some cases multiple contexts could return the same answer. Generally, this would be a strong signal of a correct answer, so it may be a signal to consider integrating into your reranking.</p>
+</div>
+<div class="readable-text intended-text" id="p231">
+<p>It’s amazing to see the quality of results possible using these out-of-the-box models with minimal retraining. Kudos to the NLP community for making these open source tools, techniques, models, and datasets freely available and straightforward to use!</p>
+</div>
+<div class="readable-text intended-text" id="p232">
+<p>Congratulations, you’ve successfully implemented an end-to-end question-answering system that extracts answers from search results. You generated a silver set of answers, saw how to improve them into a golden set, loaded and fine-tuned a question-answering reader model, and implemented the retriever-reader pattern, using your trained model and the search engine.</p>
+</div>
+<div class="readable-text intended-text" id="p233">
+<p>With LLMs, we can do much more than just extract answers from search results, however. LLM’s can be fine-tuned to perform abstractive question answering to generate answers not seen in search results but synthesized from multiple sources. They can also be trained to summarize search results for users or even synthesize brand-new content (text, images, etc.) in response to user input. Many LLMs are trained on so much data across such a widespread amount of human knowledge (such as the majority of the known internet), that they can often perform a wide variety of tasks like this well out of the box. These foundation models, which we’ll cover in the next chapter, are paving the way for the next evolution of both AI and AI-powered search. </p>
+</div>
+<div class="readable-text" id="p234">
+<h2 class="readable-text-h2" id="sigil_toc_id_228">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p235"> An extractive question-answering system generally follows the retriever-reader pattern, where possible contexts (documents) are found by the retriever and are then analyzed using the reader model to extract the most likely answer. </li>
+<li class="readable-text" id="p236"> A search engine serves as a great retriever, since it is specifically designed to take a query and return ranked documents that are likely to serve as relevant context for the query. </li>
+<li class="readable-text" id="p237"> A reader model analyzes spans of text to predict the most likely beginning and ending of the answer within each context, scoring all options to extract the most likely answer. </li>
+<li class="readable-text" id="p238"> Curating a training dataset is time-intensive, but you can generate a silver set of training data automatically using a pretrained model. You can then tweak the answers in the silver set to save significant effort compared to creating the entire golden training dataset manually. </li>
+<li class="readable-text" id="p239"> You can fine-tune a pretrained model to your specific dataset using a training, testing, and holdout validation dataset and optimizing for a loss minimization function.  </li>
+</ul>
+</div></body></html>

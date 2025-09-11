@@ -1,0 +1,951 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">10</span></span> <span class="chapter-title-text"><em>Creating a coding copilot project: This would have helped you earlier </em></span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Deploying a coding model to an API</li>
+<li class="readable-text" id="p3">Setting up a VectorDB locally and using it for a retrieval-augmented generation system</li>
+<li class="readable-text" id="p4">Building a VS Code extension to use our LLM service</li>
+<li class="readable-text" id="p5">Insights and lessons learned from the project</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<blockquote>
+<div>
+     Progress doesn’t come from early risers—progress is made by lazy men looking for easier ways to do things. 
+     <div class="quote-cite">
+       —Robert Heinlein 
+     </div>
+</div>
+</blockquote>
+</div>
+<div class="readable-text" id="p7">
+<p>If you touch code for your day job, you’ve probably dreamed about having an AI assistant helping you out. In fact, maybe you already do. With tools like GitHub Copilot out on the market, we have seen LLMs take autocomplete to the next level. However, not every company is happy with the offerings on the market, and not every enthusiast can afford them. So let’s build our own!</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>In this chapter, we will build a Visual Studio Code (VS Code) extension that will allow us to use our LLM in the code editor. The editor of choice will be VS Code, as it is a popular open source code editor. Popular might be an understatement, as the Stack Overflow 2023 Developer Survey showed it’s the preferred editor for 81% of developers.<a href="#footnote-129"><sup class="footnote-reference" id="footnote-source-1">1</sup></a> It’s essentially a lightweight version of Visual Studio, which is a full IDE that’s been around since 1997. </p>
+</div>
+<div class="readable-text intended-text" id="p9">
+<p>Beyond just choosing a specific editor, we will also make some other judicious decisions to limit the scope of the project and make it more meaningful. For example, in the last project, we focused on building an awesome LLM model we could deploy. In this project, we will instead be starting with an open source model that has already been trained on coding problems. To customize it, instead of finetuning, we’ll build a RAG system around it, which will allow us to keep it up to date more easily. Also, since we aren’t training our own model, we’ll focus on building a copilot that is good at Python, the main language we’ve used throughout this book, and not worry about every language out there. </p>
+</div>
+<div class="readable-text intended-text" id="p10">
+<p>Now that we have a clear idea of what we are building and a goal in mind, let’s get to it!</p>
+</div>
+<div class="readable-text" id="p11">
+<h2 class="readable-text-h2" id="sigil_toc_id_162"><span class="num-string">10.1</span> Our model</h2>
+</div>
+<div class="readable-text" id="p12">
+<p>Since we are only going to be focusing on Python, we decided to use DeciCoder as our model. DeciCoder is a commercial open source model that has only 1B parameters.<a href="#footnote-130"><sup class="footnote-reference" id="footnote-source-2">2</sup></a> Despite its tiny size, it’s really good at what it does. It has been trained on the Stack dataset but filtered to only include Python, Java, and JavaScript code. It’s only trained on three languages, which would typically be a limitation, but it is actually part of the secret sauce of why it’s so good despite its small size.</p>
+</div>
+<div class="readable-text intended-text" id="p13">
+<p>Some other limitations to be aware of are that it only has a context window of 2,048 tokens, which isn’t bad for a model of this size, but it is relatively small when we consider that we plan to use a RAG system and will need to give it examples of code. Code samples tend to be quite large, which limits what we can do and how many examples we can give it.</p>
+</div>
+<div class="readable-text intended-text" id="p14">
+<p>A bigger problem using DeciCoder with RAG is that the model wasn’t instruction tuned. Instead, it was designed to beat the HumanEval dataset (<a href="https://github.com/openai/human-eval">https://github.com/openai/human-eval</a>). In this evaluation dataset, a model is given only a function name and docstring describing what the function should do. From just this input, the model will generate functioning code to complete the function. As a result, it’s hard to know if giving the model more context from a RAG system will help it, but we’re going to go ahead and try to find out!</p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>Lastly, its tiny size actually makes it an interesting choice for another reason. Because it’s so small, we could potentially put the model right inside the VS Code extension we are building, using compiling methods we’ve discussed in other chapters. This would allow us to build a very compact application! We won’t be doing that in this book, mostly because it would require us to write a lot of JavaScript. That’s a problem because we only expect our readers to be familiar with Python, so it’s a tad too adventurous here to explain the details in-depth, but we leave it as an exercise for the readers who are JavaScript pros.</p>
+</div>
+<div class="readable-text intended-text" id="p16">
+<p>What we will do instead is serve our model as an API that you can run locally and will be able to call from the extension. In listing 10.1, we create a simple FastAPI service to serve our model. In fact, most of this code you’ve already seen back in chapter 6, and we have only made a few slight changes. The first is that we have changed the code to use the DeciCoder model and tokenizer. The second is a bit more involved, but we have added <code>stop</code> tokens. These are tokens that will inform the model to stop generating when it runs into them. This is done by creating a <code>StoppingCriteria</code> class. The tokens we have chosen will make a bit more sense once we’ve defined our prompt, but essentially, we are looking to have our model create one function at a time.</p>
+</div>
+<div class="browsable-container listing-container" id="p17">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.1</span> A simple FastAPI endpoint using DeciCoder </h5>
+<div class="code-area-container">
+<pre class="code-area">import argparse
+
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+import torch
+import uvicorn
+
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    StoppingCriteria,
+    StoppingCriteriaList,
+)
+
+
+torch.backends.cuda.enable_mem_efficient_sdp(False)   <span class="aframe-location"/> #1
+torch.backends.cuda.enable_flash_sdp(False)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+stop_tokens = ["def", "class", "Instruction", "Output"]    <span class="aframe-location"/> #2
+stop_token_ids = [589, 823, 9597, 2301]
+
+
+class StopOnTokens(StoppingCriteria):
+    def __call__(
+        self,
+        input_ids: torch.LongTensor,
+        scores: torch.FloatTensor,
+        **kwargs,
+    ) -&gt; bool:
+        stop_ids = stop_token_ids
+        for stop_id in stop_ids:
+            if input_ids[0][-1] == stop_id:
+                return True
+        return False
+
+
+tokenizer = AutoTokenizer.from_pretrained("Deci/DeciCoder-1b")   <span class="aframe-location"/> #3
+tokenizer.add_special_tokens( #3
+    {"additional_special_tokens": stop_tokens}, #3
+    replace_additional_special_tokens=False, #3
+) #3
+model = AutoModelForCausalLM.from_pretrained( #3
+    "Deci/DeciCoder-1b", torch_dtype=torch.bfloat16, trust_remote_code=True #3
+) #3
+model = model.to(device) #3
+
+
+app = FastAPI()    <span class="aframe-location"/> #4
+
+
+@app.post("/generate")
+async def generate(request: Request) -&gt; Response:
+    """Generate LLM Response
+
+    The request should be a JSON object with the following fields:
+    - prompt: the prompt to use for the generation.
+    """
+    request_dict = await request.json()
+    prompt = request_dict.pop("prompt")
+
+    # ...     <span class="aframe-location"/> #5
+
+    inputs = tokenizer(prompt, return_tensors="pt").to(device)   <span class="aframe-location"/> #6
+    response_tokens = model.generate(
+        inputs["input_ids"],
+        max_new_tokens=1024,
+        stopping_criteria=StoppingCriteriaList([StopOnTokens()]),
+    )
+    input_length = inputs["input_ids"].shape[1]
+    response = tokenizer.decode(
+        response_tokens[0][input_length:], skip_special_tokens=True
+    )
+
+    return response
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()    <span class="aframe-location"/> #7
+    parser.add_argument("--host", type=str, default=None)
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="debug")</pre>
+<div class="code-annotations-overlay-container">
+     #1 Torch settings
+     <br/>#2 Δefines the stopping behavior
+     <br/>#3 Loads tokenizer and models
+     <br/>#4 Runs FastAPI
+     <br/>#5 RAG will go here.
+     <br/>#6 Generates response
+     <br/>#7 Starts service; defaults to localhost on port 8000
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p18">
+<p>Assuming this listing is in a Python script server.py, you can start up the server by running <code>$</code> <code>python</code> <code>server.py</code>. Once you have it up and running, let’s go ahead and make sure it’s working correctly by sending it a request. In a new terminal, we can send the API a <code>curl</code> request with a simple prompt:</p>
+</div>
+<div class="browsable-container listing-container" id="p19">
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">$ curl --request POST --header "Content-Type: application/json" --data 
+<span class="">↪</span> '{"prompt":"def hello_world(name):"}' http://localhost:8000/generate</pre>
+</div>
+</div>
+<div class="readable-text" id="p20">
+<p>The response should be a simple Python function to complete a “Hello World” function. The response we got back from the server was <code>return</code> <code>f"Hello</code> <code>{name}!"</code>. So far, so good! Next, we’ll customize the API to utilize a RAG system.</p>
+</div>
+<div class="readable-text" id="p21">
+<h2 class="readable-text-h2" id="sigil_toc_id_163"><span class="num-string">10.2</span> Data is king</h2>
+</div>
+<div class="readable-text" id="p22">
+<p>Now that we have decided on a model, let’s prepare a dataset for our RAG system. RAG is an effective way to introduce context to our model without having to finetune it; it also allows us to customize the results based on our data. Essentially, RAG is a good system to follow if you want your model to know the context of your organization’s ever-changing code base. It’s great to have a model that’s good at coding, but we want it to be good at <em>our</em> code. We want it to use the right variable names and import custom dependencies built in-house—that sort of thing. In this section, we’ll set up a VectorDB, upload a Python coding dataset, and then update the API we just built to utilize it all.</p>
+</div>
+<div class="readable-text" id="p23">
+<h3 class="readable-text-h3" id="sigil_toc_id_164"><span class="num-string">10.2.1</span> Our VectorDB</h3>
+</div>
+<div class="readable-text" id="p24">
+<p>Before we can really dive into our dataset, we need to first set up our infrastructure. Of course, if your dataset is small enough, it is possible to load it into memory and run similarity search with tools like Faiss or USearch directly in Python, but where’s the fun in that? Plus, we want to show you Milvus.</p>
+</div>
+<div class="readable-text intended-text" id="p25">
+<p>Milvus is an awesome open source VectorDB that competes with the big players in this space. You can run it locally or across a large cloud cluster, so it scales easily to your needs. If you’d rather not deal with the setup, there are managed Milvus clusters available. One of my favorite features is its GPU-enabled version, which makes vector search lightning fast.</p>
+</div>
+<div class="readable-text intended-text" id="p26">
+<p>Thankfully, the community has also made Milvus extremely approachable and easy to set up. In fact, the standalone version only requires Docker to run and comes with a startup script to make it even easier. Since we are going to run everything locally for this project, we will use the standalone version (to learn more, see <a href="https://mng.bz/aVE9">https://mng.bz/aVE9</a>). To do so, we need to run the following commands in a terminal:</p>
+</div>
+<div class="browsable-container listing-container" id="p27">
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">$ wget https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/
+<span class="">↪</span> standalone_embed.sh
+$ bash standalone_embed.sh start</pre>
+</div>
+</div>
+<div class="readable-text" id="p28">
+<p>The first command will download a shell script, and the second will run it. This script is really only out of convenience since the Docker <code>run</code> command gets rather long. It also includes two more commands you should know about. The <code>Stop</code> command, which will stop your Milvus docker container, is</p>
+</div>
+<div class="browsable-container listing-container" id="p29">
+<div class="code-area-container">
+<pre class="code-area">$ bash standalone_embed.sh stop</pre>
+</div>
+</div>
+<div class="readable-text" id="p30">
+<p>and the <code>delete</code> command, which will delete all the data from your computer when you no longer wish to keep it, is</p>
+</div>
+<div class="browsable-container listing-container" id="p31">
+<div class="code-area-container">
+<pre class="code-area">$ bash standalone_embed.sh delete</pre>
+</div>
+</div>
+<div class="readable-text" id="p32">
+<p>You don’t need to run those yet, but remember them for when we are done. Now that we have our database set up, let’s make it useful and load some data into it.</p>
+</div>
+<div class="readable-text" id="p33">
+<h3 class="readable-text-h3" id="sigil_toc_id_165"><span class="num-string">10.2.2</span> Our dataset</h3>
+</div>
+<div class="readable-text" id="p34">
+<p>If this were a workshop, we’d show you how to write a script to pull your organization’s code from GitHub and use that to augment your prompts. We could even set up a GitHub Actions pipeline to update our VectorDB with your code whenever it merges into the main branch. But since we don’t have access to your code and this is only a book, we’ll do the reasonable thing and use an open source dataset.</p>
+</div>
+<div class="readable-text intended-text" id="p35">
+<p>We will choose the Alpaca dataset for our project. The Alpaca dataset was compiled by Stanford when it trained the model of the same name using distillation and GPT-3 as the mentor model. Since it’s synthetic data, the dataset is extremely clean, making it easy to work with. In fact, it’s so easy that multiple copies online have already filtered out all the Python code examples. This subset comprises 18.6K Python coding challenges, consisting of a task or instruction and generated code—perfect for what we are trying to accomplish.</p>
+</div>
+<div class="readable-text intended-text" id="p36">
+<p>In listing 10.2, we create our pipeline to load the dataset into Milvus. We create a <code>PythonCodeIngestion</code> class to handle the details of chunking our dataset and uploading it in batches. Note that we use the <code>krlvi/sentence-t5-base-nlpl-code_search_</code> <code>net</code> embedding model. This embedding model has been specifically trained on the CodeSearchNet dataset (<a href="https://github.com/github/CodeSearchNet">https://github.com/github/CodeSearchNet</a>) and is excellent for creating meaningful embeddings of code.</p>
+</div>
+<div class="browsable-container listing-container" id="p37">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.2</span> A data pipeline to ingest Alpaca</h5>
+<div class="code-area-container">
+<pre class="code-area">from pymilvus import (
+    connections,
+    utility,
+    FieldSchema,
+    CollectionSchema,
+    DataType,
+    Collection,
+)
+
+from transformers import AutoTokenizer
+from datasets import load_dataset
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
+
+from tqdm.auto import tqdm
+from uuid import uuid4
+
+
+connections.connect("default", host="localhost", port="19530")   <span class="aframe-location"/> #1
+
+
+class PythonCodeIngestion:
+    def __init__(
+        self,
+        collection,
+        python_code=None,
+        embedder=None,
+        tokenizer=None,
+        text_splitter=None,
+        batch_limit=100,
+    ):
+        self.collection = collection
+        self.python_code = python_code or load_dataset(
+            "iamtarun/python_code_instructions_18k_alpaca",
+            split="train",
+        )
+        self.embedder = embedder or SentenceTransformer(
+            "krlvi/sentence-t5-base-nlpl-code_search_net"
+        )
+        self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(
+            "Deci/DeciCoder-1b"
+        )
+        self.text_splitter = (
+            text_splitter
+            or RecursiveCharacterTextSplitter(
+                chunk_size=400,
+                chunk_overlap=20,
+                length_function=self.token_length,
+                separators=["\n\n", "\n", " ", ""],
+            )
+        )
+        self.batch_limit = batch_limit
+
+    def token_length(self, text):
+        tokens = self.tokenizer.encode(text)
+        return len(tokens)
+
+    def get_metadata(self, page):
+        return {
+            "instruction": page["instruction"],
+            "input": page["input"],
+            "output": page["output"],
+        }
+
+    def split_texts_and_metadatas(self, page):
+        basic_metadata = self.get_metadata(page)
+        prompts = self.text_splitter.split_text(page["prompt"])
+        metadatas = [
+            {"chunk": j, "prompt": prompt, **basic_metadata}
+            for j, prompt in enumerate(prompts)
+        ]
+        return prompts, metadatas
+
+    def upload_batch(self, texts, metadatas):
+        ids = [str(uuid4()) for _ in range(len(texts))]
+        embeddings = self.embedder.encode(texts)
+        self.collection.insert([ids, embeddings, metadatas])
+
+    def batch_upload(self):
+        batch_texts = []
+        batch_metadatas = []
+
+        for page in tqdm(self.python_code):
+            texts, metadatas = self.split_texts_and_metadatas(page)
+
+            batch_texts.extend(texts)
+            batch_metadatas.extend(metadatas)
+
+            if len(batch_texts) &gt;= self.batch_limit:
+                self.upload_batch(batch_texts, batch_metadatas)
+                batch_texts = []
+                batch_metadatas = []
+
+        if len(batch_texts) &gt; 0:
+            self.upload_batch(batch_texts, batch_metadatas)
+
+        self.collection.flush()</pre>
+<div class="code-annotations-overlay-container">
+     #1 Connects to Milvus
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p38">
+<p>Now that we have our ingestion class created, we can move forward with the pipeline. First, we’ll need to create our collection if this is the first time we’ve run it. A collection is like a table in other databases or an index in Pinecone. We’ll define our schema, which is simply an ID field, our embeddings field, and a metadata field, which contains freeform JSON. Once that’s set, we’ll upload our data using our <code>PythonCodeIngestion</code> class. </p>
+</div>
+<div class="readable-text intended-text" id="p39">
+<p>Next, we need to create our search index. The index type we’ll use is <code>IVF_FLAT</code>, which is the most basic index in Milvus and splits the embedding space into <code>nlist</code> number of clusters. This accelerates the similarity search by first comparing our search embedding against the cluster centers and then against the embedding in the cluster it is closest to. We will also use <code>L2</code> for our metric type, which means we’ll be using Euclidean distance. These are common settings, but we don’t need anything special for our dataset. Milvus supports a larger selection of options when building an index, and we encourage you to check out their documentation:</p>
+</div>
+<div class="browsable-container listing-container" id="p40">
+<div class="code-area-container">
+<pre class="code-area">if __name__ == "__main__":
+    collection_name = "milvus_llm_example"
+    dim = 768
+
+    if utility.has_collection(collection_name):    <span class="aframe-location"/> #1
+        utility.drop_collection(collection_name)
+
+    fields = [
+        FieldSchema(
+            name="ids",
+            dtype=DataType.VARCHAR,
+            is_primary=True,
+            auto_id=False,
+            max_length=36,
+        ),
+        FieldSchema(
+            name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim
+        ),
+        FieldSchema(name="metadata", dtype=DataType.JSON),
+    ]
+
+    schema = CollectionSchema(
+        fields, f"{collection_name} is collection of python code prompts"
+    )
+
+    print(f"Create collection {collection_name}")
+    collection = Collection(collection_name, schema)
+
+    collection = Collection(collection_name)   <span class="aframe-location"/> #2
+    print(collection.num_entities)
+
+    python_code_ingestion = PythonCodeIngestion(collection)   <span class="aframe-location"/> #3
+    python_code_ingestion.batch_upload()
+    print(collection.num_entities)
+
+    search_index = {               <span class="aframe-location"/> #4
+        "index_type": "IVF_FLAT",
+        "metric_type": "L2",
+        "params": {"nlist": 128},     <span class="aframe-location"/> #5
+    }
+    collection.create_index("embeddings", search_index)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Creates a collection if it doesn’t exist
+     <br/>#2 Connects to the collection and shows its size
+     <br/>#3 Ingests data and shows the stats now that data is ingested
+     <br/>#4 Builds the search index
+     <br/>#5 The number of clusters
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p41">
+<p>Now that everything is set up, we are good to move on to the next step. But first, let’s test it by running a query. We’ll want to make sure our data and index are giving us reasonable search results. With Milvus, we’ll first load the collection into memory and convert our query into an embedding with our embedder. Next, we’ll define some search parameters. Again, <code>L2</code> stands for Euclidean distance, and the <code>nprobe</code> parameter states how many clusters to search. In our case, of the 128 clusters we set up, we’ll search the 10 closest ones to our query embedding. Lastly, in the actual search, we’ll limit our results to the three best matches and return the metadata field along with our queries:</p>
+</div>
+<div class="browsable-container listing-container" id="p42">
+<div class="code-area-container">
+<pre class="code-area">    collection.load()     <span class="aframe-location"/> #1
+
+    query = (            <span class="aframe-location"/> #2
+        "Construct a neural network model in Python to classify "
+        "the MNIST data set correctly."
+    )
+    search_embedding = python_code_ingestion.embedder.encode(query)
+    search_params = {
+        "metric_type": "L2",
+        "params": {"nprobe": 10},    <span class="aframe-location"/> #3
+    }
+    results = collection.search(
+        [search_embedding],
+        "embeddings",
+        search_params,
+        limit=3,
+        output_fields=["metadata"],
+    )
+    for hits in results:
+        for hit in hits:
+            print(hit.distance)
+            print(hit.entity.metadata["instruction"])</pre>
+<div class="code-annotations-overlay-container">
+     #1 Before conducting a search, you need to load the data into memory.
+     <br/>#2 Makes a query
+     <br/>#3 The number of clusters to search
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p43">
+<p>You can see that for our query, the search results are returning strong candidates from our dataset: </p>
+</div>
+<div class="browsable-container listing-container" id="p44">
+<div class="code-area-container">
+<pre class="code-area">    # 0.7066953182220459
+    # Create a neural network in Python to identify
+    # hand-written digits from the MNIST dataset.
+    # 0.7366453409194946
+    # Create a question-answering system using Python
+    # and Natural Language Processing.
+    # 0.7389795184135437
+    # Write a Python program to create a neural network model that can
+    # classify handwritten digits (0-9) with at least 95% accuracy.</pre>
+</div>
+</div>
+<div class="readable-text" id="p45">
+<p>Now that we have our VectorDB set up with data loaded in, let’s update our API to retrieve results from our RAG system and inject the context into our prompts.</p>
+</div>
+<div class="readable-text" id="p46">
+<h3 class="readable-text-h3" id="sigil_toc_id_166"><span class="num-string">10.2.3</span> Using RAG</h3>
+</div>
+<div class="readable-text" id="p47">
+<p>In this section, we will update listing 10.1 to include our retrieval code. In listing 10.3, we won’t be repeating everything we did before, in the interests of time and space, but will simply be showing the new parts to add. In the repo accompanying this book, you’ll be able to find the code that puts everything together if you are struggling to understand which piece goes where. First, near the top of the script, we’ll need to add our imports, connect to our Milvus service, and load our embedding model.</p>
+</div>
+<div class="browsable-container listing-container" id="p48">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.3</span> Adding RAG to our API</h5>
+<div class="code-area-container">
+<pre class="code-area">from contextlib import asynccontextmanager
+
+from pymilvus import (
+    connections,
+    Collection,
+)
+from sentence_transformers import SentenceTransformer
+connections.connect("default", host="localhost", port="19530")   <span class="aframe-location"/> #1
+
+collection_name = "milvus_llm_example"
+collection = Collection(collection_name)
+
+embedder = SentenceTransformer(                 <span class="aframe-location"/> #2
+    "krlvi/sentence-t5-base-nlpl-code_search_net"
+)
+embedder = embedder.to(device)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Connects to Milvus
+     <br/>#2 Loads our embedding model
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p49">
+<p>Next, we’ll add some convenience functions, including a token counter and a FastAPI lifecycle, to ensure we load and release our Milvus collection from memory. Since we are adding a lifecycle, be sure to update the FastAPI call:</p>
+</div>
+<div class="browsable-container listing-container" id="p50">
+<div class="code-area-container">
+<pre class="code-area">def token_length(text):
+    tokens = tokenizer([text], return_tensors="pt")
+    return tokens["input_ids"].shape[1]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    collection.load()               <span class="aframe-location"/> #1
+    yield
+    collection.release()           <span class="aframe-location"/> #2
+
+
+app = FastAPI(lifespan=lifespan)     <span class="aframe-location"/> #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Load collection on startup
+     <br/>#2 Releases collection from memory on shutdown
+     <br/>#3 Runs FastAPI
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p51">
+<p>Now that we have all that set up, we can get to the good part—running the query and updating our prompt in our <code>generate</code> endpoint. The first part should look familiar since we just did it. We’ll encode the user’s prompt and search our collection for the nearest neighbors. We’re using all the same search parameters as before, except one. We increase our limit from <code>3</code> to <code>5</code> to potentially add more examples to our prompt. Next, we take those results and format them into a few-shot prompt example dataset. Then we create our instruction prompt and format the user’s input. </p>
+</div>
+<div class="readable-text intended-text" id="p52">
+<p>We are almost at the point where we can combine our instruction, examples, and user prompt; however, we need to ensure our examples don’t take up too much space. Using a <code>for</code> loop utilizing our token counter, we’ll filter out any examples that don’t fit our context window. With that, we can now combine everything to create our final prompt for our DeciCoder model:</p>
+</div>
+<div class="browsable-container listing-container" id="p53">
+<div class="code-area-container">
+<pre class="code-area">    request_dict = await request.json()     <span class="aframe-location"/> #1
+    prompt = request_dict.pop("prompt")
+
+    search_embedding = embedder.encode(prompt)     <span class="aframe-location"/> #2
+    search_params = {
+        "metric_type": "L2",
+        "params": {"nprobe": 10},
+    }
+    results = collection.search(
+        [search_embedding],
+        "embeddings",
+        search_params,
+        limit=5,
+        output_fields=["metadata"],
+    )
+
+    examples = []
+    for hits in results:
+        for hit in hits:
+            metadata = hit.entity.metadata
+            examples.append(
+                f"Instruction: {metadata['instruction']}\n"
+                f"Output: {metadata['output']}\n\n"
+            )
+
+    prompt_instruction = (
+        "You are an expert software engineer who specializes in Python. "
+        "Write python code to fulfill the request from the user.\n\n"
+    )
+    prompt_user = f"Instruction: {prompt}\nOutput: "
+
+    max_tokens = 2048
+    token_count = token_length(prompt_instruction+prompt_user)
+
+    prompt_examples = ""
+    for example in examples:
+        token_count += token_length(example)
+        if token_count &lt; max_tokens:
+            prompt_examples += example
+        else:
+            break
+
+    full_prompt = f"{prompt_instruction}{prompt_examples}{prompt_user}"
+
+    inputs = tokenizer(full_prompt, return_tensors="pt").to(device)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Inside the generate function 
+     <br/>#2 Makes a query
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p54">
+<p>Alright! Now that we’ve made our updates to our API, let’s start it up and test it again like we did before. We’ll send another request to the server to make sure everything is still working:</p>
+</div>
+<div class="browsable-container listing-container" id="p55">
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">$ curl --request POST --header "Content-Type: application/json" --data 
+<span class="">↪</span> '{"prompt":"def hello_world(name):"}' http://localhost:8000/generate</pre>
+</div>
+</div>
+<div class="readable-text" id="p56">
+<p>This time we got a response of <code>print(“Hello,</code> <code>World!”)</code>, which is slightly worse than our previous response, but it’s still in the same vein, so there’s nothing to be worried about. You’ll likely get something similar. And that concludes setting up our LLM service with a RAG system for customization. All we need to do now is call it.</p>
+</div>
+<div class="readable-text" id="p57">
+<h2 class="readable-text-h2" id="sigil_toc_id_167"><span class="num-string">10.3</span> Build the VS Code extension</h2>
+</div>
+<div class="readable-text" id="p58">
+<p>Alright, now all we need to do is build our VS Code extension. VS Code extensions are written primarily in TypeScript or JavaScript (JS). If you aren’t familiar with these languages, don’t worry; we’ll walk you through it. To get started, you’ll need Node and npm installed. Node is the JS interpreter, and npm is like pip for JS. You can add these tools in multiple ways, but we recommend first installing nvm or another node version manager. It’s also a good idea at this time to update your VS Code (or install it if you haven’t already). Updating your editor will help you avoid many problems, so be sure to do it. From here, we can install the VS Code extension template generator:</p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<div class="code-area-container">
+<pre class="code-area">$ npm install -g yo generator-code</pre>
+</div>
+</div>
+<div class="readable-text print-book-callout" id="p60">
+<p><span class="print-book-callout-head">NOTE</span>  You can find the instructions to install nvm here: <a href="https://mng.bz/gAv8">https://mng.bz/gAv8</a>. Then simply run <code>nvm</code> <code>install</code> <code>node</code> to install the latest versions of Node and npm.</p>
+</div>
+<div class="readable-text" id="p61">
+<p>The template generator will create a basic “Hello World” project repo for us that we can use as scaffolding to build off of. To run the generator, use</p>
+</div>
+<div class="browsable-container listing-container" id="p62">
+<div class="code-area-container">
+<pre class="code-area">$ yo code</pre>
+</div>
+</div>
+<div class="readable-text" id="p63">
+<p>This command will start a walkthrough in your terminal, where you’ll be greeted by what appears to us to be an ASCII art representation of a Canadian Mountie who will ask you several questions to customize the scaffolding being generated. </p>
+</div>
+<div class="readable-text intended-text" id="p64">
+<p>In figure 10.1, you can see an example with our selected answers to the walkthrough questions. Guiding you through the questions quickly, we’ll create a new JavaScript extension, which you can name whatever you like. We chose <code>llm_coding_ copilot</code>, if you’d like to follow along with us. For the identifier, press Enter, and it will hyphenate the name you chose. Give it a description; anything will do. No, we don’t want to enable type-checking. You can choose whether <span class="aframe-location"/>to initialize the project as a new Git repository. We chose No, since we are already working in one. Lastly, we’ll use npm.</p>
+</div>
+<div class="browsable-container figure-container" id="p65">
+<img alt="figure" height="521" src="../Images/10-1.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 10.1</span> The VS Code extension generator with example inputs</h5>
+</div>
+<div class="readable-text intended-text" id="p66">
+<p>When it’s done, it will generate a project repository with all the files we need. If you look at figure 10.2, you can see an example of a built project repository. It has several different configuration files, which you are welcome to familiarize yourself with, but we only care about two of these files: the package.json file where we define the extension manifest, which tells VS Code how to use the extension we will build to (well, actually extend VS Code), and the extension.js file, which holds the actual extension code.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p67">
+<img alt="figure" height="838" src="../Images/10-2.png" width="600"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 10.2</span> Example directory structure created with the VS Code extension generator</h5>
+</div>
+<div class="readable-text" id="p68">
+<p>In the package.json file, the boilerplate gets us almost all the way there, but the <code>activationEvents</code> field is currently empty and needs to be set. This field tells VS Code when to start up our extension. Extensions typically aren’t loaded when you open VS Code, which helps keep it lightweight. If it’s not set, the extension will only be loaded when the user opens it, which can be a pain. A smart strategy typically is to load the extension only when the user opens a file of the type we care about—for example, if we were building a Python-specific extension, it would only load when a .py file is opened. </p>
+</div>
+<div class="readable-text intended-text" id="p69">
+<p>We will use the <code>"onCommand:editor.action.inlineSuggest.trigger"</code> event trigger. This trigger fires when a user manually asks for an inline suggestion. It typically fires whenever a user stops typing, but we want more control over the process to avoid sending unnecessary requests to our LLM service. There’s just one problem: VS Code doesn’t have a default shortcut key for users to manually do this! Thankfully, we can set this too by adding a <code>"keybindings"</code> field to the <code>"contributes"</code> section. We will set it to the keybindings of <code>Alt+S</code>. We are using <code>S</code> for “suggestion” to be memorable; this keybinding should be available unless another extension is using it. Users can always customize their keybindings regardless. You can see the finished package.json file in the following listing. It should look very similar to what we started with from the scaffolding.</p>
+</div>
+<div class="browsable-container listing-container" id="p70">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.4</span> Extension manifest for our coding copilot</h5>
+<div class="code-area-container">
+<pre class="code-area">{
+  "name": "llm-coding-copilot",
+  "displayName": "llm_coding_copilot",
+  "description": "VSCode extension to add LLM code suggestions inline.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.86.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:editor.action.inlineSuggest.trigger"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [{
+      "command": "llm-coding-copilot.helloWorld",
+      "title": "Hello World"
+    }],
+    "keybindings": [{
+      "key": "Alt+s",
+      "command": "editor.action.inlineSuggest.trigger",
+      "mac": "Alt+s"
+    }]
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.86.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.3.8"
+  }
+}</pre>
+</div>
+</div>
+<div class="readable-text" id="p71">
+<p>Now that we have an extension manifest file, let’s go ahead and test it. From your project repo in VS Code, you can press F5 to compile your extension and launch a new VS Code Extension Development Host window with your extension installed. In the new window, you should be able to press Alt+S to trigger an inline suggestion. If everything is working, then you’ll see a console log in the original window that states, <code>Congratulations,</code> <code>your</code> <code>extension</code> <code>"llm-coding-copilot"</code> <code>is</code> <code>now</code> <code>active!</code>, as shown in figure 10.3.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p72">
+<img alt="figure" height="163" src="../Images/10-3.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 10.3</span> Example console of successfully activating our VS Code extension</h5>
+</div>
+<div class="readable-text" id="p73">
+<p>Alright, not bad! We can now both run our extension and activate it, as well as capture the logs, which is helpful for debugging. Now all we need to do is build it, so let’s turn our attention to the extension.js file.</p>
+</div>
+<div class="readable-text intended-text" id="p74">
+<p>At this point, things get a bit tricky to explain. Even for our readers who are familiar with JavaScript, it’s unlikely many are familiar with the VS Code API (<a href="https://mng.bz/eVoG">https://mng.bz/eVoG</a>). Before we get into the weeds, let’s remind ourselves what we are building. This will be an extension in VS Code that will give us coding suggestions. We already have an LLM trained on code data behind an API that is ready for us. We have a dataset in a RAG system loaded to give context and improve results, and we have our prompt crafted. All we need to do is build the extension that will call our API service. But we also want something that allows users an easy way to interact with our model that gives us lots of control. We will do this by allowing a user to highlight portions of the code, and we’ll send that when our shortcut keybindings, Alt+S, are pressed.</p>
+</div>
+<div class="readable-text intended-text" id="p75">
+<p>Let’s take a look at the template extension.js file that the generator created for us. Listing 10.5 shows us the template with the comments changed for simplicity. It simply loads the vscode library and defines <code>activate</code> and <code>deactivate</code> functions that run when you start the extension. The <code>activate</code> function demonstrates how to create and register a new command, but we won’t be using it. Instead of a command, we will create an inline suggestion provider and register it.</p>
+</div>
+<div class="browsable-container listing-container" id="p76">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.5</span> Boilerplate extension.js from template</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">// Import VSCode API library
+const vscode = require('vscode');
+
+// This method is called when your extension is activated
+function activate(context) {
+  console.log('Congratulations, your extension "llm-coding-copilot" is now
+<span class="">↪</span> active!');
+
+  // This creates and registers a new command, matching package.json
+  // But we won’t use it!
+  let disposable = vscode.commands.registerCommand('llm-coding-
+<span class="">↪</span> copilot.helloWorld', function () {
+    // The code you place here will be executed every time your command is
+<span class="">↪</span> executed
+
+    // Display a message box to the user
+    vscode.window.showInformationMessage('Hello World from llm_coding_
+<span class="">↪</span> copilot!');
+  });
+
+  context.subscriptions.push(disposable);
+}
+
+// This method is called when your extension is deactivated
+function deactivate() {}
+
+module.exports = {
+  activate,
+  deactivate
+}</pre>
+</div>
+</div>
+<div class="readable-text" id="p77">
+<p>Since we won’t be using commands, let’s take a look at what we will be using instead, an inline suggestion provider. This provider will add our suggestions as ghost text where the cursor is. This allows the user to preview what is generated and then accept the suggestion with a tab or reject it with another action. Essentially, it is doing all the heavy lifting for the user interface in the code completion extension we are building. </p>
+</div>
+<div class="readable-text intended-text" id="p78">
+<p>In listing 10.6, we show you how to create and register a provider, which returns inline completion items. It will be an array of potential items the user may cycle through to select the best option, but for our extension, we’ll keep things simple by only returning one suggestion. The provider takes in several arguments that are automatically passed in, like the document the inline suggestion is requested for, the position of the user’s cursor, context on how the provider was called (manually or automatically), and a cancel token. Lastly, we’ll register the provider, telling VS Code which types of documents to call it for; here, we give examples of registering it to only Python files or adding it to everything.</p>
+</div>
+<div class="browsable-container listing-container" id="p79">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.6</span> Example inline suggestion provider </h5>
+<div class="code-area-container">
+<pre class="code-area">// Create inline completion provider, this makes suggestions inline
+const provider = {
+    provideInlineCompletionItems: async (
+            document, position, context, token
+        ) =&gt; {
+        // Inline suggestion code goes here
+
+    }
+};
+
+// Add provider to Python files
+vscode.languages.registerInlineCompletionItemProvider(
+    { scheme: 'file', language: 'python' },
+    provider
+);
+// Example of adding provider to all languages
+vscode.languages.registerInlineCompletionItemProvider(
+    { pattern: '**' },
+    provider
+);</pre>
+</div>
+</div>
+<div class="readable-text" id="p80">
+<p>Now that we have a provider, we need a way to grab the user’s highlighted text to send it to the LLM service and ensure our provider only runs when manually triggered via the keybindings, not automatically, which happens every time the user stops typing. In listing 10.7, we add this piece to the equation inside our provider.</p>
+</div>
+<div class="readable-text intended-text" id="p81">
+<p>First, we grab the editor window and anything selected or highlighted. Then we determine whether the provider was called because it was automatically or manually triggered. Next, we do a little trick for a better user experience. If our users highlight their code backward to forward, the cursor will be at the front of their code, and our code suggestion won’t be displayed. So we’ll re-highlight the selection, which will put the cursor at the end, and retrigger the inline suggestion. Thankfully, this retriggering will also be counted as a manual trigger. Lastly, if everything is in order—the inline suggestion was called manually, we have highlighted text, and our cursor is in the right location—then we’ll go ahead and start the process of using our LLM code copilot by grabbing the highlighted text from the selection.</p>
+</div>
+<div class="browsable-container listing-container" id="p82">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.7</span> Working with the VS Code API</h5>
+<div class="code-area-container">
+<pre class="code-area">// Create inline completion provider, this makes suggestions inline
+const provider = {
+    provideInlineCompletionItems: async (
+            document, position, context, token
+        ) =&gt; {
+        // Grab VSCode editor and selection
+        const editor = vscode.window.activeTextEditor;
+        const selection = editor.selection;
+        const triggerKindManual = 0
+        const manuallyTriggered = context.triggerKind == triggerKindManual
+
+        // If highlighted back to front, put cursor at the end and rerun
+        if (manuallyTriggered &amp;&amp; position.isEqual(selection.start)) {
+            editor.selection = new vscode.Selection(
+                selection.start, selection.end
+            )
+            vscode.commands.executeCommand(
+                "editor.action.inlineSuggest.trigger"
+            )
+            return []
+        }
+
+        // On activation send highlighted text to LLM for suggestions
+        if (manuallyTriggered &amp;&amp; selection &amp;&amp; !selection.isEmpty) {
+            // Grab highlighted text
+            const selectionRange = new vscode.Range(
+                selection.start, selection.end
+            );
+            const highlighted = editor.document.getText(selectionRange);
+
+            // Send highlighted code to LLM
+        }
+    }
+};</pre>
+</div>
+</div>
+<div class="readable-text" id="p83">
+<p>Alright! Now that we have all the VS Code–specific code out of the way, we just need to make a request to our LLM service. This action should feel like familiar territory at this point; in fact, we’ll use the code we’ve already discussed in chapter 7. Nothing to fear here! In the next listing, we finish the provider by grabbing the highlighted text and using an async <code>fetch</code> request to send it to our API. Then we take the response and return it to the user.</p>
+</div>
+<div class="browsable-container listing-container" id="p84">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 10.8</span> Sending a request to our coding copilot </h5>
+<div class="code-area-container">
+<pre class="code-area">// On activation send highlighted text to LLM for suggestions
+if (manuallyTriggered &amp;&amp; selection &amp;&amp; !selection.isEmpty) {
+    // Grab highlighted text
+    const selectionRange = new vscode.Range(
+        selection.start, selection.end
+    );
+    const highlighted = editor.document.getText(
+        selectionRange
+    );
+
+    // Send highlighted text to LLM API
+    var payload = {
+        prompt: highlighted
+    };
+
+    const response = await fetch(
+        'http://localhost:8000/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    // Return response as suggestion to VSCode editor
+    var responseText = await response.text();
+
+    range = new vscode.Range(selection.end, selection.end)
+    return new Promise(resolve =&gt; {
+        resolve([{ insertText: responseText, range }])
+    })
+}</pre>
+</div>
+</div>
+<div class="readable-text" id="p85">
+<p>Now that all the pieces are in place, let’s see it in action. Press F5 again to compile your extension anew, launching another VS Code Extension Development Host window with our updated extension installed. Create a new Python file with a .py extension, and start typing out some code. When you’re ready, highlight the portion you’d like to get your copilot’s help with, and press Alt+S to get a suggestion. After a little bit, you should see some ghost text pop up with the copilot’s suggestion. If you like it, press Tab to accept. Figure 10.4 shows an example of our VS Code extension in action.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p86">
+<img alt="figure" height="699" src="../Images/10-4.png" width="932"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 10.4</span> Example console of successfully activating our VS Code extension</h5>
+</div>
+<div class="readable-text" id="p87">
+<p>Congratulations! You did it! You created your very own coding copilot! It runs on your own data and is completely local—a pretty big achievement if you started this book knowing nothing about LLMs. In the next section, we’ll talk about next steps and some lessons learned from this project.</p>
+</div>
+<div class="readable-text" id="p88">
+<h2 class="readable-text-h2" id="sigil_toc_id_168"><span class="num-string">10.4</span> Lessons learned and next steps</h2>
+</div>
+<div class="readable-text" id="p89">
+<p>Now that we have working code, we could call it a day. However, our project is far from completed; there’s still so much we could do with it! To begin, the results don’t appear to be all that great. Looking back at figure 10.4, the generated code doesn’t reverse a linked list but reverses a regular ol’ list. That’s not what we wanted. What are some things we could do to improve it?</p>
+</div>
+<div class="readable-text intended-text" id="p90">
+<p>Well, for starters, remember our test “Hello World” functions we sent to the API to test it out? It seemed we got better results when using the model before we added RAG. For fun, let’s spin up our old API with RAG disabled and see what we get while using our VS Code extension. Figure 10.5 shows an example result of using this API.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p91">
+<img alt="figure" height="699" src="../Images/10-5.png" width="942"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 10.5</span> Results of our extension using DeciCoder without RAG</h5>
+</div>
+<div class="readable-text" id="p92">
+<p>Wow! That code looks way better! It actually reverses a linked list and is already formatted in such a way you wouldn’t even need to edit or format it. What’s going on here? Aren’t models supposed to generate better results when we give them a few examples of how we want them to behave? Maybe our RAG system isn’t finding very good examples. Let’s do some digging and take a look at the prompt generated from our RAG system.</p>
+</div>
+<div class="readable-text prompt" id="p93">
+<p><span class="prompt-head"><span class="prompt-initials1">MA</span><span class="aframe-location"/><b>Instruction:</b></span> What is the most efficient way to reverse a singly linked list in 7 lines of Python code?</p>
+</div>
+<div class="readable-text response" id="p94">
+<p><span class="prompt-head"><span class="aframe-location"/></span><span class="response-head"><img alt="chatGpt" height="20" src="../Images/chatGpt.png" style="width: 20px;" width="20"/><b>Output:</b></span> # Definition for singly-linked list.</p>
+</div>
+<div class="browsable-container listing-container" id="p95">
+<div class="code-area-container">
+<pre class="code-area">class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+def reverseList(head): 
+    prev = None
+    current = head
+
+    while current is not None:
+        nxt = current.next
+        current.next = prev 
+        prev = current
+        current = nxt
+
+    head = prev 
+    return head</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p96">
+<p><span class="prompt-head"><span class="prompt-initials1">MA</span><span class="aframe-location"/><b>Instruction:</b></span> What is the most efficient way to reverse a linked list in Python?</p>
+</div>
+<div class="readable-text response" id="p97">
+<p><strong><span class="prompt-head"><span class="aframe-location"/></span><span class="response-head"><img alt="chatGpt" height="20" src="../Images/chatGpt.png" style="width: 20px;" width="20"/><b>Output:</b></span></strong></p>
+</div>
+<div class="browsable-container listing-container" id="p98">
+<div class="code-area-container">
+<pre class="code-area">def reverse(head):
+    prev = None
+    current = head
+    while current:
+        next = current.next
+        current.next = prev
+        prev = current
+        current = next
+    return prev</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p99">
+<p><span class="prompt-head"><span class="prompt-initials1">MA</span><span class="aframe-location"/><b>Instruction:</b></span> def reverse_linked_list(list):</p>
+</div>
+<div class="readable-text prompt" id="p100">
+<p> """Reverses a linked list"""</p>
+</div>
+<div class="readable-text response" id="p101">
+<p><strong><span class="prompt-head"><span class="aframe-location"/></span><span class="response-head"><img alt="chatGpt" height="20" src="../Images/chatGpt.png" style="width: 20px;" width="20"/><b>Output:</b></span></strong></p>
+</div>
+<div class="readable-text" id="p102">
+<p>Wow! Those examples seem to be spot on! What exactly could be going on then?</p>
+</div>
+<div class="readable-text intended-text" id="p103">
+<p>Well, first, take a look at the prompt again. The example instructions from our dataset are tasks in plain English, but the prompt our users will be sending is half-written code. We’d likely get better results if our users wrote in plain English. Of course, that’s likely a bit of an awkward experience when our users are coding in an editor. It’s more natural to write code and ask for help on the hard parts.</p>
+</div>
+<div class="readable-text intended-text" id="p104">
+<p>Second, remember our notes on how DeciCoder was trained? It was trained to beat the HumanEval dataset, so it’s really good at taking code as input and generating code as output. This makes it good at the task from the get-go without the need for prompt tuning. More importantly, it hasn’t been instruction tuned! It’s likely a bit confused when it sees our few-shot examples since it didn’t see input like that during its training. Being a much smaller model trained for a specific purpose, it’s just not as good at generalizing to new tasks.</p>
+</div>
+<div class="readable-text intended-text" id="p105">
+<p>There are a few key takeaways to highlight from this. First and foremost, while prompt tuning is a powerful technique to customize an LLM for new tasks, it is still limited in what you can achieve with it alone, even when using a RAG system to give highly relevant examples. One has to consider how the model was trained or finetuned and what data it was exposed to. In addition, it’s important to consider how a user will interact with the model to make sure you are crafting your prompts correctly.</p>
+</div>
+<div class="readable-text intended-text" id="p106">
+<p>So what are some next steps you can try to improve the results? At this stage, things appear to be mostly working, so the first thing we might try is adjusting the prompt in our RAG system. It doesn’t appear that the instruction data written in plain English is very useful to our model, so we could simply try giving the model example code and see if that improves the results. Next, we could try to finetune the model to take instruction datasets or just look for another model entirely.</p>
+</div>
+<div class="readable-text intended-text" id="p107">
+<p>Beyond just making our app work better, there are likely many next steps to customize this project. For example, we could create a collection in Milvus with our own code dataset. This way, we could inject the context of relevant code in our code base into our prompt. Our model wouldn’t just be good at writing general Python code but also code specific to the organization we work for. If we go down that route, we might as well deploy our API and Milvus database to a production server where we could serve it for other engineers and data scientists in the company.</p>
+</div>
+<div class="readable-text intended-text" id="p108">
+<p>Alternatively, we could abandon the customization idea and use DeciCoder alone since it appears to already give great results. No customization needed. If we do that, it would be worth compiling the model to GGUF format and running it via the JavaScript SDK directly in the extension. Doing so would allow us to encapsulate all the code into a single place and make it easier to distribute and share. </p>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>Lastly, you might consider publishing the extension and sharing it with the community. Currently, the project isn’t ready to be shared, since we are running our model and RAG system locally, but if you are interested, you can find the official instructions online at <a href="https://mng.bz/GNZA">https://mng.bz/GNZA</a>. It goes over everything from obtaining API keys, to packaging, publishing, and even becoming a verified publisher.</p>
+</div>
+<div class="readable-text" id="p110">
+<h2 class="readable-text-h2" id="sigil_toc_id_169">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p111"> DeciCoder is a small but mighty model designed for coding tasks in Python, JavaScript, and Java. </li>
+<li class="readable-text" id="p112"> Milvus is a powerful open source VectorDB that can scale to meet your needs. </li>
+<li class="readable-text" id="p113"> Your dataset is key to making your RAG system work, so spend the time cleaning and preparing it properly. </li>
+<li class="readable-text" id="p114"> Visual Studio Code is a popular editor that makes it easy to build extensions. </li>
+<li class="readable-text" id="p115"> Just throwing examples and data at your model won’t make it generate better results, even when they are carefully curated. </li>
+<li class="readable-text" id="p116"> Build prompts in a way that accounts for the model’s training methodology and data to maximize results. </li>
+</ul>
+<div class="readable-text footnote-readable-text" id="p117">
+<p><a href="#footnote-source-1"><span class="footnote-definition" id="footnote-129">[1]</span></a> D. Ramel, “Stack Overflow dev survey: VS Code, Visual Studio still top IDEs 5 years running,” Visual Studio Magazine, June 28, 2023, <a href="https://mng.bz/zn86">https://mng.bz/zn86</a>.</p>
+</div>
+<div class="readable-text footnote-readable-text" id="p118">
+<p><a href="#footnote-source-2"><span class="footnote-definition" id="footnote-130">[2]</span></a> Deci, “Introducing DeciCoder: The new gold standard in efficient and accurate code generation,” August 15, 2023, <a href="https://mng.bz/yo8o">https://mng.bz/yo8o</a>.</p>
+</div>
+</div></body></html>

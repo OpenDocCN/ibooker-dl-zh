@@ -1,0 +1,1946 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">6</span> </span> <span class="chapter-title-text">Structural causal models</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Converting a general causal graphical model to a structural causal model</li>
+<li class="readable-text" id="p3">Mastering the key elements of SCMs</li>
+<li class="readable-text" id="p4">Implementing SCMs for rule-based systems</li>
+<li class="readable-text" id="p5">Building an SCM from scratch using additive models</li>
+<li class="readable-text" id="p6">Combining SCMs with deep learning</li>
+</ul>
+</div>
+<div class="readable-text" id="p7">
+<p>In this chapter, I’ll introduce a fundamental causal modeling approach called the structural causal model (SCM). An SCM is a special case of a causal generative model that can encode causal assumptions beyond those we can capture with a DAG. If a DAG tells us <em>what</em> causes what, an SCM tells us both <em>what</em> causes what and <em>how</em> the causes affect the effects. We can use that extra “how” information to make better causal inferences.</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>In this chapter, we’ll focus on defining and building an intuition for SCMs using examples in code. In later chapters, we’ll see examples of causal inferences that we can’t make with a DAG alone but we can make with an SCM. </p>
+</div>
+<div class="readable-text" id="p9">
+<h2 class="readable-text-h2" id="sigil_toc_id_118"><span class="num-string">6.1</span> From a general causal graphical model to an SCM</h2>
+</div>
+<div class="readable-text" id="p10">
+<p>In the causal generative models we’ve built so far, we defined, for each node, a conditional probability distribution given the node’s direct parents, which we called a <em>causal Markov kernel</em>. We then <em>fit</em> these kernels using data. Specifically, we made a practical choice to use some parametric function class to fit these kernels. For example, we fit the parameters of a probability table using pgmpy’s <code>TabularCPD</code> because it let us work with pgmpy’s convenient d-separation and inference utilities. And we used a neural decoder in a VAE architecture because it solved the problem of modeling a high-dimensional variable like an image. These practical reasons have nothing to do with causality; our causal assumptions stopped at the causal DAG.</p>
+</div>
+<div class="readable-text intended-text" id="p11">
+<p>Now, with SCMs, we’ll use the parametric function class to capture additional causal assumptions beyond the causal DAG. As I said, the SCM lets us represent additional assumptions of <em>how</em> causes affect their effects; for example, that a change in the cause always leads to a proportional change in the effect. Indeed, a probability table or a neural network can be <em>too flexible</em> to capture assumptions about the “how” of causality; with enough data they can fit anything and thus don’t imply strong assumptions. More causal assumptions enable more causal inferences, at the cost of additional risk of modeling error.</p>
+</div>
+<div class="readable-text intended-text" id="p12">
+<p>SCMs are a special case of causal graphical models (CGMs)—one with more constraints than the CGMs we’ve built so far. For clarity, I’ll use CGM to refer to the broader set of causal graphical models that are not SCMs. To make the distinction clear, let’s start by looking at how we might modify a CGM so it satisfies the constraints of an SCM.</p>
+</div>
+<div class="readable-text" id="p13">
+<h3 class="readable-text-h3" id="sigil_toc_id_119"><span class="num-string">6.1.1</span> Forensics case study</h3>
+</div>
+<div class="readable-text" id="p14">
+<p>Imagine you are a forensic scientist working for the police. The police discover decomposed human remains consisting of a skull, pelvic bone, several ribs, and a femur. An apparent blunt force trauma injury to the skull leads the police to open a murder investigation. First, they need you to help identify the victim.</p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>When the remains arrive in your lab, you measure and catalog the bones. From the shape of the pelvis, you can quickly tell that the remains most likely belong to an adult male. You note that the femur is 45 centimeters long. As you might suspect, there is a strong predictive relationship between femur length and an individual’s overall height. Moreover, that relationship is causal. Femur length is a cause of height. Simply put, having a long femur makes you taller, and having a short femur makes you shorter.</p>
+</div>
+<div class="readable-text intended-text" id="p16">
+<p>Indeed, when you consult your forensic text, it says that height is a <em>linear function</em> of femur length. It provides the following probabilistic model of height, given femur length (in males):</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p17">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em>(0, 3.3)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p18">
+<p><em>y</em><em> </em> = 25 + 3<em>x</em> + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p19">
+<p>Here, <em>x</em> is femur length in centimeters, and <em>y</em> is height in centimeters. Of course, exact height will vary with other causal factors, and <em>n</em><sub><em>y</em></sub> represents variations in height from those factors. <em>N</em><sub><em>y</em></sub> has a normal distribution with mean 0 and scale parameter 3.3 cm.</p>
+</div>
+<div class="readable-text intended-text" id="p20">
+<p>This is an example of an SCM. We’ll expand this example as we go, but the key element to focus on here is that our model is assuming the causal mechanism underpinning height (<em>Y</em><em>  </em>) is linear. Height (<em>Y</em><em>  </em>) is a linear function of its causes, femur length (<em>X</em><em> </em>) and <em>N</em><sub><em>y</em></sub>, which represents other causal determinants of height. </p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>Linear modeling is an attractive choice because it is simple, stands on centuries of theory, and is supported by countless statistical and linear algebra software libraries. But from a causal perspective, that’s beside the point. Our SCM is not using this linear function because it is convenient. Rather, we are intentionally asserting that the relationship between the cause and the effect is linear—that for a change in femur length, there is a proportional change in height.</p>
+</div>
+<div class="readable-text intended-text" id="p22">
+<p>Let’s drill down on this example to highlight the differences between a CGM and an SCM.</p>
+</div>
+<div class="readable-text" id="p23">
+<h3 class="readable-text-h3" id="sigil_toc_id_120"><span class="num-string">6.1.2</span> Converting to an SCM via reparameterization</h3>
+</div>
+<div class="readable-text" id="p24">
+<p>In this section, we will start by converting the type of CGM we’ve become familiar with into an SCM. Our conversion exercise will highlight those properties and make clear the technical structure of the SCM and how it differs relative to the CGMs we’ve seen so far. Note, however, that this “conversion” is intended to build intuition; in general, you should build your SCM from scratch rather than try to shoehorn non-SCMs into SCMs, for reasons we’ll see in section 6.2.</p>
+</div>
+<div class="readable-text intended-text" id="p25">
+<p>Let’s suppose our forensic SCM were a CGM. We might implement it as in figure 6.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p26">
+<img alt="figure" height="120" src="../Images/CH06_F01_Ness.png" width="384"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.1</span> A simple two-node CGM. Femur length (<em>X</em>) is a cause of height (<em>Y</em>). <em>X</em> has a normal distribution with a mean of 47 centimeters and a standard deviation of 2.3 centimeters. <em>Y</em> has a distribution with a mean of 25 + 3<em>x</em> centimeters and a standard deviation of 3.3 centimeters.</h5>
+</div>
+<div class="readable-text" id="p27">
+<p>Recall from chapter 2 that <em>x</em> ~ <em>P</em><em> </em>(<em>X</em><em>  </em>) and <em>y</em> ~ <em>P</em><em> </em>(<em>Y</em><em>  </em>|<em>X</em>=<em>x</em><em> </em>) means we generate from the probability distribution of <em>X</em> and conditional probability distribution of <em>Y</em> given <em>X</em>. In this case, <em>P</em><em> </em>(<em>X</em><em>  </em>), the distribution of femur length, represented as a normal distribution with a mean of 47 centimeters and a standard deviation of 2.3 centimeters. <em>P</em><em> </em>(<em>Y</em><em>  </em>|<em>X</em>=<em>x</em><em> </em>) is the distribution on height given the femur length, given as a normal distribution with a mean of 25 + 3<em>x</em> centimeters and a standard deviation of 3.3 centimeters. We would implement this model in Pyro as follows in listing 6.1.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p28">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p29">
+<p>The code in this chapter was written using Python version 3.10, Pyro version 1.9.0, pgmpy version 0.1.25, and torch 2.3.0. See <a href="https://www.altdeep.ai/p/causalaibook">https://www.altdeep.ai/p/causalaibook</a> for links to the notebooks that run the code. We are also using MATLAB for some plotting; this code was tested with version 3.7.</p>
+</div>
+</div>
+<div class="browsable-container listing-container" id="p30">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.1</span> Pyro pseudocode of the CGM in figure 6.1</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.distributions import Normal
+from pyro import sample
+
+def cgm_model():   <span class="aframe-location"/> #1
+    x = sample("x", Normal(47., 2.3))   #1
+    y = sample("y", Normal(25. + 3*x, 3.3))   #1
+    return x, y   <span class="aframe-location"/> #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 x and y are sampled from their causal Markov kernels, in this case normal distributions.
+     <br/>#2 Repeatedly calling cgm_model will return samples from P(X, Y).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p31">
+<p>We are going to convert this model to an SCM using the following algorithm:</p>
+</div>
+<ol>
+<li class="readable-text" id="p32"> Introduce a new latent causal parent for <em>X</em> called <em>N</em><sub><em>x</em></sub> and a new latent causal parent for <em>Y</em> called <em>N</em><sub><em>y</em></sub> with distributions <em>P</em>(<em>N</em><sub><em>x</em></sub>) and <em>P</em>(<em>N</em><sub><em>y</em></sub>). </li>
+<li class="readable-text" id="p33"> Make <em>X</em> and <em>Y</em> deterministic functions of <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub> such that <em>P</em>(<em>X</em>, <em>Y</em>) in this new model is the same as in the old model. </li>
+</ol>
+<div class="readable-text" id="p34">
+<p>Following these instructions and adding in two new variables, we get figure 6.2.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p35">
+<img alt="figure" height="176" src="../Images/CH06_F02_Ness.png" width="360"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.2</span> To convert the CGM to an SCM, we introduce latent “exogenous” parents, <em>N</em><em><sub>x</sub></em> for <em>X</em> and <em>N</em><em><sub>y</sub></em> for <em>Y</em>, and probability distributions <em>P</em>(<em>N</em><em><sub>x</sub></em>) and <em>P</em>(<em>N</em><em><sub>y</sub></em>) for these latents. We then set <em>X</em> and <em>Y</em> deterministically, given their parents, via functions <em>f</em><em><sub>x</sub></em> and <em>f</em><em><sub>y</sub></em>.</h5>
+</div>
+<div class="readable-text" id="p36">
+<p>We have two new latent variables <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub> with distributions <em>P</em><em> </em>(<em>N</em><sub><em>x</em></sub>) and <em>P</em><em> </em>(<em>N</em><sub><em>y</em></sub>). <em>X</em> and <em>Y</em> each have their own functions <em>f</em><sub><em>x</em></sub> and <em>f</em><sub><em>y</em></sub> that that deterministically set <em>X</em> and <em>Y</em>, given their parents in the graph. This difference is key; <em>X</em> and <em>Y</em> are generated in the model described in figure 6.1 but set deterministically in this new model. To emphasize this, I use the assignment operator “:=” instead of the equal sign “=” to emphasize that <em>f</em><sub><em>x</em></sub> and <em>f</em><sub><em>y</em></sub> assign the values of <em>X</em> and <em>Y</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p37">
+<p>To meet our goal of converting our CGM to an SCM, we want <em>P</em><em> </em>(<em>X</em><em>  </em>) and <em>P</em><em> </em>(<em>Y</em><em>  </em>|<em>X</em><em> </em>=<em>x</em><em> </em>) to be the same across both models. To achieve this, we have to choose <em>P</em><em> </em>(<em>N</em><sub><em>x</em></sub>), <em>P</em><em> </em>(<em>N</em><sub><em>y</em></sub>), <em>f</em><sub><em>x</em></sub>, and <em>f</em><sub><em>y</em></sub> such that <em>P</em><em> </em>(<em>X</em><em>  </em>) is still Normal(47, 2.3) and <em>P</em><em> </em>(<em>Y</em><em>  </em>|<em>X</em><em> </em>=<em> </em><em>x</em><em> </em>) is still Normal(25 + 3.3<em>x</em>, 3.3). One option is to do a simple reparameterization. Linear functions of normally distributed random variables are also normally distributed. We can implement the model in figure 6.3.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p38">
+<img alt="figure" height="177" src="../Images/CH06_F03_Ness.png" width="418"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.3</span> A simple reparameterization of the original CGM produces a new SCM model with the same <em>P</em>(<em>X</em>) and <em>P</em>(<em>Y</em>|<em>X</em>) as the original.</h5>
+</div>
+<div class="readable-text" id="p39">
+<p>In code, we rewrite this as follows.</p>
+</div>
+<div class="browsable-container listing-container" id="p40">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.2</span> CGM rewritten as an SCM</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.distributions import Normal
+from pyro import sample
+
+def scm_model():
+    n_x = sample("n_x", Normal(0., 2.3))   <span class="aframe-location"/> #1
+    n_y = sample("n_y", Normal(0., 3.3))   #1
+    x = 47. + n_x    <span class="aframe-location"/> #2
+    y = 25. + 3.*x + n_y    #2
+    return x, y   <span class="aframe-location"/> #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 We sample these new latent variables from a standard normal distribution.
+     <br/>#2 X and Y are calculated deterministically as linear transformations of n_x and n_y.
+     <br/>#3 The returned samples of P(X, Y) match the first model.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p41">
+<p>With this introduction of new exogenous variables <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub>, some linear functions <em>f</em><sub><em>x</em></sub> and <em>f</em><sub><em>y</em></sub>, and a reparameterization, we converted the CGM to an SCM that encodes the same distribution <em>P</em><em> </em>(<em>X</em>, <em>Y</em><em>  </em>). Next, let’s look more closely at the elements we introduced.</p>
+</div>
+<div class="readable-text" id="p42">
+<h3 class="readable-text-h3" id="sigil_toc_id_121"><span class="num-string">6.1.3</span> Formalizing the new model</h3>
+</div>
+<div class="readable-text" id="p43">
+<p>To build an SCM, we’re going to assume we’ve already built a causal DAG, as in figure 6.1. In figures 6.2 and 6.3, we see two kinds of variables: exogenous and endogenous. The <em>endogenous variables</em> are the original variables <em>X</em> and <em>Y</em>—we’ll define them as the variables we are modeling explicitly. These are the variables we included in our causal DAG.</p>
+</div>
+<div class="readable-text intended-text" id="p44">
+<p>The <em>exogenous variables</em> (also called <em>noise</em> variables) are our new nodes <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub>. These variables represent all unmodeled causes of our endogenous variables. In our formulation, we pair each of the endogenous variable with its own exogenous variable parent; <em>X</em> gets new exogenous causal parent <em>N</em><sub><em>x</em></sub>, and <em>Y</em> gets exogenous parent <em>N</em><sub><em>y</em></sub>. We add these to our DAG for completeness as in figures 6.2 and 6.3.</p>
+</div>
+<div class="readable-text intended-text" id="p45">
+<p>In our formulation, we’ll assume exogenous variables have no parents and have no edges between one another. In other words, they are root nodes in the graph, and they are independent relative to other exogenous variables. Further, we’ll treat the exogenous variables as latent variables.</p>
+</div>
+<div class="readable-text intended-text" id="p46">
+<p>Each endogenous variable also gets its own <em>assignment function</em> (also called a <em>structural assignment</em>) <em>f</em><sub><em>x</em></sub>, and <em>f</em><sub><em>y</em></sub>. The assignment function <em>deterministically</em> sets the value of the endogenous variables <em>X</em> and <em>Y</em> given values of their parents in the causal DAG. </p>
+</div>
+<div class="readable-text intended-text" id="p47">
+<p>Assignment functions are how we capture assumptions about the “how” of causality. For instance, to say that the causal relationship between height (<em>Y</em><em>  </em>) and femur length (<em>X</em><em>  </em>) is linear, we specify that <em>f</em><sub><em>x</em></sub> is a linear function.</p>
+</div>
+<div class="readable-text intended-text" id="p48">
+<p>While the endogenous variables are set deterministically, the SCM generates the values of the exogenous variables from probability distributions. In our femur example, we generate values <em>n</em><sub><em>x</em></sub> and <em>n</em><sub><em>y</em></sub> of exogenous variables <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub> from distributions <em>P</em><em> </em>(<em>N</em><sub><em>x</em></sub>) and <em>P</em><em> </em>(<em>N</em><sub><em>y</em></sub>), which are <em>N</em><em> </em>(0, 2.3) and <em>N</em><em> </em>(0, 3.3), as seen in figure 6.3.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p49">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Elements of the generative SCM</h5>
+</div>
+<ul>
+<li class="readable-text" id="p50"> <em>A set of endogenous variables (e.g., X, Y)</em>—These are the variables we want to model explicitly. They are the models we build into our causal DAG. </li>
+<li class="readable-text" id="p51"> <em>A set of exogenous variables (e.g., N</em><em><sub>x</sub></em><em> and N</em><em><sub>y</sub></em><em>)</em>—These variables stand in for unmodeled causes of the endogenous variables. In our formulation, each endogenous variable has one corresponding latent exogenous variable. </li>
+<li class="readable-text" id="p52"> <em>A set of assignment functions (e.g., f</em><em><sub>x</sub></em><em> and f</em><em><sub>y</sub></em><em>)</em>—Each endogenous variable has an assignment function that sets its value deterministically given its parents (its corresponding exogenous variable and other endogenous variables). </li>
+<li class="readable-text" id="p53"> <em>A set of exogenous variable probability distributions (e.g., P(N</em><em><sub>x</sub></em><em>) and P(N</em><em><sub>y</sub></em><em>))</em>—The SCM becomes a generative model with a set of distributions on the exogenous variables. Given values generated from these distributions, the endogenous variables are set deterministically. </li>
+</ul>
+</div>
+<div class="readable-text" id="p54">
+<p>Let’s look at another example of an SCM, this time using discrete variables.</p>
+</div>
+<div class="readable-text" id="p55">
+<h3 class="readable-text-h3" id="sigil_toc_id_122"><span class="num-string">6.1.4</span> A discrete, imperative example of an SCM</h3>
+</div>
+<div class="readable-text" id="p56">
+<p>Our femur example dealt with continuous variables like height and length. Let’s now return to our rock-throwing example from chapter 2 and consider a discrete case of an SCM. In this example, either Jenny or Brian or both throw a rock at window if they are inclined to do so. The window breaks depending on whether either or both Jenny and Brian throw and the strength of the windowpane.</p>
+</div>
+<div class="readable-text intended-text" id="p57">
+<p>How might we convert this model to an SCM? In fact, this model is <em>already</em> an SCM. We captured this with the following code.</p>
+</div>
+<div class="browsable-container listing-container" id="p58">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.3</span> The rock-throwing example from chapter 2 is an SCM</h5>
+<div class="code-area-container">
+<pre class="code-area">import pandas as pd
+import random
+
+def true_dgp(
+    jenny_inclination,    <span class="aframe-location"/> #1
+    brian_inclination,     #1
+    window_strength):     #1
+    jenny_throws_rock = jenny_inclination &gt; 0.5 <span class="aframe-location"/>    #2
+    brian_throws_rock = brian_inclination &gt; 0.5    #2
+    if jenny_throws_rock and brian_throws_rock:    <span class="aframe-location"/> #3
+        strength_of_impact = 0.8     #3
+    elif jenny_throws_rock or brian_throws_rock:     #3
+        strength_of_impact = 0.6     #3
+    else:     #3
+        strength_of_impact = 0.0    #3
+    window_breaks = window_strength &lt; strength_of_impact   <span class="aframe-location"/> #4
+    return jenny_throws_rock, brian_throws_rock, window_breaks
+
+generated_outcome = true_dgp(
+    jenny_inclination=random.uniform(0, 1), <span class="aframe-location"/> #5
+    brian_inclination=random.uniform(0, 1),  #5
+    window_strength=random.uniform(0, 1)   #5
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 The input values are instances of exogenous variables.
+     <br/>#2 Jenny and Brian throw the rock if so inclined. jenny_throws_rock and brian_throws_rock are endogenous variables.
+     <br/>#3 strength_of_impact is an endogenous variable. This entire if-then expression is the assignment function for strength of impact.
+     <br/>#4 window_breaks is an endogenous variable. The assignment function is lambda strength_of_impact, window_strength: strength_of_impact &amp;gt; window_strength.
+     <br/>#5 Each exogenous variable has a Uniform(0, 1) distribution.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p59">
+<p>You’ll see that it satisfies the requirements of an SCM. The arguments to the <code>true_dgp</code> function (namely <code>jenny_inclination,</code> <code>brian_inclination,</code> <code>window_strength</code>) are the exogenous variables. The named variables inside the function are the endogenous variables, which are set deterministically by the exogenous variables.</p>
+</div>
+<div class="readable-text intended-text" id="p60">
+<p>Most SCMs you’ll encounter in papers and textbooks are written down as math. However, this rock-throwing example shows us the power of reasoning causally with an imperative scripting language like Python. Some causal processes are easier to write in code than in math. It is only recently that tools such as Pyro have allowed us to make sophisticated code-based SCMs.</p>
+</div>
+<div class="readable-text" id="p61">
+<h3 class="readable-text-h3" id="sigil_toc_id_123"><span class="num-string">6.1.5</span> Why use SCMs?</h3>
+</div>
+<div class="readable-text" id="p62">
+<p>More causal assumptions mean more ability to make causal inferences. The question of whether to use an SCM instead of a regular CGM is equivalent to asking whether the additional causal assumptions encoded in the functional assignments will serve your causal inference goal.</p>
+</div>
+<div class="readable-text intended-text" id="p63">
+<p>In our femur example, our DAG says femur length causes height. Our SCM goes further and says that for every unit increase in femur length, there is a proportional increase in height. The question is whether that additional information helps us answer a causal question. One example where such a linear assumption helps make a causal inference is the use of <em>instrumental variable estimation</em> of causal effects, which I’ll discuss in chapter 11. This approach relies on linearity assumptions to infer causal effects in cases where the assumptions in the DAG alone are not sufficient to make the inference. Another example is where an SCM can enable us to answer <em>counterfactual queries</em> using an algorithm discussed in chapter 9.</p>
+</div>
+<div class="readable-text intended-text" id="p64">
+<p>Of course, if your causal inference is relying on an assumption, and that assumption is incorrect, your inference will probably be incorrect. The “what” assumptions in a DAG are simpler than the additional “how” assumptions in an SCM. An edge in a DAG is a true or false statement that <em>X</em> causes <em>Y.</em> An assignment function in an SCM model is a statement about <em>how</em> <em>X</em> causes <em>Y</em>. The latter assumption is more nuanced and quite hard to validate, so it’s easier to get incorrect. Consider the fact that there are longstanding drugs on the market that we know work, but we don’t fully understand their mechanism of action—<em>how</em> they work.</p>
+</div>
+<div class="readable-text" id="p65">
+<h3 class="readable-text-h3" id="sigil_toc_id_124"><span class="num-string">6.1.6</span> Differences from related approaches</h3>
+</div>
+<div class="readable-text" id="p66">
+<p>SCMs have a rich history across different fields. You may have seen formulations that are similar to but nonetheless different from what we’ve laid out here. Here, we’ll highlight the differentiating elements of this formulation and why they matter to us.</p>
+</div>
+<div class="readable-text" id="p67">
+<h4 class="readable-text-h4 sigil_not_in_toc">Generative SCMs with latent exogenous variables</h4>
+</div>
+<div class="readable-text" id="p68">
+<p>We want to use our SCMs as generative models. To that end, we treat exogenous variables (variables we don’t want to model explicitly) as latent proxies for unmodeled causes of the endogenous variables. We just need to specify probability distributions of the exogenous variables and we get a generative latent variable model.</p>
+</div>
+<div class="readable-text" id="p69">
+<h4 class="readable-text-h4 sigil_not_in_toc">Flexible selection of assignment functions</h4>
+</div>
+<div class="readable-text" id="p70">
+<p>You’ll find that the most common applications of SCMs use linear functions as assignment functions, like we did in the femur example. However, in a generative AI setting, we certainly don’t want to constrain ourselves to linear models. We want to work with rich function classes we can write as code, optimize with automatic differentiation, and apply to high-dimensional nonlinear problems, like images. These function classes can do just as well in representing the “how” of causality.</p>
+</div>
+<div class="readable-text" id="p71">
+<h4 class="readable-text-h4 sigil_not_in_toc">Connection to the DAG</h4>
+</div>
+<div class="readable-text" id="p72">
+<p>We contextualize the SCM within the DAG-based view of causality. First, we build a causal DAG as in chapters 3 and 4. Each variable in the DAG becomes an endogenous variable (a variable we want to model explicitly) in the SCM. For each endogenous variable, we add a single latent exogenous parent node to the DAG. Next, we define “assignment function” as a function that assigns a given endogenous variable a value, given the values of its parents in the DAG. All of our DAG-based theory still applies, such as the causal Markov property and independence of mechanism.</p>
+</div>
+<div class="readable-text intended-text" id="p73">
+<p>Note that not all formulations of the SCM adhere so closely to the DAG. Some practitioners who don’t adopt a graphical view of causality still use SCM-like models (e.g., structural equation modeling in econometrics). And some variations of graphical SCMs allow us to relax acyclicity and work with cycles and feedback loops.</p>
+</div>
+<div class="readable-text" id="p74">
+<h4 class="readable-text-h4 sigil_not_in_toc">Independent exogenous variables</h4>
+</div>
+<div class="readable-text" id="p75">
+<p>Introducing one exogenous variable for every endogenous variable can be a nuisance; sometimes it is easier to treat a node with no parents in the original DAG as exogenous, or have the same exogenous parent for two endogenous nodes. But this approach lets us add exogenous variables in a way that maintains the d-separations entailed by the original DAG. It also allows us to make a distinction between <em>endogenous</em> variables we care to model explicitly, and all the <em>exogenous</em> causes we don’t want to model explicitly. This comes in handy when, for example, you’re building a causal image model like in chapter 5, and you don’t want to explicitly represent <em>all</em> the many causes of the appearance of an image.</p>
+</div>
+<div class="readable-text" id="p76">
+<h3 class="readable-text-h3" id="sigil_toc_id_125"><span class="num-string">6.1.7</span> Causal determinism and implications to how we model</h3>
+</div>
+<div class="readable-text" id="p77">
+<p>The defining element of the SCM is that endogenous variables are set deterministically by assignment functions instead of probabilistically by drawing randomly from a distribution conditioned on causal parents. This deterministic assignment reflects the philosophical view of <em>causal determinism,</em> which argues that if you knew all the causal factors of an outcome, you would know the outcome with complete certainty.</p>
+</div>
+<div class="readable-text intended-text" id="p78">
+<p>The SCM stands on this philosophical foundation. Consider again our femur-height example, shown in figure 6.4. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p79">
+<img alt="figure" height="179" src="../Images/CH06_F04_Ness.png" width="798"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.4</span> The original CGM samples endogenous variables from causal Markov kernels. The new model sets the endogenous variables deterministically.</h5>
+</div>
+<div class="readable-text" id="p80">
+<p>In the original CGM on the left of figure 6.4, we generate values of <em>X</em> and <em>Y</em> from models of their causal Markov kernels. In the corresponding SCM on the right, the endogenous variables are set deterministically, no longer drawn from distributions. The SCM is saying that given femur length and all the other unmodeled causes of height represented by <em>N</em><sub><em>y</em></sub>, height is a certainty.</p>
+</div>
+<div class="readable-text intended-text" id="p81">
+<p>Note that despite this deterministic view, the SCM is still a probabilistic model of the joint probability distribution of the endogenous variables <em>P</em>(<em>X</em>, <em>Y</em>). But in comparison to the CGM on the left of figure 6.4, the SCM on the right shunts all the randomness of the model to the exogenous variable distributions. <em>X</em> and <em>Y</em> are still random variables in the SCM, because they are functions of <em>N</em><sub><em>x</em></sub> and <em>N</em><sub><em>y</em></sub>, and a function of a random variable is a random variable. But conditional on the exogenous variables, the endogenous variables are fully determined (<em>degenerate</em>).</p>
+</div>
+<div class="readable-text intended-text" id="p82">
+<p>The causal determinism leads to eye-opening conclusions for us as causal modelers. First, when we apply a DAG-based view of causality to a given problem<em>, </em>we implicitly assume <em>the ground-truth data generating process</em> (DGP) is an SCM. We already assumed that the ground-truth DGP had an underlying ground-truth DAG. Going a step further and assuming that each variable in that DAG is set deterministically, given all its causes (both those in and outside the DAG), is equivalent to assuming the ground-truth DGP is an SCM. The SCM might be a black box, or we might not be able to easily write it down in math or code, but it is an SCM nonetheless. That means, whether we’re using a traditional CGM or an SCM, we are <em>modeling a ground-truth SCM</em>. </p>
+</div>
+<div class="readable-text intended-text" id="p83">
+<p>Second, it suggests that if we were to generate from the ground-truth SCM, all the random variation in those samples would be <em>entirely due to exogenous causes</em>. It would <em>not be due to an irreducible source of stochasticity</em> like, for example, Heisenberg’s uncertainty principle or butterfly effects. If such concepts drive the outcomes in your modeling domain, CGMs might not be the best choice.</p>
+</div>
+<div class="readable-text intended-text" id="p84">
+<p>Now that we know we want to model a ground-truth SCM, let’s explore why we can’t simply learn it from data.</p>
+</div>
+<div class="readable-text" id="p85">
+<h2 class="readable-text-h2" id="sigil_toc_id_126"><span class="num-string">6.2</span> Equivalence between SCMs</h2>
+</div>
+<div class="readable-text" id="p86">
+<p>A key thing to understand about SCMs is that we can’t fully learn them from data. To see why, let’s revisit the case where we turned a CGM into an SCM. Let’s see why, in general, this can’t give us the ground-truth SCM.</p>
+</div>
+<div class="readable-text" id="p87">
+<h3 class="readable-text-h3" id="sigil_toc_id_127"><span class="num-string">6.2.1</span> Reparameterization is not enough</h3>
+</div>
+<div class="readable-text" id="p88">
+<p>When we converted the generic CGM to the SCM, we used the fact that a linear transformation of a normally distributed random variable produces a normally distributed random variable. This ensured that the joint probability distribution of the endogenous variables was unchanged. </p>
+</div>
+<div class="readable-text intended-text" id="p89">
+<p>We could use this “reparameterization trick” (as this technique is called in generative AI) with other distributions. When we apply the reparameterization trick, we are shunting all the uncertainty in those conditional probability distributions to the distributions of the newly introduced exogenous variables. The problem is that different “reparameterization tricks” can lead to different SCMs with different causal assumptions, leading to different causal inferences.</p>
+</div>
+<div class="readable-text" id="p90">
+<h4 class="readable-text-h4 sigil_not_in_toc">Reparameterization trick for a Bernoulli distribution</h4>
+</div>
+<div class="readable-text" id="p91">
+<p>As an example, let <em>X</em> represent the choice of a weighted coin and <em>Y</em> represent the outcome of a flip of the chosen coin. <em>Y</em> is 1 if we flip heads and 0 if we flip tails. <em>X</em> takes two values, “coin A” or “coin B”. Coin A has a .8 chance of flipping heads, and coin B has a .4 chance of flipping heads, as shown in figure 6.5. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p92">
+<img alt="figure" height="165" src="../Images/CH06_F05_Ness.png" width="478"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.5</span> A simple CGM. <em>X</em> is a choice of one of two coins with different weights on heads and tails. <em>Y</em> is the outcome of the coin flip (heads or tails).</h5>
+</div>
+<div class="readable-text intended-text" id="p93">
+<p>We can simulate an outcome of the flip with a variable <em>Y</em> sampled from a Bernoulli distribution with parameter <em>p</em><sub><em>x</em></sub>, where <em>p</em><sub><em>x</em></sub> is .8 or .4, depending on the value of <em>x</em>.</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p94">
+<p><em>y</em> ~ Bernoulli(<em>p</em><sub><em>x</em></sub>)</p>
+</div>
+<div class="readable-text" id="p95">
+<p>How could we apply the reparameterization trick here to make the outcome <em>Y</em> be the result of a deterministic process? </p>
+</div>
+<div class="readable-text intended-text" id="p96">
+<p>Imagine that we have a stick that’s one meter long (figure 6.6). <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p97">
+<img alt="figure" height="89" src="../Images/CH06_F06_Ness.png" width="462"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.6</span> To turn the coin flip model into an SCM, first imagine a one meter long stick.</h5>
+</div>
+<div class="readable-text" id="p98">
+<p>Imagine using a pocket knife to carve a mark that partitions the stick into two regions: one corresponding to “tails” and one for “heads.” We cut the mark at a point that makes the length of each region proportional to the probability of the corresponding outcome; the length of the heads region is <em>p</em><sub><em>x</em></sub> meters, and the length of the tails region is 1 – <em>p</em><sub><em>x</em></sub> meters. For coin <em>A</em>, this would be .8 meters (80 centimeters) for the heads region and .2 meters for the tails region (figure 6.7).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p99">
+<img alt="figure" height="178" src="../Images/CH06_F07_Ness.png" width="510"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.7</span> Divide the stick into two regions corresponding to each outcome. The length of the region is proportional to the probability of the outcome.</h5>
+</div>
+<div class="readable-text" id="p100">
+<p>After marking the partition, we will now randomly select a point on the stick’s length where we will break the stick. The probability that the break will occur in a given region is equal to the probability of that region’s associated outcome (figure 6.8). The equality comes from having the length of the region correspond to the probability of the outcome. If the break point is to the left of the partition we cut with our pocket knife, <em>y</em> is assigned 0 (“heads”), and if the break point is to the right, <em>y</em> is assigned 1 (“tails”). </p>
+</div>
+<div class="readable-text intended-text" id="p101">
+<p>To randomly select a point to break the stick, we can generate from a uniform distribution. Suppose we sample .15 from a uniform(0, 1) and thus break the stick at a point .15 meters along its length, as shown in figure 6.8. The .15 falls into the “heads” region, so we return heads. If we repeat this stick-breaking procedure many times, we’ll get samples from our target Bernoulli distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p102">
+<p>In math, we can write this new model as follows:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p103">
+<p><em>n</em><sub><em>y</em></sub> ~ Uniform(0, 1)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p104">
+<p><em>y</em> :<em> </em>= <em>I</em>(<em>n</em><sub><em>y</em></sub> <span class="regular-symbol">≤</span> <em>p</em><sub><em>x</em></sub>)</p>
+</div>
+<div class="readable-text" id="p105">
+<p>where <em>p</em><sub><em>x</em></sub> is .8 if <em>X</em> is coin <em>A</em>, or .4 if <em>X</em> is coin <em>B</em>. Here, <em>I</em>(.) is the indicator function that returns 1 if <em>n</em><sub><em>y</em></sub> &lt; <em>p</em><sub><em>x</em></sub> and 0 otherwise.</p>
+</div>
+<div class="browsable-container figure-container" id="p106">
+<img alt="figure" height="439" src="../Images/CH06_F08_Ness.png" width="657"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.8</span> Generate from a uniform distribution on 0 to 1 meters, break the stick at that point, and return the outcome associated with the region where the break occurred. Repeated generation of uniform variates will cause breaks in the “heads” region 80% of the time, because its length is 80% of the full stick length.</h5>
+</div>
+<div class="readable-text" id="p107">
+<p>This new model is technically an SCM, because instead of <em>Y</em> being generated from a Bernoulli distribution, it is set deterministically by an indicator “assignment” function. We did a reparameterization that shunted all the randomness to an exogenous variable with a uniform distribution, and that variable is passed to the assignment function.</p>
+</div>
+<div class="readable-text" id="p108">
+<h4 class="readable-text-h4 sigil_not_in_toc">Different “reparameterization tricks” lead to different SCMs</h4>
+</div>
+<div class="readable-text" id="p109">
+<p>The main reason to use SCM modeling is to have the functional assignments represent causal assumptions beyond those captured by the causal DAG. The problem with the reparameterization trick is that different reparameterization tricks applied to the same CGM will create SCMs with different assignment functions, implying different causal assumptions.</p>
+</div>
+<div class="readable-text intended-text" id="p110">
+<p>To illustrate, suppose that instead of a coin flip, <em>Y</em> was a three-sided die, like we saw in chapter 2 (figure 6.9).<em> X</em> determines which die we’ll throw; die A or die B (figure 6.10). Each die is weighted differently, so they have different probabilities of rolling a 1, 2, or 3.</p>
+</div>
+<div class="browsable-container figure-container" id="p111">
+<img alt="figure" height="279" src="../Images/CH06_F09_Ness.png" width="542"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.9</span> Three-sided dice</h5>
+</div>
+<div class="browsable-container figure-container" id="p112">
+<img alt="figure" height="172" src="../Images/CH06_F10_Ness.png" width="410"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.10</span> Suppose we switch the model from choosing a coin (two outcomes) to choosing a three-sided die (three outcomes).</h5>
+</div>
+<div class="readable-text" id="p113">
+<p>We can extend the original model from a Bernoulli distribution (which is the same as a categorical distribution with two outcomes) to a categorical distribution with three outcomes:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p114">
+<p><em>y</em> ~ Categorical([<em>p</em><sub><em>x</em></sub><sub>1</sub>, <em>p</em><sub><em>x</em></sub><sub>2</sub>, <em>p</em><sub><em>x</em></sub><sub>3</sub>])</p>
+</div>
+<div class="readable-text" id="p115">
+<p>where <em>p</em><sub><em>x</em></sub><sub>1</sub>, <em>p</em><sub><em>x</em></sub><sub>2</sub>, and <em>p</em><sub><em>x</em></sub><sub>3</sub> are the probabilities of rolling a 1, 2, and 3 respectively (note that one of these is redundant, since <em>p</em><sub><em>x</em></sub><sub>1</sub> = 1 – <em>p</em><sub><em>x</em></sub><sub>2</sub> – <em>p</em><sub><em>x</em></sub><sub>3</sub>). </p>
+</div>
+<div class="readable-text intended-text" id="p116">
+<p>We can use the stick-based reparameterization trick here as well; we just need to extend the stick to have one more region. Suppose for die <em>A</em>, the probability of rolling a 1 is <em>p</em><sub><em>x</em></sub><sub>1</sub>=.1, rolling a 2 is <em>p</em><sub><em>x</em></sub><sub>2</sub>=.3, and rolling a 3 is <em>p</em><sub><em>x</em></sub><sub>3</sub>=.6. We’ll mark our stick as in figure 6.11.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p117">
+<img alt="figure" height="123" src="../Images/CH06_F11_Ness.png" width="462"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.11</span> Divide the stick into three regions corresponding to outcomes of the three-sided die.</h5>
+</div>
+<div class="readable-text" id="p118">
+<p>We’ll then use the same selection of a remote region using a generated uniform variate as before (figure 6.12). <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p119">
+<img alt="figure" height="375" src="../Images/CH06_F12_Ness.png" width="793"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.12</span> The conversion to the stick-breaking SCM when <em>Y</em> has three outcomes</h5>
+</div>
+<div class="readable-text" id="p120">
+<p>In math we’ll write this as follows: <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p121">
+<img alt="figure" height="140" src="../Images/ness-ch6-eqs-4x.png" width="328"/>
+</div>
+<div class="readable-text" id="p122">
+<p>But what if we mark the stick differently, such that we change the ordering of the regions on the stick? In the second stick, the region order is 3, 1, and then 2 (figure 6.13).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p123">
+<img alt="figure" height="502" src="../Images/CH06_F13_Ness.png" width="793"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.13</span> Two different ways of reparameterizing a causal generative model yield two different SCMs. They encode the same joint probability distribution but different endogenous values given the same exogenous value.</h5>
+</div>
+<div class="readable-text" id="p124">
+<p>In terms of the probability of each outcome (1, 2, or 3), the two sticks are equivalent—the size of the stick regions assigned to each die-roll outcome are the same on both sticks. But our causal mechanism has changed! These two sticks can return <em>different</em> outcomes for a given value of <em>n</em><sub><em>y</em></sub>. If we randomly draw .15 and thereby break the sticks at the .15 meter point, the first stick will break in region 2, returning a 2, and the second stick will break in region 3, returning a 3.</p>
+</div>
+<div class="readable-text intended-text" id="p125">
+<p>In math, the second stick-breaking SCM has this form:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p126">
+<img alt="figure" height="141" src="../Images/ness-ch6-eqs-5x.png" width="328"/>
+</div>
+<div class="readable-text" id="p127">
+<p>Metaphorically speaking, imagine that in your modeling domain, the sticks are always marked a certain way, with the regions ordered in a certain way. Then there is no guarantee that a simple reparameterization trick will give you the ground-truth marking. </p>
+</div>
+<div class="readable-text intended-text" id="p128">
+<p>To drive the point home, let’s look back at the reparameterization trick we performed to convert our femur-height model to an SCM (figure 6.14).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p129">
+<img alt="figure" height="179" src="../Images/CH06_F14_Ness.png" width="786"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.14</span> Revisiting the femur-height SCM</h5>
+</div>
+<div class="readable-text" id="p130">
+<p>Suppose we create a new SCM that is the same, except that the assignment function for <em>y</em> now looks like this:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p131">
+<p><em>y</em> := 25 + 3<em>x</em> – <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p132">
+<p>Now we have a second SCM that subtracts <em>n</em><sub><em>y</em></sub> instead of adding <em>n</em><sub><em>y</em></sub>. A normal distribution is symmetric around its mean, so since <em>n</em><sub><em>y</em></sub> has a normal distribution with mean 0, the probability values of <em>n</em><sub><em>y</em></sub> and –<em>n</em><sub><em>y</em></sub> are the same, so the probability distribution of <em>Y</em> is the same in both models. But for the same values of <em>n</em><sub><em>y</em></sub> and <em>x</em>, the actual assigned values of <em>y</em> will be different. Next, we’ll examine this idea in formal detail.</p>
+</div>
+<div class="readable-text" id="p133">
+<h3 class="readable-text-h3" id="sigil_toc_id_128"><span class="num-string">6.2.2</span> Uniqueness and equivalence of SCMs</h3>
+</div>
+<div class="readable-text" id="p134">
+<p>Given a causal DAG and a joint probability distribution on endogenous variables, there can generally be multiple SCMs consistent with that DAG and joint probability distribution. This means that we can’t rely on data alone to learn the ground-truth SCM. We’ll explore this problem of <em>causal identifiability</em> in depth in chapter 10. For now, let’s break this idea down using concepts we’ve seen so far.</p>
+</div>
+<div class="readable-text" id="p135">
+<h4 class="readable-text-h4 sigil_not_in_toc">Many SCMs are consistent with a DAG and corresponding distributions</h4>
+</div>
+<div class="readable-text" id="p136">
+<p>Recall the many-to-one relationships we outlined in figure 2.24, shown again here in figure 6.15.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p137">
+<img alt="figure" height="222" src="../Images/CH06_F15_Ness.png" width="354"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.15</span> We have many-to-one relationships as we move from the DGP to observed data.</h5>
+</div>
+<div class="readable-text" id="p138">
+<p>If we can represent the underlying DGP as a ground-truth SCM, figure 6.15 becomes as shown in figure 6.16.</p>
+</div>
+<div class="browsable-container figure-container" id="p139">
+<img alt="figure" height="221" src="../Images/CH06_F16_Ness.png" width="426"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.16</span> Different SCMs can entail the same DAG structure and distributions. The SCMs can differ in assignment functions (and/or exogenous distributions).</h5>
+</div>
+<div class="readable-text" id="p140">
+<p>In other words, given a joint distribution on a set of variables, there can be multiple causal DAGs consistent with that distribution—in chapter 4 we called these DAGs a <em>Markov equivalence class</em>. Further, we can have <em>equivalence classes of SCMs</em>—given a causal DAG and a joint distribution, there can be multiple SCMs consistent with that DAG and distribution. We saw this with how the two variants of the stick-breaking die-roll SCM are both consistent with the DAG <em>X</em> (die choice) → <em>Y</em> (die roll) and with the distributions <em>P</em><em> </em>(<em>X</em><em>  </em>) (probability distribution on die selection) and <em>P</em><em> </em>(<em>Y</em><em>  </em>|<em>X</em><em>  </em>) (probability of die roll).</p>
+</div>
+<div class="readable-text" id="p141">
+<h4 class="readable-text-h4 sigil_not_in_toc">The ground-truth SCM can’t be learned from data (without causal assumptions)</h4>
+</div>
+<div class="readable-text" id="p142">
+<p>When we were working to build a causal DAG in previous chapters, our implied objective was to reproduce the ground-truth causal DAG. Now we seek to reproduce the ground-truth SCM, as in figure 6.16.</p>
+</div>
+<div class="readable-text intended-text" id="p143">
+<p>In chapter 4, we saw that data cannot distinguish between causal DAGs in an equivalence class of DAGs. Similarly, data alone is not sufficient to recover the ground-truth SCM. Again, consider the stick-breaking SCMs we derived. We derived two marked sticks, with two different orderings of regions. Of course, there are 3 <span class="regular-symbol">×</span> 2 <span class="regular-symbol">×</span> 1 = 6 ways of ordering the three outcomes: ({1, 2, 3}, {1, 3, 2}, {2, 1, 3}, {2, 3, 2}, {3, 1, 2}, {3, 2, 1}). That’s six ways of marking the stick and thus six different possible SCMs consistent with the distributions <em>P</em><em> </em>(<em>X</em><em>  </em>) and <em>P</em>(<em>Y</em><em>  </em>|<em>X</em><em>  </em>) (probability of die roll). </p>
+</div>
+<div class="readable-text intended-text" id="p144">
+<p>Suppose one of these marked sticks was the ground-truth SCM, and it was hidden from us in a black box, as in figure 6.17. Suppose we repeatedly ran the SCM to generate some die rolls. Based on those die rolls, could we figure out how the ground-truth stick was marked? In other words, which of the six orderings was the black box ordering?<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p145">
+<img alt="figure" height="185" src="../Images/CH06_F17_Ness.png" width="786"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.17</span> Suppose we didn’t know which “marked stick” was generating the observed die rolls. There would be no way of inferring the correct marked stick from the die rolls alone. More generally, SCMs cannot be learned from statistical information in the data alone.</h5>
+</div>
+<div class="readable-text" id="p146">
+<p>The answer is no. More generally, because of the many-to-one relationship between SCMs and data, you cannot learn the ground-truth SCM from statistical information in the data alone.</p>
+</div>
+<div class="readable-text intended-text" id="p147">
+<p>Let that sink in for a second. I’m telling you that even with infinite data, the most cutting-edge deep learning architecture, and a bottomless compute budget, you cannot figure out the true SCM even in this trivial three-outcome stick-breaking example. In terms of statistical likelihood, each SCM is equally likely, given the data. To prefer one SCM to another in the equivalence class, you would need additional assumptions, such as that {1, 2, 3} is the most likely marking because the person marking the stick would probably mark the regions in order. That’s a fine assumption to make, as long as you are <em>aware</em> you are making it.</p>
+</div>
+<div class="readable-text intended-text" id="p148">
+<p>In the practice of machine learning, we are often unaware that we are making such assumptions. To illustrate, suppose you ran the following experiment. You created a bunch of stick-breaking SCMs and then simulated data from those SCMs. Then you vectorized the SCMs and used them as labels, and the simulated data as features, in a deep supervised learning training procedure focused on predicting the “true” SCM from simulated data, as illustrated in figure 6.18.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p149">
+<img alt="figure" height="320" src="../Images/CH06_F18_Ness.png" width="901"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.18</span> You create many SCMs and simulate data from each of them. You could then do supervised learning of a deep net that predicted the ground-truth SCM from the simulated data. Given two SCMs of the same equivalence class, this approach would favor the SCM with attributes that appeared more often in the training data.</h5>
+</div>
+<div class="readable-text" id="p150">
+<p>Suppose then you fed the trained model data actual samples of three-sided die rolls, with the goal of predicting the ground-truth SCM. That predictive model’s prediction might favor a stick with the {1, 2, 3} ordering over the equivalent {2, 3, 1} ordering. But it would only do so if the {1, 2, 3} ordering was more common in the training data.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p151">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Analogy to program induction</h5>
+</div>
+<div class="readable-text" id="p152">
+<p>The problem of learning an SCM from data is related to the challenge of program induction in computer science. Suppose a program took “foo” and “bar” as inputs and returned “foobar” as the output. What is the program? You might think that the program simply concatenates the inputs. But it could be anything, including one that concatenates the inputs along with the word “aardvark”, then deletes the “aardvark” characters, and returns the result. The “data” (many examples of inputs to and outputs of the program) are not enough distinguish which program of all the possible programs is the correct one. For that you need additional assumptions or constraints, such as an Occam’s razor type of inductive bias that prefers the simplest program (e.g., the program with the <em>minimum description length</em>).</p>
+</div>
+<div class="readable-text" id="p153">
+<p>Trying to learn an SCM from data is a special case of this problem. The program’s inputs are the exogenous variable values, and the outputs are the endogenous variable values. Suppose you have the causal DAG, just not the assignment functions. The problem is that an infinite number of assignment functions could produce those outputs, given the inputs. Learning an SCM from data requires additional assumptions to constrain the assignment functions, such as constraining the function class and using Occam’s razor (e.g., model selection criterion).</p>
+</div>
+</div>
+<div class="readable-text" id="p154">
+<p>Next, we’ll dive into implementing an SCM in a discrete rule-based setting.</p>
+</div>
+<div class="readable-text" id="p155">
+<h2 class="readable-text-h2" id="sigil_toc_id_129"><span class="num-string">6.3</span> Implementing SCMs for rule-based systems</h2>
+</div>
+<div class="readable-text" id="p156">
+<p>A particularly useful application for SCMs is modeling rule-based systems. By “rule-based,” I mean that known rules, often set by humans, determine the “how” of causality. Games are a good example.</p>
+</div>
+<div class="readable-text intended-text" id="p157">
+<p>To illustrate, consider the <em>Monty Hall problem</em>—a probability-based brain teaser named after the host of a 1960’s game show with a similar setup.</p>
+</div>
+<div class="readable-text" id="p158">
+<h3 class="readable-text-h3" id="sigil_toc_id_130"><span class="num-string">6.3.1</span> Case study: The Monty Hall problem</h3>
+</div>
+<div class="readable-text" id="p159">
+<p>A contestant on a game show is asked to choose between three closed doors. Behind one door is a car; behind the others, goats. The player picks the first door. Then the host, who knows what’s behind the doors, opens another door, for example the third door, which has a goat. The host then asks the contestant, “Do you want to switch to the second door, or do you want to stay with your original choice?” The question is which is the better strategy, switching doors or staying?</p>
+</div>
+<div class="readable-text intended-text" id="p160">
+<p>The correct answer is to switch doors. This question appeared in a column in <em>Parade</em> magazine in 1990, with the correct answer. Thousands of readers mailed in, including many with graduate-level mathematical training, to refute the answer and say that there is no advantage to switching, that staying or switching have the same probability of winning.</p>
+</div>
+<div class="readable-text intended-text" id="p161">
+<p>Figure 6.19 illustrates the intuition behind why switching is better. Switching doors is the correct answer because under the standard assumptions, the “switch” strategy has a probability of two-thirds of winning the car, while the “stay” strategy has only a one-third probability. It seems counterintuitive because each door has an equal chance of having the car when the game starts. It seems as if, once the host eliminates one door, each remaining door should have a 50-50 chance. This logic is false, because the host doesn’t eliminate a door at random. He only eliminates a door that isn’t the player’s initial selection <em>and</em> that doesn’t have the car. A third of the times, those are the same door, and two-thirds of the time they are different doors; that one-third to two-thirds asymmetry is why the remaining doors don’t each have a 50-50 chance of having the car.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p162">
+<img alt="figure" height="778" src="../Images/CH06_F19_Ness.png" width="1016"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.19</span> The Monty Hall problem. Each door has an equal probability of concealing a prize. The player chooses a door initially, the host reveals a losing door, and the player has the option to switch their initial choice. Contrary to intuition, the player should switch; if they switch, they will win two out of three times. This illustration assumes door 1 is chosen, but the results are the same regardless of the initial choice of door.</h5>
+</div>
+<div class="readable-text" id="p163">
+<h3 class="readable-text-h3" id="sigil_toc_id_131"><span class="num-string">6.3.2</span> A causal DAG for the Monty Hall problem</h3>
+</div>
+<div class="readable-text" id="p164">
+<p>Causal modeling makes the Monty Hall problem much more intuitive. We can represent this game with the causal DAG in figure 6.20.</p>
+</div>
+<div class="browsable-container figure-container" id="p165">
+<img alt="figure" height="472" src="../Images/CH06_F20_Ness.png" width="477"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.20</span> A causal DAG for the Monty Hall problem</h5>
+</div>
+<div class="readable-text" id="p166">
+<p>The possible outcomes for each variable are as follows:</p>
+</div>
+<ul>
+<li class="readable-text" id="p167"> <em>Door with Car</em><em> </em>—Indicates the door that has the car behind it. 1<sup>st</sup> for the first door, 2<sup>nd</sup> for the second door, or 3<sup>rd</sup> for the third door. </li>
+<li class="readable-text" id="p168"> <em>Player First Choice</em><em> </em>—Indicates which door the player chooses first. 1<sup>st</sup> for the first door, 2<sup>nd</sup> for the second door, or 3<sup>rd</sup> for the third door. </li>
+<li class="readable-text" id="p169"> <em>Host Inclination</em><em> </em>—Suppose the host is facing the doors, such that from left to right they are ordered 1<sup>st</sup>, 2<sup>nd</sup>, and 3<sup>rd</sup>. This <em>Host Inclination </em>variable has two outcomes, Left and Right. When the outcome is Left, the host is inclined to choose the left-most available door; otherwise the host will be inclined to choose the right-most available door. </li>
+<li class="readable-text" id="p170"> <em>Host Door Selection</em><em> </em>—The outcomes are again 1<sup>st</sup>, 2<sup>nd</sup>, and 3<sup>rd</sup>. </li>
+<li class="readable-text" id="p171"> <em>Strategy</em><em> </em>—The outcomes are Switch if the strategy is to switch doors from the first choice, or Stay if the strategy is to stay with the first choice. </li>
+<li class="readable-text" id="p172"> <em>Player Second Choice</em><em> </em>—Indicates which door the player chooses after being asked by the host whether they want to switch or not. The outcomes again are 1<sup>st</sup>, 2<sup>nd</sup>, and 3<sup>rd</sup>. </li>
+<li class="readable-text" id="p173"> <em>Win or Lose</em><em> </em>—Indicates whether the player wins; the outcomes are Win or Lose. Winning occurs when <em>Player Second Choice</em> == <em>Door with Car</em>. </li>
+</ul>
+<div class="readable-text" id="p174">
+<p>Next, we’ll see how to implement this as an SCM in pgmpy.</p>
+</div>
+<div class="readable-text" id="p175">
+<h3 class="readable-text-h3" id="sigil_toc_id_132"><span class="num-string">6.3.3</span> Implementing Monty Hall as an SCM with pgmpy</h3>
+</div>
+<div class="readable-text" id="p176">
+<p>The rules of the game give us clear logic for the assignment functions. For example, we can represent the assignment function for <em>Host Door Selection</em> with table 6.1.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p177">
+<h5 class="browsable-container-h5 sigil_not_in_toc"><span class="num-string">Table 6.1</span> A lookup table for <em>Host Door Selection</em>, given <em>Player First Choice, Door with Car</em><em>,</em> and <em>Host Inclination</em>. It shows which door the host selects, given the player’s first choice, which door has the car, and the <em>Host Inclination</em>, which refers to whether the host will choose the left-most or right-most door in cases when the host has two doors to choose from.</h5>
+<table>
+<thead>
+<tr>
+<th rowspan="2">
+<div>
+        Host Inclination
+       </div></th>
+<th colspan="9">
+<div>
+        Left
+       </div></th>
+<th colspan="9">
+<div>
+        Right
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Door with Car</strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+</tr>
+<tr>
+<td> <strong>Player First Choice</strong><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+</tr>
+<tr>
+<td> <strong>Host Door Selection</strong><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p178">
+<p>When the door with the car and the player’s first choice are different doors, the host can only choose the remaining door. But if the door with the car and the player’s first choice are the same door, the host has two doors to choose from. He will choose the left-most door if <em>Host Inclination </em>is Left. For example, if <em>Door with Car</em> and <em>Player First Choice</em> are both 1<sup>st</sup>, the host must choose between the 2<sup>nd</sup> and 3<sup>rd</sup> doors. He will choose the 2<sup>nd</sup> door if <em>Host Inclination</em> == Left and the 3<sup>rd</sup> if <em>Host Inclination</em> == Right.</p>
+</div>
+<div class="readable-text intended-text" id="p179">
+<p>This logic would be straightforward to write using if-then logic with a library like Pyro. But since the rules are simple, we can use the far more constrained pgmpy library to write this function as a conditional probability table (table 6.2).</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p180">
+<h5 class="browsable-container-h5 sigil_not_in_toc"><span class="num-string">Table 6.2</span> We can convert the <em>Host Door Selection</em> lookup table (table 6.1) to a conditional probability table that we can implement as a <code>TabularCPD</code> object in pgmpy, where the probability of a given outcome is 0 or 1, and thus, deterministic.</h5>
+<table>
+<thead>
+<tr>
+<th colspan="2" rowspan="2">
+<div>
+        Host Inclination
+       </div></th>
+<th colspan="9">
+<div>
+        Left
+       </div></th>
+<th colspan="9">
+<div>
+        Right
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td colspan="2"> <strong>Door with Car</strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+</tr>
+<tr>
+<td colspan="2"> <strong>Player First Choice</strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+<td><strong>1<sup>st</sup></strong><br/></td>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td><strong>3<sup>rd</sup></strong><br/></td>
+</tr>
+<tr>
+<td rowspan="3"> <strong>Host Door Selection</strong><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+</tr>
+<tr>
+<td> 2<sup>nd</sup><br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+</tr>
+<tr>
+<td> 3<sup>rd</sup><br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p181">
+<p>The entries in the table correspond to the probability of the <em>Host Door Selection</em> outcome given the values of the causes. Each probability outcome is either 0 or 1, given the causal parents, so the outcome is completely deterministic given the parents. Therefore, we can use this as our assignment function, and since it is a conditional probability table, we can implement it using the <code>TabularCPD</code> class in pgmpy.</p>
+</div>
+<div class="browsable-container listing-container" id="p182">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.4</span> Implementation of <em>Host Door Selection</em> assignment function in pgmpy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.factors.discrete.CPD import TabularCPD
+f_host_door_selection = TabularCPD(
+    variable='Host Door Selection',   <span class="aframe-location"/> #1
+    variable_card=3,    <span class="aframe-location"/> #2
+    values=[   <span class="aframe-location"/> #3
+        [0,0,0,0,1,1,0,1,1,0,0,0,0,0,1,0,1,0],     #3
+        [1,0,1,0,0,0,1,0,0,0,0,1,0,0,0,1,0,1],     #3
+        [0,1,0,1,0,0,0,0,0,1,1,0,1,1,0,0,0,0]     #3
+    ],     #3
+    evidence=[    <span class="aframe-location"/> #4
+        'Host Inclination',     #4
+        'Door with Car',     #4
+        'Player First Choice'     #4
+    ],   #4
+    evidence_card=[2, 3, 3],   <span class="aframe-location"/> #5
+    state_names={   <span class="aframe-location"/> #6
+        'Host Door Selection':['1st', '2nd', '3rd'],    #6
+        'Host Inclination': ['left', 'right'],   #6
+        'Door with Car': ['1st', '2nd', '3rd'],  #6
+        'Player First Choice': ['1st', '2nd', '3rd']    #6
+    }    #6
+)     #6</pre>
+<div class="code-annotations-overlay-container">
+     #1 The name of the variable
+     <br/>#2 The cardinality (number of outcomes)
+     <br/>#3 The probability table. The values match the value in table 6.2, as long as the ordering of the causal variables in the evidence argument matches the top-down ordering of causal variable names in the table.
+     <br/>#4 The conditioning (causal) variables
+     <br/>#5 The cardinality (number of outcomes) for each conditioning (causal) variable
+     <br/>#6 The state names of each the variables
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p183">
+<p>This code produces <code>f_host_door_selection</code>, a <code>TabularCPD</code> object we can add to a model of the class <code>BayesianNetwork</code>. We can then use this in a CGM as we would a more typical <code>TabularCPD</code> object. </p>
+</div>
+<div class="readable-text intended-text" id="p184">
+<p>Similarly, we can create a look-up table for <em>Player Second Choice</em>, as shown in table 6.3.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p185">
+<h5 class="browsable-container-h5 sigil_not_in_toc"><span class="num-string">Table 6.3</span> A lookup table for <em>Player Second Choice</em>, conditional on <em>Player First Choice</em>, <em>Host Door Selection</em>, and <em>Strategy. Player Second Choice</em> cells are empty in the impossible cases where <em>Player First Choice</em> and <em>Host Door Selection</em> are the same.</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+        Strategy
+       </div></th>
+<th colspan="9">
+<div>
+        Stay
+       </div></th>
+<th colspan="9">
+<div>
+        Switch
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> <strong>Host Door Selection</strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+</tr>
+<tr>
+<td> <strong>Player First Choice</strong><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+</tr>
+<tr>
+<td> <strong>Player Second Choice</strong><br/></td>
+<td/>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td/>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td/>
+<td/>
+<td> 3<sup>rd</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td/>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td/>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p186">
+<p>The host will never choose the same door as the player’s first choice, so <em>Host Door Selection</em> and <em>Player First Choice</em> can never have the same value. The entries of <em>Player Second Choice</em> are not defined in these cases. </p>
+</div>
+<div class="readable-text intended-text" id="p187">
+<p>Expanding this to a conditional probability table gives us table 6.4. Again, the cells with impossible outcomes are left blank.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p188">
+<h5 class="browsable-container-h5 sigil_not_in_toc"><span class="num-string">Table 6.4</span> The result of converting the lookup table for <em>Player Second Choice</em> (table 6.3) to a conditional probability table that we can implement as a <code>TabularCPD</code> object</h5>
+<table border="1">
+<thead>
+<tr>
+<th colspan="2">
+<div>
+        Strategy
+       </div></th>
+<th colspan="9">
+<div>
+        Stay
+       </div></th>
+<th colspan="9">
+<div>
+        Switch
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td colspan="2"> <strong>Host Door Selection</strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+<td colspan="3"><strong>1<sup>st</sup></strong><br/></td>
+<td colspan="3"><strong>2<sup>nd</sup></strong><br/></td>
+<td colspan="3"><strong>3<sup>rd</sup></strong><br/></td>
+</tr>
+<tr>
+<td colspan="2"> <strong>Player First Choice</strong><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+<td> 1<sup>st</sup><br/></td>
+<td> 2<sup>nd</sup><br/></td>
+<td> 3<sup>rd</sup><br/></td>
+</tr>
+<tr>
+<td rowspan="3"> <strong>Player Second Choice</strong><br/></td>
+<td> <strong>1<sup>st</sup></strong><br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td/>
+<td/>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td/>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td/>
+</tr>
+<tr>
+<td><strong>2<sup>nd</sup></strong><br/></td>
+<td/>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td/>
+<td/>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td/>
+</tr>
+<tr>
+<td> <strong>3<sup>rd</sup></strong><br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td/>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td/>
+<td/>
+<td> 1<br/></td>
+<td> 0<br/></td>
+<td> 1<br/></td>
+<td/>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td> 0<br/></td>
+<td/>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p189">
+<p>Unfortunately, we can’t leave the impossible values blank when we specify a <code>Tabular-CPD</code>, so in the following code, we’ll need to assign arbitrary values to these elements.</p>
+</div>
+<div class="browsable-container listing-container" id="p190">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.5</span> Implementation of <em>Player Second Choice</em> assignment function in pgmpy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.factors.discrete.CPD import TabularCPD
+f_second_choice = TabularCPD(
+    variable='Player Second Choice',
+    variable_card=3,
+    values=[
+        [1,0,0,1,0,0,1,0,0,0,0,0,0,0,1,0,1,0],   <span class="aframe-location"/> #1
+        [0,1,0,0,1,0,0,1,0,1,0,1,0,1,0,1,0,1],    #1
+        [0,0,1,0,0,1,0,0,1,0,1,0,1,0,0,0,0,0]     #1
+    ],
+    evidence=[
+        'Strategy',
+        'Host Door Selection',
+        'Player First Choice'
+    ],
+    evidence_card=[2, 3, 3],
+    state_names={
+        'Player Second Choice': ['1st', '2nd', '3rd'],
+        'Strategy': ['stay', 'switch'],
+        'Host Door Selection': ['1st', '2nd', '3rd'],
+        'Player First Choice': ['1st', '2nd', '3rd']
+    }
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 The probability values are 0 or 1, so the assignment function is deterministic. In cases where the parent combinations are impossible, we still have to assign a value.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p191">
+<p>That gives us a second <code>TabularCPD</code> object. We’ll create one for each node. </p>
+</div>
+<div class="readable-text intended-text" id="p192">
+<p>First, let’s set up the causal DAG.</p>
+</div>
+<div class="browsable-container listing-container" id="p193">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.6</span> Implementing the full Monty Hall SCM</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.models import BayesianNetwork
+from pgmpy.factors.discrete.CPD import TabularCPD
+
+monty_hall_model = BayesianNetwork([   <span class="aframe-location"/> #1
+    ('Host Inclination', 'Host Door Selection'),     #1
+    ('Door with Car', 'Host Door Selection'),     #1
+    ('Player First Choice', 'Host Door Selection'),    #1
+    ('Player First Choice', 'Player Second Choice'),    #1
+    ('Host Door Selection', 'Player Second Choice'),    #1
+    ('Strategy', 'Player Second Choice'),    #1
+    ('Player Second Choice', 'Win or Lose'),     #1
+    ('Door with Car', 'Win or Lose')  #1
+])    #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 Build the causal DAG.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p194">
+<p><code>monty_hall_model</code> is now a causal DAG. It will become an SCM after we add the exogenous variable distributions and assignment functions. </p>
+</div>
+<div class="readable-text intended-text" id="p195">
+<p>The following listing adds the exogenous variable distribution.</p>
+</div>
+<div class="browsable-container listing-container" id="p196">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.7</span> Create the exogenous variable distributions</h5>
+<div class="code-area-container">
+<pre class="code-area">p_host_inclination = TabularCPD(      <span class="aframe-location"/> #1
+    variable='Host Inclination',    #1
+    variable_card=2,   #1
+    values=[[.5], [.5]],    #1
+    state_names={'Host Inclination': ['left', 'right']}    #1
+)    #1
+
+p_door_with_car = TabularCPD(    <span class="aframe-location"/> #2
+    variable='Door with Car',    #2
+    variable_card=3,    #2
+    values=[[1/3], [1/3], [1/3]],    #2
+    state_names={'Door with Car': ['1st', '2nd', '3rd']}     #2
+)     #2
+
+p_player_first_choice = TabularCPD(    <span class="aframe-location"/> #3
+    variable='Player First Choice',     #3
+    variable_card=3,     #3
+    values=[[1/3], [1/3], [1/3]],     #3
+    state_names={'Player First Choice': ['1st', '2nd', '3rd']}     #3
+)     #3
+
+p_host_strategy = TabularCPD(   <span class="aframe-location"/> #4
+    variable='Strategy',    #4
+    variable_card=2,    #4
+    values=[[.5], [.5]],     #4
+    state_names={'Strategy': ['stay', 'switch']}    #4
+)    #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 A CPD for the Host Inclination variable. In cases when the player chooses the door with the car, the host has a choice between the two other doors. This variable is “left” when the host is inclined to choose the left-most door, and “right” if the host is inclined to choose the right-most door.
+     <br/>#2 A CPD for the variable representing which door has the prize car. Assume each door has an equal probability of having the car.
+     <br/>#3 A CPD for the variable representing the player’s first door choice. Each door has an equal probability of being chosen.
+     <br/>#4 A CPD for the variable representing the player's strategy. “Stay” is the strategy of staying with the first choice, and “switch” is the strategy of switching doors.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p197">
+<p>Having created the exogenous distributions, we’ll now create the assignment functions. We’ve already created <code>f_host_door_selection</code> and <code>f_second_choice</code>, so we’ll add <code>f_win_or_lose</code>—the assignment function determining whether the player wins or loses.</p>
+</div>
+<div class="browsable-container listing-container" id="p198">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.8</span> Create the assignment functions</h5>
+<div class="code-area-container">
+<pre class="code-area">f_win_or_lose = TabularCPD(    
+    variable='Win or Lose',    
+    variable_card=2,    
+    values=[    
+        [1,0,0,0,1,0,0,0,1],    
+        [0,1,1,1,0,1,1,1,0],    
+    ],    
+    evidence=['Player Second Choice', 'Door with Car'],    
+    evidence_card=[3, 3],    
+    state_names={    
+        'Win or Lose': ['win', 'lose'],    
+        'Player Second Choice': ['1st', '2nd', '3rd'],    
+        'Door with Car': ['1st', '2nd', '3rd']    
+    }    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p199">
+<p>Finally, we’ll add the exogenous distribution and the assignment functions to <code>monty_hall_model</code> and create the SCM.</p>
+</div>
+<div class="browsable-container listing-container" id="p200">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.9</span> Create the SCM for the Monty Hall problem</h5>
+<div class="code-area-container">
+<pre class="code-area">monty_hall_model.add_cpds(    
+    p_host_inclination,    
+    p_door_with_car,    
+    p_player_first_choice,    
+    p_host_strategy,    
+    f_host_door_selection,    
+    f_second_choice,    
+    f_win_or_lose    
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p201">
+<p>We can run the variable elimination inference algorithm to verify the results of the algorithm. Let’s query the probability of winning, given that the player takes the “stay” strategy.</p>
+</div>
+<div class="browsable-container listing-container" id="p202">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.10</span> Inferring the winning strategy</h5>
+<div class="code-area-container">
+<pre class="code-area">from pgmpy.inference import VariableElimination   <span class="aframe-location"/> #1
+
+infer = VariableElimination(monty_hall_model)
+q1 = infer.query(['Win or Lose'], evidence={'Strategy': 'stay'})    <span class="aframe-location"/> #2
+print(q1)   #2
+q2 = infer.query(['Win or Lose'], evidence={'Strategy': 'switch'})    <span class="aframe-location"/> #3
+print(q2)   #3
+<span class="aframe-location"/>q3 = infer.query(['Strategy'], evidence={'Win or Lose': 'win'})     #4
+print(q3)   #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 We’ll use the inference algorithm called “variable elimination.”
+     <br/>#2 Print the probabilities of winning and losing when the player uses the “stay” strategy.
+     <br/>#3 Print the probabilities of winning and losing when the player uses the “switch” strategy.
+     <br/>#4 Print the probabilities that the player used a stay strategy versus a switch strategy, given that the player won.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p203">
+<p>This inference produces the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p204">
+<div class="code-area-container">
+<pre class="code-area">+-------------------+--------------------+
+| Win or Lose       |   phi(Win or Lose) |
++===================+====================+
+| Win or Lose(win)  |             0.3333 |
++-------------------+--------------------+
+| Win or Lose(lose) |             0.6667 |
++-------------------+--------------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p205">
+<p>The probability of winning and losing under the “stay” strategy is 1/3 and 2/3, respectively. In contrast, here’s the output for the “switch” strategy:</p>
+</div>
+<div class="browsable-container listing-container" id="p206">
+<div class="code-area-container">
+<pre class="code-area">+-------------------+--------------------+
+| Win or Lose       |   phi(Win or Lose) |
++===================+====================+
+| Win or Lose(win)  |             0.6667 |
++-------------------+--------------------+
+| Win or Lose(lose) |             0.3333 |
++-------------------+--------------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p207">
+<p>The probability of winning and losing under the “switch” strategy is 2/3 and 1/3, respectively. We can also condition on a winning outcome and infer the probability that each strategy leads to that outcome.</p>
+</div>
+<div class="browsable-container listing-container" id="p208">
+<div class="code-area-container">
+<pre class="code-area">+------------------+-----------------+
+| Strategy         |   phi(Strategy) |
++==================+=================+
+| Strategy(stay)   |          0.3333 |
++------------------+-----------------+
+| Strategy(switch) |          0.6667 |
++------------------+-----------------+</pre>
+</div>
+</div>
+<div class="readable-text" id="p209">
+<p>These are plain vanilla non-causal probabilistic inferences—we were just validating that our SCM is capable of produce these inferences. In chapter 9, we’ll demonstrate how this SCM enables causal <em>counterfactual</em> inferences that simpler models can’t answer, such as “What would have happened had the losing player used a different strategy?”</p>
+</div>
+<div class="readable-text" id="p210">
+<h3 class="readable-text-h3" id="sigil_toc_id_133"><span class="num-string">6.3.4</span> Exogenous variables in the rule-based system</h3>
+</div>
+<div class="readable-text" id="p211">
+<p>In this Monty Hall SCM, the root nodes (nodes with no incoming edges) in the causal DAG function as the exogenous variables. This is slightly different from our formal definition of an SCM, which states that exogenous variables represent causal factors outside the system. <em>Host Inclination</em> meets that definition, as this was not part of the original description. <em>Door with Car</em>, <em>Player First Choice</em>, and <em>Strategy</em> are another matter. To remedy this, we could introduce exogenous parents to these variables, and set these variables deterministically, given these parents, as we do elsewhere in this chapter. But while modeling this in pgmpy, that’s a bit redundant.</p>
+</div>
+<div class="readable-text" id="p212">
+<h3 class="readable-text-h3" id="sigil_toc_id_134"><span class="num-string">6.3.5</span> Applications of SCM-modeling of rule-based systems</h3>
+</div>
+<div class="readable-text" id="p213">
+<p>While the Monty Hall game is simple, do not underestimate the expressive power of incorporating rules into assignment functions. Some of the biggest achievements in AI in previous decades have been at beating expert humans in board games with simple rules. Simulation software, often based on simple rules for how a system transitions from one state to another, can model highly complex behavior. Often, we want to apply causal analysis to rule-based systems engineered by humans (who know and can rewrite those rules), such as an automated manufacturing system.</p>
+</div>
+<div class="readable-text" id="p214">
+<h2 class="readable-text-h2" id="sigil_toc_id_135"><span class="num-string">6.4</span> Training an SCM on data</h2>
+</div>
+<div class="readable-text" id="p215">
+<p>Given a DAG, we make a choice of whether to use a CGM or an SCM. Let’s suppose we want to go with the SCM, and we want to “fit” or “train” this SCM on data. To do this, we choose some <em>parameterized</em> <em>function class</em> (e.g., linear functions, logistic functions, etc.) for each assignment function. That function class becomes a specific function once we’ve fit its parameters on data. Similarly, for each exogenous variable, we want to specify a canonical probability distribution, possibly with parameters we can fit on data. </p>
+</div>
+<div class="readable-text intended-text" id="p216">
+<p>In our femur-height example, all the assignment functions were linear functions and the exogenous variables were normal distributions. But with tools like Pyro, you can specify each assignment function and exogenous distribution one by one. Then you can train the parameters just as you would with a CGM. For example, instead of taking this femur-height model from the forensic textbook:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p217">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em><em> </em>(0, 3.3)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p218">
+<p><em>y</em> = 25 + 3<em>x</em> + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p219">
+<p>you can just fit the parameters <em class="obliqued">α</em>, <em class="obliqued">β</em>, and <em>δ</em> of a linear model on actual forensic data:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p220">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em><em> </em>(0, <em>δ</em>)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p221">
+<p><em>y</em> = <em class="obliqued">α</em> + <em class="obliqued">β</em><em>x</em> + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p222">
+<p>In this forensics example, we use a linear assignment function because height is proportional to femur length. Let’s consider other ways to capture how causes influence their effects. </p>
+</div>
+<div class="readable-text" id="p223">
+<h3 class="readable-text-h3" id="sigil_toc_id_136"><span class="num-string">6.4.1</span> What assignment functions should I choose?</h3>
+</div>
+<div class="readable-text" id="p224">
+<p>The most important choice in an SCM model is your choice of <em>function classes</em> for the assignment functions, because these choices represent your assumptions about the “how” of causality. You can use function classes common in math, such as linear models. You can also use code (complete with if-then statements, loops, recursion, etc.) like we did with the rock-throwing example.</p>
+</div>
+<div class="readable-text intended-text" id="p225">
+<p>Remember, you are modeling a ground-truth SCM. You are probably going to specify your assignment functions differently from those in the ground-truth SCM, but that’s fine. You don’t need your SCM to match the ground truth exactly; you just need your model to be right about the “how” assumptions it is relying on for your causal inferences.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p226">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">SCMs without “how” assumptions are just CGMs</h5>
+</div>
+<div class="readable-text" id="p227">
+<p>Suppose you built an SCM where every assignment function is a linear function. You are using a linear Gaussian assumption because your library of choice requires it (e.g., <code>LinearGaussianCPD</code> is pretty much your only choice for modeling continuous variables in pgmpy). However, you are not planning on relying on that linear assumption for your causal inference. In this case, while your model checks the boxes of an SCM, it is effectively a CGM with linear models of the causal Markov kernels.</p>
+</div>
+</div>
+<div class="readable-text" id="p228">
+<p>Suppose, for example, that instead of a linear relationship between <em>X</em> and <em>Y</em>, <em>X</em> and <em>Y</em> followed a nonlinear S-curve, and your causal inference was sensitive to this S-curve. Imagine that the ground-truth SCM captured this with an assignment function in the form of the Hill equation (a function that arises in biochemistry and that can capture S-curves). But your SCM instead uses a logistic function fit on data. Your model, though wrong, will be sufficient to make a good causal inference if your logistic assignment function captured everything it needed to about the S-curve for your inference to work.</p>
+</div>
+<div class="readable-text" id="p229">
+<h3 class="readable-text-h3" id="sigil_toc_id_137"><span class="num-string">6.4.2</span> How should I model the exogenous variable distributions?</h3>
+</div>
+<div class="readable-text" id="p230">
+<p>In section 6.1.3, we formulated our generative SCM in a particular way, where every node gets its own exogenous variable representing its unmodeled causes. Under that formulation, the role of the exogenous variable distribution is simply to provide sufficient variation for the SCM to model the joint distribution. This means that, assuming you have selected your assignment function classes, you can choose canonical distributions for the exogenous variables based on how well they would fit the data after parameter estimation. Some canonical distributions may fit better than others. You can contrast different choices using standard techniques for model comparison and cross-validation.</p>
+</div>
+<div class="readable-text intended-text" id="p231">
+<p>These canonical distributions can be parameterized, such as <em>N</em>(0, <em>δ</em>) in</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p232">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em><em> </em>(0, <em>δ</em>)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p233">
+<p><em>y</em> = <em class="obliqued">α</em> + <em class="obliqued">β</em><em>x</em> + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p234">
+<p>A more common approach in generative AI is to use constants in the canonical distribution and only train the parameters of the assignment function: </p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p235">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em>(0, 1)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p236">
+<p><em>y</em> = <em class="obliqued">α</em> + <em class="obliqued">β</em><em>x</em> + <em>δ</em> <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p237">
+<p>Either is fine, as long as your choice captures your “how” assumptions.</p>
+</div>
+<div class="readable-text" id="p238">
+<h3 class="readable-text-h3" id="sigil_toc_id_138"><span class="num-string">6.4.3</span> Additive models: A popular choice for SCM modeling</h3>
+</div>
+<div class="readable-text" id="p239">
+<p>Additive models are SCM templates that use popular trainable function classes for assignment functions. They can be a great place to start in SCM modeling. We’ll look at three common types of additive models: linear Gaussian additive model (LiGAM), linear non-Gaussian additive model (LiNGAM), and the nonlinear additive noise model (ANM). These models each encapsulate a pair of constraints: one on the structure of the assignment functions, and one on the distribution of the additive exogenous variables.</p>
+</div>
+<div class="readable-text intended-text" id="p240">
+<p>Additivity makes this approach easier because there are typically unique solutions to algorithms that learn the parameters of these additive models from data. In some cases, those parameters have a direct causal interpretation. There are also myriad software libraries for training additive models on data.</p>
+</div>
+<div class="readable-text intended-text" id="p241">
+<p>Let’s demonstrate the usefulness of additive models with an example. Suppose you were a biochemist studying the synthesis of a certain protein in a biological sample. The sample has some amount of an enzyme that reacts with some precursors in the sample and synthesizes the protein you are interested in. You measure the quantity of the protein you’re interested in. Let <em>X</em> be the amount of enzyme, and let <em>Y</em> be the measured amount of the protein of interest. We’ll model this system with an SCM, which has the DAG in figure 6.21.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p242">
+<img alt="figure" height="114" src="../Images/CH06_F21_Ness.png" width="170"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.21</span> The amount of enzyme (<em>X</em>) is a cause the measured quantity of protein (<em>Y</em>).</h5>
+</div>
+<div class="readable-text intended-text" id="p243">
+<p>We have qualitative knowledge of<em> </em>how causes affect effects, but we have to turn that knowledge into explicit choices of function classes for assignment functions and exogenous variable distributions. Additive models are a good place to start.</p>
+</div>
+<div class="readable-text intended-text" id="p244">
+<p>To illustrate, we’ll focus on the assignment function and exogenous variable distribution for <em>Y</em>, the amount of the target protein in our example. Generating from the exogenous variable, and setting <em>Y</em> via the assignment function, has the following notation:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p245">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>P</em>(<em>N</em><sub><em>y</em></sub>)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p246">
+<p><em>y</em> := <em>f</em><sub><em>y</em></sub>(<em>x</em>, <em>n</em><sub><em>y</em></sub>)</p>
+</div>
+<div class="readable-text" id="p247">
+<p><em>f</em><sub><em>y</em></sub>(.) denotes the assignment function for <em>y</em>, which takes a value of the endogenous parent <em>X</em> and exogenous parent <em>N</em><sub><em>y</em></sub> as inputs.</p>
+</div>
+<div class="readable-text intended-text" id="p248">
+<p>In an <em>additive</em> assignment function, the exogenous variable is always added to some function of endogenous parents. In our example, this means that the assignment function for <em>Y</em> has the following form:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p249">
+<p><em>y</em> := <em>f</em><sub>y</sub>(<em>x</em>, <em>n</em><sub><em>y</em></sub>) = <em>g</em>(<em>x</em>) + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p250">
+<p>Here, <em>g</em>(.) is some trainable function of the endogenous parent(s), and <em>n</em><sub><em>y</em></sub> is added to the results of that function. </p>
+</div>
+<div class="readable-text intended-text" id="p251">
+<p>For our protein <em>Y</em>, these models say that the measured amount of protein <em>Y</em> is equal to some function of the enzyme amount <em>g</em><em> </em>(<em>X</em><em>  </em>) plus some exogenous factors, such as noise in the measurement device. This assumption is attractive, because it lets us think of unmodeled exogenous causes as additive “noise.” In terms of statistical signal processing, it is relatively easy to disentangle some core signal (e.g., <em>g</em><em> </em>(<em>x</em><em> </em>)) from additive noise.</p>
+</div>
+<div class="readable-text intended-text" id="p252">
+<p>In general, let <em>V</em> represent an endogenous variable in the model, <em>V</em><sub><em>PA</em></sub> represent the endogenous parents of <em>V</em>, and <em>N</em><sub><em>v</em></sub> represent an exogenous variable.</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p253">
+<p><em>v</em> := <em>f</em><sub><em>v</em></sub>(<em>V</em><sub><em>PA</em></sub>, <em>n</em><sub><em>v</em></sub>) = <em>g</em><em> </em>(<em>V</em><sub><em>PA</em></sub>) + <em>n</em><sub><em>v</em></sub></p>
+</div>
+<div class="readable-text" id="p254">
+<p>Additive SCMs have several benefits, but here we’ll focus on their benefit as a template for building SCMs. We’ll start with the simplest additive model, the linear Gaussian additive model.</p>
+</div>
+<div class="readable-text" id="p255">
+<h3 class="readable-text-h3" id="sigil_toc_id_139"><span class="num-string">6.4.4</span> Linear Gaussian additive model</h3>
+</div>
+<div class="readable-text" id="p256">
+<p>In a linear Gaussian additive model, the assignment functions are linear functions of the parents, and the exogenous variables have a normal distribution. </p>
+</div>
+<div class="readable-text intended-text" id="p257">
+<p>In our enzyme example, <em>N</em><sub><em>y</em></sub> and <em>Y</em> are given as follows:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p258">
+<p><em>n</em><sub><em>y</em></sub> ~ <em>N</em>(0, <em class="obliqued">σ</em><sub><em>y</em></sub>)</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p259">
+<p><em>y</em> := <em class="obliqued">β</em><sub>0</sub> + <em class="obliqued">β</em><sub><em>x</em></sub><em>x</em> + <em>n</em><sub><em>y</em></sub></p>
+</div>
+<div class="readable-text" id="p260">
+<p>Here, <em class="obliqued">β</em><sub>0</sub> is an intercept term, and <em class="obliqued">β</em><sub><em>x</em></sub> is a coefficient for <em>X</em><em> </em>. We are assuming that for every unit increase in the amount of enzyme <em>X</em>, there is a <em class="obliqued">β</em><sub><em>x</em></sub> increase in the expected amount of the measured protein. <em>N</em><sub><em>y</em></sub> accounts for variation around that expected amount due to exogenous causal factors, and we assume it has a normal distribution with a mean of 0 and scale parameter <em class="obliqued">σ</em><sub><em>y</em></sub>. For example, we might assume that <em>N</em><sub><em>y</em></sub> is composed mostly of technical noise from the measurement device, such as dust particles that interfere with the sensors. We might know from experience with this device that this noise has a normal distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p261">
+<p>In general, for variable <em>V</em> with a set of <em>K</em> parents, <em>V</em><sub><em>PA</em></sub> = {<em>V</em><sub><em>pa</em></sub><sub>,1</sub>, …, <em>V</em><sub><em>pa</em></sub><sub>,</sub><sub><em>K</em></sub>}:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p262">
+<img alt="figure" height="93" src="../Images/ness-ch6-eqs-13x.png" width="253"/>
+</div>
+<div class="readable-text" id="p263">
+<p>This model defines parameters: <em class="obliqued">β</em><sub>0</sub> is an intercept term, <em class="obliqued">β</em><sub><em>j</em></sub> is the coefficient attached to the <em>j</em><sup>th</sup> parent, and <em class="obliqued">σ</em><sub><em>v</em></sub> is the scale parameter of <em>N</em><sub><em>v</em></sub>’s normal distribution.</p>
+</div>
+<div class="readable-text intended-text" id="p264">
+<p>Let’s see an example of a LiNGAM model in Pyro.</p>
+</div>
+<div class="browsable-container listing-container" id="p265">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.11</span> Pyro example of a linear Gaussian model</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro import sample
+from pyro.distributions import Normal
+
+def linear_gaussian():
+    n_x = sample("N_x", Normal(9., 3.))
+    n_y = sample("N_y", Normal(9., 3.))
+    x = 10. + n_x    <span class="aframe-location"/> #1
+    y = 2. * x + n_y    <span class="aframe-location"/> #2
+    return x, y</pre>
+<div class="code-annotations-overlay-container">
+     #1 The distributions of the exogenous variables are normal (Gaussian).
+     <br/>#2 The functional assignments are linear.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p266">
+<p>Linear Gaussian SCMs are especially popular in econometric methods used in the social sciences because the model assumptions have many attractive statistical properties. Further, in linear models, we can interpret a parent causal regressor variable’s coefficient as the causal effect (average treatment effect) of that parent on the effect (response) variable.</p>
+</div>
+<div class="readable-text" id="p267">
+<h3 class="readable-text-h3" id="sigil_toc_id_140"><span class="num-string">6.4.5</span> Linear non-Gaussian additive models </h3>
+</div>
+<div class="readable-text" id="p268">
+<p>Linear non-Gaussian additive models (LiNGAM) are useful when the Gaussian assumption on exogenous variables is not appropriate. In our example, the amount of protein <em>Y</em> cannot be negative, but that can easily occur in a linear model if <em class="obliqued">β</em><sub>0</sub>, <em>x</em>, or <em>n</em><sub><em>x</em></sub> have low values. LiNGAM models remedy this by allowing the exogenous variable to have a non-normal distribution.</p>
+</div>
+<div class="browsable-container listing-container" id="p269">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.12</span> Pyro example of a LiNGAM model</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro import sample
+from pyro.distributions import Gamma
+
+def LiNGAM():
+    n_x = sample("N_x", Gamma(9., 1.))    <span class="aframe-location"/> #1
+    n_y = sample("N_y", Gamma(9., 1.))   #1
+    x = 10. + n_x   <span class="aframe-location"/> #2
+    y = 2. * x + n_y    #2
+    return x, y</pre>
+<div class="code-annotations-overlay-container">
+     #1 Instead of a normal (Gaussian) distribution, the exogenous variables have a gamma distribution with the same mean and variance.
+     <br/>#2 These are the same assignment functions as in the linear Gaussian model.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p270">
+<p>In the preceding model, we use a gamma distribution. The lowest possible value in a gamma distribution is 0, so <em>y</em> cannot be negative.</p>
+</div>
+<div class="readable-text" id="p271">
+<h3 class="readable-text-h3" id="sigil_toc_id_141"><span class="num-string">6.4.6</span> Nonlinear additive noise models</h3>
+</div>
+<div class="readable-text" id="p272">
+<p>As I’ve mentioned, the power of the SCM is the ability to choose functional assignments that reflect <em>how</em> causes affect their direct effects. In our hypothetical example, you are a biochemist. Could you import knowledge from biochemistry to design the assignment function? Here is what that reasoning might look like. (You don’t need to understand the biology or the math, in this example, just the logic).</p>
+</div>
+<div class="readable-text intended-text" id="p273">
+<p>There is a common mathematical assumption in enzyme modeling called <em>mass action kinetics</em>. In this model, <em>T</em> is the maximum possible amount of the target protein. The biochemical reactions happen in real time, and during that time, the amount of the target protein fluctuates before stabilizing at some equilibrium value <em>Y</em>. Let <em>Y</em>(<em>t</em>) and <em>X</em>(<em>t</em>) be the amount of the target protein and enzyme at a given time point. Mass action kinetics give us the following ordinary differential equation:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p274">
+<img alt="figure" height="56" src="../Images/ness-ch6-eqs-14x.png" width="343"/>
+</div>
+<div class="readable-text" id="p275">
+<p>Here, <em>v</em> and <em class="obliqued">α</em> are <em>rate</em> <em>parameters</em> that characterize the rates at which different biochemical reactions occur in time. This differential equation has the following equilibrium solution,<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p276">
+<img alt="figure" height="55" src="../Images/ness-ch6-eqs-15x.png" width="169"/>
+</div>
+<div class="readable-text" id="p277">
+<p>where <em>Y</em> and <em>X</em> are equilibrium values of <em>Y</em>(<em>t</em>) and <em>X</em>(<em>t</em>), and <em class="obliqued">β</em> = <em>v</em>/<em class="obliqued">α</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p278">
+<p>As an enzyme biologist, you know that this equation captures something of the actual mechanism underpinning the biochemistry of this system, like physics equations such as Ohm’s law and SIR models in epidemiology. You elect to use this as your assignment function for <em>Y</em>:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p279">
+<img alt="figure" height="55" src="../Images/ness-ch6-eqs-16x.png" width="229"/>
+</div>
+<div class="readable-text" id="p280">
+<p>This is a nonlinear additive noise model (ANM). In general, ANMs have the following structure:</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p281">
+<p><em>V</em> = <em>g</em><em> </em>(<em>V</em><sub><em>pa</em></sub>) + <em>N</em><sub><em>v</em></sub></p>
+</div>
+<div class="readable-text" id="p282">
+<p>In our example <em>g</em><em> </em>(<em>X</em><em>  </em>) = <em>T</em> <span class="regular-symbol">×</span> <em class="obliqued">β</em> <em>X </em>/ (1 + <em class="obliqued">β</em> <em>X</em><em>  </em>). <em>N</em><sub><em>y</em></sub> can be normal (Gaussian) or non-Gaussian. </p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p283">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Connecting dynamic modeling and simulation to SCMs </h5>
+</div>
+<div class="readable-text" id="p284">
+<p>Dynamic models describe how a system’s behavior evolves in time. The use of dynamic modeling, as you saw in the enzyme modeling example, is one approach to addressing this knowledge elicitation problem for SCMs. </p>
+</div>
+<div class="readable-text" id="p285">
+<p>In this section, I illustrated how an enzyme biologist could use a domain-specific dynamic model, specifically an ODE, to construct an SCM. An ODE is just one type of dynamic model. Another example is computer simulator models, such as the simulators used in climate modeling, power-grid modeling, and manufacturing. Simulators can also model complex social processes, such as financial markets and epidemics. Simulator software is a growing multibillion dollar market.</p>
+</div>
+<div class="readable-text" id="p286">
+<p>In simulators and other dynamic models, specifying the “how” of causality can be easier than in SCMs. SCMs require assignment functions to explicitly capture the global behavior of the system. Dynamic models only require you to specify the rules for how things change from instant to instant. You can then see global behavior by running the simulation. The trade-off is that dynamic models can be computationally expensive to run, and it is generally difficult to train parameters of dynamic models on data or perform inferences given data as evidence. This has motivated interesting research in combining the knowledge elicitation convenience of dynamic models with the statistical and computational conveniences of SCMs.</p>
+</div>
+</div>
+<div class="readable-text" id="p287">
+<p>Next, we’ll examine using regression tools to train these additive models.</p>
+</div>
+<div class="readable-text" id="p288">
+<h3 class="readable-text-h3" id="sigil_toc_id_142"><span class="num-string">6.4.7</span> Training additive model SCMs with regression tools</h3>
+</div>
+<div class="readable-text" id="p289">
+<p>In statistics, regression modeling finds parameter values that minimize the difference between a parameterized function of a set of predictors and a response variable. Regression modeling libraries are ubiquitous, and one advantage of additive SCM models is that they can use those libraries to fit an SCM’s parameters on data. For example, parameters of additive models can be fit with standard linear and nonlinear regression parameter fitting techniques (e.g., generalized least squares). We can also leverage these tools’ regression goodness-of-fit statistics to evaluate how well the model explains the data.</p>
+</div>
+<div class="readable-text intended-text" id="p290">
+<p>Note that the predictors in a general regression model can be anything you like. Most regression modeling pedagogy encourages you to keep adding predictors that increase goodness-of-fit (e.g., adjusted R-squared) or reduce predictive error. But in an SCM, your predictors are limited to direct endogenous causes.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p291">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Can I use generalized linear models as SCMs?</h5>
+</div>
+<div class="readable-text" id="p292">
+<p>In statistical modeling, a generalized linear model (GLM) is a flexible generalization of linear regression. In a GLM, the response variable is related to a linear function of the predictors with a <em>link function</em>. Further, variance of the response variable can be a function of the predictors. Examples include logistic regression, Poisson regression, and gamma regression. GLMs are a fundamental statistical toolset for data scientists. </p>
+</div>
+<div class="readable-text" id="p293">
+<p>In a CGM (non-SCM), GLMs are good choices as models of causal Markov kernels. But a common question is whether GLMs can be used as assignment functions in an SCM.</p>
+</div>
+<div class="readable-text" id="p294">
+<p>Several GLMs align with the structure of additive SCMs, but it’s generally best not to think of GLMs as templates for SCMs. The functional form of assignment functions in an SCM is meant to reflect the nature of the causal relationship between a variable and its causal parents. The functional form of a GLM applies a (in some cases nonlinear) link function to a linear function of the predictors. The link function is designed to map that linear function of the predictors to the mean of a canonical distribution (e.g., normal, Poisson, gamma). It is not designed to reflect causal assumptions.</p>
+</div>
+</div>
+<div class="readable-text" id="p295">
+<h3 class="readable-text-h3" id="sigil_toc_id_143"><span class="num-string">6.4.8</span> Beyond the additive model</h3>
+</div>
+<div class="readable-text" id="p296">
+<p>If the “how” of an assignment function requires more nuance than you can capture with an additive model, don’t constrain yourself to an additive model. Using biochemistry as an example, it is not hard to come up with scenarios where interactions between endogenous and exogenous causes would motivate a multiplicative model.</p>
+</div>
+<div class="readable-text intended-text" id="p297">
+<p>For these more complex scenarios, it starts making sense to move toward using probabilistic deep learning tools to implement an SCM.</p>
+</div>
+<div class="readable-text" id="p298">
+<h2 class="readable-text-h2" id="sigil_toc_id_144"><span class="num-string">6.5</span> Combining SCMs with deep learning</h2>
+</div>
+<div class="readable-text" id="p299">
+<p>Let’s revisit the enzyme kinetic model, where the amount of an enzyme <em>X</em> is a cause of the amount of a target protein <em>Y</em>, as in figure 6.22.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p300">
+<img alt="figure" height="114" src="../Images/CH06_F22_Ness.png" width="170"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.22</span> The amount of enzyme (<em>X</em>) is a cause of the measured quantity of protein (<em>Y</em>).</h5>
+</div>
+<div class="readable-text" id="p301">
+<p>I said previously that, based on a dynamic mathematical model popular in the study of enzyme biology, a good candidate for an additive assignment function for <em>Y</em> is<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p302">
+<img alt="figure" height="55" src="../Images/ness-ch6-eqs-16x.png" width="229"/>
+</div>
+<div class="readable-text" id="p303">
+<p>Further, suppose that we knew from experiments that <em>T</em> was 100 and <em class="obliqued">β</em> was .08.</p>
+</div>
+<div class="readable-text intended-text" id="p304">
+<p>Ideally, we would want to be able to reproduce these parameter values from data. Better yet, we should like to leverage the automatic differentiation-based frameworks that power modern deep learning.</p>
+</div>
+<div class="readable-text" id="p305">
+<h3 class="readable-text-h3" id="sigil_toc_id_145"><span class="num-string">6.5.1</span> Implementing and training an SCM with basic PyTorch</h3>
+</div>
+<div class="readable-text" id="p306">
+<p>First, let’s create a PyTorch version of the enzyme model.</p>
+</div>
+<div class="browsable-container listing-container" id="p307">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.13</span> Implement the PyTorch enzyme model</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">from torch import nn
+
+class EnzymeModel(nn.Module):   <span class="aframe-location"/> #1
+    def __init__(self):
+        super().__init__()
+        self.<em class="obliqued">β</em> = nn.Parameter(torch.randn(1, 1))    <span class="aframe-location"/> #2
+
+    def forward(self, x):
+        x = torch.mul(x, self.<em class="obliqued">β</em>)    <span class="aframe-location"/> #3
+        x = x.log().sigmoid()    <span class="aframe-location"/> #4
+        x = torch.mul(x, 100.)   <span class="aframe-location"/> #5
+        return x</pre>
+<div class="code-annotations-overlay-container">
+     #1 Create the enzyme model.
+     <br/>#2 Initialize the parameter 
+     <em class="obliqued">D�</em>.
+     <em class="obliqued"> </em>
+<br/>#3 Calculate the product of enzyme amount X and 
+     <em class="obliqued">D�</em>.
+     <br/>#4 Implement the function u / (u + 1) as sigmoid(log(u)), since the sigmoid and log functions are native PyTorch transforms.
+     <br/>#5 Multiply by T = 100.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p308">
+<p>Suppose we observed the data from this system, visualized in figure 6.23.</p>
+</div>
+<div class="browsable-container figure-container" id="p309">
+<img alt="figure" height="779" src="../Images/CH06_F23_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.23</span> Exampled enzyme data. <em>X</em> is the amount of enzyme, and <em>Y</em> is the amount of target protein.</h5>
+</div>
+<div class="readable-text" id="p310">
+<p>Let’s try to learn <em class="obliqued">β</em> from this data using a basic PyTorch workflow.</p>
+</div>
+<div class="browsable-container listing-container" id="p311">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.14</span> Fitting enzyme data with PyTorch</h5>
+<div class="code-area-container">
+<pre class="code-area">import pandas as pd
+from torch import tensor
+import torch
+
+df = pd.read_csv("https://raw.githubusercontent.com/altdeep
+     /causalML/master/datasets/enzyme-data.csv")   <span class="aframe-location"/> #1
+X = torch.tensor(df['x'].values).unsqueeze(1).float()    <span class="aframe-location"/> #2
+Y = torch.tensor(df['y'].values).unsqueeze(1).float()     #2
+
+def train(X, Y, model, loss_function, optim, num_epochs):    <span class="aframe-location"/> #3
+    loss_history = []     #3
+    for epoch in range(num_epochs):    #3
+        Y_pred = model(X)    #3
+        loss = loss_function(Y_pred, Y)     #3
+        loss.backward()   #3
+        optim.step()    #3
+        optim.zero_grad()     #3
+        if epoch % 1000 == 0:    <span class="aframe-location"/> #4
+            print(round(loss.data.item(), 6))     #4
+
+torch.manual_seed(1)   <span class="aframe-location"/> #5
+enzyme_model = EnzymeModel()
+optim = torch.optim.Adam(enzyme_model.parameters(), lr=0.00001)    <span class="aframe-location"/> #6
+<span class="aframe-location"/>loss_function = nn.MSELoss()     #7
+
+train(X, Y, enzyme_model, loss_function, optim, num_epochs=60000)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Load the enzyme data from GitHub.
+     <em class="obliqued"/>
+<br/>#2 Convert the data to tensors.
+     <br/>#3 Create the training algorithm.
+     <br/>#4 Print out losses during training.
+     <br/>#5 Set a random seed for reproducibility.
+     <br/>#6 Initialize an instance of the Adam optimizer. Use a low value for the learning rate because loss is very sensitive to small changes in 
+     <em class="obliqued">D�</em>.
+     <br/>#7 Using mean squared loss error is equivalent to assuming Ny is additive and symmetric.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p312">
+<p>When I run this code with the given random seed, it produces a value of 0.1079 (you can access the value by printing <code>enzyme_model.</code><em class="obliqued">β</em><code>.data</code>), which only differs slightly from the ground-truth value of .08. This implementation did not represent the exogenous variable <em>N</em><sub>y</sub> explicitly, but statistics theory tells us that using the mean squared error loss function is equivalent to assuming <em>N</em><sub>y</sub> was additive and had a normal distribution. However, it also assumes that the normal distribution had constant variance, while the funnel shape in the scatterplot indicates the variance of <em>N</em><sub>y</sub> might increase with the value of <em>X</em>.</p>
+</div>
+<div class="readable-text" id="p313">
+<h3 class="readable-text-h3" id="sigil_toc_id_146"><span class="num-string">6.5.2</span> Training an SCM with probabilistic PyTorch</h3>
+</div>
+<div class="readable-text" id="p314">
+<p>The problem with this basic parameter optimization approach is that the SCM should encode a distribution <em>P</em><em> </em>(<em>X</em>, <em>Y</em><em>  </em>). So we can turn to a probabilistic modeling approach to fit this model.</p>
+</div>
+<div class="browsable-container listing-container" id="p315">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.15</span> Bayesian estimation <em class="obliqued">β</em> in a probabilistic enzyme model</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import pyro
+from pyro.distributions import Beta, Normal, Uniform
+from pyro.infer.mcmc import NUTS, MCMC
+
+def g(u):    <span class="aframe-location"/> #1
+  return u / (1 + u)  #1
+
+def model(N):    <span class="aframe-location"/> #2
+    <em class="obliqued">β</em> = pyro.sample("<em class="obliqued">β</em>", Beta(0.5, 5.0))    <span class="aframe-location"/> #3
+    with pyro.plate("data", N):    <span class="aframe-location"/> #4
+       <span class="aframe-location"/> x = pyro.sample("X", Uniform(0.0, 101.0))     #5
+        y = pyro.sample("Y", Normal(100.0 * g(<em class="obliqued">β</em> * x), x**.5))    <span class="aframe-location"/> #6
+    return x, y
+
+conditioned_model = pyro.condition(    <span class="aframe-location"/> #7
+    model,    #7
+    data={"X": X.squeeze(1), "Y":  Y.squeeze(1)}    #7
+)     #7
+
+N = X.shape[0]   <span class="aframe-location"/> #8
+pyro.set_rng_seed(526)   <span class="aframe-location"/> #9
+
+nuts_kernel = NUTS(conditioned_model, adapt_step_size=True)   <span class="aframe-location"/> #10
+mcmc = MCMC(nuts_kernel, num_samples=1500, warmup_steps=500)   #10
+mcmc.run(N)   #10</pre>
+<div class="code-annotations-overlay-container">
+     #1 The simple transform used in the assignment function for Y (amount of target protein)
+     <br/>#2 The probabilistic model
+     <br/>#3 A prior on the parameter 
+     <em class="obliqued">β</em> that we mean to fit with this model
+     <br/>#4 A "plate" for the N=100 identical and independently distributed values of X and Y
+     <br/>#5 The marginal probability of the enzyme P(X) is a uniform distribution between 0 and 101.
+     <br/>#6 P(Y|X) is the conditional distribution of Y (protein concentration) given X (and 
+     <em class="obliqued">β</em>). I model P(Y|X) with a normal distribution with both a mean and variance that depends on Y.
+     <br/>#7 Condition the model on the observed evidence.
+     <br/>#8 Get the number of examples in the data (100).
+     <br/>#9 Set a random seed for reproducibility.
+     <br/>#10 To learn 
+     <em class="obliqued">β</em>, I use a gradient-based MCMC algorithm called a No-U-Turn Sampler (NUTS). This algorithm is one of many probabilistic approaches for parameter learning, and this choice is independent of the causal elements of your model.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p316">
+<p>The problem with this approach is that it doesn’t have an explicit representation of the exogenous variables. If we want to use a probabilistic machine learning framework to build an SCM, we need to make exogenous variables explicit. That is challenging with the preceding approach for one very nuanced reason: When I write the following statement in Pyro code, <code>y</code> <code>=</code> <code>pyro.sample("Y",</code> <code>Normal(…, …))</code>, Pyro knows to use that normal distribution to calculate the probability value (in more precise terms, the <em>likelihood</em>) of each value of <em>Y</em> in the training data. Those values are used in probabilistic inference algorithms like MCMC. But if I write a statement that represents an assignment function, like <code>y</code> <code>=</code> <code>f(x,</code> <code>ny)</code>, Pyro doesn’t automatically know how to calculate probability values for <em>Y</em>, especially since as far as Pyro is concerned, <em>f</em>(.) can be anything.</p>
+</div>
+<div class="readable-text intended-text" id="p317">
+<p>But there is another problem that is more important than this issue with inference. So far, we’ve been assuming that we conveniently know a domain-based mathematical functional form for <em>Y</em>’s assignment function. It would be nice to use deep learning to fit the assignment functions, but this is problematic.</p>
+</div>
+<div class="readable-text" id="p318">
+<h3 class="readable-text-h3" id="sigil_toc_id_147"><span class="num-string">6.5.3</span> Neural SCMs and normalizing flows</h3>
+</div>
+<div class="readable-text" id="p319">
+<p>Suppose we used a neural network to model <code>y</code> <code>=</code> <code>f(x,</code> <code>ny)</code>. Indeed for a given SCM, we could use a multilayer neural network to model each variable, given its parents—call this a “neural SCM.” The problem is that we want the trainable function class we use for our assignment functions to represent our assumptions about the “how” of causality. Neural networks, as universal function approximators, are, by definition, as assumption-free as curve-fitting functions get. Therefore, to use a neural SCM, we need ways to constrain the neural assignment function to remain faithful to our “how” assumptions. This could be done with constraints on the training feature, loss function, and elements of the neural network architecture. Normalizing flows are an example of the latter.</p>
+</div>
+<div class="readable-text intended-text" id="p320">
+<p>Returning to the enzyme modeling example, let’s start by enumerating some basic biological assumptions about the relationships between enzymes and the proteins they help synthesize:</p>
+</div>
+<ul>
+<li class="readable-text" id="p321"> The process by which the protein leaves the system is independent of the amount of enzyme. So we expect the amount of target protein to <em>monotonically increase</em>, given the amount of enzyme. </li>
+<li class="readable-text" id="p322"> However, systems tend to saturate, such that there are diminishing returns in adding more enzyme. </li>
+</ul>
+<div class="readable-text" id="p323">
+<p>We need a neural network approach that <em>only</em> allows for monotonic functions with diminishing returns. For this, we’ll use a deep generative modeling approach called <em>normalizing flows</em>.</p>
+</div>
+<div class="readable-text intended-text" id="p324">
+<p>Normalizing flows model a complex probability density as an invertible transformation of a simple base density. I’m going to use flows to model the distribution of endogenous variables as invertible transformations of exogenous variable distributions. There are many different transformations, but I’m going to use <em>neural splines.<a href="#footnote-305"><sup class="footnote-reference" id="footnote-source-1">1</sup></a></em> Splines are a decades-old approach to curve-fitting using piece-wise polynomials; a neural spline is the neural network version of a spline.</p>
+</div>
+<div class="browsable-container listing-container" id="p325">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.16</span> Initializing splines for assignment functions</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.distributions.transforms import conditional_spline
+print(conditional_spline(input_dim=1, context_dim=1))    <span class="aframe-location"/> #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 A neural spline transform is a type of invertible PyTorch neural network module.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p326">
+<p>We get a three-layer neural network with ReLU activation functions:</p>
+</div>
+<div class="browsable-container listing-container" id="p327">
+<div class="code-area-container">
+<pre class="code-area">ConditionalSpline(
+  (nn): DenseNN(
+    (layers): ModuleList(
+      (0): Linear(in_features=1, out_features=10, bias=True)
+      (1): Linear(in_features=10, out_features=10, bias=True)
+      (2): Linear(in_features=10, out_features=31, bias=True)
+    )
+    (f): ReLU()
+  )
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p328">
+<p>Normalizing flows solve our problem of not having a likelihood value for <code>y</code> <code>=</code> <code>f(x,</code> <code>ny)</code>. Like other probabilistic machine learning models, they allow us to connect an input random variable (like an exogenous variable) to an output variable (like an endogenous variable) using layers of transformations. The key difference is that normalizing flow models automatically calculate the probability values of instances of the output variable in the data (using the <em>change-of-variable formula</em> from probability theory). That automatic calculation relies on monotonicity; our causal “how” assumption is that the relationship between enzyme concentration and protein abundance is monotonic, and normalizing flows give us monotonicity.</p>
+</div>
+<div class="readable-text intended-text" id="p329">
+<p>For example, in the following code, <code>NxDist</code> is the distribution of exogenous variable <em>N</em><sub><em>x</em></sub>. We set the distribution as a Uniform(0, 1). <code>f_x</code> is the assignment function for <em>X</em>, implemented as an <code>AffineTransformation</code> that maps this distribution to Uniform(1, 101).</p>
+</div>
+<div class="browsable-container listing-container" id="p330">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.17</span> Transforming a distribution of <em>N</em>x to a distribution of <em>X</em></h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.distributions import TransformedDistribution
+from pyro.distributions.transforms import AffineTransform
+NxDist = Uniform(torch.zeros(1), torch.ones(1))    <span class="aframe-location"/> #1
+f_x = AffineTransform(loc=1., scale=100.0)   <span class="aframe-location"/> #2
+<span class="aframe-location"/>XDist = TransformedDistribution(NxDist, [f_x])     #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 The exogenous distribution of X is Uniform(0, 1).
+     <br/>#2 The assignment function for f_x. The AffineTransform multiplies Nx by 100 and adds 1.
+     <br/>#3 XDist is an explicit representation of P(X). Multiplying by 100 and adding 1 gives you a Uniform(1, 101).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p331">
+<p>So <code>XDist</code> allows us to calculate the probability value of <em>X</em> even when its value is set deterministically by an assignment function. You can calculate the log-probability value of 50 with <code>XDist.log_prob(torch.tensor([50.0]))</code>, which under the Uniform(1, 101) distribution will be log(1/100).</p>
+</div>
+<div class="readable-text intended-text" id="p332">
+<p>Let’s first specify the model.</p>
+</div>
+<div class="browsable-container listing-container" id="p333">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.18</span> Specify the flow-based SCM</h5>
+<div class="code-area-container">
+<pre class="code-area">import pyro
+from pyro.distributions import (
+    ConditionalTransformedDistribution,
+    Normal, Uniform,
+    TransformedDistribution
+)
+from pyro.distributions.transforms import (
+    conditional_spline, spline
+)
+import torch
+from torch.distributions.transforms import AffineTransform
+
+pyro.set_rng_seed(348)
+
+NxDist = Uniform(torch.zeros(1), torch.ones(1))     <span class="aframe-location"/> #1
+f_x = AffineTransform(loc=1., scale=100.0)   <span class="aframe-location"/> #2
+XDist = TransformedDistribution(NxDist, [f_x])   <span class="aframe-location"/> #3
+
+NyDist = Normal(torch.zeros(1), torch.ones(1))   <span class="aframe-location"/> #4
+<span class="aframe-location"/>f_y = conditional_spline(input_dim=1, context_dim=1)    #5
+YDist = ConditionalTransformedDistribution(NyDist, [f_y])    <span class="aframe-location"/> #6</pre>
+<div class="code-annotations-overlay-container">
+     #1 The exogenous distribution of X is Uniform(0, 1).
+     <br/>#2 The assignment function for f_x. The AffineTransform multiplies Nx by 100 and adds 1.
+     <br/>#3 XDist is an explicit representation of P(X). Multiplying by 100 and adding 1 gives you a Uniform(1, 101).
+     <br/>#4 The exogenous distribution of Y is Normal(0, 1).
+     <br/>#5 We implement the assignment function for f_y with a neural spline. Optimization will optimize the parameters of this spline.
+     <br/>#6 YDist is an explicit representation of P(Y|X).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p334">
+<p>Now we run the training.</p>
+</div>
+<div class="browsable-container listing-container" id="p335">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.19</span> Train the SCM</h5>
+<div class="code-area-container">
+<pre class="code-area">import matplotlib.pyplot as plt
+
+modules = torch.nn.ModuleList([f_y])    <span class="aframe-location"/> #1
+optimizer = torch.optim.Adam(modules.parameters(), lr=3e-3)   <span class="aframe-location"/> #2
+losses = []
+maxY = max(Y)   <span class="aframe-location"/> #3
+Ynorm = Y / maxY    #3
+for step in range(800):
+    optimizer.zero_grad()    <span class="aframe-location"/> #4
+    log_prob_x = XDist.log_prob(X)    <span class="aframe-location"/> #5
+    log_prob_y = YDist.condition(X).log_prob(Ynorm)    <span class="aframe-location"/> #6
+    loss = -(log_prob_x + log_prob_y).mean()    <span class="aframe-location"/> #7
+    loss.backward()    #7
+    optimizer.step()   #7
+    XDist.clear_cache()
+    YDist.clear_cache()
+    losses.append(loss.item())
+
+plt.plot(losses[1:])    <span class="aframe-location"/> #8
+plt.title("Loss")    #8
+plt.xlabel("step")     #8
+plt.ylabel("loss")   #8</pre>
+<div class="code-annotations-overlay-container">
+     #1 Register the neural spline functional assignment function for Y.
+     <br/>#2 Initialize the optimizer.
+     <br/>#3 Normalize Y, since the assignment function is working with neural networks.
+     <br/>#4 Set all gradients to 0.
+     <br/>#5 Use P(X) to calculate a log likelihood value for each value of X.
+     <br/>#6 Use P(Y|X) to calculate a log likelihood value for each value of Y, given X.
+     <br/>#7 Fit the parameters of the neural network modules using maximum likelihood as an objective.
+     <br/>#8 Visualize losses during training.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p336">
+<p>Figure 6.24 shows the training loss over training.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p337">
+<img alt="figure" height="844" src="../Images/CH06_F24_Ness.png" width="1058"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.24</span> Training loss of the flow-based SCM-training procedure</h5>
+</div>
+<div class="readable-text" id="p338">
+<p>Now we can generate samples from the model and compare them to the training data.</p>
+</div>
+<div class="browsable-container listing-container" id="p339">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 6.20</span> Generate from the trained model</h5>
+<div class="code-area-container">
+<pre class="code-area">x_flow = XDist.sample(torch.Size([100,]))    <span class="aframe-location"/> #1
+y_flow = YDist.condition(x_flow).sample(torch.Size([100,])) * maxY   #1
+
+plt.title("""
+Observed values of enzyme concentration X\n
+and protein concentration Y""")    <span class="aframe-location"/> #2
+plt.xlabel('X')     #2
+plt.ylabel('Y')    #2
+plt.xlim(0, 105)   #2
+plt.ylim(0, 120)    #2
+plt.scatter(    #2
+    X.squeeze(1), Y.squeeze(1), color='firebrick',     #2
+    label='Actual Data',    #2
+    alpha=0.5     #2
+)     #2
+plt.scatter(     #2
+    x_flow.squeeze(1), y_flow.squeeze(),     #2
+    label='Generated values from trained model',     #2
+    alpha=0.5     #2
+)    #2
+plt.legend()     #2
+plt.show()     #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 Generate synthetic examples from the trained model.
+     <br/>#2 Visualize the synthetic examples over the examples in the training data to validate model fit.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p340">
+<p>Figure 6.25 overlays generated samples with the actual examples in the training data.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p341">
+<img alt="figure" height="916" src="../Images/CH06_F25_Ness.png" width="1050"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 6.25</span> Generated examples from the trained model overlaid upon actual examples in the training data</h5>
+</div>
+<div class="readable-text" id="p342">
+<p>The ability to have multilayered flows as in other neural network frameworks makes this an extremely flexible modeling class. But this is not a mere curve-fitting exercise. With the variational autoencoder example in chapter 5, you saw that you can use neural networks to map causal parents to their child effects in the general class of CGMs. But that is not sufficient for SCMs, even if you set endogenous variables deterministically. Again, SCMs reflect causal assumptions about the “how” of causality in the form of assignment functions. In this enzyme example, we are asserting that the monotonic relationship between the enzyme and protein abundance is important in the causal inferences we want to make, and so we’re constraining the neural nets (and other transforms) in my assignment functions to those that preserve monotonicity.</p>
+</div>
+<div class="readable-text" id="p343">
+<h2 class="readable-text-h2" id="sigil_toc_id_148">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p344"> Structural causal models (SCMs) are a type of causal graphical model (CGM) that encode causal assumptions beyond the assumptions encoded in the causal DAG. The causal DAG assumptions capture <em>what</em> causes <em>what</em>. The SCM additionally captures <em>how</em> the causes affect the effects. </li>
+<li class="readable-text" id="p345"> SCMs are composed of exogenous variables, probability distributions on those exogenous variables, endogenous variables, and functional assignments. </li>
+<li class="readable-text" id="p346"> Exogenous variables represent unmodeled causes. </li>
+<li class="readable-text" id="p347"> Endogenous variables are the variables explicitly included in the model, corresponding to the nodes we’ve seen in previous causal DAGs. </li>
+<li class="readable-text" id="p348"> The functional assignments set each endogenous variable deterministically, given its causal parents. </li>
+<li class="readable-text" id="p349"> The SCM’s additional assumptions represent the “how” of causality in the form of functional assignments. </li>
+<li class="readable-text" id="p350"> SCMs represent a deterministic view of causality, where an outcome is known for certain if all the causes are known. </li>
+<li class="readable-text" id="p351"> You can derive an SCM from a more general (non-SCM) CGM. But given a general CGM, there are potentially multiple SCMs that entail the same DAG and joint probability distribution as that CGM. </li>
+<li class="readable-text" id="p352"> You can’t learn the functional assignments of an SCM from statistical information in the data alone. </li>
+<li class="readable-text" id="p353"> SCMs are an ideal choice for representing well-defined systems with simple, deterministic rules, such as games. </li>
+<li class="readable-text" id="p354"> Additive noise models provide a useful template for building SCMs from scratch. </li>
+<li class="readable-text" id="p355"> Normalizing flows are a useful probabilistic machine learning framework for modeling SCMs when your causal “how” assumption is monotonicity. </li>
+</ul>
+<div class="readable-text footnote-readable-text" id="p356">
+<p><a href="#footnote-source-1"><span class="footnote-definition" id="footnote-305">[1]</span></a> For more information on neural splines, see C. Durkan, A. Bekasov, I. Murray, and G. Papamakarios, “Neural spline flows,” in <em>Advances in neural information processing systems</em>, <em>32 (NeurIPS 2019)</em>.</p>
+</div>
+</div></body></html>

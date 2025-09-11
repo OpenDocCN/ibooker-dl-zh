@@ -1,0 +1,629 @@
+<html><head></head><body>
+<div class="calibre1" id="sbo-rt-content"><h1 class="tochead" id="heading_id_2">14 <a id="idTextAnchor000"/><a id="idTextAnchor001"/><a id="idTextAnchor002"/><a id="idTextAnchor003"/>Building and training a music Transformer</h1>
+<p class="co-summary-head"><a id="marker-318"/>This chapter covers<a id="idIndexMarker000"/></p>
+<ul class="calibre5">
+<li class="co-summary-bullet">Representing music with control messages and velocity values</li>
+<li class="co-summary-bullet">Tokenizing music into a sequence of indexes</li>
+<li class="co-summary-bullet">Building and training a music Transformer</li>
+<li class="co-summary-bullet">Generating musical events using the trained Transformer</li>
+<li class="co-summary-bullet">Converting musical events back to a playable MIDI file</li>
+</ul>
+<p class="body">Sad that your favorite musician is no longer with us? Sad no more: generative AI can bring them back to the stage!</p>
+<p class="body">Take, for example, Layered Reality, a London-based company that’s working on a project called Elvis Evolution.<sup class="footnotenumber" id="footnote-002-backlink"><a class="url1" href="#footnote-002">1</a></sup> The goal? To resurrect the legendary Elvis Presley using AI. By feeding a vast array of Elvis’ official archival material, including video clips, photographs, and music, into a sophisticated computer model, this AI Elvis learns to mimic his singing, speaking, dancing, and walking with remarkable resemblance. The result? A digital performance that captures the essence of the late King himself.</p>
+<p class="body">The Elvis Evolution project is a shining example of the transformative effect of generative AI across various industries. In the previous chapter, you explored the use of MuseGAN to create music that could pass as authentic multitrack compositions. MuseGAN views a piece of music as a multidimensional object, similar to an image, and generates complete music pieces that resemble those in the training dataset. Both real and AI-generated music are then evaluated by a critic, which helps refine the AI-generated music until it’s indistinguishable from the real thing.</p>
+<p class="body">In this chapter, you’ll take a different approach to AI music creation, treating it as a sequence of musical events. We’ll apply techniques from text generation, as discussed in chapters 11 and 12, to predict the next element in a sequence. Specifically, you’ll develop a GPT-style model to predict the next musical event based on all previous events in the sequence. GPT-style Transformers are ideal for this task because of their scalability and the self-attention mechanism, which helps them capture long-range dependencies and understand context. This makes them highly effective for sequence prediction and generation across a wide range of content, including music. The music Transformer you will create has 20.16 million parameters, large enough to capture the long-term relations of different notes in music pieces but small enough to be trained in a reasonable amount of time.</p>
+<p class="body">We’ll use the Maestro piano music from Google’s Magenta group as our training data. You’ll learn how to first convert a musical instrument digital interface (MIDI) file into a sequence of music notes, analogous to raw text data in natural language processing (NLP). You’ll then break the musical notes down into small pieces called musical events, analogous to tokens in NLP. Since neural networks can only accept numerical inputs, you’ll map each unique event token to an index. With this, the music pieces in the training data are converted into sequences of indexes, ready to be fed into neural networks. <a id="idIndexMarker001"/><a id="idIndexMarker002"/><a id="marker-319"/></p>
+<p class="body">To train the music Transformer to predict the next token based on the current token and all previous tokens in the sequence, we’ll create sequences of 2,048 indexes as inputs (features <span class="times">x</span>). We then shift the sequences one index to the right and use them as the outputs (targets <span class="times">y</span>). We feed pairs of <span class="times">(x, y)</span> to the music Transformer to train the model. Once trained, we’ll use a short sequence of indexes as the prompt and feed it to the music Transformer to predict the next token, which is then appended to the prompt to form a new sequence. This new sequence is fed back into the model for further predictions, and this process is repeated until the sequence reaches a desired length.</p>
+<p class="body">You’ll see that the trained music Transformer can generate lifelike music that mimics the style in the training dataset. Further, unlike the music generated in chapter 13, you’ll learn to control the creativity of the music piece. You’ll achieve this by scaling the predicted logits with the temperature parameter, just as you did in earlier chapters when controlling the creativity of the generated text. <a id="idIndexMarker003"/></p>
+<h2 class="fm-head" id="heading_id_3">14.1 Introduction to the music Transformer</h2>
+<p class="body">The concept of the music Transformer was introduced in 2018.<sup class="footnotenumber" id="footnote-001-backlink"><a class="url1" href="#footnote-001">2</a></sup> This innovative approach extends the Transformer architecture, initially devised for NLP tasks, to the field of music generation. As discussed in previous chapters, Transformers employ self-attention mechanisms to effectively grasp the context and capture long-range dependencies among elements in a sequence.<a id="idIndexMarker004"/><a id="marker-320"/></p>
+<p class="body">In a similar vein, the music Transformer is engineered to generate a sequence of musical notes by learning from a vast dataset of existing music. The model is trained to predict the next musical event in a sequence based on preceding events by understanding the patterns, structures, and relationships between different musical elements in the training data.</p>
+<p class="body">A crucial step in training a music Transformer lies in figuring out how to represent music as a sequence of unique musical events, akin to tokens in NLP. In the previous chapter, you learned to represent a piece of music as a 4D object. In this chapter, you will explore an alternative approach to music representation, specifically performance-based music representation through control messages and velocity values.<sup class="footnotenumber" id="footnote-000-backlink"><a class="url1" href="#footnote-000">3</a></sup> Based on this, you will convert a piece of music into four types of musical events: note-on, note-off, time-shift, and velocity.</p>
+<p class="body">Note-on signals the start of a musical note being played, specifying the note’s pitch. Note-off indicates the end of a note, telling the instrument to stop playing that note. Time-shift represents the amount of time that passes between two musical events. Velocity measures the force or speed with which a note is played, with higher values corresponding to a stronger, louder sound. Each type of musical event has many different values. Each unique event will be mapped to a different index, effectively transforming a piece of music into a sequence of indexes. You will then apply the GPT models, as discussed in chapters 11 and 12, to create a decoder-only music Transformer that predicts the next musical event in the sequence.</p>
+<p class="body">In this section, you will begin by learning about performance-based music representation through control messages and velocity values. You will then explore how to represent music pieces as sequences of musical events. Finally, you will learn the steps involved in building and training a Transformer to generate music.</p>
+<h3 class="fm-head1" id="heading_id_4">14.1.1 Performance-based music representation</h3>
+<p class="body">Performance-based music representation is often achieved using the MIDI format, which captures the nuances of a musical performance through control messages and velocity values. In MIDI, musical notes are represented by note-on and note-off messages, which include information about the pitch and velocity of each note.<a id="idIndexMarker005"/><a id="idIndexMarker006"/></p>
+<p class="body">As we discussed in chapter 13, the pitch value ranges from 0 to 127, with each value corresponding to a semitone in an octave level. For instance, the pitch value 60 corresponds to a C4 note, while the pitch value 74 corresponds to a D5 note. The velocity value, also ranging from 0 to 127, represents the dynamics of the note, with higher values indicating louder or more forceful playing. By combining these control messages and velocity values, a MIDI sequence can capture the expressive details of a live performance, allowing for expressive playback through MIDI-compatible instruments and software.</p>
+<p class="body">To give you a concrete example of how a piece of music can be represented by control messages and velocity values, consider the five notes shown in the following listing.</p>
+<p class="fm-code-listing-caption">Listing 14.1 Example notes in a performance-based music representation</p>
+<pre class="programlisting">&lt;[SNote] time: 1.0325520833333333 type: note_on, value: 74, velocity: 86&gt;
+&lt;[SNote] time: 1.0442708333333333 type: note_on, value: 38, velocity: 77&gt;
+&lt;[SNote] time: 1.2265625 type: note_off, value: 74, velocity: None&gt;
+&lt;[SNote] time: 1.2395833333333333 type: note_on, value: 73, velocity: 69&gt;
+&lt;[SNote] time: 1.2408854166666665 type: note_on, value: 37, velocity: 64&gt;</pre>
+<p class="body"><a id="marker-321"/>These are the first five notes from a piece of music in the training dataset you’ll use in this chapter. The first note has a timestamp of approximately 1.03 seconds, with a note of pitch value 74 (D5) starting to play at a velocity of 86. Looking at the second note, you can infer that after about 0.01 seconds (since the timestamp is now 1.04 seconds), a note with a pitch value of 38 starts to play at a velocity of 77, and so on.</p>
+<p class="body">These musical notes are similar to raw text in NLP; we cannot directly feed them to a music Transformer to train the model. We first need to “tokenize” the notes and then convert the tokens to indexes before feeding them to the model.</p>
+<p class="body">To tokenize the musical notes, we’ll represent the music using increments of 0.01 seconds to reduce the number of time steps in the music piece. Additionally, we’ll separate control messages from velocity values and treat them as different elements of the music piece. Specifically, we’ll represent music using a combination of note-on, note-off, time-shift, and velocity events. Once we do that, the preceding five musical notes can be represented by the following events (some events are omitted for brevity).</p>
+<p class="fm-code-listing-caption">Listing 14.2 Tokenized representation of a piece of music</p>
+<pre class="programlisting">&lt;Event type: time_shift, value: 99&gt;, 
+ &lt;Event type: time_shift, value: 2&gt;, 
+ &lt;Event type: velocity, value: 21&gt;, 
+ &lt;Event type: note_on, value: 74&gt;, 
+ &lt;Event type: time_shift, value: 0&gt;, 
+ &lt;Event type: velocity, value: 19&gt;, 
+ &lt;Event type: note_on, value: 38&gt;, 
+ &lt;Event type: time_shift, value: 17&gt;, 
+ &lt;Event type: note_off, value: 74&gt;, 
+ &lt;Event type: time_shift, value: 0&gt;, 
+ &lt;Event type: velocity, value: 17&gt;, 
+ &lt;Event type: note_on, value: 73&gt;, 
+ &lt;Event type: velocity, value: 16&gt;, 
+ &lt;Event type: note_on, value: 37&gt;, 
+ &lt;Event type: time_shift, value: 0&gt;
+…</pre>
+<p class="body">We’ll count time shifts in increments of 0.01 seconds and tokenize time shifts from 0.01 seconds to 1 second with 100 different values. Thus, time-shift events are tokenized into 1 of 100 unique event tokens: a value of 0 indicates a time lapse of 0.01 seconds, 1 indicates a time lapse of 0.02 seconds, and so on, up to 99, which indicates a time lapse of 1 second. If a time-shift lasts more than 1 second, you can use multiple time-shift tokens to indicate it. For example, the first two tokens in listing 14.2 are both time-shift tokens, with values 99 and 2, respectively, indicating time lapses of 1 second and 0.03 seconds. This matches the timestamp of the first musical note in listing 14.1: 1.0326 seconds.</p>
+<p class="body">Listing 14.2 also shows that velocity is a separate type of musical event. We place the value of velocity into 32 equally spaced bins, converting the original velocity values, which range from 0 to 127, into 1 of 32 values, ranging from 0 to 31. This is why the original velocity value of 86 in the first note in listing 14.1 is now represented as a velocity event with a value of 21 in listing 14.2 (the number 86 falls into the 22<sup class="fm-superscript">nd</sup> bin, and Python uses zero-based indexing).</p>
+<p class="body">Table 14.1 shows the meaning of four types of different tokenized events, their value ranges, and the meaning of each event <a id="idTextAnchor004"/>token.<a id="marker-322"/></p>
+<p class="fm-table-caption">Table 14.1 Meanings of different event tokens</p>
+<table border="1" class="contenttable-1-table" id="table001" width="100%">
+<colgroup class="contenttable-0-colgroup">
+<col class="contenttable-0-col" span="1" width="15%"/>
+<col class="contenttable-0-col" span="1" width="15%"/>
+<col class="contenttable-0-col" span="1" width="70%"/>
+</colgroup>
+<thead class="contenttable-1-thead">
+<tr class="contenttable-0-tr">
+<th class="contenttable-1-th">
+<p class="fm-table-head">Event token type</p>
+</th>
+<th class="contenttable-1-th">
+<p class="fm-table-head">Event token value range</p>
+</th>
+<th class="contenttable-1-th">
+<p class="fm-table-head">Meaning of the event tokens</p>
+</th>
+</tr>
+</thead>
+<tbody class="contenttable-1-thead">
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">note_on</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">0–127</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">Starting to play at a certain pitch value. For example, <code class="fm-code-in-text1">note_on</code> with value 74 means starting to play note D5.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">note_off</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">0–127</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">Releasing a certain note. For example, <code class="fm-code-in-text1">note_off</code> with value 60 means to stop playing note C4.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">time_shift</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">0–99</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">The <code class="fm-code-in-text1">time_shift</code> values are increments of 0.01 seconds. For example, 0 indicates 0.01 seconds, 2 indicates 0.03 seconds, and 99 indicates 1 second.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">velocity</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">0–31</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">The original velocity values are placed into 32 bins. The bin value is used. For example, an original velocity value of 86 now has a tokenized value of 21.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p class="body">Similar to the approach taken in NLP, we’ll convert each unique token into an index so that we can input the data into neural networks. According to table 14.1, there are 128 unique note-on event tokens, 128 note-off event tokens, 32 velocity event tokens, and 100 time-shift event tokens. This results in a total of 128 + 128 + 32 + 100 = 388 unique tokens. Consequently, we convert these 388 unique tokens into indexes ranging from 0 to 387, based on the mappings provided in table 14.2.</p>
+<p class="fm-table-caption">Table 14.2 Mapping event tokens to indexes and indexes to event tokens</p>
+<table border="1" class="contenttable-1-table" id="table002" width="100%">
+<colgroup class="contenttable-0-colgroup">
+<col class="contenttable-0-col" span="1" width="15%"/>
+<col class="contenttable-0-col" span="1" width="15%"/>
+<col class="contenttable-0-col" span="1" width="35%"/>
+<col class="contenttable-0-col" span="1" width="35%"/>
+</colgroup>
+<thead class="contenttable-1-thead">
+<tr class="contenttable-0-tr">
+<th class="contenttable-1-th">
+<p class="fm-table-head">Token type</p>
+</th>
+<th class="contenttable-1-th">
+<p class="fm-table-head">Index range</p>
+</th>
+<th class="contenttable-1-th">
+<p class="fm-table-head">Event token to index</p>
+</th>
+<th class="contenttable-1-th">
+<p class="fm-table-head">Index to event token</p>
+</th>
+</tr>
+</thead>
+<tbody class="contenttable-1-thead">
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">note_on</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">0<a id="idTextAnchor005"/>–127</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">The value of the <code class="fm-code-in-text1">note_on</code> token. For example, the <code class="fm-code-in-text1">note_on</code> token with a value of 74 is assigned an index value of 74.</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">If the index range is 0 to 127, set token type to <code class="fm-code-in-text1">note_on</code> and value to the index value. For example, the index value 63 is mapped to a <code class="fm-code-in-text1">note_on</code> token with a value of 63.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">note_off</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">128–255</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">128 plus the value of the <code class="fm-code-in-text1">note_off</code> token. For example, the <code class="fm-code-in-text1">note_off</code> token with a value of 60 is assigned an index value of 188 (since 128 + 60 = 188).</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">If the index range is 128 to 255, set token type to <code class="fm-code-in-text1">note_off</code> and value to index minus 128. For example, index 180 is mapped to the <code class="fm-code-in-text1">note_off</code> token with value 52.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">time_shift</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">256–355</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">256 plus the value of the <code class="fm-code-in-text1">time_shift</code> token. For example, the <code class="fm-code-in-text1">time_shift</code> token with a value of 16 is assigned an index value of 272 (since 256 + 16 = 272).</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">If the index range is 256 to 355, set token type to <code class="fm-code-in-text1">time_shift</code> and value to index minus 256. For example, index 288 is mapped to the <code class="fm-code-in-text1">time_shift</code> token with value 32.</p>
+</td>
+</tr>
+<tr class="contenttable-0-tr">
+<td class="contenttable-1-td">
+<p class="fm-table-body"><code class="fm-code-in-text1">velocity</code></p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">356–387</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">356 plus the value of the velocity token. For example, the velocity token with a value of 21 is assigned an index value of 377 (since 356+21=377).</p>
+</td>
+<td class="contenttable-1-td">
+<p class="fm-table-body">If the index range is 356 to 387, set token type to <code class="fm-code-in-text1">velocity</code> and value to index minus 356. For example, index 380 is mapped to the <code class="fm-code-in-text1">velocity</code> token with value 24.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p class="body"><a id="marker-323"/>The third column in table 14.2 outlines the conversion of event tokens to indexes. Note-on tokens are assigned index values ranging from 0 to 127, where the index value corresponds to the pitch number in the token. Note-off tokens are assigned index values from 128 to 255, with the index value being 128 plus the pitch number. Time-shift tokens are assigned index values from 256 to 355, with the index value being 256 plus the time-shift value. Lastly, velocity tokens are assigned index values from 356 to 387, with the index value being 356 plus the velocity bin number.</p>
+<p class="body">Using this token-to-index mapping, we’ll convert each piece of music into a sequence of indexes. We’ll apply this conversion to all music pieces in the training dataset and use the resulting sequences to train our music Transformer (the details of which will be explained later). Once trained, we’ll use the Transformer to generate music in the form of a sequence of indexes. The final step is to convert this sequence back into MIDI format so that we can play and enjoy the music on a computer.</p>
+<p class="body">The last column in table 14.2 provides guidance on converting indexes back to event tokens. We first determine the token type based on the range in which the index falls. The four ranges in the second column of table 14.2 correspond to the four token types in the first column of the table. To obtain the value for each token type, we subtract the index value by 0, 128, 256, and 356 for the four types of tokens, respectively. These tokenized events are then converted into musical notes in MIDI format, ready to be played on a computer. <a id="idIndexMarker007"/><a id="idIndexMarker008"/></p>
+<h3 class="fm-head1" id="heading_id_5">14.1.2 The music Transformer architecture</h3>
+<p class="body">In chapter 9, we built an encoder-decoder Transformer, and in chapters 11 and 12, we focused on decoder-only Transformers. Unlike language translation tasks where the encoder captures the meaning of the source language and passes it to the decoder for generating the translation, music generation does not require an encoder to understand a different language. Instead, the model generates subsequent event tokens based on previous event tokens in the music sequence. Therefore, we’ll construct a decoder-only Transformer for our music generation task.<a id="idIndexMarker009"/><a id="marker-324"/></p>
+<p class="body">Our music Transformer, like other Transformer models, utilizes self-attention mechanisms to capture the long-range dependencies among different musical events in a piece of music, thereby generating coherent and lifelike music. Although our music Transformer differs in size from the GPT models we built in chapters 11 and 12, it shares the same core architecture. It follows the same structural design as GPT-2 models but is significantly smaller, making it feasible to train without the need for supercomputing facilities.</p>
+<p class="body">Specifically, our music Transformer consists of 6 decoder layers with an embedding dimension of 512, meaning each token is represented by a 512-value vector after word embedding. Instead of using sine and cosine functions for positional encoding as in the original 2017 paper “Attention Is All You Need,” we use embedding layers to learn the positional encodings for different positions in a sequence. As a result, each position in a sequence is also represented by a 512-value vector. For calculating causal self-attention, we use 8 parallel attention heads to capture different aspects of the meanings of a token in the sequence, giving each attention head a dimension of 64 (512/8).</p>
+<p class="body">Compared to the vocabulary size of 50,257 in GPT-2 models, our model has a much smaller vocabulary size of 390 (388 different event tokens, plus a token to signify the end of a sequence and a token to pad shorter sequences; I’ll explain later why padding is needed). This allows us to set the maximum sequence length in our music Transformer to 2,048, which is much longer than the maximum sequence length of 1,024 in GPT-2 models. This choice is necessary to capture the long-term relations of music notes in a sequence. With these hyperparameter values, our music Transformer has a size of 20.16 million parameters.</p>
+<p class="body">Figure 14.1 illustrates the architecture of the music Transformer we will create in this chapter. It is similar to the architecture of the GPT models you built in chapters 11 and 12. Figure 14.1 also shows the size of the training data as it passes through the model during training.</p>
+<p class="body">The input to the music Transformer we constructed comprises input embeddings, as depicted at the bottom of figure 14.1. The input embedding is the sum of the word embedding and positional encoding of the input sequence. This input embedding is then passed sequentially through six decoder blocks.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="646" src="../../OEBPS/Images/CH14_F01_Liu.png" width="659"/></p>
+<p class="figurecaption">Figure 14.1 The architecture of a music Transformer. Music files in MIDI formats are first converted into sequences of musical events. These events are then tokenized and converted into indexes. We organize these indexes into sequences of 2,048 elements, and each batch contains 2 such sequences. The input sequence first undergoes word embedding and positional encoding; the input embedding is the sum of these two components. This input embedding is then processed through six decoder layers, each utilizing self-attention mechanisms to capture the relationships among different musical events in the sequence. After passing through the decoder layers, the output undergoes layer normalization to ensure stability in the training process. It then passes through a linear layer, resulting in an output size of 390, which corresponds to the number of unique tokens in the vocabulary. This final output represents the predicted logits for the next musical event in the sequence.</p>
+</div>
+<p class="body"><a id="marker-325"/>As discussed in chapters 11 and 12, each decoder layer consists of two sublayers: a causal self-attention layer and a feed-forward network. In addition, we apply layer normalization and residual connections to each sublayer to enhance the model’s stability and learning capability.</p>
+<p class="body">After passing through the decoder layers, the output undergoes layer normalization and is then fed into a linear layer. The number of outputs in our model corresponds to the number of unique musical event tokens in the vocabulary, which is 390. The output of the model is the logits for the next musical event token.</p>
+<p class="body">Later, we will apply the softmax function to these logits to obtain the probability distribution over all possible event tokens. The model is designed to predict the next event token based on the current token and all previous tokens in the music sequence, enabling it to generate coherent and musically sensible sequences.<a id="idIndexMarker010"/></p>
+<h3 class="fm-head1" id="heading_id_6">14.1.3 Training the music Transformer</h3>
+<p class="body">Now that we understand how to construct a music Transformer for music generation, let’s outline the training process for the music Transformer.<a id="idIndexMarker011"/><a id="marker-326"/></p>
+<p class="body">The style of the music generated by the model is influenced by the music pieces used for training. We’ll use piano performances from Google’s Magenta group to train our model. Figure 14.2 illustrates the steps involved in training the Transformer for music generation.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="345" src="../../OEBPS/Images/CH14_F02_Liu.png" width="435"/></p>
+<p class="figurecaption">Figure 14.2 The training process for a music Transformer to generate music</p>
+</div>
+<p class="body">Similar to the approach we’ve taken in NLP tasks, the first step in the training process for our music Transformer is to convert the raw training data into a numerical form so that it can be fed into the model. Specifically, we start by converting MIDI files in the training set into sequences of musical notes. We then further tokenize these notes by converting them into 1 of 388 unique events/tokens. After tokenization, we assign a unique index (i.e., an integer) to each token, converting the music pieces in the training set into sequences of integers (see step 1 in figure 14.2).</p>
+<p class="body">Next, we transform the sequence of integers into training data by dividing this sequence into sequences of equal length (step 2 in figure 14.2). We allow a maximum length of 2,048 indexes in each sequence. The choice of 2,048 enables us to capture long-range dependencies among musical events in a music sequence to create lifelike music. These sequences form the features (the x variable) of our model. As we did in previous chapters when training GPT models to generate text, we slide the input sequence window one index to the right and use it as the output in the training data (the y variable; step 3 in figure 14.2). Doing so forces our model to predict the next music token in a sequence based on the current token and all previous tokens in the music sequence.</p>
+<p class="body">The input and output pairs serve as the training data <span class="times">(x, y)</span> for the music Transformer. During training, you will iterate through the training data. In the forward passes, you feed the input sequence x through the music Transformer (step 4). The music Transformer then makes a prediction based on the current parameters in the model (step 5). You compute the cross-entropy loss by comparing the predicted next tokens with the output obtained from step 3. In other words, you compare the model’s prediction with the ground truth (step 6). Finally, you will adjust the parameters in the music Transformer so that in the next iteration, the model’s predictions move closer to the actual output, minimizing the cross-entropy loss (step 7). The model is essentially performing a multicategory classification problem: it’s predicting the next token from all unique music tokens in the vocabulary.</p>
+<p class="body">You will repeat steps 3 to 7 through many iterations. After each iteration, the model parameters are adjusted to improve the prediction of the next token. This process will be repeated for 50 epochs.</p>
+<p class="body">To generate a new piece of music with the trained model, we obtain a music piece from the test set, tokenize it, and convert it to a long sequence of indexes. We’ll use the first, say, 250 indexes as the prompt (200 or 300 will lead to similar results). We then ask the trained music Transformer to generate new indexes until the sequence reaches a certain length (say, 1,000 indexes). We then convert the sequence of indexes back into a MIDI file to be played on your computer.<a id="idIndexMarker012"/></p>
+<h2 class="fm-head" id="heading_id_7">14.2 Tokenizing music pieces</h2>
+<p class="body"><a id="marker-327"/>Having grasped the structure of the music Transformer and its training methodology, we’ll start with the first step: tokenization and indexing of the musical compositions in our training dataset.<a id="idIndexMarker013"/><a id="idIndexMarker014"/></p>
+<p class="body">We’ll begin with employing a performance-based representation (as explained in the first section) to portray music pieces as musical notes, akin to raw text in NLP. After that, we’ll divide these musical notes into a series of events, similar to tokens in NLP. Each unique event will be assigned a different index. Utilizing this mapping, we’ll transform all music pieces in the training dataset into sequences of indexes.</p>
+<p class="body">Next, we’ll standardize these sequences of indexes into a fixed length, specifically sequences with 2,048 indexes, and use them as the feature inputs <span class="times">(x)</span>. By shifting the window one index to the right, we’ll generate the corresponding output sequences <span class="times">(y)</span>. We’ll then group pairs of input and output <span class="times">(x, y)</span> into batches, preparing them for training the music Transformer later in the chapter.</p>
+<p class="body">As we’ll require the <code class="fm-code-in-text">pretty_midi</code> and <code class="fm-code-in-text">music21</code> libraries for processing MIDI files, execute the following line of code in a new cell in the Jupyter Notebook application:<a id="idIndexMarker015"/><a id="idIndexMarker016"/></p>
+<pre class="programlisting">!pip install pretty_midi music21</pre>
+<h3 class="fm-head1" id="heading_id_8">14.2.1 Downloading training data</h3>
+<p class="body">We’ll obtain the piano performances from the MAESTRO dataset, which is made available by Google’s Magenta group (<a class="url" href="https://storage.googleapis.com/magentadata/datasets/maestro/v2.0.0/maestro-v2.0.0-midi.zip">https://storage.googleapis.com/magentadata/datasets/maestro/v2.0.0/maestro-v2.0.0-midi.zip</a>) and download the ZIP file. After downloading, unzip it and move the resulting folder, /maestro-v2.0.0/, into the /files/ directory on your computer.<a id="idIndexMarker017"/><a id="idIndexMarker018"/><a id="idIndexMarker019"/><a id="marker-328"/></p>
+<p class="body">Ensure that the /maestro-v2.0.0/ folder contains 4 files (one of which should be named “maestro-v2.0.0.json”) and 10 subfolders. Each subfolder should contain more than 100 MIDI files. To familiarize yourself with the sound of the music pieces in the training data, try opening some of the MIDI files with your preferred music player.</p>
+<p class="body">Next, we’ll split the MIDI files into train, validation, and test subsets. To start, create three subfolders within /files/maestro-v2.0.0/:</p>
+<pre class="programlisting">import os
+  
+os.makedirs("files/maestro-v2.0.0/train", exist_ok=True)
+os.makedirs("files/maestro-v2.0.0/val", exist_ok=True)
+os.makedirs("files/maestro-v2.0.0/test", exist_ok=True)</pre>
+<p class="body">To facilitate the processing of MIDI files, visit Kevin Yang’s GitHub repository at <a class="url" href="https://github.com/jason9693/midi-neural-processor">https://github.com/jason9693/midi-neural-processor</a>, download the processor.py file, and place it in the /utils/ folder on your computer. Alternatively, you can obtain the file from the book’s GitHub repository: <a class="url" href="https://github.com/markhliu/DGAI">https://github.com/markhliu/DGAI</a>. We’ll use this file as a local module to transform a MIDI file into a sequence of indexes and vice versa. This approach allows us to concentrate on developing, training, and utilizing a music Transformer without getting bogged down in the details of music format conversion. At the same time, I’ll provide a simple example of how this process works so that you can convert between a MIDI file and a sequence of indexes yourself using the module.</p>
+<p class="body">Additionally, you need to download the ch14util.py file from the book’s GitHub repository and place it in the /utils/ directory on your computer. We’ll use the ch14util.py file as another local module to define the music Transformer model.</p>
+<p class="body">The file maestro-v2.0.0.json within the /maestro-v2.0.0/ folder contains the names of all MIDI files and their designated subsets (train, validation, or test). Based on this information, we’ll categorize the MIDI files into three corresponding subfolders.</p>
+<p class="fm-code-listing-caption">Listing 14.3 Splitting training data into train, validation, and test subsets</p>
+<pre class="programlisting">import json
+import pickle
+from utils.processor import encode_midi
+  
+file="files/maestro-v2.0.0/maestro-v2.0.0.json"
+  
+with open(file,"r") as fb:
+    maestro_json=json.load(fb)                            <span class="fm-combinumeral">①</span>
+  
+for x in maestro_json:                                    <span class="fm-combinumeral">②</span>
+    mid=rf'files/maestro-v2.0.0/{x["midi_filename"]}'
+    split_type = x["split"]                               <span class="fm-combinumeral">③</span>
+    f_name = mid.split("/")[-1] + ".pickle"
+    if(split_type == "train"):
+        o_file = rf'files/maestro-v2.0.0/train/{f_name}'
+    elif(split_type == "validation"):
+        o_file = rf'files/maestro-v2.0.0/val/{f_name}'
+    elif(split_type == "test"):
+        o_file = rf'files/maestro-v2.0.0/test/{f_name}'
+    prepped = encode_midi(mid)
+    with open(o_file,"wb") as f:
+        pickle.dump(prepped, f)</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Loads JSON file</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Iterates through all files in the training data</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Places a file in train, validation, or test subfolder based on instructions in the JSON file</p>
+<p class="body">The JavaScript object notation (JSON) file you downloaded categorizes each file in the training dataset into one of three subsets: train, validation, and test. After executing the previous code listing, if you explore the /train/, /val/, and /test/ folders on your computer, you should find numerous files in each. To verify the number of files in each of these three folders, you can perform the following checks:<a id="idIndexMarker020"/></p>
+<pre class="programlisting">train_size=len(os.listdir('files/maestro-v2.0.0/train'))
+print(f"there are {train_size} files in the train set")
+val_size=len(os.listdir('files/maestro-v2.0.0/val'))
+print(f"there are {val_size} files in the validation set")
+test_size=len(os.listdir('files/maestro-v2.0.0/test'))
+print(f"there are {test_size} files in the test set")</pre>
+<p class="body">The output from the preceding code block is</p>
+<pre class="programlisting">there are 967 files in the train set
+there are 137 files in the validation set
+there are 178 files in the test set</pre>
+<p class="body"><a id="marker-329"/>Results show that there are 967, 137, and 178 pieces of music in the train, validation, and test subsets, respectively.<a id="idIndexMarker021"/><a id="idIndexMarker022"/><a id="idIndexMarker023"/></p>
+<h3 class="fm-head1" id="heading_id_9">14.2.2 Tokenizing MIDI files</h3>
+<p class="body">Next, we’ll represent each MIDI file as a sequence of musical notes. <a id="idIndexMarker024"/><a id="idIndexMarker025"/><a id="idIndexMarker026"/></p>
+<p class="fm-code-listing-caption">Listing 14.4 Converting a MIDI file to a sequence of music notes</p>
+<pre class="programlisting">import pickle
+from utils.processor import encode_midi
+import pretty_midi
+from utils.processor import (_control_preprocess,
+    _note_preprocess,_divide_note,
+    _make_time_sift_events,_snote2events)
+  
+file='MIDI-Unprocessed_Chamber1_MID--AUDIO_07_R3_2018_wav--2'
+name=rf'files/maestro-v2.0.0/2018/{file}.midi'               <span class="fm-combinumeral">①</span>
+  
+events=[]
+notes=[]
+song=pretty_midi.PrettyMIDI(name)
+for inst in song.instruments:
+    inst_notes=inst.notes
+    ctrls=_control_preprocess([ctrl for ctrl in 
+       inst.control_changes if ctrl.number == 64])
+    notes += _note_preprocess(ctrls, inst_notes)             <span class="fm-combinumeral">②</span>
+dnotes = _divide_note(notes)                                 <span class="fm-combinumeral">③</span>
+dnotes.sort(key=lambda x: x.time)    
+for i in range(5):
+    print(dnotes[i])   </pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Selects a MIDI file from the training dataset</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Extracts musical events from the music</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Places all musical events in the list dnotes</p>
+<p class="body">We have selected one MIDI file from the training dataset and used the processor.py local module to convert it into a sequence of musical notes. The output from the preceding code listing is</p>
+<pre class="programlisting">&lt;[SNote] time: 1.0325520833333333 type: note_on, value: 74, velocity: 86&gt;
+&lt;[SNote] time: 1.0442708333333333 type: note_on, value: 38, velocity: 77&gt;
+&lt;[SNote] time: 1.2265625 type: note_off, value: 74, velocity: None&gt;
+&lt;[SNote] time: 1.2395833333333333 type: note_on, value: 73, velocity: 69&gt;
+&lt;[SNote] time: 1.2408854166666665 type: note_on, value: 37, velocity: 64&gt;</pre>
+<p class="body"><a id="marker-330"/>The output displayed here shows the first five musical notes from the MIDI file. You might have observed that the time representation in the output is continuous. Certain musical notes contain both a <code class="fm-code-in-text">note_on</code> and a <code class="fm-code-in-text">velocity</code> attribute, complicating the tokenization process due to the vast number of unique musical events resulting from the continuous nature of time representation. Additionally, the combination of different <code class="fm-code-in-text">note_on</code> and <code class="fm-code-in-text">velocity</code> values is large (each can assume 128 distinct values, ranging from 0 to 127), leading to an excessively large vocabulary size. This, in turn, would render training impractical.<a id="idIndexMarker027"/><a id="idIndexMarker028"/><a id="idIndexMarker029"/><a id="idIndexMarker030"/></p>
+<p class="body">To mitigate this problem and decrease the vocabulary size, we further convert these musical notes into tokenized events:</p>
+<pre class="programlisting">cur_time = 0
+cur_vel = 0
+for snote in dnotes:
+    events += _make_time_sift_events(prev_time=cur_time,    <span class="fm-combinumeral">①</span>
+                                     post_time=snote.time)
+    events += _snote2events(snote=snote, prev_vel=cur_vel)  <span class="fm-combinumeral">②</span>
+    cur_time = snote.time
+    cur_vel = snote.velocity    
+indexes=[e.to_int() for e in events]   
+for i in range(15):                                         <span class="fm-combinumeral">③</span>
+    print(events[i]) </pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Discretizes time to reduce the number of unique events</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Converts musical notes to events</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Prints out the first 15 events</p>
+<p class="body">The output is as follows:</p>
+<pre class="programlisting">&lt;Event type: time_shift, value: 99&gt;
+&lt;Event type: time_shift, value: 2&gt;
+&lt;Event type: velocity, value: 21&gt;
+&lt;Event type: note_on, value: 74&gt;
+&lt;Event type: time_shift, value: 0&gt;
+&lt;Event type: velocity, value: 19&gt;
+&lt;Event type: note_on, value: 38&gt;
+&lt;Event type: time_shift, value: 17&gt;
+&lt;Event type: note_off, value: 74&gt;
+&lt;Event type: time_shift, value: 0&gt;
+&lt;Event type: velocity, value: 17&gt;
+&lt;Event type: note_on, value: 73&gt;
+&lt;Event type: velocity, value: 16&gt;
+&lt;Event type: note_on, value: 37&gt;
+&lt;Event type: time_shift, value: 0&gt;</pre>
+<p class="body">The music piece is now represented by four types of events: note-on, note-off, time-shift, and velocity. Each event type includes different values, resulting in a total of 388 unique events, as detailed in table 14.2 earlier. The specifics of converting a MIDI file into a sequence of such unique events are not essential for constructing and training a music Transformer. Therefore, we will not dive deeply into this topic; interested readers can refer to Huang et al (2018) cited earlier. All you need to know is how to use the processor.py module to transform a MIDI file into a sequence of indexes and vice versa. In the following subsection, you’ll learn how to accomplish that.<a id="idIndexMarker031"/><a id="idIndexMarker032"/><a id="idIndexMarker033"/></p>
+<h3 class="fm-head1" id="heading_id_10">14.2.3 Preparing the training data</h3>
+<p class="body"><a id="marker-331"/>We’ve learned how to convert music pieces into tokens and then into indexes. The next step involves preparing the training data so that we can utilize it to train the music Transformer later in this chapter. To achieve this, we define the <code class="fm-code-in-text">create</code>_<code class="fm-code-in-text">xys()</code> function shown in the following listing.<a id="idIndexMarker034"/><a id="idIndexMarker035"/><a id="idIndexMarker036"/></p>
+<p class="fm-code-listing-caption">Listing 14.5 Creating training data</p>
+<pre class="programlisting">import torch,os,pickle
+  
+max_seq=2048
+def create_xys(folder):  
+    files=[os.path.join(folder,f) for f in os.listdir(folder)]
+    xys=[]
+    for f in files:
+        with open(f,"rb") as fb:
+            music=pickle.load(fb)
+        music=torch.LongTensor(music)      
+        x=torch.full((max_seq,),389, dtype=torch.long)
+        y=torch.full((max_seq,),389, dtype=torch.long)      <span class="fm-combinumeral">①</span>
+        length=len(music)
+        if length&lt;=max_seq:
+            print(length)
+            x[:length]=music                                <span class="fm-combinumeral">②</span>
+            y[:length-1]=music[1:]                          <span class="fm-combinumeral">③</span>
+            y[length-1]=388                                 <span class="fm-combinumeral">④</span>
+        else:
+            x=music[:max_seq]
+            y=music[1:max_seq+1]   
+        xys.append((x,y))
+    return xys</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates <span class="times">(x, y)</span> sequences, with equal lengths of 2,048 indexes and sets index 399 as the padding index</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Uses a sequence of up to 2,048 indexes as input</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Slides the window one index to the right and uses it as the output</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Sets the end index as 388</p>
+<p class="body">As we’ve seen repeatedly throughout this book, in sequence prediction tasks, we use a sequence x as input. We then shift the sequence one position to the right to create the output sequence. This approach compels the model to predict the next element based on the current element and all preceding elements in the sequence. To prepare training data for our music Transformer, we’ll construct pairs <span class="times">(x, y)</span>, where <span class="times">x</span> is the input and <span class="times">y</span> is the output. Both <span class="times">x</span><a id="idTextAnchor006"/> and <span class="times">y</span> contain 2,048 indexes—long enough to capture the long-term relations of music notes in a sequence but not too long to hinder the training process.</p>
+<p class="body">We’ll iterate through all the music pieces in the training dataset we downloaded. If a music piece exceeds 2,048 indexes in length, we’ll use the first 2,048 indexes as input <span class="times">x</span>. For the output <span class="times">y</span>, we’ll use indexes from the second position to the 2,049th position. In the rare case where the music piece is less than or equal to 2,048 indexes long, we’ll pad the sequence with index 389 to ensure that both <span class="times">x</span> and <span class="times">y</span> are 2,048 indexes long. Additionally, we use index 388 to signal the end of the sequence <span class="times">y</span>.</p>
+<p class="body">As mentioned in the first section, there are a total of 388 unique event tokens, indexed from 0 to 387. Since we use 388 to signal the end of the y sequence and 389 to pad sequences, we have a total of 390 unique indexes, ranging from 0 to 389.</p>
+<p class="body">We can now apply the <code class="fm-code-in-text">create_xys()</code> function to the train subset:<a id="idIndexMarker037"/><a id="marker-332"/></p>
+<pre class="programlisting">trainfolder='files/maestro-v2.0.0/train'
+train=create_xys(trainfolder)</pre>
+<p class="body">The output is</p>
+<pre class="programlisting">15
+5
+1643
+1771
+586</pre>
+<p class="body">This shows that out of the 967 music pieces in the train subset, only 5 are shorter than 2,048 indexes. Their lengths are shown in the previous output.</p>
+<p class="body">We also apply the <code class="fm-code-in-text">create_xys()</code> function to the validation and test subsets:<a id="idIndexMarker038"/></p>
+<pre class="programlisting">valfolder='files/maestro-v2.0.0/val'
+testfolder='files/maestro-v2.0.0/test'
+print("processing the validation set")
+val=create_xys(valfolder)
+print("processing the test set")
+test=create_xys(testfolder)</pre>
+<p class="body">The output is</p>
+<pre class="programlisting">processing the validation set
+processing the test set
+1837</pre>
+<p class="body">This shows that all music pieces in the validation subset are longer than 2,048 indexes. Only one music piece in the test subset is shorter than 2,048 indexes.</p>
+<p class="body">Let’s print out a file from the validation subset and see what it looks like:</p>
+<pre class="programlisting">val1, _ = val[0]
+print(val1.shape)
+print(val1)</pre>
+<p class="body">The output is as follows:</p>
+<pre class="programlisting">torch.Size([2048])
+tensor([324, 366,  67,  ...,  60, 264, 369])</pre>
+<p class="body">The x sequence from the first pair in the validation set has a length of 2,048 indexes, with values such as 324, 367, and so on. Let’s use the module <code class="fm-code-in-text">processor.py</code> to decode the sequence to a MIDI file so that you can hear what it sounds like:<a id="idIndexMarker039"/></p>
+<pre class="programlisting">from utils.processor import decode_midi
+  
+file_path="files/val1.midi"
+decode_midi(val1.cpu().numpy(), file_path=file_path)</pre>
+<p class="body">The <code class="fm-code-in-text">decode_midi()</code> function converts a sequence of indexes into a MIDI file, playable on your computer. After running the preceding code block, open the file val1.midi with a music player on your computer to hear what it sounds like.<a id="marker-333"/><a id="idIndexMarker040"/></p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 14.1</p>
+<p class="fm-sidebar-text">Use the <code class="fm-code-in-text1">decode_midi()</code> function from the processor.py local module to convert the first music piece in the train subset into a MIDI file. Save it as train1.midi on your computer. Open it with a music player on your computer and get a sense of what type of music we use for training data.<a id="idIndexMarker041"/></p>
+</div>
+<p class="body">Finally, we create a data loader so that the data are in batches for training:</p>
+<pre class="programlisting">from torch.utils.data import DataLoader
+  
+batch_size=2
+trainloader=DataLoader(train,batch_size=batch_size,
+                       shuffle=True)</pre>
+<p class="body">To prevent your GPU from running out of memory, we’ll use a batch size of 2, as we’ve created very long sequences, each comprising 2,048 indexes. If needed, reduce the batch size to one or switch to CPU training.</p>
+<p class="body">With that, our training data is prepared. In the next two sections, we’ll construct a music Transformer from scratch and then train it using the training data we’ve just prepared.<a id="idIndexMarker042"/><a id="idIndexMarker043"/><a id="idIndexMarker044"/><a id="idIndexMarker045"/></p>
+<h2 class="fm-head" id="heading_id_11">14.3 Building a GPT to generate music</h2>
+<p class="body">Now that our training data is prepared, we’ll construct a GPT model from scratch for music generation. The architecture of this model will be similar to the GPT-2XL model we developed in chapter 11 and the text generator from chapter 12. However, the size of our music Transformer will differ due to the specific hyperparameters we select.<a id="idIndexMarker046"/><a id="idIndexMarker047"/><a id="marker-334"/></p>
+<p class="body">To conserve space, we’ll place the model construction within the local module ch14util.py. Our focus here will be on the hyperparameters chosen for the music Transformer. Specifically, we’ll decide the values of <code class="fm-code-in-text">n_layer,</code> the number of decoder layers in the model; <code class="fm-code-in-text">n_head</code>, the number of parallel heads to use to calculate causal self-attention; <code class="fm-code-in-text">n_embd,</code> the embedding dimension; and <code class="fm-code-in-text">block_size,</code> the number of tokens in the input sequence. <a id="idIndexMarker048"/><a id="idIndexMarker049"/><a id="idIndexMarker050"/><a id="idIndexMarker051"/></p>
+<h3 class="fm-head1" id="heading_id_12">14.3.1 Hyperparameters in the music Transformer</h3>
+<p class="body">Open the file ch14util.py that you downloaded earlier from the book’s GitHub repository. Inside, you’ll find several functions and classes that are identical to those defined in chapter 12.<a id="idIndexMarker052"/><a id="idIndexMarker053"/><a id="idIndexMarker054"/></p>
+<p class="body">As in all GPT models we have seen in this book, the feed-forward network in the decoder block utilizes the Gaussian error linear unit (GELU) activation function. Consequently, we define a GELU class in ch14util.py, exactly as we did in chapter 12.<a id="idIndexMarker055"/></p>
+<p class="body">We employ a <code class="fm-code-in-text">Config()</code> class to store all the hyperparameters used in the music Transformer:<a id="idIndexMarker056"/></p>
+<pre class="programlisting">from torch import nn
+class Config():
+    def __init__(self):
+        self.n_layer = 6
+        self.n_head = 8
+        self.n_embd = 512
+        self.vocab_size = 390
+        self.block_size = 2048 
+        self.embd_pdrop = 0.1
+        self.resid_pdrop = 0.1
+        self.attn_pdrop = 0.1
+config=Config()
+device="cuda" if torch.cuda.is_available() else "cpu"</pre>
+<p class="body">The attributes within the <code class="fm-code-in-text">Config()</code> class serve as hyperparameters for our music Transformer. We assign a value of 6 to the <code class="fm-code-in-text">n_layer</code> attribute, indicating that our music Transformer consists of 6 decoder layers. This is more than the number of decoder layers in the GPT model we built in chapter 12. Each decoder layer processes the input sequence and introduces a level of abstraction or representation. As the information traverses through more layers, the model is capable of capturing more complex patterns and relationships in the data. This depth is crucial for our music Transformer to comprehend and generate intricate music pieces.<a id="idIndexMarker057"/><a id="idIndexMarker058"/></p>
+<p class="body">The <code class="fm-code-in-text">n_head</code> attribute is set to 8, signifying that we will divide the query <span class="times">Q</span>, key <span class="times">K</span>, and value <span class="times">V</span> vectors into eight parallel heads during the computation of causal self-attention. The <code class="fm-code-in-text">n_embd</code> attribute is set to 512, indicating an embedding dimension of 512: each event token will be represented by a vector of 512 values. The <code class="fm-code-in-text">vocab_size</code> attribute is determined by the number of unique tokens in the vocabulary, which is 390. As explained earlier, there are 388 unique event tokens, and we added 1 token to signify the end of the sequence and another token to pad shorter sequences so that all sequences have a length of 2,048. The <code class="fm-code-in-text">block_size</code> attribute is set to 2,048, indicating that the input sequence contains a maximum of 2,048 tokens. We set the dropout rates to 0.1, as in chapters 11 and 12.<a id="idIndexMarker059"/><a id="idIndexMarker060"/><a id="idIndexMarker061"/><a id="idIndexMarker062"/></p>
+<p class="body">Like all Transformers, our music Transformer employs self-attention mechanisms to capture relationships among different elements in a sequence. Consequently, we define a <code class="fm-code-in-text">CausalSelfAttention()</code> class in the local module ch14util, which is identical to the <code class="fm-code-in-text">CausalSelfAttention()</code> class defined in chapter 12. <a id="idIndexMarker063"/></p>
+<h3 class="fm-head1" id="heading_id_13">14.3.2 Building a music Transformer</h3>
+<p class="body">We combine a feed-forward network with the causal self-attention sublayer to form a decoder block (i.e., a decoder layer). We apply layer normalization and a residual connection to each sublayer for improved stability and performance. To this end, we define a <code class="fm-code-in-text">Block()</code> class in the local module to create a decoder block, which is identical to the <code class="fm-code-in-text">Block()</code> class we defined in chapter 12.<a id="idIndexMarker064"/><a id="idIndexMarker065"/><a id="idIndexMarker066"/><a id="marker-335"/></p>
+<p class="body">We then stack six decoder blocks on top of each other to form the main body of our music Transformer. To achieve this, we define a <code class="fm-code-in-text">Model()</code> class in the local module. As in all GPT models we have seen in this book, we use learned positional encoding by employing the <code class="fm-code-in-text">Embedding()</code> class in PyTorch, instead of the fixed positional encoding in the original 2017 paper “Attention Is All You Need.” Refer to chapter 11 on the differences between the two positional encoding methods.<a id="idIndexMarker067"/><a id="idIndexMarker068"/></p>
+<p class="body">The input to the model consists of sequences of indexes corresponding to musical event tokens in the vocabulary. We pass the input through word embedding and positional encoding and add the two to form the input embedding. The input embedding then goes through the six decoder layers. After that, we apply layer normalization to the output and attach a linear head to it so that the number of outputs is 390, the size of the vocabulary. The outputs are the logits corresponding to the 390 tokens in the vocabulary. Later, we’ll apply the softmax activation function to the logits to obtain the probability distribution over the unique music tokens in the vocabulary when generating music.</p>
+<p class="body">Next, we’ll create our music Transformer by instantiating the <code class="fm-code-in-text">Model()</code> class we defined in the local module:<a id="idIndexMarker069"/></p>
+<pre class="programlisting">from utils.ch14util import Model
+  
+model=Model(config)
+model.to(device)
+num=sum(p.numel() for p in model.transformer.parameters())
+print("number of parameters: %.2fM" % (num/1e6,))
+print(model)</pre>
+<p class="body">The output is</p>
+<pre class="programlisting">number of parameters: 20.16M
+Model(
+  (transformer): ModuleDict(
+    (wte): Embedding(390, 512)
+    (wpe): Embedding(2048, 512)
+    (drop): Dropout(p=0.1, inplace=False)
+    (h): ModuleList(
+      (0-5): 6 x Block(
+        (ln_1): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+        (attn): CausalSelfAttention(
+          (c_attn): Linear(in_features=512, out_features=1536, bias=True)
+          (c_proj): Linear(in_features=512, out_features=512, bias=True)
+          (attn_dropout): Dropout(p=0.1, inplace=False)
+          (resid_dropout): Dropout(p=0.1, inplace=False)
+        )
+        (ln_2): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+        (mlp): ModuleDict(
+          (c_fc): Linear(in_features=512, out_features=2048, bias=True)
+          (c_proj): Linear(in_features=2048, out_features=512, bias=True)
+          (act): GELU()
+          (dropout): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (ln_f): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+  )
+  (lm_head): Linear(in_features=512, out_features=390, bias=False)
+)</pre>
+<p class="body">Our music Transformer consists of 20.16 million parameters, a figure substantially smaller than the GPT-2XL, which boasts over 1.5 billion parameters. Nonetheless, our music Transformer surpasses the size of the text generator we constructed in chapter 12, which contains only 5.12 million parameters. Despite these differences, all three models are based on the decoder-only Transformer architecture. The variations lie solely in the hyperparameters, such as the embedding dimension, number of decoder layers, vocabulary size, and so on. <a id="idIndexMarker070"/><a id="idIndexMarker071"/></p>
+<h2 class="fm-head" id="heading_id_14">14.4 Training and using the music Transformer</h2>
+<p class="body"><a id="marker-336"/>In this section, you’ll train the music Transformer you’ve just constructed using the batches of training data we prepared earlier in this chapter. To expedite the process, we’ll train the model for 100 epochs and then stop the training process. For those interested, you can utilize the validation set to determine when to stop training, based on the performance of the model on the validation set, as we did in chapter 2.<a id="idIndexMarker072"/></p>
+<p class="body">Once the model is trained, we’ll provide it with a prompt in the form of a sequence of indexes. We’ll then request the trained music Transformer to generate the next index. This new index is appended to the prompt, and the updated prompt is fed back into the model for another prediction. This process is repeated iteratively until the sequence reaches a certain length.</p>
+<p class="body">Unlike the music generated in chapter 13, we can control the creativity of the music piece by applying different temperatures.</p>
+<h3 class="fm-head1" id="heading_id_15">14.4.1 Training the music Transformer</h3>
+<p class="body">As always, we’ll use the Adam optimizer for training. Given that our music Transformer is essentially executing a multicategory classification task, we’ll utilize cross-entropy loss as our loss function:<a id="idIndexMarker073"/><a id="idIndexMarker074"/></p>
+<pre class="programlisting">lr=0.0001
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+loss_func=torch.nn.CrossEntropyLoss(ignore_index=389)</pre>
+<p class="body">The <code class="fm-code-in-text">ignore_index=389</code> argument in the previous loss function instructs the program to disregard index 389 whenever it occurs in the target sequence (i.e., sequence y), as this index is used solely for padding purposes and does not represent any specific event token in the music piece.</p>
+<p class="body">We will then train the model for 100 epochs.</p>
+<p class="fm-code-listing-caption">Listing 14.6 Training the music Transformer to generate music</p>
+<pre class="programlisting">model.train()  
+for i in range(1,101):
+    tloss = 0.
+    for idx, (x,y) in enumerate(trainloader):              <span class="fm-combinumeral">①</span>
+        x,y=x.to(device),y.to(device)
+        output = model(x)
+        loss=loss_func(output.view(-1,output.size(-1)),
+                           y.view(-1))                     <span class="fm-combinumeral">②</span>
+        optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(),1)     <span class="fm-combinumeral">③</span>
+        optimizer.step()                                   <span class="fm-combinumeral">④</span>
+    print(f'epoch {i} loss {tloss/(idx+1)}') 
+torch.save(model.state_dict(),f'files/musicTrans.pth')     <span class="fm-combinumeral">⑤</span></pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Iterates through all batches of training data</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Compares model predictions with actual outputs</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Clips gradient norm to 1</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Tweaks model parameters to minimize loss</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">⑤</span> Saves model after training</p>
+<p class="body">During training, we feed all the input sequences x in a batch through the model to obtain predictions. We then compare these predictions with the corresponding output sequences y in the batch and calculate the cross-entropy loss. After that, we adjust the model parameters to minimize this loss. It’s important to note that we’ve clipped the gradient norm to 1 to prevent the potential problem of exploding gradients.</p>
+<p class="body"><a id="marker-337"/>The training process described above takes approximately 3 hours if you have a CUDA-enabled GPU. After training, the trained model weights, musicTrans.pth, are saved on your computer. Alternatively, you can download the trained weights from my website at <a class="url" href="https://mng.bz/V2pW">https://mng.bz/V2pW</a>.</p>
+<h3 class="fm-head1" id="heading_id_16">14.4.2 Music generation with the trained Transformer</h3>
+<p class="body">Now that we have a trained music Transformer, we can proceed with music generation.<a id="idIndexMarker075"/><a id="idIndexMarker076"/></p>
+<p class="body">Similar to the process in text generation, music generation begins with feeding a sequence of indexes (representing event tokens) to the model as a prompt. We’ll select a music piece from the test set and use the first 250 musical events as the prompt:</p>
+<pre class="programlisting">from utils.processor import decode_midi
+  
+prompt, _  = test[42]
+prompt = prompt.to(device)
+len_prompt=250
+file_path = "files/prompt.midi"
+decode_midi(prompt[:len_prompt].cpu().numpy(),
+            file_path=file_path)</pre>
+<p class="body">We have randomly selected an index (42, in our case) and used it to retrieve a song from the test subset. We keep only the first 250 musical events, which we’ll later feed to the trained model to predict the next musical events. For comparison purposes, we’ll save the prompt as a MIDI file, prompt.midi, in the local folder.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 14.2</p>
+<p class="fm-sidebar-text">Use the <code class="fm-code-in-text1">decode_midi()</code> function to convert the first 250 musical events in the second music piece in the test set into a MIDI file. Save it as prompt2.midi on your computer. <a id="idIndexMarker077"/></p>
+</div>
+<p class="body">To streamline the music generation process, we’ll define a <code class="fm-code-in-text">sample()</code> function. This function accepts a sequence of indexes as input, representing a short piece of music. It then iteratively predicts and appends new indexes to the sequence until a specified length, <code class="fm-code-in-text">seq_length</code>, is achieved. The implementation is shown in the following listing.<a id="idIndexMarker078"/><a id="marker-338"/></p>
+<p class="fm-code-listing-caption">Listing 14.7 A <code class="fm-code-in-text">sample()</code> function in music generation</p>
+<pre class="programlisting">softmax=torch.nn.Softmax(dim=-1)
+def sample(prompt,seq_length=1000,temperature=1):
+    gen_seq=torch.full((1,seq_length),389,dtype=torch.long).to(device)
+    idx=len(prompt)
+    gen_seq[..., :idx]=prompt.type(torch.long).to(device)    
+    while(idx &lt; seq_length):                                       <span class="fm-combinumeral">①</span>
+        y=softmax(model(gen_seq[..., :idx])/temperature)[...,:388] <span class="fm-combinumeral">②</span>
+        probs=y[:, idx-1, :]
+        distrib=torch.distributions.categorical.Categorical(probs=probs)
+        next_token=distrib.sample()                                <span class="fm-combinumeral">③</span>
+        gen_seq[:, idx]=next_token
+        idx+=1
+    return gen_seq[:, :idx]                                        <span class="fm-combinumeral">④</span></pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Generates the new indexes until the sequence reaches a certain length</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Divides the prediction by the temperature and then applies the softmax function on logits</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Samples from the predicted probability distribution to generate a new index</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Outputs the whole sequence</p>
+<p class="body">One of the parameters of the <code class="fm-code-in-text">sample()</code> function is temperature, which regulates the creativity of the generated music. Refer to chapter 8 on how this works if needed. Since we can adjust the originality and diversity of the generated music with the temperature parameter alone, we have omitted <code class="fm-code-in-text">top-K</code> sampling for simplicity in this instance. As we have discussed <code class="fm-code-in-text">top-K</code> sampling three times earlier in this book (in chapters 8, 11, and 12), interested readers can experiment with incorporating <code class="fm-code-in-text">top-K</code> sampling into the <code class="fm-code-in-text">sample()</code> function here.<a id="idIndexMarker079"/><a id="idIndexMarker080"/><a id="idIndexMarker081"/></p>
+<p class="body">Next, we’ll load the trained weights into the model:</p>
+<pre class="programlisting">model.load_state_dict(torch.load("files/musicTrans.pth",
+    map_location=device))
+model.eval()</pre>
+<p class="body">We then call the <code class="fm-code-in-text">sample()</code> function to generate a piece of music:<a id="idIndexMarker082"/></p>
+<pre class="programlisting">from utils.processor import encode_midi
+  
+file_path = "files/prompt.midi"
+prompt = torch.tensor(encode_midi(file_path))
+generated_music=sample(prompt, seq_length=1000)</pre>
+<p class="body">First, we utilize the <code class="fm-code-in-text">encode_midi()</code> function from the processor.py module to convert the MIDI file, prompt.midi, into a sequence of indexes. We then use this sequence as the prompt in the <code class="fm-code-in-text">sample()</code> function to generate a music piece comprising 1,000 indexes.<a id="idIndexMarker083"/><a id="idIndexMarker084"/><a id="marker-339"/></p>
+<p class="body">Finally, we convert the generated sequence of indexes into the MIDI format:</p>
+<pre class="programlisting">music_data = generated_music[0].cpu().numpy()
+file_path = 'files/musicTrans.midi'
+decode_midi(music_data, file_path=file_path)</pre>
+<p class="body">We employ the <code class="fm-code-in-text">decode_midi()</code> function in the processor.py module to transform the generated sequence of indexes into a MIDI file, musicTrans.midi, on your computer. Open both files, prompt.midi and musicTrans.midi, on your computer and listen to them. The music from prompt.midi lasts about 10 seconds. The music from musicTrans.midi lasts about 40 seconds, with the final 30 seconds being new music generated by the music Transformer. The generated music should sound like the music piece on my website: <a class="url" href="https://mng.bz/x6dg">https://mng.bz/x6dg</a>.<a id="idIndexMarker085"/></p>
+<p class="body">The preceding code block may produce output similar to the following:</p>
+<pre class="programlisting">info removed pitch: 52
+info removed pitch: 83
+info removed pitch: 55
+info removed pitch: 68</pre>
+<p class="body">In the generated music, there may be instances where certain notes need to be removed. For example, if the generated music piece attempts to turn off note 52, but note 52 was never turned on initially, then we cannot turn it off. Therefore, we need to remove such notes.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 14.3</p>
+<p class="fm-sidebar-text">Generate a piece of music consisting of 1,200 notes using the trained Music Transformer model, keeping the temperature parameter at 1. Use the sequence of indexes from the file prompt2.midi you just generated in exercise 14.2 as the prompt. Save the generated music in a file named musicTrans2.midi on your computer.</p>
+</div>
+<p class="body">You can increase the creativity of the music by setting the temperature argument to a value greater than 1, as follows:</p>
+<pre class="programlisting">file_path = "files/prompt.midi"
+prompt = torch.tensor(encode_midi(file_path))
+generated_music=sample(prompt, seq_length=1000,temperature=1.5)
+music_data = generated_music[0].cpu().numpy()
+file_path = 'files/musicHiTemp.midi'
+decode_midi(music_data, file_path=file_path)</pre>
+<p class="body">We set the temperature to 1.5. The generated music is saved as musicHiTemp.midi on your computer. Open the file and listen to the generated music to see if you can discern any differences compared to the music in the file musicTrans.midi.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 14.4</p>
+<p class="fm-sidebar-text">Generate a piece of music consisting of 1,000 indexes using the trained Music Transformer model, setting the temperature parameter to 0.7. Use the sequence of indexes in the file prompt.midi as the prompt. Save the generated music in a file named musicLowTemp.midi on your computer. Open this file to listen to the generated music and see if there are any discernible differences between the new piece of music and the music in the file musicTrans.midi.</p>
+</div>
+<p class="body"><a id="marker-340"/>In this chapter, you’ve learned how to construct and train a music Transformer from scratch, based on the decoder-only Transformer architecture you used in earlier chapters. In the next chapter, you’ll explore diffusion-based models, which are at the heart of text-to-image Transformers such as OpenAI’s DALL-E 2 and Google’s Imagen. <a id="idIndexMarker086"/><a id="idIndexMarker087"/><a id="idIndexMarker088"/></p>
+<h2 class="fm-head" id="heading_id_17">Summary</h2>
+<ul class="calibre5">
+<li class="fm-list-bullet">
+<p class="list">The performance-based representation of music enables us to represent a music piece as a sequence of notes, which include control messages and velocity values. These notes can be further reduced to four kinds of musical events: note-on, note-off, time-shift, and velocity. Each event type can assume various values. Consequently, we can transform a music piece into a sequence of tokens and then into indexes.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">A music Transformer adapts the Transformer architecture, originally designed for NLP tasks, for music generation. This model is designed to generate sequences of musical notes by learning from a large dataset of existing music. It is trained to predict the next note in a sequence based on previous notes, by recognizing patterns, structures, and relationships among various musical elements in the training data.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">Just as in text generation, we can use temperature to regulate the creativity of the generated music.</p>
+</li>
+</ul>
+<hr class="calibre6"/>
+<p class="fm-footnote"><a id="footnote-002"/><sup class="footnotenumber1"><a class="url1" href="#footnote-002-backlink">1</a></sup>  Chloe Veltman, March 15, 2024. “Just because your favorite singer is dead doesn’t mean you can’t see them ‘live.’” <a class="url" href="https://mng.bz/r1de">https://mng.bz/r1de</a>.</p>
+<p class="fm-footnote"><a id="footnote-001"/><sup class="footnotenumber1"><a class="url1" href="#footnote-001-backlink">2</a></sup>  Cheng-Zhi Anna Huang, Ashish Vaswani, Jakob Uszkoreit, Noam Shazeer, Ian Simon, Curtis Hawthorne, Andrew M. Dai, Matthew D. Hoffman, Monica Dinculescu, and Douglas Eck, 2018, “Music Transformer.” <a class="url" href="https://arxiv.org/abs/1809.04281">https://arxiv.org/abs/1809.04281</a>.</p>
+<p class="fm-footnote"><a id="footnote-000"/><sup class="footnotenumber1"><a class="url1" href="#footnote-000-backlink">3</a></sup>  See, for example, Hawthorne et al., 2018, “Enabling Factorized Piano Music Modeling and Generation with the MAESTRO Dataset.” <a class="url" href="https://arxiv.org/abs/1810.12247">https://arxiv.org/abs/1810.12247</a>.</p>
+</div></body></html>

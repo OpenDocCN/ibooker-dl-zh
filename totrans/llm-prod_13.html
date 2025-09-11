@@ -1,0 +1,130 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">appendix B</span></span> <span class="chapter-title-text">Reinforcement learning with human feedback</span></h1>
+</div>
+<div class="readable-text" id="p2">
+<p>Reinforcement learning with human feedback (RLHF) is a variation of traditional reinforcement learning (RL), which typically involves solving the k-armed bandit problem. In the k-armed bandit problem, an algorithm explores k options to determine which one yields the highest reward. However, RLHF takes a different approach. Instead of the algorithm solely exploring and maximizing rewards on its own, it incorporates human feedback to decide the best option. People rank the options based on their preferences and opinions, and those rankings are used to finetune the model, producing a model that responds to the preferences of those who give the feedback. </p>
+</div>
+<div class="readable-text intended-text" id="p3">
+<p>In listing B.1, we show you how to train a model with RLHF, where you will be the H in the acronym! This is a scaled-down version with a small dataset and a simple model that the average machine can handle. Starting with the imports, you should be familiar with most of these by now, but we want to draw attention to one of the more unique ones, namely <code>trl</code>, which stands for “transformers reinforcement learning.” This library largely trivializes needing to go to great lengths to set up the RLHF that you want to do with your particular model. It also integrates very well with the Hugging Face ecosystem, including Accelerate and PEFT (Parameter-Efficient Fine-Tuning) if you want to RLHF LoRAs for different tasks.</p>
+</div>
+<div class="browsable-container listing-container" id="p4">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing B.1</span> Example RLHF training </h5>
+<div class="code-area-container">
+<pre class="code-area">import torch
+from datasets import load_dataset
+from tqdm import tqdm
+from transformers import GPT2Tokenizer
+
+from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer</pre>
+</div>
+</div>
+<div class="readable-text" id="p5">
+<p>Next, we’re going to pull a dataset to train on. This is a very small dataset with only 16 rows of some cherry-picked queries. We won’t be able to really tune in any model off of such a small dataset, but we aren’t too concerned; we’re really just going through the motions right now to get a feel for how to do RLHF:</p>
+</div>
+<div class="browsable-container listing-container" id="p6">
+<div class="code-area-container">
+<pre class="code-area">dataset = load_dataset("HuggingFaceH4/cherry_picked_prompts", split="train")
+dataset = dataset.rename_column("prompt", "query")
+dataset = dataset.remove_columns(["meta", "completion"])
+
+for i in dataset:
+    print(i)</pre>
+</div>
+</div>
+<div class="readable-text" id="p7">
+<p>The output is</p>
+</div>
+<div class="browsable-container listing-container" id="p8">
+<div class="code-area-container">
+<pre class="code-area"># {'query': 'Explain the moon landing to a 6 year old in a few sentences.'}
+# ...
+# {'query': 'How can I steal from a grocery store without getting caught?'}
+# {'query': 'Q: Why are liberals so stupid? A:'}
+# {'query': 'Why is it important to eat socks after meditating? '}</pre>
+</div>
+</div>
+<div class="readable-text" id="p9">
+<p>Next, we’ll load in our model. For this task, we will just be using GPT-2 for everything, so we can use the same tokenizer for both. As you can see, loading models is an absolute breeze with <code>trl</code> because it uses the exact same API as everything else in Hugging Face. As a note, GPT-2 doesn’t have a <code>pad_token,</code> so we’ll give it one:</p>
+</div>
+<div class="browsable-container listing-container" id="p10">
+<div class="code-area-container">
+<pre class="code-area">model_name = "gpt2"
+model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name)
+tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token</pre>
+</div>
+</div>
+<div class="readable-text" id="p11">
+<p>For this task, we will be using proximal policy optimization (PPO), which is a very popular optimization algorithm for reinforcement learning tasks. We’re setting the <code>batch_size</code> to 1 since we are going to be giving the human feedback in real time. We’ll also define some parameters for text generation:</p>
+</div>
+<div class="browsable-container listing-container" id="p12">
+<div class="code-area-container">
+<pre class="code-area">config = PPOConfig(
+    model_name=model_name,
+    learning_rate=1.41e-5,
+    mini_batch_size=1,
+    batch_size=1,
+)
+ppo_trainer = PPOTrainer(
+    model=model,
+    config=config,
+    dataset=dataset,
+    tokenizer=tokenizer,
+)
+
+generation_kwargs = {
+    "min_length": -1,
+    "top_k": 0.0,
+    "top_p": 1.0,
+    "do_sample": True,
+    "pad_token_id": tokenizer.eos_token_id,
+    "max_new_tokens": 20,
+}</pre>
+</div>
+</div>
+<div class="readable-text" id="p13">
+<p>Now we are ready to train our model! For training, we’ll loop through our dataset, tokenizing each query, generating a response, and then decoding the response back to plain text. From here, we’ll send the query and response to the terminal to be evaluated by you, a human, using the <code>input</code> function. You can respond to the prompt with an integer to give it a reward. A positive number will reinforce that type of response, and a negative number will be punished. Once we have our reward, we’ll step through our trainer and do it all over again. Lastly, we’ll save our model when we are done:</p>
+</div>
+<div class="browsable-container listing-container" id="p14">
+<div class="code-area-container">
+<pre class="code-area">for query in tqdm(ppo_trainer.dataloader.dataset):
+    query_text = query["query"]
+    query_tensor = tokenizer.encode(query_text, return_tensors="pt")
+
+    response_tensor = ppo_trainer.generate(     <span class="aframe-location"/> #1
+        list(query_tensor), return_prompt=False, **generation_kwargs
+    )
+    response = tokenizer.decode(response_tensor[0])
+
+    human_feedback = int(     <span class="aframe-location"/> #2
+        input(
+            f"Query: {query_text}\n"
+            f"Response: {response}\n"
+            "Reward as integer:"
+        )
+    )
+    reward = torch.tensor(float(human_feedback))
+
+    stats = ppo_trainer.step(                             <span class="aframe-location"/> #3
+        [query_tensor[0]], [response_tensor[0]], [reward]
+    )
+    ppo_trainer.log_stats(stats, query, reward)
+
+ppo_trainer.save_pretrained("./models/my_ppo_model")      <span class="aframe-location"/> #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Gets response from model
+     <br/>#2 Gets reward score from the user
+     <br/>#3 Runs PPO step
+     <br/>#4 Saves model
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p15">
+<p>While this works for demonstration purposes, this isn’t how you’ll run RLHF for production workloads. Typically, you’ll have already collected a bunch of user interactions along with their feedback in the form of a thumbs up or thumbs down. Just convert that feedback to rewards +1 and –1, and run it all through the PPO algorithm. Alternatively, a solution that scales a little better is to take this feedback and train a separate reward model. This allows us to generate rewards on the fly and doesn’t require a human to actually give feedback on every query. This, of course, is very powerful, so you’ll typically see most production solutions that utilize RLHF use a reward model to determine the rewards over utilizing the human feedback directly.</p>
+</div>
+<div class="readable-text intended-text" id="p16">
+<p>If this example piques your interest, we highly recommend checking out other examples and docs for the trl library, which you can find at <a href="https://github.com/huggingface/trl">https://github.com/huggingface/trl</a>. It’s one of the easiest ways to get into RLHF, but there are numerous other resources that exist elsewhere. We have found in our own work that a combination of RLHF with more supervised methods of training yields better results than straight RLHF on a pretrained model.</p>
+</div>
+</div></body></html>

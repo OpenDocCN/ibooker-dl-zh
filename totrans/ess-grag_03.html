@@ -1,0 +1,465 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">4</span> </span> <span class="chapter-title-text">Generating Cypher queries from natural language questions</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">The basics of query language generation</li>
+<li class="readable-text" id="p3">Where query language generation fits in the RAG pipeline</li>
+<li class="readable-text" id="p4">Useful practices for query language generation</li>
+<li class="readable-text" id="p5">Implementing a text2cypher retriever using a base model</li>
+<li class="readable-text" id="p6">Specialized (finetuned) LLMs for text2cypher</li>
+</ul>
+</div>
+<div class="readable-text" id="p7">
+<p>We’ve covered a lot of ground in the previous chapters. We’ve learned how to build a knowledge graph, extract information from text, and use that information to answer questions. We’ve also looked into how we can extend and improve plain vector search retrieval by using hardcoded Cypher queries to get more relevant context to the LLM. In this chapter, we will go a step further and learn how to generate Cypher queries from natural language questions. This will allow us to build a more flexible and dynamic retrieval system that can adapt to different types of questions and knowledge graphs.</p>
+</div>
+<div class="readable-text print-book-callout" id="p8">
+<p><span class="print-book-callout-head">Note</span>  In the implementation of this chapter, we use what we call the “Movies dataset.” See the appendix for more information on the dataset and various ways to load it.</p>
+</div>
+<div class="readable-text" id="p9">
+<h2 class="readable-text-h2"><span class="num-string">4.1</span> The basics of query language generation</h2>
+</div>
+<div class="readable-text" id="p10">
+<p>When we talk about the basics of query language generation, we are referring to the process of converting a natural language question into a query language that can be executed on a database. More specifically, we are interested in generating Cypher queries from natural language questions. Most LLMs know what Cypher is and know the basic syntax of the language. The main challenge in this process is to generate a query that is both correct and relevant to the question being asked. This requires understanding the semantics of the question, as well as the schema of the knowledge graph being queried. </p>
+</div>
+<div class="readable-text intended-text" id="p11">
+<p>If we don’t provide a schema of the knowledge graph, the LLM can only assume the names of nodes, relationships, and properties. When a schema is provided, it acts as a mapping between the semantics of the user question and the graph model used---which labels are being used on nodes, the relationship types that exist, the properties that are available, and which relationship types the nodes are connected to.</p>
+</div>
+<div class="readable-text intended-text" id="p12">
+<p>The workflow for generating Cypher queries from natural language questions can be broken down into the following steps (figure 4.1):</p>
+</div>
+<ul>
+<li class="readable-text" id="p13"> Retrieve the question from the user. </li>
+<li class="readable-text" id="p14"> Retrieve the schema of the knowledge graph. </li>
+<li class="readable-text" id="p15"> Define other useful information like terminology mappings, format instructions, and few-shot examples. </li>
+<li class="readable-text" id="p16"> Generate the prompt for the LLM. </li>
+<li class="readable-text" id="p17"> Pass the prompt to the LLM to generate the Cypher query. <span class="aframe-location"/> </li>
+</ul>
+<div class="browsable-container figure-container" id="p18">
+<img alt="figure" height="750" src="../Images/4-1.png" width="1100"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.1</span> Workflow for generating Cypher queries from natural language questions</h5>
+</div>
+<div class="readable-text" id="p19">
+<h2 class="readable-text-h2"><span class="num-string">4.2</span> Where query language generation fits in the RAG pipeline</h2>
+</div>
+<div class="readable-text" id="p20">
+<p>In earlier chapters, we’ve seen how we can get relevant responses from knowledge graphs by performing a vector similarity search on unstructured parts of the graphs. We’ve also seen how we can use vector similarity search extended with hardcoded Cypher queries to get more relevant context to the LLM. One limitation of these techniques is that they’re restricted in what type of questions they can answer. </p>
+</div>
+<div class="readable-text intended-text" id="p21">
+<p>Consider the user question, “List the top three highest-rated movies directed by Steven Spielberg and their average score.” This can never be answered by a vector similarity search, as it requires a specific type of query to be executed on the database where the Cypher query could be something like the following (assuming a reasonable schema).</p>
+</div>
+<div class="browsable-container listing-container" id="p22">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.1</span> Cypher query</h5>
+<div class="code-area-container">
+<pre class="code-area">MATCH (:Reviewer)-[r:REVIEWED]-&gt;(m:Movie)&lt;-[:DIRECTED]-(:Director {name: 'Steven Spielberg'})
+RETURN m.title, AVG(r.score) AS avg_rating
+ORDER BY avg_rating DESC
+LIMIT 3</pre>
+</div>
+</div>
+<div class="readable-text" id="p23">
+<p>This query is not so much about the most similar nodes in the graph as aggregating data in a specific way. What this illustrates is that we want to use generated Cypher for certain types of queries---when we’re looking for things other than just the most similar nodes in the graph or when we want to aggregate data in some way. In the next chapter, we will look at how we can create an agentic system where we can provide multiple retrievers and use the most fitting one for each user question to be able to deliver the best response to the user.</p>
+</div>
+<div class="readable-text intended-text" id="p24">
+<p>Text2cypher could also function as a “catchall” retriever for the types of questions where there’s no real good match for any of the other retrievers in the system. </p>
+</div>
+<div class="readable-text" id="p25">
+<h2 class="readable-text-h2"><span class="num-string">4.3</span> Useful practices for query language generation</h2>
+</div>
+<div class="readable-text" id="p26">
+<p>When generating Cypher queries from natural language questions, there are a few things to keep in mind to ensure that the generated queries are correct and relevant. The LLMs tend to make mistakes when generating Cypher queries, especially when the input questions are complex or ambiguous or if the database schema elements aren’t semantically named. </p>
+</div>
+<div class="readable-text" id="p27">
+<h3 class="readable-text-h3"><span class="num-string">4.3.1</span> Using few-shot examples for in-context learning</h3>
+</div>
+<div class="readable-text" id="p28">
+<p>Few-shot examples are a great way to improve the performance of LLMs for text2cypher. What this means is that we can provide the LLM with a few examples of questions and their corresponding Cypher queries, and the LLM will learn to generate similar queries for new questions. In contrast, zero-shot examples are when we don’t provide any examples to the LLM, and it has to generate the query with no hints at all. </p>
+</div>
+<div class="readable-text intended-text" id="p29">
+<p>The few-shot examples are specific to the knowledge graph being queried, so they need to be created manually for each knowledge graph. This is very useful when you recognize that the LLM misinterprets the schema or often makes the same type of mistake (expects a property when it should be a traversal, etc.).</p>
+</div>
+<div class="readable-text intended-text" id="p30">
+<p>Let’s assume that you detect that the LLM is trying to read the country of production of a movie, and it’s looking for a property on the movie node, but the country is actually a node in the graph. You can then add a few-shot example to the prompt to let the LLM know how to get the country name:</p>
+</div>
+<div class="readable-text prompt" id="p31">
+<p>In what country was the movie <em>The Matrix</em> produced?</p>
+</div>
+<div class="browsable-container listing-container" id="p32">
+<div class="code-area-container">
+<pre class="code-area">MATCH (m:Movie {title: 'The Matrix'}) RETURN m.country</pre>
+</div>
+</div>
+<div class="readable-text" id="p33">
+<p>This would be fixed by adding the following to the few-shot examples in the prompt to the LLM:</p>
+</div>
+<div class="readable-text prompt" id="p34">
+<p>In what country was the movie <em>The Matrix</em> produced?</p>
+</div>
+<div class="readable-text prompt" id="p35">
+<p>Examples</p>
+</div>
+<div class="readable-text prompt" id="p36">
+<p>Question: In what country was the movie <em>Ready Player One</em> produced?</p>
+</div>
+<div class="readable-text prompt" id="p37">
+<p>Cypher: MATCH (m:Movie { title: 'Ready Player One' })-[:PRODUCED_IN]<span class="seqoe-symbol">→</span>(c:Country) RETURN c.name</p>
+</div>
+<div class="browsable-container listing-container" id="p38">
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">MATCH (m:Movie {title: 'The Matrix'})-[:PRODUCED_IN]-&gt;(c:Country)
+<span class="">↪</span> RETURN c.name</pre>
+</div>
+</div>
+<div class="readable-text" id="p39">
+<p>This would not only fix the issue for this specific question but also for similar questions now that we have a clear example to let the LLM see a pattern to get a country name. </p>
+</div>
+<div class="readable-text" id="p40">
+<h3 class="readable-text-h3"><span class="num-string">4.3.2</span> Using database schema in the prompt to show the LLM the structure of the knowledge graph</h3>
+</div>
+<div class="readable-text" id="p41">
+<p>The schema of the knowledge graph is crucial for generating correct Cypher queries. There are several ways to describe the knowledge graph schema to an LLM, and according to our internal research at Neo4j, the format doesn’t matter that much. </p>
+</div>
+<div class="readable-text intended-text" id="p42">
+<p>The schema should be part of the prompt and make a clear case about what labels, relationship types, and properties are available in the graph:</p>
+</div>
+<div class="readable-text prompt" id="p43">
+<p>Graph database schema:</p>
+</div>
+<div class="readable-text prompt" id="p44">
+<p>Use only the provided relationship types and properties in the schema. Do not use any other relationship types or properties that are not provided in the schema.</p>
+</div>
+<div class="readable-text prompt" id="p45">
+<p>Node labels and properties:</p>
+</div>
+<div class="browsable-container listing-container" id="p46">
+<div class="code-area-container">
+<pre class="code-area">LabelA {property_a: STRING}</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p47">
+<p>Relationship types and properties:</p>
+</div>
+<div class="browsable-container listing-container" id="p48">
+<div class="code-area-container">
+<pre class="code-area">REL_TYPE {rel_prop: STRING}</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p49">
+<p>The relationships:</p>
+</div>
+<div class="browsable-container listing-container" id="p50">
+<div class="code-area-container">
+<pre class="code-area">(:LabelA)-[:REL_TYPE]-&gt;(:LabelB)
+(:LabelA)-[:REL_TYPE]-&gt;(:LabelC)</pre>
+</div>
+</div>
+<div class="readable-text" id="p51">
+<p>Whether you want to expose the complete knowledge graph to be queried or not might depend on how large the schema is and if it’s relevant for the use case. To automatically infer the schema from Neo4j could be expensive, depending on the size of the data, so it’s common to sample the database and infer the schema from that.</p>
+</div>
+<div class="readable-text intended-text" id="p52">
+<p>To infer the schema from Neo4j, we currently need to use procedures from the APOC library that’s free and available both within Neo4j’s SaaS offering Aura and in the other distributions of Neo4j. The following listing shows how you can infer the schema from a Neo4j database. </p>
+</div>
+<div class="readable-text print-book-callout" id="p53">
+<p><span class="print-book-callout-head">Tip</span>  You can read more about APOC here: <a href="https://neo4j.com/docs/apoc/">https://neo4j.com/docs/apoc/</a>.</p>
+</div>
+<div class="browsable-container listing-container" id="p54">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.2</span> Inferring schema from Neo4j</h5>
+<div class="code-area-container">
+<pre class="code-area">NODE_PROPERTIES_QUERY = """
+CALL apoc.meta.data()
+YIELD label, other, elementType, type, property
+WHERE NOT type = "RELATIONSHIP" AND elementType = "node"
+WITH label AS nodeLabels, collect({property:property, type:type}) AS properties
+RETURN {labels: nodeLabels, properties: properties} AS output
+"""
+
+REL_PROPERTIES_QUERY = """
+CALL apoc.meta.data()
+YIELD label, other, elementType, type, property
+WHERE NOT type = "RELATIONSHIP" AND elementType = "relationship"
+WITH label AS relType, collect({property:property, type:type}) AS properties
+RETURN {type: relType, properties: properties} AS output
+"""
+
+REL_QUERY = """
+CALL apoc.meta.data()
+YIELD label, other, elementType, type, property
+WHERE type = "RELATIONSHIP" AND elementType = "node"
+UNWIND other AS other_node
+RETURN {start: label, type: property, end: toString(other_node)} AS output
+"""</pre>
+</div>
+</div>
+<div class="readable-text" id="p55">
+<p>With these queries, we can now get the schema of the graph database and use it in the prompt to the LLM. Let’s run the queries and store the result in a structured way so we can generate the previous schema string later.</p>
+</div>
+<div class="browsable-container listing-container" id="p56">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.3</span> Running the schema inference queries</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_structured_schema(driver: neo4j.Driver) -&gt; dict[str, Any]:
+    node_labels_response = driver.execute_query(NODE_PROPERTIES_QUERY)
+    node_properties = [
+        data["output"]
+        for data in [r.data() for r in node_labels_response.records]
+    ]
+
+    rel_properties_query_response = driver.execute_query(REL_PROPERTIES_QUERY)
+    rel_properties = [
+        data["output"]
+        for data in [r.data() for r in rel_properties_query_response.records]
+    ]
+
+
+    rel_query_response = driver.execute_query(REL_QUERY)
+    relationships = [
+        data["output"]
+        for data in [r.data() for r in rel_query_response.records]
+    ]
+
+    return {
+        "node_props": {el["labels"]: el["properties"] for el in node_properties},
+        "rel_props": {el["type"]: el["properties"] for el in rel_properties},
+        "relationships": relationships,
+    }</pre>
+</div>
+</div>
+<div class="readable-text" id="p57">
+<p>With this structured response in place, we can format the schema string as we want, and it’s also easy for us to explore and experiment with different formats in the prompt.</p>
+</div>
+<div class="readable-text intended-text" id="p58">
+<p>To get the format illustrated earlier in this chapter, we can use the function shown in the following listing. </p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.4</span> Formatting the schema string</h5>
+<div class="code-area-container">
+<pre class="code-area">def get_schema(structured_schema: dict[str, Any]) -&gt; str:
+    def _format_props(props: list[dict[str, Any]]) -&gt; str:
+        return ", ".join([f"{prop['property']}: {prop['type']}" for prop in props])
+
+    formatted_node_props = [
+        f"{label} {{{_format_props(props)}}}"
+        for label, props in structured_schema["node_props"].items()
+    ]
+
+    formatted_rel_props = [
+        f"{rel_type} {{{_format_props(props)}}}"
+        for rel_type, props in structured_schema["rel_props"].items()
+    ]
+
+    formatted_rels = [
+        f"(:{element['start']})-[:{element['type']}]-&gt;(:{element['end']})"
+        for element in structured_schema["relationships"]
+    ]
+
+    return "\n".join(
+        [
+            "Node labels and properties:",
+            "\n".join(formatted_node_props),
+            "Relationship types and properties:",
+            "\n".join(formatted_rel_props),
+            "The relationships:",
+            "\n".join(formatted_rels),
+        ]
+    )</pre>
+</div>
+</div>
+<div class="readable-text" id="p60">
+<p>With this function, we can now generate the schema string that we can use in the prompt to the LLM.</p>
+</div>
+<div class="readable-text" id="p61">
+<h3 class="readable-text-h3"><span class="num-string">4.3.3</span> Adding terminology mapping to semantically map the user question to the schema</h3>
+</div>
+<div class="readable-text" id="p62">
+<p>The LLM needs to know how to map the terminology used in the question to the terminology used in the schema. A well-designed graph schema uses nouns and verbs for labels and relationship types and adjectives and nouns for properties. Even if that’s the case, the LLMs can sometimes get confused about what to use where. </p>
+</div>
+<div class="readable-text print-book-callout" id="p63">
+<p><span class="print-book-callout-head">Note</span>  These mappings are knowledge graph specific and should be part of the prompt; they would be hard to reuse between different knowledge graphs.</p>
+</div>
+<div class="readable-text" id="p64">
+<p>The terminology mappings are something that probably will evolve over time as you detect problems with the generated queries due to the LLM not understanding the schema correctly. </p>
+</div>
+<div class="readable-text prompt" id="p65">
+<p>TERMINOLOGY MAPPING:</p>
+</div>
+<div class="readable-text prompt" id="p66">
+<p>Persons: When a user asks about a person by trade, they are referring to a node with the label Person. Movies: When a user asks about a film or movie, they are referring to a node with the label Movie.</p>
+</div>
+<div class="readable-text" id="p67">
+<h3 class="readable-text-h3"><span class="num-string">4.3.4</span> Format instructions</h3>
+</div>
+<div class="readable-text" id="p68">
+<p>Different LLMs output the response in different ways. Some of them put code tags around the Cypher query, and some of them don’t. Some of them add text before the Cypher query; some of them don’t, etc. </p>
+</div>
+<div class="readable-text intended-text" id="p69">
+<p>To have them all output the same way, you can add format instructions to the prompt. Useful instructions are to try to get the LLMs to only output the Cypher query and nothing else. </p>
+</div>
+<div class="readable-text prompt" id="p70">
+<p>FORMAT INSTRUCTIONS:</p>
+</div>
+<div class="readable-text prompt" id="p71">
+<p>Do not include any explanations or apologies in your responses. Do not respond to any questions that might ask anything else than for you to construct a Cypher statement. Do not include any text except the generated Cypher statement. ONLY RESPOND WITH CYPHER, NO CODE BLOCKS.</p>
+</div>
+<div class="readable-text" id="p72">
+<h2 class="readable-text-h2"><span class="num-string">4.4</span> Implementing a text2cypher generator using a base model</h2>
+</div>
+<div class="readable-text" id="p73">
+<p>Let’s put all of this into practice and implement a text2cypher generator using a base model. The task here is basically forming a prompt that includes the schema, terminology mappings, format instructions, and few-shot examples to make our intention clear to the LLM. </p>
+</div>
+<div class="readable-text intended-text" id="p74">
+<p>In the remainder of this chapter, we will implement a text2cypher generator using the Neo4j Python driver and the OpenAI API. To follow along, you’ll need access to a running, blank Neo4j instance. This can be a local installation or a cloud-hosted instance; just make sure it’s empty. You can follow the implementation directly in the accompanying Jupyter notebook available here: <a href="https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch04.ipynb">https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch04.ipynb</a>.</p>
+</div>
+<div class="readable-text intended-text" id="p75">
+<p>Let’s dive in.</p>
+</div>
+<div class="browsable-container listing-container" id="p76">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.5</span> Prompt template</h5>
+<div class="code-area-container">
+<pre class="code-area">prompt_template = """
+Instructions:
+Generate Cypher statement to query a graph database to get the data to answer the following user question.
+
+Graph database schema:
+Use only the provided relationship types and properties in the schema.
+Do not use any other relationship types or properties that are not provided in the schema.
+{schema}
+
+Terminology mapping:
+This section is helpful to map terminology between the user question and the graph database schema.
+{terminology}
+Examples:
+The following examples provide useful patterns for querying the graph database.
+{examples}
+
+Format instructions:
+Do not include any explanations or apologies in your responses.
+Do not respond to any questions that might ask anything else than for you to
+construct a Cypher statement.
+Do not include any text except the generated Cypher statement.
+ONLY RESPOND WITH CYPHER—NO CODE BLOCKS.
+
+User question: {question}
+"""</pre>
+</div>
+</div>
+<div class="readable-text" id="p77">
+<p>With this prompt template, we can now generate the prompt for the LLM. Let’s assume we have the following user question, schema, terminology mappings, and few-shot examples.</p>
+</div>
+<div class="browsable-container listing-container" id="p78">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.6</span> Full prompt example</h5>
+<div class="code-area-container">
+<pre class="code-area">question = "Who directed the most movies?"
+
+schema_string = get_schema(neo4j_driver)
+
+terminology_string = """
+Persons: When a user asks about a person by trade like actor, writer, director, producer,  or reviewer, they are referring to a node with the label 'Person'.
+Movies: When a user asks about a film or movie, they are referring to a node with the label Movie.
+"""
+
+examples = [["Who are the two people acted in most movies together?", "MATCH (p1:Person)-[:ACTED_IN]-&gt;(m:Movie)&lt;-[:ACTED_IN]-(p2:Person) WHERE p1 &lt;&gt; p2 RETURN p1.name, p2.name, COUNT(m) AS movieCount ORDER BY movieCount DESC LIMIT 1"]]
+
+full_prompt = prompt_template.format(question=question, schema=schema_string, terminology=terminology_string,examples="\n".join([f"Question: {e[0]}\nCypher: {e[1]}" for i, e in enumerate(examples)]))
+print(full_prompt)</pre>
+</div>
+</div>
+<div class="readable-text" id="p79">
+<p>If we execute this example, the prompt output would look like this:</p>
+</div>
+<div class="readable-text prompt" id="p80">
+<p>Instructions: Generate Cypher statement to query a graph database to get the data to answer the following user question.</p>
+</div>
+<div class="readable-text prompt" id="p81">
+<p>Graph database schema: Use only the provided relationship types and properties in the schema. Do not use any other relationship types or properties that are not provided in the schema. Node properties:</p>
+</div>
+<div class="browsable-container listing-container" id="p82">
+<div class="code-area-container">
+<pre class="code-area">Movie {tagline: STRING, title: STRING, released: INTEGER}
+Person {born: INTEGER, name: STRING}</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p83">
+<p>Relationship properties:</p>
+</div>
+<div class="browsable-container listing-container" id="p84">
+<div class="code-area-container">
+<pre class="code-area">ACTED_IN {roles: LIST}
+REVIEWED {summary: STRING, rating: INTEGER}</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p85">
+<p>The relationships:</p>
+</div>
+<div class="browsable-container listing-container" id="p86">
+<div class="code-area-container">
+<pre class="code-area">(:Person)-[:ACTED_IN]-&gt;(:Movie)
+(:Person)-[:DIRECTED]-&gt;(:Movie)
+(:Person)-[:PRODUCED]-&gt;(:Movie)
+(:Person)-[:WROTE]-&gt;(:Movie)
+(:Person)-[:FOLLOWS]-&gt;(:Person)
+(:Person)-[:REVIEWED]-&gt;(:Movie)</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p87">
+<p>Terminology mapping: This section is helpful to map terminology between the user question and the graph database schema.</p>
+</div>
+<div class="readable-text prompt" id="p88">
+<p>Persons: When a user asks about a person by trade like actor, writer, director, producer, or reviewer, they are referring to a node with the label 'Person'. Movies: When a user asks about a film or movie, they are referring to a node with the label Movie.</p>
+</div>
+<div class="readable-text prompt" id="p89">
+<p>Examples: The following examples provide useful patterns for querying the graph database. Question: Who are the two people who have acted in the most movies together?</p>
+</div>
+<div class="browsable-container listing-container" id="p90">
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">Cypher: MATCH (p1:Person)-[:ACTED_IN]-&gt;(m:Movie)&lt;-[:ACTED_IN]-(p2:Person)
+<span class="">↪</span> WHERE p1 &lt;&gt; p2 RETURN p1.name, p2.name, COUNT(m) AS movieCount
+<span class="">↪</span> ORDER BY movieCount DESC LIMIT 1</pre>
+</div>
+</div>
+<div class="readable-text prompt" id="p91">
+<p>Format instructions: Do not include any explanations or apologies in your responses. Do not respond to any questions that might ask anything else than for you to construct a Cypher statement. Do not include any text except the generated Cypher statement. ONLY RESPOND WITH CYPHER—NO CODE BLOCKS.</p>
+</div>
+<div class="readable-text prompt" id="p92">
+<p>User question: Who has directed the most movies?</p>
+</div>
+<div class="readable-text" id="p93">
+<p>With this prompt, we can now generate the Cypher query for the user’s question. You can try this by copying the prompt to an LLM and see what it generates. </p>
+</div>
+<div class="browsable-container listing-container" id="p94">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.7</span> Cypher query generated</h5>
+<div class="code-area-container">
+<pre class="code-area">MATCH (p:Person)-[:DIRECTED]-&gt;(m:Movie)
+RETURN p.name, COUNT(m) AS movieCount
+ORDER BY movieCount
+DESC LIMIT 1</pre>
+</div>
+</div>
+<div class="readable-text" id="p95">
+<h2 class="readable-text-h2"><span class="num-string">4.5</span> Specialized (finetuned) LLMs for text2cypher</h2>
+</div>
+<div class="readable-text" id="p96">
+<p>At Neo4j, we are continuously working on improving the performance of our LLMs for text2cypher via finetuning. Our open source training data at Hugging Face is available at <a href="https://huggingface.co/datasets/neo4j/text2cypher">https://huggingface.co/datasets/neo4j/text2cypher</a>. We also provide finetuned models based on open source LLMs (like Gemma2, Llama 3.1) at <a href="https://huggingface.co/neo4j">https://huggingface.co/neo4j</a>. </p>
+</div>
+<div class="readable-text intended-text" id="p97">
+<p>These models are still pretty far behind the performance of finetuned larger models like the latest GPT and Gemini models, but they are much more efficient and can be used in production systems where the larger models are too slow. Go ahead and try them out and refer back to the few-shot examples, schema, terminology mappings, and format instructions to improve the performance of the models. There’s more information about our finetuning process and learnings at <a href="https://mng.bz/MwDW">https://mng.bz/MwDW</a>, <a href="https://mng.bz/a9v7">https://mng.bz/a9v7</a>, and <a href="https://mng.bz/yNWB">https://mng.bz/yNWB</a>.</p>
+</div>
+<div class="readable-text" id="p98">
+<h2 class="readable-text-h2"><span class="num-string">4.6</span> What we’ve learned and what text2cypher enables</h2>
+</div>
+<div class="readable-text" id="p99">
+<p>With the code and information in this chapter, you should be able to implement a text2cypher retriever for your knowledge graph. You should be able to get it to generate correct Cypher queries for a wide range of questions, and to improve its performance by providing it with few-shot examples, schema, terminology mappings, and format instructions. </p>
+</div>
+<div class="readable-text intended-text" id="p100">
+<p>As you identify the types of questions it struggles with, you can add more few-shot examples to the prompt to help it learn how to generate the correct queries. Over time, you will notice that the quality of the generated queries improves and that the retriever becomes more reliable. </p>
+</div>
+<div class="readable-text" id="p101">
+<h2 class="readable-text-h2">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p102"> Query language generation fits in well with the RAG pipeline as a complement to other retrieval methods, especially when we want to aggregate data or get specific data from the graph.  </li>
+<li class="readable-text" id="p103"> Useful practices for query language generation include using few-shot examples, schema, terminology mappings, and format instructions. </li>
+<li class="readable-text" id="p104"> We can implement a text2cypher retriever using a base model and structure the prompt to the LLM. </li>
+<li class="readable-text" id="p105"> We can use specialized (finetuned) LLMs for text2cypher and improve their performance.  </li>
+</ul>
+</div></body></html>

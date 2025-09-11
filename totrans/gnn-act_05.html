@@ -1,0 +1,1628 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">4</span></span> <span class="chapter-title-text">Graph attention networks</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Understanding attention and how it’s applied to graph attention networks</li>
+<li class="readable-text" id="p3">Knowing when to use GAT and GATv2 layers in PyTorch Geometric</li>
+<li class="readable-text" id="p4">Using mini-batching via the <code>NeighborLoader</code> class</li>
+<li class="readable-text" id="p5">Implementing and applying graph attention networks layers in a spam detection problem</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>In this chapter, we extend our discussion of convolutional graph neural network (convolutional GNN) architectures by looking at a special variant of such models, the graph attention network (GAT). While these GNNs use convolution as introduced in the previous chapter, they extend this idea with an <em>attention mechanism</em> to highlight important nodes in the learning process [1, 2]. In contrast to the conventional convolutional GNN, which weights all nodes equally, the attention mechanism allows the GAT to learn what aspects in its training to put extra emphasis on.</p>
+</div>
+<div class="readable-text intended-text" id="p7">
+<p>As with convolution,<em> attention </em>is a widely used mechanism in deep learning outside of GNNs. Architectures that rely on attention (particularly <em>transformers</em>) have seen such success in addressing natural language problems that they now dominate the field. It remains to be seen if attention will have a similar effect in the graph world.</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>GATs shine when dealing with domains where some nodes have more importance than the graph structure suggests. Sometimes in a graph, there can be a single high-degree node that has an outsized importance on the rest of the graph, and the vanilla message passing (covered in the previous chapter) will likely capture its significance thanks to the node’s many neighbors. However, sometimes a node can have a large effect despite having a similar degree to other nodes. Some examples include social networks, where some members of a network have more influence on generating or spreading information and news; fraud detection, where a small set of actors and transactions drive deception; and anomaly detection, where a small subset of people, behaviors, or events will fall outside the norm [3–5]. GATs are especially well suited to these types of problems. </p>
+</div>
+<div class="readable-text intended-text" id="p9">
+<p>In this chapter, we’ll apply GATs to the domain of fraud detection. In our problem, we detect fake customer reviews from the Yelp website. For this, we use a network of user reviews derived from a dataset that contains Yelp reviews for hotels and restaurants in the Chicago area [6, 7]. </p>
+</div>
+<div class="readable-text intended-text" id="p10">
+<p>After an introduction to the problem and the dataset, we first train a baseline model without the graph structure before applying two versions of the GAT model to the problem. At the end, we discuss class imbalance and some ways to address this.</p>
+</div>
+<div class="readable-text intended-text" id="p11">
+<p>Code snippets will be used to explain the process, but the majority of code and annotation can be found in the repository. As with previous chapters, we provide a deeper dive into the theory in section 4.5 at the end of the chapter. </p>
+</div>
+<div class="readable-text print-book-callout" id="p12">
+<p><span class="print-book-callout-head">Note</span>  Code from this chapter can be found in notebook form at the GitHub repository (<a href="https://mng.bz/JYoP">https://mng.bz/JYoP</a>). Colab links and data from this chapter can be accessed in the same location.</p>
+</div>
+<div class="readable-text" id="p13">
+<h2 class="readable-text-h2"><span class="num-string">4.1</span> Detecting spam and fraudulent reviews</h2>
+</div>
+<div class="readable-text" id="p14">
+<p>On consumer-oriented websites and e-commerce platforms such as Yelp, Amazon, and Google Business Reviews, it’s common for user-generated reviews and ratings to accompany the presentation and description of a product or a service. In the United States, more than 90% of adults trust and rely on these reviews and ratings when making a purchase decision [3]. At the same time, many of these reviews are fake. Capital One estimated that 30% of online reviews weren’t real in 2024 [5]. In this chapter, we’re going to be training our model to detect fake reviews. </p>
+</div>
+<div class="readable-text intended-text" id="p15">
+<p>Spam or fraudulent review detection has been a well-trodden area in machine learning and natural language processing (NLP). As such, several datasets from primary consumer sites and platforms are available. In this chapter, we’re going to use review data from Yelp.com, a platform of user reviews and ratings that focuses on consumer services. On Yelp.com, users can look up local businesses in their proximity <span class="aframe-location"/>and browse basic information about the business and written feedback from users. Yelp uses internally developed tools and models to filter reviews based on their trustworthiness. The process we’ll use to approach the problem is shown in figure 4.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p16">
+<img alt="figure" height="594" src="../Images/4-1.png" width="862"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.1</span> We’ll tackle the fraudulent user review classification problem using both non-graph and graph data.</h5>
+</div>
+<div class="readable-text" id="p17">
+<p>First, we’ll establish baselines using non-GNN models and tabular data: logistic regression, XGBoost, and scikit-learn’s multilayer perceptron (MLP). Then, we’ll apply graph convolutional network (GCN) and GAT to the problem, introducing graph structural data.</p>
+</div>
+<div class="readable-text intended-text" id="p18">
+<p>This fraudulent review problem can be tackled as a node classification problem. We’ll use GAT to perform node classification of the Yelp reviews, sifting the fraudulent from the legitimate reviews. This classification is binary: “spam” or “not spam.” </p>
+</div>
+<div class="readable-text intended-text" id="p19">
+<p>We expect that the graph structural data and attention mechanism will give an edge to the attention-based GNN models. We’ll follow this process in this chapter:</p>
+</div>
+<ul>
+<li class="readable-text" id="p20"> Load and preprocess the dataset </li>
+<li class="readable-text" id="p21"> Define baseline models and results </li>
+<li class="readable-text" id="p22"> Implement the GAT solution and compare it to baseline results </li>
+</ul>
+<div class="readable-text" id="p23">
+<h2 class="readable-text-h2"><span class="num-string">4.2</span> Exploring the review spam dataset</h2>
+</div>
+<div class="readable-text" id="p24">
+<p>Derived from a broader Yelp review dataset, our data focuses on reviews from Chicago’s hotels and restaurants. It has also been preprocessed so that the data has a graph structure. This means we’re going to be using a specialized version of the Yelp Multirelational dataset, characterized by its graph structure and its focus on consumer reviews from many Chicago-based hotels and restaurants. The Yelp Multirelational dataset is derived from the Yelp Review dataset and processed into a graph. This dataset contains the following (final version of the dataset is summarized in table 4.1):</p>
+</div>
+<ul>
+<li class="readable-text" id="p25"> <em>45,954 nodes</em> —Each node represents an individual review, with 14.5% of them flagged as likely fraudulent and created by a bot to skew the reviews. </li>
+<li class="readable-text" id="p26"> <em>Preprocessed node features</em> —Our nodes come with 32 features that have been normalized to facilitate machine learning algorithms. </li>
+<li class="readable-text" id="p27"> <em>3,892,933 edges</em> —Edges connect reviews that have a common author or review a common business. While the original dataset had multiple types of relational edges, we use one with homogenous edges for easier analysis. </li>
+<li class="readable-text" id="p28"> <em>No user or business IDs</em> —Distinguishing IDs have been removed. </li>
+</ul>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p29">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.1</span> Overview of the Yelp Multirelational dataset </h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Yelp Review dataset for the city of Chicago processed into a graph, with node features based on review text and user data 
+       </div></th>
+<th/>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Number of nodes (reviews) <br/></td>
+<td>  45,954 <br/></td>
+</tr>
+<tr>
+<td>  Filtered (fraudulent) nodes <br/></td>
+<td>  14.5% <br/></td>
+</tr>
+<tr>
+<td>  Node features <br/></td>
+<td>  32 <br/></td>
+</tr>
+<tr>
+<td>  Total number of edges (edges are assumed to be homogenous in our analysis) <br/></td>
+<td>  3,846,979 <br/></td>
+</tr>
+<tr>
+<td>  Reviews with a common writer <br/></td>
+<td>  49,315 <br/></td>
+</tr>
+<tr>
+<td>  Reviews of a common business and written in the same month <br/></td>
+<td>  73,616 <br/></td>
+</tr>
+<tr>
+<td>  Reviews of a common business that share the same rating <br/></td>
+<td>  3,402,743 <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p30">
+<p>Next, table 4.2 shows examples of text reviews from this dataset, ordered by the star rating system.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p31">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.2</span> Sampling of reviews from the YelpChi dataset for one restaurant, in descending order by rating (5 being the highest)</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Rating (1–5) 
+       </div></th>
+<th>
+<div>
+         Date 
+       </div></th>
+<th>
+<div>
+         Review* 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  5 <br/></td>
+<td>  7/7/08 <br/></td>
+<td>  Perfection. Snack has become my favorite late lunch/early dinner spot. Make sure to try the butter beans!!! <br/></td>
+</tr>
+<tr>
+<td>  4 <br/></td>
+<td>  7/1/13 <br/></td>
+<td>  Ordered lunch for 15 from Snack last Friday. On time, nothing missing and the food was great. I have added it to the regular company lunch list, as everyone enjoyed their meal. <br/></td>
+</tr>
+<tr>
+<td>  3 <br/></td>
+<td>  12/8/14 <br/></td>
+<td>  The food at snack is a selection of popular Greek dishes. The appetizer tray is good as is the Greek salad. We were underwhelmed with the main courses. There are 4-5 tables here so it’s sometimes hard to get seated. <br/></td>
+</tr>
+<tr>
+<td>  2 <br/></td>
+<td>  9/10/13 <br/></td>
+<td>  Been meaning to try this place for a while-highly recommended by a friend. Had the tuna sandwic… . good but got TERRIBLY SICK afterword. Also, sage tea was nice. <br/></td>
+</tr>
+<tr>
+<td>  1 <br/></td>
+<td>  8/12/12 <br/></td>
+<td>  Lackluster service, soggy lukewarm spinach pie and two-day-old cucumber salad. Go to Local instead! <br/></td>
+</tr>
+<tr>
+<td>  *Spelling, grammar, and punctuation are uncorrected in these reviews. <br/></td>
+<td/>
+<td/>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p32">
+<h3 class="readable-text-h3"><span class="num-string">4.2.1</span> Explaining the node features</h3>
+</div>
+<div class="readable-text" id="p33">
+<p>Highlights of this dataset are its node features. These were extracted from available metadata such as ratings, timestamps, and review text. They are divided into the following:</p>
+</div>
+<ul>
+<li class="readable-text" id="p34"> Characteristics of the text review </li>
+<li class="readable-text" id="p35"> Characteristics of the reviewer </li>
+<li class="readable-text" id="p36"> Characteristics of the reviewed business </li>
+</ul>
+<div class="readable-text" id="p37">
+<p>These features are then further divided into behavioral and textual features:</p>
+</div>
+<ul>
+<li class="readable-text" id="p38"> Behavioral features highlight patterns of behavior and actions of the reviewers. </li>
+<li class="readable-text" id="p39"> Textual features are based on the text found in the reviews. </li>
+</ul>
+<div class="readable-text" id="p40">
+<p>The process for calculating these features was developed by Rayana and Akoglu [7] and Dou [9]. Taking the original formulas from Rayana and Akoglu, Dou preprocessed and normalized the feature data that we use in this example. A summary of the features is shown in figure 4.2. (For more details on definitions and how they were calculated, refer to the original paper [8].) These node features are summarized here: </p>
+</div>
+<ul>
+<li class="readable-text" id="p41"> Reviewer and business features: </li>
+</ul>
+<div class="readable-text list-body-item" id="p42">
+<p><em>Behavioral:</em></p>
+</div>
+<ul>
+<li class="buletless-item" style="list-style-type: none;">
+<ul>
+<li class="readable-text" id="p43"> <em>Max. number of reviews written in a day (MNR)</em> —High value suggests spam. </li>
+<li class="readable-text" id="p44"> <em>Ratio of positive reviews (4-5 star) (PR)</em> —High value suggests spam. </li>
+<li class="readable-text" id="p45"> <em>Ratio of negative reviews (1-2 star) (NR)</em> —High value suggests spam. </li>
+<li class="readable-text" id="p46"> <em>Avg. rating deviation (avgRD)</em> —High value suggests spam. </li>
+<li class="readable-text" id="p47"> <em>Weighted rating deviation (WRD)</em> —High value suggests spam. </li>
+<li class="readable-text" id="p48"> <em>Burstiness (BST)</em> —Specifically, the time frame between the user’s first and last review. High value suggests spam. </li>
+<li class="readable-text" id="p49"> <em>Entropy of rating distribution (ERD)</em> —Low value suggests spam. </li>
+<li class="readable-text" id="p50"> <em>Entropy of temporal gaps </em><em>D</em><em>t’s (ETG)</em> —Low value is spam indicative. </li>
+</ul></li>
+</ul>
+<div class="readable-text list-body-item" id="p51">
+<p><em>Text-based:</em></p>
+</div>
+<ul>
+<li class="buletless-item" style="list-style-type: none;">
+<ul>
+<li class="readable-text" id="p52"> <em>Avg. review length in words (RL)</em> —Low value suggests spam. </li>
+<li class="readable-text" id="p53"> <em>Avg./Max. content similarity</em> <em>measured with cosine similarity using a bag-of-bigrams approach (ACS, MCS)</em> —High value suggests spam. </li>
+</ul></li>
+<li class="readable-text" id="p54"> Review features: </li>
+</ul>
+<div class="readable-text list-body-item" id="p55">
+<p><em>Behavioral:</em></p>
+</div>
+<ul>
+<li class="buletless-item" style="list-style-type: none;">
+<ul>
+<li class="readable-text" id="p56"> <em>Rank order among all the reviews of a product</em> —Low value suggests spam. </li>
+<li class="readable-text" id="p57"> <em>Absolute rating deviation from product’s average rating (RD)</em> —High value is suspicious. </li>
+<li class="readable-text" id="p58"> <em>Extremity of rating (EXT)</em> —High values (4-5 stars) are considered spammy. </li>
+<li class="readable-text" id="p59"> <em>Thresholded rating deviation of review (DEV)</em> —High deviation is suspicious. </li>
+<li class="readable-text" id="p60"> <em>Early time frame (ETF)</em> —Reviews that appear too early are suspicious. </li>
+<li class="readable-text" id="p61"> <em>Singleton Reviewer Detection (ISR)</em> —If the review is a user’s sole review, it’s marked as suspicious. </li>
+</ul></li>
+</ul>
+<div class="readable-text list-body-item" id="p62">
+<p><em>Text-based:</em></p>
+</div>
+<ul>
+<li class="buletless-item" style="list-style-type: none;">
+<ul>
+<li class="readable-text" id="p63"> <em>Percentage of ALL-capital words (PCW)</em> —High values are suspicious. </li>
+<li class="readable-text" id="p64"> <em>Percentage of capital letters (PC)</em> —High values are suspicious. </li>
+<li class="readable-text" id="p65"> <em>Review length in words</em> —Low values are suspicious. </li>
+<li class="readable-text" id="p66"> <em>Ratio of 1st person pronouns like “I”, “my” (PP1)</em> —Low values are suspicious. </li>
+<li class="readable-text" id="p67"> <em>Ratio of exclamation sentences (RES)</em> —High values are suspicious. </li>
+<li class="readable-text" id="p68"> <em>Ratio of subjective words</em>—<em>Detected by sentiWordNet (SW)</em> —High values are suspicious. </li>
+<li class="readable-text" id="p69"> <em>Ratio of objective words</em>—<em>Detected by sentiWordNet (OW)</em> —Low values are suspicious. </li>
+<li class="readable-text" id="p70"> <em>Frequency of review</em>—<em>Approximated using locality-sensitive hashing (F)</em> —High values are suspicious. </li>
+<li class="readable-text" id="p71"> <em>Description length based on unigrams and bigrams (DLu, DLb)</em> —Low values are suspicious. </li>
+</ul></li>
+</ul>
+<div class="readable-text" id="p72">
+<p>Figure 4.2 gives a summary of the set of features.</p>
+</div>
+<div class="browsable-container figure-container" id="p74">
+<img alt="figure" height="924" src="../Images/4-2.png" width="1012"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.2</span> Summary definitions of node features used in the example. A label of high means that a high value of the data indicates a tendency toward spamminess. Likewise, a label of low means that a low value of the data indicates a tendency toward spamminess. (For more details on the derivation of these features, refer to [7].)</h5>
+</div>
+<div class="readable-text intended-text" id="p73">
+<p>This diverse mix of features requires varying degrees of intuition to interpret. These features not only help in understanding the behavior of reviewers but also in deducing the context and essence of the reviews. It’s clear that certain features, such as Singleton Reviewer Detection or Review Length in Words can provide immediate insights, while others, such as Entropy of Temporal Gaps <span class="regular-symbol">D</span>t’s, require a more considered understanding. Let’s next examine the distributions of these features present in the data.<span class="aframe-location"/></p>
+</div>
+<div class="readable-text" id="p75">
+<h3 class="readable-text-h3"><span class="num-string">4.2.2</span> Exploratory data analysis</h3>
+</div>
+<div class="readable-text" id="p76">
+<p>In this section, we download and explore the dataset with a focus on node features. Node features will serve as the main tabular features in our non-graph baseline models.</p>
+</div>
+<div class="readable-text intended-text" id="p77">
+<p>The dataset can be downloaded from Yingtong Dou’s GitHub repository (<a href="https://mng.bz/Pdyg">https://mng.bz/Pdyg</a>), compressed in a zip file. The unzipped file will be in MATLAB format. Using the <code>loadmat</code> function from the <code>scipy</code> library and a utility function from Dou’s repository, we can produce the objects we need to start (see listing 4.1):</p>
+</div>
+<ul>
+<li class="readable-text" id="p78"> A <code>features</code> object containing the node features </li>
+<li class="readable-text" id="p79"> A <code>labels</code> object containing the node labels </li>
+<li class="readable-text" id="p80"> An adjacency list object </li>
+</ul>
+<div class="browsable-container listing-container" id="p81">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.1</span> Load data</h5>
+<div class="code-area-container">
+<pre class="code-area">prefix = 'PATH_TO_MATLAB_FILE/'
+
+data_file = loadmat(prefix +  'YelpChi.mat')  <span class="aframe-location"/> #1
+
+labels = data_file['label'].flatten()         <span class="aframe-location"/> #2
+features = data_file['features'].todense().A   #2
+
+yelp_homo = data_file['homo']           <span class="aframe-location"/> #3
+sparse_to_adjlist(yelp_homo, prefix +\
+ 'yelp_homo_adjlists.pickle')</pre>
+<div class="code-annotations-overlay-container">
+     #1 loadmat is a scipy function that loads MATLAB files.
+     <br/>#2 Retrieves the node labels and features, respectively
+     <br/>#3 Retrieves and pickles an adjacency list. “Homo” means that this adjacency list will be based on a homogenous set of edges; that is, we get rid of the multirelational nature of the edges.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p82">
+<p>Once the adjacency list is extracted and pickled, it can then be called in the future using</p>
+</div>
+<div class="browsable-container listing-container" id="p83">
+<div class="code-area-container">
+<pre class="code-area">with open(prefix + 'yelp_homo_adjlists.pickle', 'rb') as file:
+    homogenous = pickle.load(file)</pre>
+</div>
+</div>
+<div class="readable-text" id="p84">
+<p>With the data loaded, we can now perform some exploratory data analysis (EDA) to analyze the graph structure and node features.</p>
+</div>
+<div class="readable-text" id="p85">
+<h3 class="readable-text-h3"><span class="num-string">4.2.3</span> Exploring the graph structure</h3>
+</div>
+<div class="readable-text" id="p86">
+<p>To better understand fraud within our dataset, we explore the underlying graph structure. By analyzing the connected components and various graph metrics, we can get an overview of the network’s topology. This understanding will reveal the data’s inherent characteristics and make sure there are no potential blockers to effective GNN training. We present a detailed analysis of the connected components, density, clustering coefficients, and other key metrics. </p>
+</div>
+<div class="readable-text intended-text" id="p87">
+<p>To perform this structural EDA, we use our adjacency list to examine the structural nature of our graph using the <code>NetworkX</code> library. In the following snippet of code, we load the adjacency list object, convert it into a <code>NetworkX</code> graph object, and then interrogate this graph object for three basic properties. The longer code can be found in the repository:</p>
+</div>
+<div class="browsable-container listing-container" id="p88">
+<div class="code-area-container">
+<pre class="code-area">with open(prefix + 'yelp_homo_adjlists.pickle', 'rb') as file:
+homogenous = pickle.load(file)
+g = nx.Graph(homogenous)
+print(f'Number of nodes: {g.number_of_nodes()}')
+print(f'Number of edges: {g.number_of_edges()}')
+print(f'Average node degree: {len(g.edges) / len(g.nodes):.2f}')</pre>
+</div>
+</div>
+<div class="readable-text" id="p89">
+<p>From the EDA, we obtain the properties listed in table 4.3.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p90">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.3</span> Graph properties</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Property 
+       </div></th>
+<th>
+<div>
+         Value/details 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Number of nodes <br/></td>
+<td>  45,954 <br/></td>
+</tr>
+<tr>
+<td>  Number of edges <br/></td>
+<td>  3,892,933 <br/></td>
+</tr>
+<tr>
+<td>  Average node degree <br/></td>
+<td>  84.71 <br/></td>
+</tr>
+<tr>
+<td>  Density <br/></td>
+<td>  ~0.00 <br/></td>
+</tr>
+<tr>
+<td>  Connectivity <br/></td>
+<td>  The graph isn’t connected. <br/></td>
+</tr>
+<tr>
+<td>  Average clustering coefficient <br/></td>
+<td>  0.77 <br/></td>
+</tr>
+<tr>
+<td>  Number of connected components <br/></td>
+<td>  26 <br/></td>
+</tr>
+<tr>
+<td>  Degree distribution (first 10 nodes) <br/></td>
+<td>  [4, 4, 4, 3, 4, 5, 5, 6, 5, 19] <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p91">
+<p>Let’s dig into these properties. The graph is relatively large with 45,954 nodes and 3,892,933 edges. This means the graph has a considerable level of complexity and will likely contain intricate relationships. The average node degree is 84.71, suggesting that, on average, nodes in the graph are connected to around 85 other nodes. This indicates that the nodes in the graph are reasonably well connected, and there’s a possibility of rich information flow between them. The graph’s density is close to 0.00, which indicates it’s quite sparse. In other words, the number of actual connections (edges) is much lower than the number of possible connections. The density of a graph is its number of edges divided by its total possible edges.</p>
+</div>
+<div class="readable-text intended-text" id="p92">
+<p>The graph isn’t fully connected and consists of 26 separate connected components. The presence of multiple connected components may require special consideration in modeling, especially if different components represent distinct data clusters or phenomena. The average clustering coefficient of 0.77 is relatively high. This metric gives an idea of the graph’s “cliquishness.” A high value means that nodes tend to cluster together, forming tightly knit groups. This could be indicative of local communities or clusters within the data, which can be crucial in understanding patterns or anomalies, especially in fraud detection.</p>
+</div>
+<div class="readable-text intended-text" id="p93">
+<p>Given that we have 26 distinct components, it’s important to examine them to plan for model training. We want to know whether the components are roughly the same size, are a mix of sizes, or have one or two components dominating. Do the properties of these separate graphs differ significantly? We run a similar analysis on the 26 components and summarize the properties in table 4.4, with the components displayed in descending order in terms of the number of nodes. The first column contains the identifier of the component. From this table, we observe that one large component dominates the dataset.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p94">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.4</span> Properties of the 26 graph components, sorted in descending order by number of nodes </h5>
+<table border="1">
+<thead>
+<tr>
+<th>
+<div>
+         Component ID 
+       </div></th>
+<th>
+<div>
+         Number of nodes 
+       </div></th>
+<th>
+<div>
+         Number of edges 
+       </div></th>
+<th>
+<div>
+         Average node degree 
+       </div></th>
+<th>
+<div>
+         Density 
+       </div></th>
+<th>
+<div>
+         Average clustering coeff 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  3 <br/></td>
+<td>  45,900 <br/></td>
+<td>  38,92810 <br/></td>
+<td>  169.62 <br/></td>
+<td>  0 <br/></td>
+<td>  0.77 <br/></td>
+</tr>
+<tr>
+<td>  4 <br/></td>
+<td>  13 <br/></td>
+<td>  60 <br/></td>
+<td>  9.23 <br/></td>
+<td>  0.77 <br/></td>
+<td>  0.77 <br/></td>
+</tr>
+<tr>
+<td>  2 <br/></td>
+<td>  6 <br/></td>
+<td>  14 <br/></td>
+<td>  4.67 <br/></td>
+<td>  0.93 <br/></td>
+<td>  0.58 <br/></td>
+</tr>
+<tr>
+<td>  1, 22 <br/></td>
+<td>  3 <br/></td>
+<td>  6 <br/></td>
+<td>  4 <br/></td>
+<td>  2 <br/></td>
+<td>  1 <br/></td>
+</tr>
+<tr>
+<td>  5–9, 14, 17, 24, 26 <br/></td>
+<td>  2 <br/></td>
+<td>  3 <br/></td>
+<td>  3 <br/></td>
+<td>  3 <br/></td>
+<td>  0 <br/></td>
+</tr>
+<tr>
+<td>  7–21, 23, 25 <br/></td>
+<td>  1 <br/></td>
+<td>  1 <br/></td>
+<td>  2 <br/></td>
+<td>  0 <br/></td>
+<td>  0 <br/></td>
+</tr>
+<tr>
+<td colspan="6">  In the bottom three rows, several components have identical properties and are put in the same row to save space. <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p95">
+<p>We see here that component 3 is the dominant component, followed by 25 components that are tiny in comparison. These tiny components probably won’t have a strong influence over our model, so we’ll focus on component 3. Let’s contrast this component with the overall graph, found in table 4.5. Most of the properties are very similar or the same, with the exception of the average node degree, for which component 3 is twice as large.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p96">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.5</span> Comparing the largest component of the graph, component 3, to the overall graph</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Attribute 
+       </div></th>
+<th>
+<div>
+         Component No. 3 
+       </div></th>
+<th>
+<div>
+         Overall Graph 
+       </div></th>
+<th>
+<div>
+         Insight/Contrast 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Number of nodes <br/></td>
+<td>  45,900 <br/></td>
+<td>  45,954 <br/></td>
+<td>  Component 3 contains almost all nodes from the entire graph. <br/></td>
+</tr>
+<tr>
+<td>  Number of edges <br/></td>
+<td>  3,892,810 <br/></td>
+<td>  3,892,933 <br/></td>
+<td>  Component 3 contributes almost all edges of the entire graph. <br/></td>
+</tr>
+<tr>
+<td>  Average node degree <br/></td>
+<td>  169.62 <br/></td>
+<td>  84.71 <br/></td>
+<td>  Nodes in component 3 are more densely connected than in the overall graph. <br/></td>
+</tr>
+<tr>
+<td>  Density <br/></td>
+<td>  0.00 <br/></td>
+<td>  0.00 <br/></td>
+<td>  Both the component and the entire graph are sparse; this property is mainly driven by component 3. <br/></td>
+</tr>
+<tr>
+<td>  Average clustering coefficient <br/></td>
+<td>  0.77 <br/></td>
+<td>  0.77 <br/></td>
+<td>  Component 3 matches the overall graph in terms of clustering, indicating its dominance in defining the graph’s structure. <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p97">
+<p>For our GNN modeling purposes, what should we take away from this structural analysis? Primarily, the overwhelming dominance of component 3 in both nodes and edges underscores its significance in our dataset; almost the entirety of the graph’s structure is encapsulated within this single component. This suggests that the patterns, relationships, and anomalies within component 3 will heavily influence the model’s training and outcomes. The higher average node degree in component 3, compared to the overall graph, indicates a richer interconnectedness, emphasizing the importance of capturing these dense connections effectively. Furthermore, the identical density and clustering coefficient values between component 3 and the entire graph highlight that this component is highly representative of the dataset’s overall structural properties. We have two options:</p>
+</div>
+<ol>
+<li class="readable-text" id="p98"> Assume that the other components will have a minor effect on the model and train without making any adjustments. </li>
+<li class="readable-text" id="p99"> Model only component 3 itself, completely leaving the data of the smaller components out of the training and test data. </li>
+</ol>
+<div class="readable-text" id="p100">
+<p>We looked at the structural properties of the graph data to get a glimpse into the characteristics of the graph and got some valuable insights to guide GNN model design and training for understanding potential fraud patterns. Next, we deep dive into the node features.</p>
+</div>
+<div class="readable-text" id="p101">
+<h3 class="readable-text-h3"><span class="num-string">4.2.4</span> Exploring the node features</h3>
+</div>
+<div class="readable-text" id="p102">
+<p>Having explored the structural nature of our graph, we turn to the node features. In the code at the beginning of this section, we pulled out the node features from the data file: </p>
+</div>
+<div class="browsable-container listing-container" id="p103">
+<div class="code-area-container">
+<pre class="code-area">features = data_file['features'].todense().A</pre>
+</div>
+</div>
+<div class="readable-text print-book-callout" id="p104">
+<p><span class="print-book-callout-head">Note</span>  As discussed previously, these feature definitions were handcrafted by Rayana and others [7, 8]. Guided by the feature generation process, Dou et al. [8] did the nontrivial work of further processing the Yelp review dataset to create a set of normalized node features.</p>
+</div>
+<div class="readable-text" id="p105">
+<p>With some additional work, shown in the code repository, we also add some tags and descriptions to the features before we create a chart distribution for each feature (example plots are shown in figures 4.3 to 4.5). Each set of plots corresponds to features describing the review text, the reviewer, and the business. We want to use these plots to check that the node features can be useful in distinguishing fraud. Figure 4.3 shows the distributions of two of the features derived from the characteristics of the reviews.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p106">
+<img alt="figure" height="530" src="../Images/4-3.png" width="1100"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.3</span> Distribution plots of 2 of the 15 normalized node features based on the review (see section 4.2.1 for feature definitions)</h5>
+</div>
+<div class="readable-text intended-text" id="p107">
+<p>Figure 4.4 shows the distributions of two of the features derived from the characteristics of the reviewers.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p108">
+<img alt="figure" height="550" src="../Images/4-4.png" width="1100"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.4</span> Distribution plots of two of the nine normalized node features based on the reviewer (see section 4.2.1 for feature definitions)</h5>
+</div>
+<div class="readable-text intended-text" id="p109">
+<p>Finally, figure 4.5 shows two of the distributions of the features derived from the characteristics of the restaurant or hotel being reviewed.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p110">
+<img alt="figure" height="529" src="../Images/4-5.png" width="1100"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.5</span> Distribution plots of two of the eight normalized node features based on the business being reviewed (see section 4.2.1 for feature definitions)</h5>
+</div>
+<div class="readable-text intended-text" id="p111">
+<p>By examining the histograms for the 32 node features, we can make several observations. First, there’s a pronounced skewness in many of the features. Specifically, features such as Rank, RD, and EXT lean toward a right-skewed distribution. This indicates that the majority of data points fall on the histogram’s left side, but a few higher-value points stretch the histogram toward the right. Conversely, features such as MNR_user, PR_user, and NR_user, among others, display a left-skewed distribution. In these cases, most of the data points concentrate on the histogram’s right side, with a few lower-value points stretching the histogram to the left. </p>
+</div>
+<div class="readable-text intended-text" id="p112">
+<p>Some features also exhibit a bimodal distribution, meaning that there are two distinct peaks or groups within the data. This suggests that segmenting the data and creating separate models for each group could be a useful strategy.</p>
+</div>
+<div class="readable-text intended-text" id="p113">
+<p>Lastly, the long tails in several histograms suggest there are some outliers. Given that certain models, such as linear regression, are highly sensitive to extreme values, addressing these outliers could be crucial in refining and improving our model. This could mean opting for outlier-resistant models, developing strategies to mitigate their effect, or even removing them altogether. </p>
+</div>
+<div class="readable-text intended-text" id="p114">
+<p>Given those general insights, let’s examine one of the feature plots more closely. PP1 is the ratio of first-person pronouns (i.e., I, me, us, our, etc.) to second person pronouns (you, your, etc.) in the review. This feature was developed due to an observation that spam reviews typically contain more second person pronouns. From the distribution plot for PP1, we observe that the distribution is skewed left, with a tail that peaks at low values. Thus, if a low ratio is an indicator of a spammy review, this feature would be good at distinguishing spam reviews.</p>
+</div>
+<div class="readable-text intended-text" id="p115">
+<p>To conclude our exploration of the node features, this data exhibits diverse characteristics, with many opportunities for model training. Further preprocessing, which could involve outlier handling, skewed feature transformation, data segmentation, and feature scaling, may be crucial in optimizing the model’s predictive performance.</p>
+</div>
+<div class="readable-text intended-text" id="p116">
+<p>Our exploration of the review spam dataset revealed some patterns, anomalies, and insights. From the intricate structural characteristics of the dataset, represented largely by dominant component 3, to the node features that provide promising indications for distinguishing between genuine and fraudulent reviews, we’ve laid the groundwork for our model training. </p>
+</div>
+<div class="readable-text intended-text" id="p117">
+<p>In section 4.3, we’ll embark on training our baseline models. These initial models serve as a foundation, helping us gauge the effectiveness of basic model performance. Through these models, we’ll harness the potential of the data’s graph structure and node features to separate fraud and spam from genuine reviews.</p>
+</div>
+<div class="readable-text" id="p118">
+<h2 class="readable-text-h2"><span class="num-string">4.3</span> Training baseline models</h2>
+</div>
+<div class="readable-text" id="p119">
+<p>Given our dataset, we’ll begin the training phase by first developing three baseline models: logistic regression, XGBoost, and an MLP. Note that for these models, the data will have a tabular format, with the node features serving as our columnar features. There will be one row or observation for every node of our graph dataset. Next, we’ll develop an additional GNN baseline by training a GCN to evaluate the effect of introducing graph structured data to our problem. </p>
+</div>
+<div class="readable-text intended-text" id="p120">
+<p>We now split our tabular data into test and train sets, and apply the three baseline models. First, the test/train splitting:</p>
+</div>
+<div class="browsable-container listing-container" id="p121">
+<div class="code-area-container">
+<pre class="code-area">from sklearn.model_selection import train_test_split 
+split = 0.2
+xtrain, xtest, ytrain, ytest = train_test_split\
+(features, labels, test_size = \
+split, stratify=labels, random_state = 99)  <span class="aframe-location"/> #1
+
+print(f'Required shape is {int(len(features)*(1-split))}')  <span class="aframe-location"/> #2
+print(f'xtrain shape = {xtrain.shape}, \
+xtest shape = {xtest.shape}')                               
+print(f'Correct split = {int(len(features)*(1-split))\
+ == xtrain.shape[0]}')</pre>
+<div class="code-annotations-overlay-container">
+     #1 Splits data into test and train sets with an 80/20 split
+     <br/>#2 Double-checks the object shapes
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p122">
+<p>We can use this split data for each of the three models. For this training, we’re only using the node features and labels. There is no use of the graph data structure or geometry. For the baseline models and for the GNNs, we’ll mainly rely on Receiver Operating Characteristic (ROC) and Area Under the Curve (AUC) to gauge performance and to compare the performance of our GAT models.</p>
+</div>
+<div class="readable-text" id="p123">
+<h3 class="readable-text-h3"><span class="num-string">4.3.1</span> Non-GNN baselines</h3>
+</div>
+<div class="readable-text" id="p124">
+<p>We start by using a logistic regression model with the scikit-learn implementation and the default hyperparameters:</p>
+</div>
+<div class="browsable-container listing-container" id="p125">
+<div class="code-area-container">
+<pre class="code-area">from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score, f1_score
+
+clf = LogisticRegression(random_state=0)\
+.fit(xtrain, ytrain)  <span class="aframe-location"/> #1
+ypred = clf.predict_proba(xtest)[:,1]
+acc = roc_auc_score(ytest,ypred)  <span class="aframe-location"/> #2
+
+print(f"Model accuracy (logression) = {100*acc:.2f}%")</pre>
+<div class="code-annotations-overlay-container">
+     #1 Logistic regression model instantiation and training
+     <br/>#2 Accuracy score
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p126">
+<p>This model yields an AUC of 76.12%. For the ROC performance, we’ll also use a function from scikit-learn. We’ll also recycle the true positive rate (<code>tpr</code>) and false positive rate (<code>fpr</code>) to compare with our other baseline models:</p>
+</div>
+<div class="browsable-container listing-container" id="p127">
+<div class="code-area-container">
+<pre class="code-area">from sklearn.metrics import roc_curve 
+fpr, tpr, _ = roc_curve(ytest,ypred)  <span class="aframe-location"/> #1
+
+plt.figure(1)
+plt.plot([0, 1], [0, 1])
+plt.plot(fpr, tpr)
+plt.xlabel('False positive rate')
+plt.ylabel('True positive rate')
+plt.show()</pre>
+<div class="code-annotations-overlay-container">
+     #1 ROC curve calculation, yielding false positive rate (fpr) and true positive rate (tpr)
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p128">
+<p>In figure 4.6, we see the ROC curve. We find that the curve is relatively balanced between false positives and false negatives but that the overall specificity is quite poor, given how near it is to the diagonal.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p129">
+<img alt="figure" height="777" src="../Images/4-6.png" width="1024"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.6</span> ROC curve for logistic regression baseline model (orange line) and chance line (blue diagonal line). An AUC of 76% indicates a model that can be improved.</h5>
+</div>
+<div class="readable-text" id="p130">
+<h4 class="readable-text-h4">XGBoost</h4>
+</div>
+<div class="readable-text" id="p131">
+<p>The XGBoost baseline follows the logistic regression, as shown in listing 4.2. We use a barebones model with the same training and test sets. For comparison, we differentiate the names of the generated predictions (named <code>pred2</code>), the true positive rate (<code>tpr2</code>), and the false positive rate (<code>fpr2</code>).</p>
+</div>
+<div class="browsable-container listing-container" id="p132">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.2</span> XGBoost baseline and plot </h5>
+<div class="code-area-container">
+<pre class="code-area">import xgboost as xgb
+xgb_classifier = xgb.XGBClassifier()
+
+xgb_classifier.fit(xtrain,ytrain)
+ypred2 = xgb_classifier.predict_proba(xtest)[:,1]  <span class="aframe-location"/> #1
+acc = roc_auc_score(ytest,ypred2)
+
+print(f"Model accuracy (XGBoost) = {100*acc:.2f}%")
+
+fpr2, tpr2, _ = roc_curve(ytest,ypred2)  <span class="aframe-location"/> #2
+
+plt.figure(1)
+plt.plot([0, 1], [0, 1])
+plt.plot(fpr, tpr)
+plt.plot(fpr2, tpr2)                     
+plt.xlabel('False positive rate')
+plt.ylabel('True positive rate')
+plt.show()</pre>
+<div class="code-annotations-overlay-container">
+     #1 For comparison, we name the XGBoost predictions “ypred2”.
+     <br/>#2 For comparison, we distinguish the tpr and fpr of XGBoost and plot them alongside the logistic regression result.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p133">
+<p>Figure 4.7 shows the ROC curves for XGBoost and logistic regression. It’s clear that XGBoost has superior performance for this metric.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p134">
+<img alt="figure" height="775" src="../Images/4-7.png" width="1022"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.7</span> ROC curve for the XGBoost (dotted line), shown with the logistic regression curve (solid line). We see that the XGBoost curve shows a better performance than the logistic regression. The diagonal line is the chance line.</h5>
+</div>
+<div class="readable-text" id="p135">
+<p>XGBoost fares better than logistic regression with this data, yielding an AUC of 94%, and with a superior ROC curve. This highlights that even a simple model can be suitable for some problems, and it’s always a good idea to check performance. </p>
+</div>
+<div class="readable-text" id="p136">
+<h4 class="readable-text-h4">Multilayer perceptron</h4>
+</div>
+<div class="readable-text" id="p137">
+<p>For the MLP baseline, we use PyTorch to build a simple, three-layer model, as shown in listing 4.3. As with PyTorch, we establish the model using a class, defining the layers and the forward pass. In the MLP, we use binary cross-entropy (BCE) as the loss function, which is commonly used in binary classification problems.</p>
+</div>
+<div class="browsable-container listing-container" id="p138">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.3</span> MLP baseline and plot </h5>
+<div class="code-area-container">
+<pre class="code-area">import torch  <span class="aframe-location"/> #1
+import torch.nn as nn
+import torch.nn.functional as F
+
+class MLP(nn.Module):  <span class="aframe-location"/> #2
+    def __init__(self, in_channels, out_channels, hidden_channels=[128,256]):
+        super(MLP, self).__init__()
+        self.lin1 = nn.Linear(in_channels,hidden_channels[0])
+        self.lin2 = nn.Linear(hidden_channels[0],hidden_channels[1])
+        self.lin3 = nn.Linear(hidden_channels[1],out_channels)
+
+    def forward(self, x):
+        x = self.lin1(x)
+        x = F.relu(x)
+        x = self.lin2(x)
+        x = F.relu(x)
+        x = self.lin3(x)
+        x = torch.sigmoid(x)
+
+        return x
+
+model = MLP(in_channels = features.shape[1],\
+ out_channels = 1)  <span class="aframe-location"/> #3
+
+epochs = 100  <span class="aframe-location"/> #4
+lr = 0.001
+wd = 5e-4
+n_classes = 2
+n_samples = len(ytrain)
+
+w= ytrain.sum()/(n_samples - ytrain.sum())  <span class="aframe-location"/> #5
+
+optimizer = torch.optim.Adam(model.parameters()\
+,lr=lr,weight_decay=wd)  <span class="aframe-location"/> #6
+criterion = torch.nn.BCELoss()  <span class="aframe-location"/> #7
+
+xtrain = torch.tensor(xtrain).float()  <span class="aframe-location"/> #8
+ytrain = torch.tensor(ytrain)
+
+losses = []
+
+for epoch in range(epochs): <span class="aframe-location"/> #9
+    model.train()
+    optimizer.zero_grad()
+    output = model(xtrain)
+    loss = criterion(output, ytrain.reshape(-1,1).float())
+    loss.backward()
+    losses.append(loss.item())
+
+    ypred3 = model(torch.tensor(xtest,dtype=torch.float32))
+
+    acc = roc_auc_score(ytest,ypred3.detach().numpy())
+    print(f'Epoch {epoch} | Loss {loss.item():6.2f}\
+    | Accuracy = {100*acc:6.3f}% | # True\ Labels = \
+    {ypred3.detach().numpy().round().sum()}', end='\r')
+
+    optimizer.step()
+
+
+fpr, tpr, _ = roc_curve(ytest,ypred)
+fpr3, tpr3, _ = roc_curve(ytest,ypred3.detach().numpy())  <span class="aframe-location"/> #10
+
+plt.figure(1)  <span class="aframe-location"/> #11
+plt.plot([0, 1], [0, 1])
+plt.plot(fpr, tpr)
+plt.plot(fpr2, tpr2)
+plt.plot(fpr3, tpr3)
+plt.xlabel('False positive rate')
+plt.ylabel('True positive rate')
+plt.show()</pre>
+<div class="code-annotations-overlay-container">
+     #1 Imports needed packages for this section
+     <br/>#2 Defines the MLP architecture using a class
+     <br/>#3 Instantiates the defined model
+     <br/>#4 Sets key hyperparameters
+     <br/>#5 Added to the account for class imbalance
+     <br/>#6 Defines the optimizer and the training criterion
+     <br/>#7 Uses BCE loss as the loss function
+     <br/>#8 Converts training data to torch data types: torch tensors
+     <br/>#9 The training loop. In this example, we’ve specified 100 epochs.
+     <br/>#10 Differentiates the tpr and fpr for comparison
+     <br/>#11 Plots all three ROC curves together
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p139">
+<p>Figure 4.8 shows the ROC results for logistic regression, XGBoost, and an MLP.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p140">
+<img alt="figure" height="777" src="../Images/4-8.png" width="1024"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.8</span> ROC curves for all three baseline models. The curves for logistic regression and MLP overlap. The XGBoost model shows the best performance for this metric. The diagonal line is the chance line.</h5>
+</div>
+<div class="readable-text" id="p141">
+<p>The MLP run for 100 epochs yields an accuracy of 85.9% in the middle of our baselines. Its ROC curve is only slightly better than the logistic regression models. These results are summarized in table 4.6.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p142">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.6</span> Log loss and ROC AUC for the three baseline models</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Model 
+       </div></th>
+<th>
+<div>
+         Log Loss 
+       </div></th>
+<th>
+<div>
+         ROC AUC 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  logistic regression <br/></td>
+<td>  0.357 <br/></td>
+<td>  75.90% <br/></td>
+</tr>
+<tr>
+<td>  XGBoost <br/></td>
+<td>  0.178 <br/></td>
+<td>  94.17% <br/></td>
+</tr>
+<tr>
+<td>  Multilayer perceptron <br/></td>
+<td>  0.295 <br/></td>
+<td>  85.93% <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p143">
+<p>To summarize this section, we’ve run three baseline models to use as benchmarks against our GNN models. These baselines used no structural graph data, only a set of tabular features derived from the node features. We didn’t attempt to optimize these models, and XGBoost ended up performing the best with an accuracy of 89.25%. Next, we’ll train one more baseline using GCN and then apply the GATs.</p>
+</div>
+<div class="readable-text" id="p144">
+<h3 class="readable-text-h3"><span class="num-string">4.3.2</span> GCN baseline</h3>
+</div>
+<div class="readable-text" id="p145">
+<p>In this section, we’ll apply GNNs to our problem, starting with the GCN from chapter 3 before moving on to a GAT model. We anticipate that our GNN models will outperform other baselines thanks to the graph structural data, and the models with an attention mechanism will be best. For the GNN models, we need to make some changes to our pipeline. A lot of this has to do with the data preprocessing and data loading. </p>
+</div>
+<div class="readable-text" id="p146">
+<h4 class="readable-text-h4">Data preprocessing</h4>
+</div>
+<div class="readable-text" id="p147">
+<p>One critical first step is to prepare the data for use by our GNNs. This follows some of what has already been covered in chapters 2 and 3. The code for this is provided in listing 4.4, where we take the following steps:</p>
+</div>
+<ul>
+<li class="readable-text" id="p148"> <em>Establish the train/test split.</em> We use the same <code>test_train_split</code> function from before, slightly tweaked to produce indices, and we only keep the resulting indices. </li>
+<li class="readable-text" id="p149"> <em>Transform our dataset into PyG tensors.</em> For this, we start with the homogenous adjacency list generated in an earlier section. Using NetworkX, we convert this to a NetworkX <code>graph</code> object. From there, we use the PyG <code>from_networkx</code> function to convert this to a PyG <code>data</code> object. </li>
+<li class="readable-text" id="p150"> <em>Apply the train/test split to the converted data objects.</em> For this, we use the indices from the first step. </li>
+</ul>
+<div class="readable-text" id="p151">
+<p>We want to show a variety of ways to arrange the training data for ingestion. So, for the GCN, we’ll run the entire dataset through the model, while in the GAT example, we’ll batch the training data.</p>
+</div>
+<div class="browsable-container listing-container" id="p152">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.4</span> Converting the datatypes of our training data </h5>
+<div class="code-area-container">
+<pre class="code-area">from torch_geometric.transforms import NormalizeFeatures
+
+split = 0.2                                       <span class="aframe-location"/> #1
+indices = np.arange(len(features))                 #1
+xtrain, xtest, ytrain, ytest, idxtrain, idxtest\
+ = train_test_split(features labels,indices, \
+stratify=labels, test_size = split, \
+random_state = 99)                                <span class="aframe-location"/> #2
+
+g = nx.Graph(homogenous)                                           <span class="aframe-location"/> #3
+print(f'Number of nodes: {g.number_of_nodes()}')
+print(f'Number of edges: {g.number_of_edges()}')
+print(f'Average node degree: {len(g.edges) / len(g.nodes):.2f}')
+data = from_networkx(g)                                            
+data.x = torch.tensor(features).float()                            
+data.y = torch.tensor(labels)                                      
+data.num_node_features = data.x.shape[-1]                          
+data.num_classes = 1 #binary classification                        
+
+A = set(range(len(labels)))                                 <span class="aframe-location"/> #4
+data.train_mask = torch.tensor([x in idxtrain for x in A])   #4
+data.test_mask = torch.tensor([x in idxtest for x in A])     #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Establishes the train/test split. We’ll only use the index variables.
+     <br/>#2 Establishes the train/test split. We’ll only use the index variables.
+     <br/>#3 Takes the adjacency list and transforms it into PyG data objects
+     <br/>#4 Establishes the train/test split in the data objects
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p153">
+<p>With the preprocessing done, we’re ready to apply the GCN and GAT solutions. We detailed the GCN architecture in chapter 3. In listing 4.5, we establish a two-layer GCN, trained over 1,000 epochs. We choose two layers due to the insight from chapter 3 that, in general, a low model depth improves performance and prevents over-smoothing.</p>
+</div>
+<div class="browsable-container listing-container" id="p154">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.5</span> GCN definition and training </h5>
+<div class="code-area-container">
+<pre class="code-area">class GCN(torch.nn.Module):      <span class="aframe-location"/> #1
+    def __init__(self, hidden_layers = 64):
+        super().__init__()
+        torch.manual_seed(2022)
+        self.conv1 = GCNConv(data.num_node_features, hidden_layers)
+        self.conv2 = GCNConv(hidden_layers, 1)
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
+
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = F.dropout(x, training=self.training)
+        x = self.conv2(x, edge_index)
+
+        return torch.sigmoid(x)
+
+device = torch.device("cuda"\
+ if torch.cuda.is_available() \
+else "cpu")             <span class="aframe-location"/> #2
+print(device)
+model = GCN()
+model.to(device)
+data.to(device)
+
+lr = 0.01
+epochs = 1000
+
+optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=5e-4)
+criterion = torch.nn.BCELoss()
+
+losses = []
+for e in range(epochs):     <span class="aframe-location"/> #3
+    model.train()
+    optimizer.zero_grad()
+    out = model(data)                         <span class="aframe-location"/> #4
+
+    loss = criterion(out[data.train_mask], \
+    data.y[data.train_mask].\
+    reshape(-1,1).float())                    
+    loss.backward()
+    losses.append(loss.item())
+
+    optimizer.step()
+
+    ypred = model(data).clone().cpu()
+    pred = data.y[data.test_mask].clone().cpu().detach().numpy()
+    true = ypred[data.test_mask].detach().numpy()
+    acc = roc_auc_score(pred,true)
+
+    print(f'Epoch {e} | Loss {loss:6.2f} \
+    | Accuracy = {100*acc:6.3f}% \
+    | # True Labels =\ {ypred.round().sum()}')
+fpr, tpr, _ = roc_curve(pred,true)     <span class="aframe-location"/> #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Defines a two-layer GCN architecture
+     <br/>#2 Instantiates the model and puts the model and data on the GPU
+     <br/>#3 Training loop
+     <br/>#4 For each epoch, we feed the entire data object through the model and then use the training mask to calculate the loss.
+     <br/>#5 Calculates false positive rate (fpr) and true positive rate (tpr)
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p155">
+<h4 class="readable-text-h4">Applying the solutions</h4>
+</div>
+<div class="readable-text" id="p156">
+<p>One item of note is the use of the masks in our training. While we establish loss using the nodes in the training mask, for forward propagation, we must pass the entire graph through the model. Why is this so? Unlike traditional machine learning models that work on independent data points (e.g., rows in a tabular dataset), GNNs operate on graph-structured data where the relationships between nodes are critical. When training a GCN, each node’s embedding is updated based on its neighbors’ information. Because this message-passing process involves aggregating information from a node’s local neighborhood, the model needs access to the entire graph structure so that it can compute these aggregations correctly and accurately perform this process.</p>
+</div>
+<div class="readable-text intended-text" id="p157">
+<p>So, during training, even though we’re only interested in the prediction for certain nodes (those in the training set), passing the entire graph through the model ensures that all necessary context is considered. If only part of the graph were passed through the model, the network would lack the complete information needed to propagate messages correctly and update node representations effectively.</p>
+</div>
+<div class="readable-text intended-text" id="p158">
+<p>A training session of 100 epochs for the GCN yields an accuracy of 94.37%. By introducing the graph data, we see incremental improvement against the XGBoost model. Table 4.7 compares the model performance levels. </p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p159">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.7</span> AUC for the four baseline models</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Model 
+       </div></th>
+<th>
+<div>
+         AUC 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Logistic regression <br/></td>
+<td>  75.90% <br/></td>
+</tr>
+<tr>
+<td>  XGBoost <br/></td>
+<td>  94.17% <br/></td>
+</tr>
+<tr>
+<td>  Multilayer perceptron <br/></td>
+<td>  85.93% <br/></td>
+</tr>
+<tr>
+<td>  GCN <br/></td>
+<td>  94.37% <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p160">
+<p>To summarize, we’ve seen that including graph structural information using a GNN model slightly improves performance compared to a purely feature-based or tabular model. It’s clear that the XGBoost model has shown impressive results even without the use of graph structures. However, the GCN model’s marginally better performance underlines the potential of GNNs in using relational information embedded in graph data.</p>
+</div>
+<div class="readable-text intended-text" id="p161">
+<p>In the next phase of our study, our attention will turn to graph attention networks (GATs). GATs have an attention mechanism that is especially tailored to learning how to weigh the significance of neighbors during a message-passing step. This can potentially offer even better model performance. In the next section, we’ll delve into the details of training GAT models and comparing their outcomes with the baselines we’ve established. Let’s proceed with GAT model training.</p>
+</div>
+<div class="readable-text" id="p162">
+<h2 class="readable-text-h2"><span class="num-string">4.4</span> Training GAT models</h2>
+</div>
+<div class="readable-text" id="p163">
+<p>To train our GAT models, we’ll apply two PyG implementations (GAT and GATv2) [2]. In this section, we’ll dive straight into training the models without discussing what attention means for machine learning models and why it’s helpful. However, for a short overview on attention and why attention might be all you need, see section 4.5.</p>
+</div>
+<div class="readable-text intended-text" id="p164">
+<p>We’ll be training two different GAT models. These both follow the same fundamental idea—that we’re replacing the aggregation operator in our GCN with an attention mechanism to learn what messages (node features) the model should pay the most attention to. The first—GATConv—is a simple extension to the GCN in chapter 3 with the attention mechanism. The second is a slight variation to this model known as GATv2Conv. This model is the same as GATConv except that it addresses a limitation in the original implementation, namely that the attention mechanism is <em>static</em> over individual GNN layers. Instead, for GATv2Conv, the attention mechanism is dynamic across layers. </p>
+</div>
+<div class="readable-text intended-text" id="p165">
+<p>To reiterate this, the original GAT model only computes the attention weights once per training loop by using individual node and neighborhood features, and these weights are static across all layers. In GATv2, the attention weights are calculated on the node features as they are transformed through the layers. This allows GATv2 to be more expressive, learning to emphasize the influence of node neighborhoods throughout the trained model. </p>
+</div>
+<div class="readable-text intended-text" id="p166">
+<p>Both models introduce a significant computational overhead due to the introduction of the attention mechanism. To address this, we introduce mini-batching to our training loop. </p>
+</div>
+<div class="readable-text" id="p167">
+<h3 class="readable-text-h3"><span class="num-string">4.4.1</span> Neighborhood loader and GAT models</h3>
+</div>
+<div class="readable-text" id="p168">
+<p>From an implementation point of view, one key difference between the previously studied convolutional models and our GAT models is the much larger memory requirements of GAT models [9]. The reason for this is that GAT requires a calculation of attention scores for every attention head and for every edge. This in turn requires the PyTorch <code>autograd</code> method to hold tensors in memory that can scale up considerably, depending on the number of edges, heads, and (twice) the number of node features.</p>
+</div>
+<div class="readable-text intended-text" id="p169">
+<p>To get around this problem, we can divide our graph into batches and load these batches into the training loop. This is in contrast to what we did with our GCN model where we trained on one single batch (the entire graph). PyG’s <code>NeighborLoader</code> (in its <code>dataloader</code> module) allows such mini-batch training, where we provide implementation code for this in listing 4.6. (PyG function <code>NeighborLoader</code> is based on the “Inductive Representation Learning on Large Graphs” paper [10].) The key input parameters for <code>NeighborLoader</code> are</p>
+</div>
+<ul>
+<li class="readable-text" id="p170"> <code>num_neighbors</code>—How many neighbor nodes will be sampled, multiplied by the number of iterations (i.e., GNN layers). In our example, we specify 1,000 nodes over two iterations. </li>
+<li class="readable-text" id="p171"> <code>batch_size</code>—The number of nodes selected for each batch. In our example, we set the batch size to be <code>128</code>. </li>
+</ul>
+<div class="browsable-container listing-container" id="p172">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.6</span> Setting up <code>NeighborLoader</code> for GAT</h5>
+<div class="code-area-container">
+<pre class="code-area">from torch_geometric.loader import NeighborLoader
+
+batch_size = 128
+loader = NeighborLoader(
+    data,
+    num_neighbors=[1000]*2,  <span class="aframe-location"/> #1
+    batch_size=batch_size,  <span class="aframe-location"/> #2
+    input_nodes=data.train_mask)
+
+sampled_data = next(iter(loader))
+print(f'Checking that batch size is \
+{batch_size}: {batch_size == \
+sampled_data.batch_size}')
+print(f'Percentage fraud in batch: \
+{100*sampled_data.y.sum()/\
+len(sampled_data.y):.4f}%')
+sampled_data</pre>
+<div class="code-annotations-overlay-container">
+     #1 Samples 1,000 neighbors for each node in two iterations
+     <br/>#2 Uses a batch size for sampling training nodes
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p173">
+<p>In creating our GAT model, there are two key changes to make relative to our GCN class. First, because we’re training in batches, we want to apply a batch-norm layer. Batch normalization is a technique used to normalize the inputs of each layer in a neural network to have a mean of 0 and a standard deviation of 1. This helps stabilize and accelerate the training process by reducing internal covariate shift, allowing the use of higher learning rates, and improving the overall performance of the model.</p>
+</div>
+<div class="readable-text intended-text" id="p174">
+<p>Second, we note that our GAT layers have an additional input parameter—<code>heads</code>—which is the number of multihead attentions. In our example, our first <code>GATConv</code> layer has two heads, as specified in listing 4.7. </p>
+</div>
+<div class="readable-text intended-text" id="p175">
+<p>The second <code>GATConv</code> layer, which is the output layer, has one head. In this GAT model, because we want the final layer to have a single representation for each node for our task, we use one head. Multiple heads would result in a confusing output with multiple node representations.</p>
+</div>
+<div class="browsable-container listing-container" id="p176">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.7</span> GAT-based architecture </h5>
+<div class="code-area-container">
+<pre class="code-area">class GAT(torch.nn.Module):
+    def __init__(self, hidden_layers=32, heads=1, dropout_p=0.0):
+        super().__init__()
+        torch.manual_seed(2022)
+        self.conv1 = GATConv(data.num_node_features,\
+ hidden_layers, heads, dropout=dropout_p)                           <span class="aframe-location"/> #1
+        self.bn1 = nn.BatchNorm1d(hidden_layers*heads)    <span class="aframe-location"/> #2
+        self.conv2 = GATConv(hidden_layers * heads, \
+1, dropout=dropout_p)                                               
+
+    def forward(self, data, dropout_p=0.0):
+        x, edge_index = data.x, data.edge_index
+        x = self.conv1(x, edge_index)
+        x = self.bn1(x)                                   
+        x = F.relu(x)
+        x = F.dropout(x, training=self.training)
+        x = self.conv2(x, edge_index)
+
+        return torch.sigmoid(x)</pre>
+<div class="code-annotations-overlay-container">
+     #1 GAT layers have a heads parameter, which determines the number of attention mechanisms in each layer. In this implementation, the first layer (conv1) uses multiple heads for richer feature extraction, while the final output layer (conv2) uses a single head to aggregate the learned information into a # single output for each node.
+     <br/>#2 Because mini-batch training is being performed, a batch-norm layer is added.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p177">
+<p>Our training routine for GAT is similar to the single-batch GCN, which we provide in the following listing, except that we now need a nested loop for each batch. </p>
+</div>
+<div class="browsable-container listing-container" id="p178">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.8</span> Training loop for GAT </h5>
+<div class="code-area-container">
+<pre class="code-area">lr = 0.01
+epochs = 1000
+
+model = GAT(hidden_layers = 64,heads=2)
+model.to(device)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=lr,weight_decay=5e-4)
+criterion = torch.nn.BCELoss()
+
+losses = []
+for e in range(epochs):    
+    epoch_loss = 0.
+    for i, sampled_data in enumerate(loader): <span class="aframe-location"/> #1
+        sampled_data.to(device)
+        model.train()
+        optimizer.zero_grad()
+        out = model(sampled_data)
+        loss = criterion(out[sampled_data.train_mask],\ 
+sampled_data.y[sampled_data.train_mask].\
+reshape(-1,1).float())
+loss.backward()
+epoch_loss += loss.item()
+
+        optimizer.step()
+
+        ypred = model(sampled_data).clone().cpu()
+        pred = sampled_data.y[sampled_data.test_mask]\
+.clone().cpu().detach().numpy()
+        true = ypred[sampled_data.test_mask].detach().numpy()
+        acc = roc_auc_score(pred,true)    
+    losses.append(epoch_loss/batch_size)
+
+    print(f'Epoch {e} | Loss {epoch_loss:6.2f}\
+    | Accuracy = {100*acc:6.3f}% | 
+    # True Labels = {ypred.round().sum()}')</pre>
+<div class="code-annotations-overlay-container">
+     #1 Nested loop for mini-batch training. Each iteration here is a batch of nodes loaded by NeighborLoader.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p179">
+<p>The steps outlined previously are the same for GATv2Conv, which can be found in our repository. Training GATConv and GATv2Conv yields accuracies of 95.65% and 95.10%, respectively. As shown in table 4.8, our GAT models outperform the baseline models and GCN. Figure 4.9 shows the ROC results of the GCN and GAT models. Figure 4.10 shows the ROC results of the GCN, GAT, and GATv2 models.<span class="aframe-location"/><span class="aframe-location"/></p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p182">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.8</span> ROC AUC of the models</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Model 
+       </div></th>
+<th>
+<div>
+         ROC AUC (%) 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Logistic regression <br/></td>
+<td>  75.90 <br/></td>
+</tr>
+<tr>
+<td>  XGBoost <br/></td>
+<td>  94.17 <br/></td>
+</tr>
+<tr>
+<td>  Multilayer perceptron <br/></td>
+<td>  85.93 <br/></td>
+</tr>
+<tr>
+<td>  GCN <br/></td>
+<td>  94.37 <br/></td>
+</tr>
+<tr>
+<td>  GAT <br/></td>
+<td>  95.65 <br/></td>
+</tr>
+<tr>
+<td>  GATv2 <br/></td>
+<td>  95.10 <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="browsable-container figure-container" id="p180">
+<img alt="figure" height="774" src="../Images/4-9.png" width="1026"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.9</span> ROC curves for GCN and GATConv. The GATConv model shows the best performance for this metric because it has a higher AUC and because its false positive rate is markedly lower. The diagonal line is the chance line.</h5>
+</div>
+<div class="browsable-container figure-container" id="p181">
+<img alt="figure" height="776" src="../Images/4-10.png" width="1024"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.10</span> ROC curves for GCN, GATConv, and GATv2. Both GAT models outperform GCN. GATv2 has the same higher false positive profile than GAT but has a similar true positive rate.</h5>
+</div>
+<div class="readable-text" id="p183">
+<p>When observing the ROC curves, we see that both GAT models outperform the GCN. We also see that both have better false positive rates. This is crucial for fraud/spam detection as false positives can lead to genuine transactions/users being incorrectly flagged, causing inconvenience and loss of trust. For GATv2, we notice that for true positive rates, its performance is the same as for GCN and GAT. This indicates that while it’s conservative in not mislabeling genuine transactions as fraudulent, it might miss some actual frauds. These insights can lead to paths to refine the models or to decision-making about which to use. Despite the favorable AUC curves and scores, we must address one final problem that affects the usability of our GAT models: class imbalance.</p>
+</div>
+<div class="readable-text" id="p184">
+<h3 class="readable-text-h3"><span class="num-string">4.4.2</span> Addressing class imbalance in model performance</h3>
+</div>
+<div class="readable-text" id="p185">
+<p>Class imbalance is a critical challenge in GNN problems, where the minority class, often representing rare but important instances (e.g., fraudulent activities), is significantly underrepresented compared to the majority class. In our dataset, only 14.5% of the nodes are labeled as fraudulent, making it challenging for the model to effectively learn from this sparse data. While high AUC scores may suggest good overall performance, they can be misleading, masking poor performance on the minority class that is crucial for a balanced evaluation. A deeper analysis reveals a critical oversight: class imbalance significantly undermines our precision and F1 scores.</p>
+</div>
+<div class="readable-text intended-text" id="p186">
+<p>In response to this challenge, several methods have been developed specifically for GNNs to address class imbalance. Traditional techniques such as the Synthetic Minority Over-sampling Technique (SMOTE) have been adapted to create graph-specific methods such as GraphSMOTE, which generates synthetic nodes and edges to balance the class distribution without disrupting the graph structure. Other approaches include resampling techniques (both over-sampling and under-sampling), cost-sensitive learning, architectural modifications, and attention mechanisms that focus on minority class features [11, 12].</p>
+</div>
+<div class="readable-text intended-text" id="p187">
+<p>While these methods help improve model performance, they come with unique challenges, such as preserving the graph’s topology, maintaining node dependencies, and ensuring scalability. Recent advancements, such as Graph-of-Graph Neural Networks (G2GNN), have been developed to handle these problems more effectively. By understanding and applying these strategies, we can enhance the robustness and fairness of GNN models in real-world applications where class imbalance is a common problem. Taking the GATv2 model from the previous section as the illustration, we compare its F1, recall, and precision with that of XGBoost in table 4.9. XGBoost has superior performance, while GATv2 struggles to handle the imbalanced data.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p188">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.9</span> Comparing F1, recall, and precision between the GATv2 and XGBoost models trained in this chapter</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Metric 
+       </div></th>
+<th>
+<div>
+         GATv2 
+       </div></th>
+<th>
+<div>
+         XGBoost 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  F1 score <br/></td>
+<td>  0.254 <br/></td>
+<td>  0.734 <br/></td>
+</tr>
+<tr>
+<td>  Precision <br/></td>
+<td>  0.145 <br/></td>
+<td>  0.855 <br/></td>
+</tr>
+<tr>
+<td>  Recall <br/></td>
+<td>  1 <br/></td>
+<td>  0.643 <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p189">
+<p>The GATv2 model’s performance reflects a common challenge faced in scenarios with significant class imbalances. With the minority class constituting only 14.5% of the data, the model emphasizes maximizing recall, achieving a perfect recall score of 1.000. This suggests that the model correctly identifies every instance of the minority class, avoiding any missed detections of potentially crucial cases. However, this comes at a significant cost to precision, which is notably low at 0.145. This indicates that while the GAT is effective in detecting all true positives, it also misclassifies many negative cases as positive, leading to a high number of false positives. As a result, the F1 score, which reflects both precision and recall, is low at 0.254, highlighting the inefficiency of the model in balancing detection with accuracy. </p>
+</div>
+<div class="readable-text intended-text" id="p190">
+<p>To alleviate this, we implemented two strategies aimed at mitigating class imbalance: SMOTE illustrated in figure 4.11 and a custom reshuffling approach shown in figure 4.12.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p191">
+<img alt="figure" height="496" src="../Images/4-11.png" width="929"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.11</span> An illustration of SMOTE, which seeks to provide a more balanced dataset by upsampling the minority class. On the left, we begin with the original dataset. In the middle, SMOTE creates synthetic data in the minority class. On the right, with the synthetic data added to the minority class, the dataset is more balanced.</h5>
+</div>
+<div class="readable-text" id="p192">
+<p>SMOTE was used to generate synthetic nodes, reflecting the average degree characteristics of the original dataset, and to artificially enhance the representation of minority classes. The reshuffling method took a different approach by avoiding the generation of synthetic data. Instead, it ensures a balanced class representation in each training batch by redistributing the majority class data across the batches. This is achieved using the <code>BalancedNodeSampler</code> class, which guarantees that each batch has an equal number of nodes from both the majority and minority classes. For each batch, the sampler randomly selects a balanced set of nodes, extracts the corresponding subgraph, and re-indexes the nodes to maintain consistency. A typical batch redistribution from this process is illustrated in figure 4.12. This class is shown in listing 4.9.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p193">
+<img alt="figure" height="764" src="../Images/4-12.png" width="1100"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.12</span> Illustration of the reshuffling method using an example of 100 data points, with 76 in the majority class and 24 in the minority class. When creating batches for training, each batch is made to contain equal portions of the majority and minority classes. </h5>
+</div>
+<div class="browsable-container listing-container" id="p194">
+<h5 class="listing-container-h5 browsable-container-h5"><span class="num-string">Listing 4.9</span> <code>BalancedNodeSampler</code> class </h5>
+<div class="code-area-container">
+<pre class="code-area">class BalancedNodeSampler(BaseSampler): 
+    def __init__(self, data, num_samples=None):
+        super().__init__()
+        self.data = data  
+        self.num_samples = num_samples   <span class="aframe-location"/> #1
+
+    def sample_from_nodes(self, index, **kwargs):
+        majority_indices = torch.\
+where(self.data.y == 0)[0]   <span class="aframe-location"/> #2
+        minority_indices = torch.\
+where(self.data.y == 1)[0]   <span class="aframe-location"/> #3
+
+        if self.num_samples is None:
+            batch_size = min(len(majority_indices),\
+ len(minority_indices))   <span class="aframe-location"/> #4
+        else:
+            batch_size = self.num_samples // 2 
+
+        majority_sample = majority_indices[torch.randperm\
+(len(majority_indices))[:batch_size]]                       <span class="aframe-location"/> #5
+        minority_sample = minority_indices[torch.randint\
+(len(minority_indices), (batch_size,))]                     
+        batch_indices = torch.cat\
+((majority_sample, minority_sample))  <span class="aframe-location"/> #6
+
+        mask = torch.zeros(self.data.num_nodes, dtype=torch.bool)
+        mask[batch_indices] = True   <span class="aframe-location"/> #7
+        row, col = self.data.edge_index 
+        mask_edges = mask[row] &amp; mask[col]   <span class="aframe-location"/> #8
+        sub_row = row[mask_edges] 
+        sub_col = col[mask_edges] 
+
+        new_index = torch.full((self.data.num_nodes,), -1, dtype=torch.long)
+        new_index[batch_indices] = \
+torch.arange(batch_indices.size(0))   <span class="aframe-location"/> #9
+        sub_row = new_index[sub_row] 
+        sub_col = new_index[sub_col] 
+
+        return SamplerOutput(
+            node=batch_indices,
+            row=sub_row,
+            col=sub_col,
+            edge=None,  
+            num_sampled_nodes=[len(batch_indices)],  
+            metadata=(batch_indices, None)
+        )</pre>
+<div class="code-annotations-overlay-container">
+     #1 Optional: defines fixed sampling size per class
+     <br/>#2 Indices for the majority class
+     <br/>#3 Indices for the minority class
+     <br/>#4 Determines balanced batch size
+     <br/>#5 Randomly selects nodes for both classes 
+     <br/>#6 Combines samples from both classes into a single batch
+     <br/>#7 Creates a mask for sampled nodes
+     <br/>#8 Filters edges between sampled nodes
+     <br/>#9 Re-indexes sampled nodes
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p195">
+<p>In this case, SMOTE didn’t yield performance improvement. Therefore, we’ll focus on the results of applying the reshuffling method. The metrics in table 4.10 demonstrate that our interventions have not only improved the fairness of the models but also enhanced their robustness by better capturing the minority class without sacrificing overall accuracy. While the reshuffling method’s AUC doesn’t exceed XGBoost (94.17%), it handles the class imbalance well with superior F1, precision, and recall.</p>
+</div>
+<div class="browsable-container browsable-table-container framemaker-table-container" id="p196">
+<h5 class="browsable-container-h5"><span class="num-string">Table 4.10</span> Comparing F1, precision, recall, and AUC of the GATv2 model trained with a class reshuffling method</h5>
+<table>
+<thead>
+<tr>
+<th>
+<div>
+         Metric 
+       </div></th>
+<th>
+<div>
+         Value 
+       </div></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>  Mean validation F1 score <br/></td>
+<td>  0.809 <br/></td>
+</tr>
+<tr>
+<td>  Mean validation precision <br/></td>
+<td>  0.878 <br/></td>
+</tr>
+<tr>
+<td>  Mean validation recall <br/></td>
+<td>  0.781 <br/></td>
+</tr>
+<tr>
+<td>  Mean validation AUC <br/></td>
+<td>  0.914 <br/></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="readable-text" id="p197">
+<h3 class="readable-text-h3"><span class="num-string">4.4.3</span> <em>Deciding between GAT and XGBoost</em></h3>
+</div>
+<div class="readable-text" id="p198">
+<p>The choice between using XGBoost and GATs should be informed by specific use-case requirements and constraints. XGBoost offers efficiency and speed, which are advantageous for projects with limited computational resources or when quick model training is required. However, GATs provide the added benefit of deeply integrating node relational data, which is essential for projects where internode relationships are pivotal to understanding complex data patterns.</p>
+</div>
+<div class="readable-text intended-text" id="p199">
+<p>GATs are particularly valuable for their ability to be integrated into broader deep learning frameworks, offering enhanced node embeddings that encapsulate rich contextual information, thus making them suitable for complex relational datasets.</p>
+</div>
+<div class="readable-text intended-text" id="p200">
+<p>Our exploration into methods for addressing class imbalance has significantly informed our understanding of model performance in real-world scenarios. These insights are crucial for the effective development of robust and effective models, especially in fields where precision and recall are critically balanced. In the next, optional section, we go deeper into the concepts underlying GATs.</p>
+</div>
+<div class="readable-text" id="p201">
+<h2 class="readable-text-h2"><span class="num-string">4.5</span> Under the hood</h2>
+</div>
+<div class="readable-text" id="p202">
+<p>In this section, we discuss some of the additional details about attention and GATs. This is provided for those who want to know what’s going on under the hood, but you can safely skip this section if you’re more interested in learning how to apply the models. We dive into the equations from the GAT paper [8] and explain attention from a more intuitive perspective.</p>
+</div>
+<div class="readable-text" id="p203">
+<h3 class="readable-text-h3"><span class="num-string">4.5.1</span> Explaining attention and GAT models</h3>
+</div>
+<div class="readable-text" id="p204">
+<p>In this section, we provide a foundational overview of attention mechanisms. Attention, self-attention, and multihead attention are explained conceptually. Then, GATs are positioned as an extension of convolutional GNNs.</p>
+</div>
+<div class="readable-text" id="p205">
+<h4 class="readable-text-h4">Concept 1: The various attention mechanism types</h4>
+</div>
+<div class="readable-text" id="p206">
+<p>Attention is one of the most important concepts introduced into deep learning in the past decade. It’s the basis for the, now famous, transformer model that powers many of the breakthroughs in generative models such as large language models (LLMs). Attention is the mechanism by which a model can learn what aspects in its training to put extra emphasis on [13, 14]. What are the various types of attention in a model? </p>
+</div>
+<div class="readable-text" id="p207">
+<h4 class="readable-text-h4">Attention</h4>
+</div>
+<div class="readable-text" id="p208">
+<p>Imagine you’re reading a novel where the storyline isn’t linear but rather jumps around, connecting various characters, events, or even parallel storylines. While reading a chapter about a specific character, you remember and consider other parts of the book where this character has appeared or been mentioned. Your understanding of this character at any given moment is influenced by these different parts of the book.</p>
+</div>
+<div class="readable-text intended-text" id="p209">
+<p>In deep learning and GNNs, attention serves a similar purpose. When processing a sentence in an NLP problem, attention means the model can learn the importance of neighboring words. For a GNN considering a specific node in a graph, the model uses attention to weigh the importance of neighboring nodes. This helps the model decide which neighboring nodes are most relevant when trying to understand the current node, similar to how you remember relevant parts of the book to better understand a character.</p>
+</div>
+<div class="readable-text" id="p210">
+<h4 class="readable-text-h4">Self-attention</h4>
+</div>
+<div class="readable-text" id="p211">
+<p>Imagine reading a sentence in the novel that refers to multiple characters and events, some of which are related in complex ways. To understand this sentence fully, you have to recall how each character and event relate to each other, all within the scope of that sentence. You might find yourself focusing more on certain characters or events that are crucial to understanding the context of the sentence you’re currently reading.</p>
+</div>
+<div class="readable-text intended-text" id="p212">
+<p>For a GNN using self-attention, each node in a graph not only considers its immediate neighbors but also takes into account its own features and position in the graph. By doing this, each node receives a new representation influenced by a weighted context of itself and other nodes, which helps in tasks that require understanding the relationships between nodes in a complex graph.</p>
+</div>
+<div class="readable-text" id="p213">
+<h4 class="readable-text-h4">Multihead attention</h4>
+</div>
+<div class="readable-text" id="p214">
+<p>Suppose you’re a member of a book club that is reading the novel, and each member of your club is asked to focus on different aspects of the novel—one on character development, another on plot twists, and yet another on thematic elements. When you all come together to discuss, you get a multifaceted understanding of the book.</p>
+</div>
+<div class="readable-text intended-text" id="p215">
+<p>Similarly, in GNNs, multihead attention allows the model to have multiple “heads,” or attention mechanisms, focusing on various aspects or features of the neighboring nodes. These different heads can learn different patterns or relationships within the graph, and their outputs are usually aggregated to form a more complete understanding of each node’s role within the larger graph. </p>
+</div>
+<div class="readable-text" id="p216">
+<h4 class="readable-text-h4">Concept 2: GATs as variants of convolutional GNNs</h4>
+</div>
+<div class="readable-text" id="p217">
+<p>GATs extend convolutional GNNs by incorporating attention mechanisms. In traditional convolutional GNNs such as GCNs, the contributions from all neighbors during the message-passing step are equally weighted when aggregated. GATs, however, add in attention scores to the aggregation function to weigh these contributions. This is still permutation invariant (by design) but more descriptive than the summation operation in GCNs. </p>
+</div>
+<div class="readable-text" id="p218">
+<h4 class="readable-text-h4">PyG implementations</h4>
+</div>
+<div class="readable-text" id="p219">
+<p>PyG offers two versions of GAT layers. The two are distinguished by the types of attention used and the calculation of attention scores:</p>
+</div>
+<ul>
+<li class="readable-text" id="p220"> <code>GATConv</code>—Based on Veličković’s paper [1], this layer uses self-attention to calculate attention scores across the entire graph. It can also be configured to use multihead attention, thereby employing multiple “heads” to focus on various aspects of the input nodes. </li>
+<li class="readable-text" id="p221"> <code>GATv2Conv</code>—This layer improves upon GATConv by introducing <em>dynamic atten</em><em>tion</em>. Here, self-attention scores are recalculated in a node-specific context across layers, making the model more expressive in how it learns to weigh node representations constructed during the message-passing step within each layer of a GNN. As with <code>GATConv</code>, it supports multihead attention to capture various features or aspects more effectively. </li>
+</ul>
+<div class="readable-text" id="p222">
+<h4 class="readable-text-h4">Tradeoffs vs. other convolutional GNNs</h4>
+</div>
+<div class="readable-text" id="p223">
+<p>As implemented in PyG, GAT layers have advantages due to the use of attention. There are performance tradeoffs to consider, however. Key factors to consider are:</p>
+</div>
+<ul>
+<li class="readable-text" id="p224"> <em>Performance</em>—GATs generally have higher performance than standard convolutional GNNs as they can focus on the most relevant features. </li>
+<li class="readable-text" id="p225"> <em>Training time</em>—Increased performance comes at the cost of more time required to train the models due to the added complexity of computing the attention mechanisms. </li>
+<li class="readable-text" id="p226"> <em>Scalability</em>—The computational cost also affects the scalability, making GATs less suitable for very large or dense graphs. </li>
+</ul>
+<div class="readable-text" id="p227">
+<h3 class="readable-text-h3"><span class="num-string">4.5.2</span> Over-smoothing</h3>
+</div>
+<div class="readable-text" id="p228">
+<p>You’ve learned how to change the aggregation operation used in the message-passing step to include more complicated methods, such as attention mechanisms. However, there is always a risk of performance degradation when applying multiple rounds of message passing. This effect, known as <em>over-smoothing</em>, occurs because, after multiple rounds of message passing [15], the updated features can converge to similar values. An example of this is shown in figure 4.13. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p229">
+<img alt="figure" height="359" src="../Images/4-13.png" width="1007"/>
+<h5 class="figure-container-h5"><span class="num-string">Figure 4.13</span> Example of over-smoothing based on changing node features</h5>
+</div>
+<div class="readable-text" id="p230">
+<p>As we know, message passing occurs at each layer of a GNN. In fact, a GNN that has many layers is more at risk of over-smoothing than one that has fewer layers. This is one of the reasons why GNNs are typically more shallow than traditional deep learning models. </p>
+</div>
+<div class="readable-text intended-text" id="p231">
+<p>Another cause of over-smoothing happens when a problem has a significant long-range (in terms of number of hops) task that needs solving. For example, a node could be influenced by a far-off node. This is also known as having a large “problem radius.” Whenever we have a graph where nodes can have a very large effect on other nodes despite being multiple hops away, then the problem radius should be considered large. For example, social media networks might have a large problem radius if certain individuals such as celebrities can influence other individuals despite being distantly connected. Usually, this occurs when a graph is sufficiently large to have distantly connected nodes.</p>
+</div>
+<div class="readable-text intended-text" id="p232">
+<p>In general, if you think a problem may be at risk of over-smoothing, be careful with how many layers you introduce to the GNN, that is, how deep you make it. However, note that certain architectures appear less at risk of over-smoothing than others. For example, GraphSAGE samples a fixed number of neighbors and aggregates their information. This sampling can mitigate over-smoothing. On the other hand, GCNs are more at risk because they don’t have this sampling process, and while the attention mechanism partially lowers the risk, GATs can also suffer from over-smoothing because the aggregation is still local. </p>
+</div>
+<div class="readable-text" id="p233">
+<h3 class="readable-text-h3"><span class="num-string">4.5.3</span> Overview of key GAT equations</h3>
+</div>
+<div class="readable-text" id="p234">
+<p>In this section, we’ll briefly cover the key equations given in the GAT paper by Veličković et al. [1] and tie them to the concepts we’ve covered about GATs. GATs use attention mechanisms to learn which neighboring nodes are more important when updating a node’s features. They do this by computing attention scores (equations 1–3), which are then used to weigh and combine the features of neighboring nodes (equations 4–6). The use of multihead attention enhances the model’s expressiveness and robustness, allowing it to learn from multiple perspectives simultaneously. This approach can be computationally expensive, but it generally improves the performance of GNNs on various tasks such as node classification and link prediction.</p>
+</div>
+<div class="readable-text" id="p235">
+<h4 class="readable-text-h4">Attention coefficients calculation (equations 4.1–4.3)</h4>
+</div>
+<div class="readable-text" id="p236">
+<p>The first step in using GATs is to compute the attention scores or coefficients for each pair of connected nodes. These coefficients indicate how much “attention” or importance a node should give to its neighbor. Raw attention scores [1] are calculated as</p>
+</div>
+<div class="browsable-container equation-container" id="p237">
+<h5 class="browsable-container-h5"><span class="num-string">(4.1)</span></h5>
+<img alt="figure" height="25" src="../Images/Equation-4-1.png" width="192"/>
+</div>
+<div class="readable-text" id="p238">
+<p>Here, <em>e</em><sub>ij</sub> represents the raw attention score from node iii to its neighbor<em> j</em>:</p>
+</div>
+<ul>
+<li class="readable-text" id="p239"> <strong>h</strong><sub><em>i</em></sub> and <strong>h</strong><sub><em>j</em></sub> are the feature vectors (representations) of nodes <em>i</em> and <em>j</em>. </li>
+<li class="readable-text" id="p240"> <strong>W</strong> is a learnable weight matrix that linearly transforms the features of each node to a higher dimensional space. </li>
+<li class="readable-text" id="p241"> <em>α</em> is an attention mechanism (usually a neural network) that computes the importance score for each node pair. </li>
+</ul>
+<div class="readable-text" id="p242">
+<p>The idea is to assess how much information node <em>i</em> should consider from node <em>j</em>. Normalized attention coefficients [1] are calculated as</p>
+</div>
+<div class="browsable-container equation-container" id="p243">
+<h5 class="browsable-container-h5"><span class="num-string">(4.2)</span></h5>
+<img alt="figure" height="59" src="../Images/Equation-4-2.png" width="352"/>
+</div>
+<div class="readable-text" id="p244">
+<p>Once we have raw scores <em>e</em><sub>ij</sub>, we normalize them using a softmax function:</p>
+</div>
+<ul>
+<li class="readable-text" id="p245"> <em>α</em><sub><em>ij</em></sub> represents the normalized attention coefficient that quantifies the importance of node <em>j</em>’s features to node <em>i</em>. </li>
+<li class="readable-text" id="p246"> The softmax ensures that all attention coefficients for a given node iii sum up to 1, making them comparable across different nodes. </li>
+</ul>
+<div class="readable-text" id="p247">
+<p>Following is a detailed computation of attention coefficients [1]: </p>
+</div>
+<div class="browsable-container equation-container" id="p248">
+<h5 class="browsable-container-h5"><span class="num-string">(4.3)</span></h5>
+<img alt="figure" height="64" src="../Images/Equation-4-3.png" width="477"/>
+</div>
+<div class="readable-text" id="p249">
+<p>Here, the attention mechanism <em>α</em> is implemented using a single-layer feed-forward neural network with parameters <strong>a</strong>. The term <img alt="figure" height="10px" src="../Images/Equation-4-4.png"/> involves concatenating the transformed feature vectors of nodes <em>i </em>and <em>j</em>, and then applying a linear transformation followed by a nonlinear activation (leaky rectified linear unit [leaky ReLU]).</p>
+</div>
+<div class="readable-text" id="p250">
+<h4 class="readable-text-h4">Node representation update (equations 4.4–4.6)</h4>
+</div>
+<div class="readable-text" id="p251">
+<p>After computing the attention coefficients, the next step is to use them to aggregate information from the neighbors and update the node representations with attention [1]:</p>
+</div>
+<div class="browsable-container equation-container" id="p252">
+<h5 class="browsable-container-h5"><span class="num-string">(4.4)</span></h5>
+<img alt="figure" height="84" src="../Images/Equation-4-5.png" width="214"/>
+</div>
+<div class="readable-text" id="p253">
+<p>This equation computes the new representation <strong>h</strong><sub><em>i</em></sub><em>'</em> for node <em>i</em>:</p>
+</div>
+<ul>
+<li class="readable-text" id="p254"> The term <img alt="figure" height="15px" src="../Images/Equation-4-6.png"/> represents a weighted sum of the neighboring node features, where each feature vector is weighted by its corresponding attention coefficient <em>α</em><sub><em>ij</em></sub>. </li>
+</ul>
+<ul>
+<li class="readable-text" id="p255"> <em>σ</em> is a nonlinear activation function (like ReLU or sigmoid) that introduces nonlinearity into the model, helping it learn complex patterns. </li>
+</ul>
+<div class="readable-text" id="p256">
+<p>The multihead attention mechanism [1] is calculated as</p>
+</div>
+<div class="browsable-container equation-container" id="p257">
+<h5 class="browsable-container-h5"><span class="num-string">(4.5)</span></h5>
+<img alt="figure" height="84" src="../Images/Equation-4-7.png" width="264"/>
+</div>
+<div class="readable-text" id="p258">
+<p>To stabilize the learning process, GATs use multihead attention, as discussed earlier:</p>
+</div>
+<ul>
+<li class="readable-text" id="p259"> Here, <em>K</em> attention heads independently compute different sets of attention coefficients and corresponding weighted sums. </li>
+<li class="readable-text" id="p260"> The results from all heads are concatenated to form a richer, more expressive node representation. </li>
+</ul>
+<div class="readable-text" id="p261">
+<p>The following shows averaging for multihead attention in the final layer [1]:</p>
+</div>
+<div class="browsable-container equation-container" id="p262">
+<h5 class="browsable-container-h5"><span class="num-string">(4.6)</span></h5>
+<img alt="figure" height="85" src="../Images/Equation-4-9.png" width="287"/>
+</div>
+<div class="readable-text" id="p263">
+<p>In the final prediction layer of the network, instead of concatenating the outputs from different heads, we take their average. This reduces the dimensionality of the final output and simplifies the model’s prediction process.</p>
+</div>
+<div class="readable-text" id="p264">
+<h2 class="readable-text-h2">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p265"> A graph attention network (GAT) is a specialized type of graph neural network (GNN) that incorporates attention mechanisms to focus on the most relevant nodes during the learning process. </li>
+<li class="readable-text" id="p266"> GATs excel in domains where certain nodes have disproportionate importance, such as social networks, fraud detection, and anomaly detection. </li>
+<li class="readable-text" id="p267"> The chapter uses a dataset derived from Yelp reviews, focusing on detecting fake reviews for hotels and restaurants in Chicago. Reviews are represented as nodes, with edges representing shared characteristics (e.g., common authors or businesses). </li>
+<li class="readable-text" id="p268"> GATs were applied to this dataset to classify nodes (reviews) as fraudulent or legitimate. The GAT models showed improvements over baseline models such as logistic regression, XGBoost, and graph convolutional networks (GCNs). </li>
+<li class="readable-text" id="p269"> GATs are memory-intensive due to their need to compute attention scores for all edges. To handle this, mini-batching with the <code>NeighborLoader</code> class in PyTorch Geometric (PyG) was used. </li>
+<li class="readable-text" id="p270"> The GAT layers in PyG, such as <code>GATConv</code> and <code>GATv2Conv</code>, apply different types of attention to graph learning problems. </li>
+<li class="readable-text" id="p271"> Strategies such as SMOTE and class reshuffling can be employed to address class imbalance. For our case, class reshuffling significantly improved model performance. </li>
+</ul>
+</div></body></html>

@@ -1,0 +1,560 @@
+<html><head></head><body>
+<div class="calibre1" id="sbo-rt-content"><h1 class="tochead" id="heading_id_2">5 <a id="idTextAnchor000"/><a id="idTextAnchor001"/><a id="idTextAnchor002"/><a id="idTextAnchor003"/><a id="idTextAnchor004"/><a id="idTextAnchor005"/>Selecting characteristics in generated images</h1>
+<p class="co-summary-head"><a id="marker-97"/>This chapter covers<a id="idIndexMarker000"/></p>
+<ul class="calibre5">
+<li class="co-summary-bullet">Building a conditional generative adversarial network to generate images with certain attributes (human faces with or without eyeglasses, for example) <a class="calibre" id="idIndexMarker001"/></li>
+<li class="co-summary-bullet">Implementing Wasserstein distance and gradient penalty to improve image quality</li>
+<li class="co-summary-bullet">Selecting vectors associated with different features so that the trained GAN model generates images with certain characteristics (male or female faces, for example)</li>
+<li class="co-summary-bullet">Combining conditional GAN with vector selection to specify two attributes simultaneously (female faces without glasses or male faces with glasses, for example)</li>
+</ul>
+<p class="body">The anime faces we generated with deep convolutional GAN (DCGAN) in chapter 4 look realistic. However, you may have noticed that each generated image has different attributes such as hair color, eye color, and whether the head tilts toward the left or right. You may be wondering if there is a way to tweak the model so that the generated images have certain characteristics (such as with black hair and tilting toward the left). It turns out you can.</p>
+<p class="body">In this chapter, you’ll learn two different ways of selecting characteristics in the generated images and their respective advantages and disadvantages. The first method involves selecting specific vectors in the latent space. Different vectors correspond to different characteristi<a id="idTextAnchor006"/>cs—for example, one vector might result in a male face and another in a female face. The second method uses a conditional GAN (cGAN), which involves training the model on labeled data. This allows us to prompt the model to generate images with a specified label, each representing a distinct characteristic—like faces with or without eyeglasses.<a id="idIndexMarker002"/></p>
+<p class="body">In addition, you’ll learn to combine the two methods so that you can select two independent attributes of the images at the same time. As a result, you can generate four different groups of images: males with glasses, males without glasses, females with glasses, and females without glasses. To make things more interesting, you can use a weighted average of the labels or a weighted average of the input vectors to generate images that transition from one attribute to another. For example, you can generate a series of images so that the eyeglasses gradually fade out on the same person’s face (label arithmetic). Or you can generate a series of images so that the male features gradually fade out and a male face changes to a female face (vector arithmetic).</p>
+<p class="body">Being able to conduct either vector arithmetic or label arithmetic alone feels like science fiction, let alone performing the two simultaneously. The whole experience reminds us of the quote by Arthur C. Clarke (author of <i class="fm-italics">2001: A Space Odyssey</i>), “Any sufficiently advanced technology is indistinguishable from magic.” <a id="idIndexMarker003"/></p>
+<p class="body">Despite the realism of the anime faces generated in chapter 4, they were limited by low resolution. Training GAN models can be tricky and is often hampered by problems like small sample sizes or low-quality images. These challenges can prevent models from converging, resulting in poor image quality. To address this, we’ll discuss and implement an improved training technique using the Wasserstein distance with gradient penalty in our cGAN. This enhancement results in more realistic human faces and noticeably better image quality compared to the previous chapter.</p>
+<h2 class="fm-head" id="heading_id_3">5.1 The eyeglasses dataset</h2>
+<p class="body"><a id="marker-98"/>We’ll use the eyeglasses dataset in this chapter to train a cGAN model. In the next chapter, we’ll also use this dataset to train a CycleGAN model in one of the exercises: to convert an image with eyeglasses to an image without eyeglasses and vice versa. In this section, you’ll learn to download the dataset and preprocess images in it. <a id="idIndexMarker004"/><a id="idIndexMarker005"/></p>
+<p class="body">The Python programs in this chapter and the next are adapted from two excellent online open-source projects: the Kaggle project by Yashika<a id="idTextAnchor007"/> Jain <a class="url" href="https://mng.bz/JNVQ">https://mng.bz/JNVQ</a> and a GitHub repository by Aladdin Pe<a id="idTextAnchor008"/>rsson <a class="url" href="https://mng.bz/w5yg">https://mng.bz/w5yg</a>. I encourage you to look into these two projects while going through this chapter and the next.</p>
+<h3 class="fm-head1" id="heading_id_4">5.1.1 Downloading the eyeglasses dataset</h3>
+<p class="body">The eyeglasses dataset we use is from Kaggle. Log into Kaggle and go to the<a id="idTextAnchor009"/> link <a class="url" href="https://mng.bz/q0oz">https://mng.bz/q0oz</a> to download the image folder and the two CSV files on the right: <code class="fm-code-in-text">train.csv</code> and <code class="fm-code-in-text">test.csv</code>. There are 5,000 images in the folder /faces-spring-2020/. Once you have the data, place both the image folder and the two CSV files inside the folder /files/ on your computer.<a id="idIndexMarker006"/><a id="idIndexMarker007"/><a id="idIndexMarker008"/><a id="idIndexMarker009"/></p>
+<p class="body">Next, we’ll sort the photos into two subfolders: one containing only images with eyeglasses and another one with images without eyeglasses.</p>
+<p class="body">First, let’s look at the file train.csv:</p>
+<pre class="programlisting">!pip install pandas
+import pandas as pd
+  
+train=pd.read_csv('files/train.csv')               <span class="fm-combinumeral">①</span>
+train.set_index('id', inplace=True)                <span class="fm-combinumeral">②</span></pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Loads the data in the file train.csv as a pandas DataFrame</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Sets the values in the id column as the indexes of observations</p>
+<p class="body">The previous code cell imports the file <code class="fm-code-in-text">train.csv</code> and sets the variable <code class="fm-code-in-text">id</code> as the index of each observation. The column <code class="fm-code-in-text">glasses</code> in the file has two values: 0 or 1, indicating whether the image has eyeglasses in it or not (0 means no glasses; 1 means with glasses).<a id="idIndexMarker010"/><a id="marker-99"/><a id="idIndexMarker011"/></p>
+<p class="body">Next, we separate the images into two different folders: one containing images with eyeglasses and one containing images without eyeglasses.</p>
+<p class="fm-code-listing-caption">Listing 5.1 Sorting images with and without eyeglasses</p>
+<pre class="programlisting">import os, shutil
+  
+G='files/glasses/G/'
+NoG='files/glasses/NoG/'
+os.makedirs(G, exist_ok=True)                       <span class="fm-combinumeral">①</span>
+os.makedirs(NoG, exist_ok=True)                     <span class="fm-combinumeral">②</span>
+folder='files/faces-spring-2020/faces-spring-2020/'
+for i in range(1,4501):
+    oldpath=f"{folder}face-{i}.png"
+    if train.loc[i]['glasses']==0:                  <span class="fm-combinumeral">③</span>
+        newpath=f"{NoG}face-{i}.png"
+    elif train.loc[i]['glasses']==1:                <span class="fm-combinumeral">④</span>
+        newpath=f"{G}face-{i}.png"
+    shutil.move(oldpath, newpath)</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates a subfolder /files/glasses/G/ to contain images with eyeglasses</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Creates a subfolder /files/glasses/NoG/ to contain images without eyeglasses</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Moves images labeled 0 to folder NoG</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Moves images labeled 1 to folder G</p>
+<p class="body">In the preceding code cell, we first use the <code class="fm-code-in-text">os</code> library to create two subfolders /glasses/G/ and /glasses/NoG/ inside the folder /files/ on your computer. We then use the <code class="fm-code-in-text">shutil</code> library to move images to the two folders based on the label <code class="fm-code-in-text">glasses</code> in the file <code class="fm-code-in-text">train.csv</code>. Those labeled 1 are moved to folder G and those labeled 0 to folder NoG. <a id="idIndexMarker012"/><a id="idIndexMarker013"/><a id="idIndexMarker014"/><a id="idIndexMarker015"/></p>
+<h3 class="fm-head1" id="heading_id_5">5.1.2 Visualizing images in the eyeglasses dataset</h3>
+<p class="body">The classification column <code class="fm-code-in-text">glasses</code> in the file <code class="fm-code-in-text">train.csv</code> is not perfect. If you go to the subfolder G on your computer, for example, you’ll see that most images have glasses, but about 10% have no glasses. Similarly, if you go to the subfolder NoG, you’ll see that about 10% actually have glasses. You need to manually correct this by moving images from one folder to the other. This is important for our training later so you should manually move images in the two folders so that one contains only images with glasses and the other images without glasses. Welcome to the life of a data scientist: fixing data problems is part of daily routine! Let’s first visualize some examples of images with eyeglasses.<a id="idIndexMarker016"/><a id="idIndexMarker017"/><a id="idIndexMarker018"/><a id="idIndexMarker019"/><a id="marker-100"/></p>
+<p class="fm-code-listing-caption">Listing 5.2 Visualizing images with eyeglasses</p>
+<pre class="programlisting">import random
+import matplotlib.pyplot as plt
+from PIL import Image
+  
+imgs=os.listdir(G)
+random.seed(42)
+samples=random.sample(imgs,16)               <span class="fm-combinumeral">①</span>
+fig=plt.figure(dpi=200, figsize=(8,2))
+for i in range(16):                          <span class="fm-combinumeral">②</span>
+    ax = plt.subplot(2, 8, i + 1)
+    img=Image.open(f"{G}{samples[i]}")
+    plt.imshow(img)
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.01,hspace=-0.01)
+plt.show()</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Randomly selects 16 images from folder G</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Displays the 16 images in a 2 <span class="cambria">×</span> 8 grid</p>
+<p class="body">If you have manually corrected the mislabeling of images in folder G, you’ll see 16 images with eyeglasses after running the code in listing 5.2. The output is shown in figure 5.1.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="211" src="../../OEBPS/Images/CH05_F01_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.1 Sample images with eyeglasses in the training dataset</p>
+</div>
+<p class="body">You can change G to NoG in listing 5.2 to visualize 16 sample images without eyeglasses in the dataset. The complete code is in the book’s GitHub repository <a class="url" href="https://github.com/markhliu/DGAI">https://github.com/markhliu/DGAI</a>. The output is shown in figure 5.2. <a id="idIndexMarker020"/><a id="idIndexMarker021"/></p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="211" src="../../OEBPS/Images/CH05_F02_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.2 Sample images without eyeglasses in the training dataset</p>
+</div>
+<h2 class="fm-head" id="heading_id_6">5.2 cGAN and Wasserstein distance</h2>
+<p class="body">A cGAN is similar to the GAN models you have seen in chapters 3 and 4, with the exception that you attach a label to the input data. The labels correspond to different characteristics in the input data. Once the trained GAN model “learns” to associate a certain label with a characteristic, you can feed a random noise vector with a label to the model to generate output with the desired characteristic.<sup class="footnotenumber" id="footnote-002-backlink"><a class="url1" href="#footnote-002">1</a></sup> <a id="idIndexMarker022"/><a id="idIndexMarker023"/><a id="marker-101"/><a id="idIndexMarker024"/></p>
+<p class="body">GAN models often suffer from problems like mode collapse (the generator finds a certain type of output that is good at fooling the discriminator and then collapses its outputs to these few modes, ignoring other variations), vanishing gradients, and slow convergence. Wasserstein GAN (WGAN) introduces the Earth Mover’s (or Wasserstein-1) distance as the loss function, offering a smoother gradient flow and more stable training. It mitigates problems like mode collapse.<sup class="footnotenumber" id="footnote-001-backlink"><a class="url1" href="#footnote-001">2</a></sup> We’ll implement it in cGAN training in this chapter. Note that WGAN is a concept independent of cGAN: It uses the Wasserstein distance to improve the training process and can be applied to any GAN model (such as the ones we created in chapters 3 and 4). We’ll combine both concepts in one setting to save space. <a id="idIndexMarker025"/><a id="idIndexMarker026"/><a id="idIndexMarker027"/><a id="idIndexMarker028"/><a id="idIndexMarker029"/></p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Other ways to stabilize GAN training</p>
+<p class="fm-sidebar-text">The problems with training GAN models are most common when generating high-resolution images. The model architecture is usually complex, with many neural layers. Other than WGAN, progressive GAN is another way to stabilize training. Progressive GANs enhance the stability of GAN training by breaking down the complex task of high-resolution image generation into manageable steps, allowing for more controlled and effective learning. For details, see “Progressive Growing of GANs for Improved Quality, Stability, and Variation.” by Karas et al., <a class="url" href="https://arxiv.org/abs/1710.10196">https://arxiv.org/abs/1710.10196</a>.</p>
+</div>
+<h3 class="fm-head1" id="heading_id_7">5.2.1 WGAN with gradient penalty</h3>
+<p class="body">WGAN is a technique used to improve the training stability and performance of GAN models. Regular GANs (such as the ones you have seen in Chapters 3 and 4) have two components—a generator and a discriminator. The generator creates fake data, while the discriminator evaluates whether the data is real or fake. Training involves a competitive zero-sum game in which the generator tries to fool the discriminator, and the discriminator tries to accurately classify real and fake data instances. <a id="idIndexMarker030"/><a id="idIndexMarker031"/><a id="idIndexMarker032"/><a id="idIndexMarker033"/></p>
+<p class="body">Researchers have proposed to use Wasserstein distance (a measure of dissimilarity between two distributions) instead of the binary cross-entropy as the loss function to stabilize training with a gradient penalty term.<sup class="footnotenumber" id="footnote-000-backlink"><a class="url1" href="#footnote-000">3</a></sup> The technique offers a smoother gradient flow and mitigates problems like mode collapse. Figure 5.3 provides a diagram of WGAN. As you can see on the right side of the figure, the losses associated with the real and fake images are Wasserstein loss instead of the regular binary cross-entropy loss.<a id="idIndexMarker034"/><a id="idIndexMarker035"/></p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="339" src="../../OEBPS/Images/CH05_F03_Liu.png" width="842"/></p>
+<p class="figurecaption">Figure 5.3 WGAN with gradient penalty. The discriminator network in WGAN (which we call the critic) rates input image<a id="idTextAnchor010"/>s: it tries to assign a score of –∞ to a fake image (bottom left) and a score of ∞ to the real image (top middle). Further, an interpolated image of the real and fake images (top left) is presented to the critic, and the gradient penalty with respect to the critic’s rating on the interpolated image is added to the total loss in the training process.</p>
+</div>
+<p class="body"><a id="marker-102"/>Further, for the Wasserstein distance to work correctly, the discriminator (called the critic in WGANs) must be 1-Lipschitz continuous, meaning the gradient norms of the critic’s function must be at most 1 everywhere. The original WGAN paper proposed weight clipping to enforce the Lipschitz constraint.</p>
+<p class="body">To address weight clipping problems, the gradient penalty is added to the loss function to enforce the Lipschitz constraint more effectively. To implement WGAN with gradient penalty, we first randomly sample points along the straight line between real and generated data points (as indicated by the interpolated image in the top left of figure 5.3). Since both real and fake images have labels attached to them, the interpolated image also has a label attached to it, which is the interpolated value of the two original labels. We then compute the gradient of the critic’s output with respect to these sampled points. Finally, we add a penalty to the loss function proportional to the deviation of these gradient norms from 1 (the penalty term is called gradient penalty). That is, gradient penalty in WGANs is a technique to improve training stability and sample quality by enforcing the Lipschitz constraint more effectively, addressing the limitations of the original WGAN model.</p>
+<h3 class="fm-head1" id="heading_id_8">5.2.2 cGANs</h3>
+<p class="body">cGAN is an extension of the basic GAN framework. In a cGAN, both the generator and the discriminator (or the critic since we are implementing WGAN and cGAN in the same setting) are conditioned on some additional information. This could be anything, such as class labels, data from other modalities, or even textual descriptions. This conditioning is typically achieved by feeding this additional information into both the generator and discriminator. In our setting, we’ll add class labels to the inputs to both the generator and the critic: we attach one label to images with eyeglasses and another label to images without eyeglasses. Figure 5.4 provides a diagram of the training process for cGANs.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="454" src="../../OEBPS/Images/CH05_F04_Liu.png" width="842"/></p>
+<p class="figurecaption">Figure 5.4 The training process for cGANs</p>
+</div>
+<p class="body"><a id="marker-103"/>As you can see at the top left of figure 5.4, in a cGAN, the generator receives both a random noise vector and the conditional information (a label indicating whether the image has eyeglasses or not) as input. It uses this information to generate data that not only looks real but also aligns with the conditional input.</p>
+<p class="body">The critic receives either real data from the training set or fake data generated by the generator, along with the conditional information (a label indicating whether the image has eyeglasses or not in our setting). Its task is to determine whether the given data is real or fake, taking the conditional information into account (does the generated image have eyeglasses in it?). In figure 5.4, we use the critic network instead of the discriminator network since we implement both cGAN and WGAN simultaneously, but the concept of cGAN applies to traditional GANs as well.</p>
+<p class="body">The main advantage of cGANs is their ability to select aspects of the generated data, making them more versatile and applicable in scenarios where the output needs to be directed or conditioned on certain input parameters. In our setting, we’ll train the cGAN so that we have the ability to select whether the generated images have eyeglasses or not.</p>
+<p class="body">In summary, cGANs are a powerful extension of the basic GAN architecture, enabling targeted generation of synthetic data based on conditional inputs.<a id="idIndexMarker036"/><a id="idIndexMarker037"/><a id="idIndexMarker038"/><a id="idIndexMarker039"/><a id="idIndexMarker040"/><a id="idIndexMarker041"/><a id="idIndexMarker042"/></p>
+<h2 class="fm-head" id="heading_id_9">5.3 Create a cGAN</h2>
+<p class="body">In this section, you’ll learn to create a cGAN to generate human faces with or without eyeglasses. You’ll also learn to implement the WGAN with gradient penalty to stabilize training. <a id="idIndexMarker043"/><a id="idIndexMarker044"/><a id="idIndexMarker045"/></p>
+<p class="body">The generator in cGANs uses not only random noise vectors but also conditional information such as labels as inputs to create images either with or without eyeglasses. Further, a critic network in WGANs is different from the discriminator network in traditional GANs. You’ll also learn how to calculate the Wasserstein distance and the gradient penalty in this section.</p>
+<h3 class="fm-head1" id="heading_id_10">5.3.1 A critic in cGAN</h3>
+<p class="body"><a id="marker-104"/>In cGANs, the discriminator is a binary classifier to identify the input as either real or fake, conditional on the label. In WGAN, we call the discriminator network the critic. The critic evaluates the input and gives a score between <span class="times">−∞</span> and <span class="times">∞</span>. The higher the score, the more likely that the input is from the training set (that is, real). <a id="idIndexMarker046"/><a id="idIndexMarker047"/><a id="idIndexMarker048"/></p>
+<p class="body">Listing 5.3 creates the critic network. The architecture is somewhat similar to the discriminator network we used in chapter 4 when generating color images of anime faces. In particular, we use seven <code class="fm-code-in-text">Conv2d</code> layers in PyTorch to gradually downsample the input so that the output is a single value between <span class="times">−∞</span> and <span class="times">∞</span>. <a id="idIndexMarker049"/></p>
+<p class="fm-code-listing-caption">Listing 5.3 A critic network in cGAN with Wasserstein distance</p>
+<pre class="programlisting">class Critic(nn.Module):
+    def __init__(self, img_channels, features):
+        super().__init__()
+        self.net = nn.Sequential(                              <span class="fm-combinumeral">①</span>
+            nn.Conv2d(img_channels, features, 
+                      kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2),
+            self.block(features, features * 2, 4, 2, 1),
+            self.block(features * 2, features * 4, 4, 2, 1),
+            self.block(features * 4, features * 8, 4, 2, 1),
+            self.block(features * 8, features * 16, 4, 2, 1),
+            self.block(features * 16, features * 32, 4, 2, 1),
+            nn.Conv2d(features * 32, 1, kernel_size=4,
+                      stride=2, padding=0))                    <span class="fm-combinumeral">②</span>
+    def block(self, in_channels, out_channels, 
+              kernel_size, stride, padding):
+        return nn.Sequential(                                  <span class="fm-combinumeral">③</span>
+            nn.Conv2d(in_channels,out_channels,
+                kernel_size,stride,padding,bias=False,),
+            nn.InstanceNorm2d(out_channels, affine=True),
+            nn.LeakyReLU(0.2))
+    def forward(self, x):
+        return self.net(x)</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> The critic network has two Conv2d layers plus five blocks.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> The output has one feature, without activation.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Each block contains a Conv2d layer, an InstanceNorm2d layer, with LeakyReLU activation.</p>
+<p class="body">The input to the critic network is a color image with a shape of <span class="times">5 <span class="cambria">×</span> 256 <span class="cambria">×</span> 256</span>. The first three channels are the color channels (colors red, green, and blue). The last two channels (the fourth and fifth channels) are label channels to tell the critic whether the image is with glasses or without glasses. We’ll discuss the exact mechanism to accomplish this in the next section.</p>
+<p class="body">The critic network consists of seven <code class="fm-code-in-text">Conv2d</code> layers. In chapter 4, we discussed in depth how these layers work. They are used for feature extraction by applying a set of learnable filters on the input images to detect patterns and features at different spatial scales, effectively capturing hierarchical representations of the input data. The critic then evaluates the input images based on these representations. The five <code class="fm-code-in-text">Conv2d</code> layers in the middle are all followed by an <code class="fm-code-in-text">InstanceNorm2d</code> layer and a <code class="fm-code-in-text">LeakyReLU</code> activation; hence, we define a <code class="fm-code-in-text">block()</code> method to streamline the critic network. The <code class="fm-code-in-text">InstanceNorm2d</code> layer is similar to the <code class="fm-code-in-text">BatchNorm2d</code> layer we discussed in chapter 4, except that we normalize each individual instance in the batch independently. <a id="idIndexMarker050"/><a id="idIndexMarker051"/><a id="idIndexMarker052"/><a id="idIndexMarker053"/><a id="idIndexMarker054"/><a id="idIndexMarker055"/><a id="marker-105"/><a id="idIndexMarker056"/></p>
+<p class="body">Another key point is that the output is no longer a value between 0 and 1 since we don’t use the sigmoid activation in the last layer in the critic netw<a id="idTextAnchor011"/>ork. Instead, the output is a value between −∞ and ∞ since we use the Wasserstein distance with gradient penalty in our cGAN.</p>
+<h3 class="fm-head1" id="heading_id_11">5.3.2 A generator in cGAN</h3>
+<p class="body">In WGANs, the generator’s job is to create data instances so that they can be evaluated at a high score by the critic. In cGANs, the generator must generate data instances with conditional information (with or without eyeglasses in our setting). Since we are implementing a cGAN with Wasserstein distance, we’ll tell the generator what type of images we want to generate by attaching a label to the random noise vector. We’ll discuss the exact mechanism in the next section. <a id="idIndexMarker057"/><a id="idIndexMarker058"/><a id="idIndexMarker059"/></p>
+<p class="body">We create the neural network shown in the following listing to represent the generator.</p>
+<p class="fm-code-listing-caption">Listing 5.4 A generator in cGAN</p>
+<pre class="programlisting">class Generator(nn.Module):
+    def __init__(self, noise_channels, img_channels, features):
+        super(Generator, self).__init__()
+        self.net = nn.Sequential(                             <span class="fm-combinumeral">①</span>
+            self.block(noise_channels, features *64, 4, 1, 0),
+            self.block(features * 64, features * 32, 4, 2, 1),
+            self.block(features * 32, features * 16, 4, 2, 1),
+            self.block(features * 16, features * 8, 4, 2, 1),
+            self.block(features * 8, features * 4, 4, 2, 1),
+            self.block(features * 4, features * 2, 4, 2, 1),
+            nn.ConvTranspose2d(
+                features * 2, img_channels, kernel_size=4,
+                stride=2, padding=1),    
+            nn.Tanh())                                        <span class="fm-combinumeral">②</span>
+    def block(self, in_channels, out_channels, 
+              kernel_size, stride, padding):
+        return nn.Sequential(                                 <span class="fm-combinumeral">③</span>
+            nn.ConvTranspose2d(in_channels,out_channels,
+                kernel_size,stride,padding,bias=False,),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),)
+    def forward(self, x):
+        return self.net(x)</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> The generator consists of seven ConvTranspose2d layers.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Uses Tanh activation to squeeze values to the range [–1, 1], the same as images in the training set</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Each block consists of a ConvTranspose2d layer, a BatchNorm2d layer, and ReLU activation.</p>
+<p class="body">We’ll feed a random noise vector from a 100-dimensional latent space to the generator as input. We’ll also feed a 2-value one-hot encoded image label to the generator to tell it to generate an image either with or without eyeglasses. We’ll concatenate the two pieces of information together to form a 102-dimensional input variable to the generator. The generator then generates a color image based on the input from the latent space and the labeling information.</p>
+<p class="body">The generator network consists of seven <code class="fm-code-in-text">ConvTranspose2d</code> layers, and the idea is to mirror the steps in the critic network to conjure up images, as we discussed in chapter 4. The first six <code class="fm-code-in-text">ConvTranspose2d</code> layers are all followed by a <code class="fm-code-in-text">BatchNorm2d</code> layer and a <code class="fm-code-in-text">ReLU</code> activation; hence, we define a <code class="fm-code-in-text">block()</code> method in the generator network to simplify the architecture. As we have done in chapter 4, we use the Tanh activation function at the output layer so the output pixels are all in the range of –1 and 1, the same as the images in the training set.<a id="idIndexMarker060"/><a id="idIndexMarker061"/><a id="idIndexMarker062"/><a id="idIndexMarker063"/><a id="idIndexMarker064"/><a id="marker-106"/></p>
+<h3 class="fm-head1" id="heading_id_12">5.3.3 Weight initialization and the gradient penalty function</h3>
+<p class="body">In deep learning, the weights in neural networks are randomly initialized. When the network architecture is complicated, and there are many hidden layers (which is the case in our setting), how weights are initialized is crucial. <a id="idIndexMarker065"/><a id="idIndexMarker066"/><a id="idIndexMarker067"/><a id="idIndexMarker068"/><a id="idIndexMarker069"/><a id="idIndexMarker070"/><a id="idIndexMarker071"/><a id="idIndexMarker072"/><a id="idIndexMarker073"/></p>
+<p class="body">We, therefore, define the following <code class="fm-code-in-text">weights_init()</code> function to initialize weights in both the generator and the critic networks:<a id="idIndexMarker074"/></p>
+<pre class="programlisting">def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)   </pre>
+<p class="body">The function initializes weights in <code class="fm-code-in-text">Conv2d</code> and <code class="fm-code-in-text">ConvTranspose2d</code> layers with values drawn from a normal distribution with a mean of 0 and a standard deviation of 0.02. It also initializes weights in <code class="fm-code-in-text">BatchNorm2d</code> layers with values drawn from a normal distribution with a mean of 1 and a standard deviation of 0.02. We choose a small standard deviation in weight initializations to avoid exploding gradients. <a id="idIndexMarker075"/><a id="idIndexMarker076"/><a id="idIndexMarker077"/></p>
+<p class="body">Next, we create a generator and a critic based on the <code class="fm-code-in-text">Generator()</code> and <code class="fm-code-in-text">Critic()</code> classes we defined in the last subsection. We then initialize the weights in them based on the <code class="fm-code-in-text">weights_init()</code> function defined earlier:<a id="idIndexMarker078"/><a id="idIndexMarker079"/><a id="idIndexMarker080"/></p>
+<pre class="programlisting">z_dim=100
+img_channels=3
+features=16
+gen=Generator(z_dim+2,img_channels,features).to(device)
+critic=Critic(img_channels+2,features).to(device)
+weights_init(gen)
+weights_init(critic)</pre>
+<p class="body">As usual, we’ll use the Adam optimizer for both the critic and the generator:</p>
+<pre class="programlisting">lr = 0.0001
+opt_gen = torch.optim.Adam(gen.parameters(), 
+                         lr = lr, betas=(0.0, 0.9))
+opt_critic = torch.optim.Adam(critic.parameters(), 
+                         lr = lr, betas=(0.0, 0.9))</pre>
+<p class="body">The generator tries to create images that are indistinguishable from those in the training set with the given label. It presents the images to the critic to obtain high ratings on the generated images. The critic, on the other hand, tries to assign high ratings to real images and low ratings to fake images, conditional on the given label. Specifically, the loss function for the critic has three components:</p>
+<p class="fm-equation">critic_value(fake) − critic_value(real) + weight <span class="cambria">×</span> GradientPenalty</p>
+<p class="body"><a id="marker-107"/>The first term, <i class="fm-italics">critic_value(fake)</i>, says that if an image is fake, the critic’s objective is to identify it as fake and give it a low evaluation. The second term, <i class="fm-italics">− critic_value(real)</i>, indicates that if the image is real, the critic’s objective is to identify it as real and give it a high evaluation. Further, the critic wants to minimize the gradient penalty term, <i class="fm-italics">weight</i> <i class="fm-italics"><span class="cambria">×</span> GradientPenalty</i>, where <i class="fm-italics">weight</i> is a constant to determine how much penalty we want to assign to deviations of the gradient norms from the value 1. The gradient penalty is calculated as shown in the following listing.</p>
+<p class="fm-code-listing-caption">Listing 5.5 Calculating gradient penalty</p>
+<pre class="programlisting">def GP(critic, real, fake):
+    B, C, H, W = real.shape    
+    alpha=torch.rand((B,1,1,1)).repeat(1,C,H,W).to(device)    
+    interpolated_images = real*alpha+fake*(1-alpha)         <span class="fm-combinumeral">①</span>
+    critic_scores = critic(interpolated_images)             <span class="fm-combinumeral">②</span>
+    gradient = torch.autograd.grad(    
+        inputs=interpolated_images,
+        outputs=critic_scores,
+        grad_outputs=torch.ones_like(critic_scores),
+        create_graph=True,
+        retain_graph=True)[0]                               <span class="fm-combinumeral">③</span>
+    gradient = gradient.view(gradient.shape[0], -1)
+    gradient_norm = gradient.norm(2, dim=1)
+    gp = torch.mean((gradient_norm - 1) ** 2)               <span class="fm-combinumeral">④</span>
+    return gp</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates an interpolated image of the real and the fake</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Obtains the critic value with respect to the interpolated image</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Calculates the gradient of the critic value</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Gradient penalty is the squared deviation of the gradient norm from value 1.</p>
+<p class="body">In the function <code class="fm-code-in-text">GP()</code>, we first create interpolated images of real ones and fake ones. This is done by randomly sampling points along the straight line between real and generated images. Imagine a slider: at one end is the real image, and at the other is the fake image. As you move the slider, you see a continuous blend from the real to the fake, with the interpolated images representing the stages in between.<a id="idIndexMarker081"/></p>
+<p class="body">We then present interpolated images to the critic network to obtain ratings on them and calculate the gradient of the critic’s output with respect to the interpolated images. Finally, the gradient penalty is calculated as the squared deviation of the gradient norms from the target value of 1.<a id="idIndexMarker082"/><a id="idIndexMarker083"/><a id="idIndexMarker084"/><a id="idIndexMarker085"/><a id="idIndexMarker086"/><a id="idIndexMarker087"/><a id="idIndexMarker088"/><a id="idIndexMarker089"/><a id="idIndexMarker090"/><a id="idIndexMarker091"/><a id="idIndexMarker092"/><a id="idIndexMarker093"/></p>
+<h2 class="fm-head" id="heading_id_13">5.4 Training the cGAN</h2>
+<p class="body"><a id="marker-108"/>As we mentioned in the last section, we need to find a way to tell both the critic and the generator what the image label is so they know if the image has eyeglasses or not.<a id="idIndexMarker094"/><a id="idIndexMarker095"/></p>
+<p class="body">In this section, you’ll first learn how to add labels to the inputs to the critic network and the inputs to the generator network so the generator knows what type of images to create while the critic can evaluate the images conditional on the labels. After that, you’ll learn how to train the cGAN with Wasserstein distance.</p>
+<h3 class="fm-head1" id="heading_id_14">5.4.1 Adding labels to inputs</h3>
+<p class="body">We first preprocess the data and convert the images to torch tensors:<a id="idIndexMarker096"/><a id="idIndexMarker097"/><a id="idIndexMarker098"/></p>
+<pre class="programlisting">import torchvision.transforms as T
+import torchvision
+  
+batch_size=16
+imgsz=256
+transform=T.Compose([
+    T.Resize((imgsz,imgsz)),
+    T.ToTensor(),
+    T.Normalize([0.5,0.5,0.5],[0.5,0.5,0.5])])      
+data_set=torchvision.datasets.ImageFolder(
+    root=r"files/glasses",
+    transform=transform) </pre>
+<p class="body">We set the batch size to 16 and the image size to 256 by 256 pixels. The pixel values are chosen so the generated images have higher resolutions than those in the last chapter (64 by 64 pixels). We choose a batch size of 16, smaller than the batch size in chapter 3, due to the larger image size. If the batch size is too large, your GPU (or even CPU) will run out of memory.</p>
+<p class="fm-callout"><span class="fm-callout-head">tip</span> If you are using GPU training and your GPU has a small memory (say, 6GB), consider reducing the batch size to a smaller number than 16, such as 10 or 8, so that your GPU doesn’t run out of memory. Alternatively, you can keep the batch size at 16 but switch to CPU training to address the GPU memory problem.</p>
+<p class="body">Next, we’ll add labels to the training data. Since there are two types of images—images with eyeglasses and images without glasses—we’ll create two one-hot image labels. Images with glasses will have a one-hot label of [1, 0], and images without glasses will have a one-hot label of [0, 1].</p>
+<p class="body">The input to the generator is a 100-value random noise vector. We concatenate the one-hot label with the random noise vector and feed the 102-value input to the generator. The input to the critic network is a three-channel color image with a shape of 3 by 256 by 256 (PyTorch uses channel-first tensors to represent images). How do we attach a label with a shape of 1 by 2 to an image with a shape of 3 by 256 by 256? The solution is to add two channels to the input image so that the image shape changes from (3, 256, 256) to (5, 256, 256): the two additional channels are the one-hot labels. Specifically, if an image has eyeglasses in it, the fourth channel is filled with 1s and the fifth channel 0s; if the image has no eyeglasses in it, the fourth channel is filled with 0s and the fifth channel 1s.<a id="marker-109"/></p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Creating labels if there are more than two values in a characteristic</p>
+<p class="fm-sidebar-text">You can easily extend the cGAN model to characteristics with more than two values. For example, if you create a model to generate images with the different hair colors black, blond, and white, the image labels you feed to the generator can have values [1, 0, 0], [0, 1, 0], and [0, 0, 1], respectively. You can attach three channels to the input image before you feed it to the discriminator or critic. For example, if an image has black hair, the fourth channel is filled with 1s and the fifth and sixth channels 0s.</p>
+<p class="fm-sidebar-text">Additionally, in the eyeglasses example, since there are only two values in the label, you can potentially use values 0 and 1 to indicate images with and without glasses when you feed the label to the generator. You can attach one channel to the input image before you feed it to the critic: if an image has eyeglasses, the fourth channel is filled with 1s; if the image has no eyeglasses, the fourth channel is filled with 0s. I’ll leave that as an exercise for you. The solution is provided in the book’s GitHub repository: <a class="url" href="https://github.com/markhliu/DGAI">https://github.com/markhliu/DGAI</a>.</p>
+</div>
+<p class="body">We implement this change as shown in the following listing.</p>
+<p class="fm-code-listing-caption">Listing 5.6 Attaching labels to input images</p>
+<pre class="programlisting">newdata=[]    
+for i,(img,label) in enumerate(data_set):
+    onehot=torch.zeros((2))
+    onehot[label]=1
+    channels=torch.zeros((2,imgsz,imgsz))                   <span class="fm-combinumeral">①</span>
+    if label==0:
+        channels[0,:,:]=1                                   <span class="fm-combinumeral">②</span>
+    else:
+        channels[1,:,:]=1                                   <span class="fm-combinumeral">③</span>
+    img_and_label=torch.cat([img,channels],dim=0)           <span class="fm-combinumeral">④</span>
+    newdata.append((img,label,onehot,img_and_label))</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates two extra channels filled with 0s, each channel with a shape of 256 by 256, the same as the dimension of each channel in the input image</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> If the original image label is 0, fills the fourth channel with 1s</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> If the original image label is 1, fills the fifth channel with 1s</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Adds the fourth and fifth channels to the original image to form a five-channel labeled image</p>
+<p class="fm-callout"><span class="fm-callout-head">tip</span> Earlier when we load the images by using the <code class="fm-code-in-text2">torchvision.datasets.ImageFolder()</code> method from the folder /files/glasses, PyTorch assigns labels to images in each subfolder in alphabetical order. Therefore, images in /files/glasses/G/ are assigned a label of 0, and those in /files/glasses/NoG/, a label of 1.</p>
+<p class="body">We first create an empty list <code class="fm-code-in-text">newdata</code> to hold images with labels. We create a PyTorch tensor with a shape (2, 256, 256) to be attached to the original input image to form a new image with a shape of (5, 256, 256). If the original image label is 0 (this means images are from the folder /files/glasses/G/), we fill the fourth channel with 1s and the fifth channel with 0s so that the critic knows it’s an image with glasses. On the other hand, if the original image label is 1 (this means images are from the folder /files/glasses/NoG/), we fill the fourth channel with 0s and the fifth channel with 1s so that the critic knows it’s an image without glasses.<a id="idIndexMarker099"/></p>
+<p class="body">We create a data iterator with batches (to improve computational efficiency, memory usage, and optimization dynamics in the training process) as follows:<a id="idIndexMarker100"/><a id="idIndexMarker101"/><a id="idIndexMarker102"/><a id="marker-110"/></p>
+<pre class="programlisting">data_loader=torch.utils.data.DataLoader(
+    newdata,batch_size=batch_size,shuffle=True)</pre>
+<h3 class="fm-head1" id="heading_id_15">5.4.2 Training the cGAN</h3>
+<p class="body">Now that we have the training data and two networks, we’ll train the cGAN. We’ll use visual inspections to determine when the training should stop.<a id="idIndexMarker103"/><a id="idIndexMarker104"/></p>
+<p class="body">Once the model is trained, we’ll discard the critic network and use the generator to create images with a certain characteristic (with or without glasses, in our case).</p>
+<p class="body">We’ll create a function to test periodically what the generated images look like.</p>
+<p class="fm-code-listing-caption">Listing 5.7 Inspecting generated images</p>
+<pre class="programlisting">def plot_epoch(epoch):
+    noise = torch.randn(32, z_dim, 1, 1)
+    labels = torch.zeros(32, 2, 1, 1)
+    labels[:,0,:,:]=1                                            <span class="fm-combinumeral">①</span>
+    noise_and_labels=torch.cat([noise,labels],dim=1).to(device)
+    fake=gen(noise_and_labels).cpu().detach()                    <span class="fm-combinumeral">②</span>
+    fig=plt.figure(figsize=(20,10),dpi=100)
+    for i in range(32):                                          <span class="fm-combinumeral">③</span>
+        ax = plt.subplot(4, 8, i + 1)
+        img=(fake.cpu().detach()[i]/2+0.5).permute(1,2,0)
+        plt.imshow(img)
+        plt.xticks([])
+        plt.yticks([])
+    plt.subplots_adjust(hspace=-0.6)
+    plt.savefig(f"files/glasses/G{epoch}.png")
+    plt.show() 
+    noise = torch.randn(32, z_dim, 1, 1)
+    labels = torch.zeros(32, 2, 1, 1)
+    labels[:,1,:,:]=1                                            <span class="fm-combinumeral">④</span>
+    … (code omitted)</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates a one-hot label for images with glasses</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Feeds the concatenated noise vector and label to the generator to create images with glasses</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Plots the generated images with glasses</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Creates a one-hot label for images without glasses</p>
+<p class="body">After each epoch of training, we’ll ask the generator to create a set of images with glasses and a set of images without glasses. We then plot the images so that we can inspect them visually. To create images with glasses, we first create one-hot labels [1, 0] and attach them to the random noise vectors before feeding the concatenated vector to the generator network. The generator creates images with glasses since the label is [1, 0] instead of [0, 1]. We then plot the generated images in four rows and eight columns and save the subplots on your computer. The process of creating images without glasses is similar, except that we use the one-hot label [0, 1] instead of [1, 0]. I skipped part of the code in listing 5.7, but you can find it in the book’s GitHub repository: <a class="url" href="https://github.com/markhliu/DGAI">https://github.com/markhliu/DGAI</a>.</p>
+<p class="body">We define a <code class="fm-code-in-text">train_batch()</code> function to train the model with a batch of data.<a id="marker-111"/><a id="idIndexMarker105"/></p>
+<p class="fm-code-listing-caption">Listing 5.8 Training the model with a batch of data</p>
+<pre class="programlisting">def train_batch(onehots,img_and_labels,epoch):
+    real = img_and_labels.to(device)                            <span class="fm-combinumeral">①</span>
+    B = real.shape[0]
+    for _ in range(5):    
+        noise = torch.randn(B, z_dim, 1, 1)
+        onehots=onehots.reshape(B,2,1,1)
+        noise_and_labels=torch.cat([noise,onehots],dim=1).to(device)
+        fake_img = gen(noise_and_labels).to(device)
+        fakelabels=img_and_labels[:,3:,:,:].to(device)
+        fake=torch.cat([fake_img,fakelabels],dim=1).to(device)  <span class="fm-combinumeral">②</span>
+        critic_real = critic(real).reshape(-1)
+        critic_fake = critic(fake).reshape(-1)
+        gp = GP(critic, real, fake)    
+        loss_critic=(-(torch.mean(critic_real) - 
+           torch.mean(critic_fake)) + 10 * gp)                  <span class="fm-combinumeral">③</span>
+        critic.zero_grad()
+        loss_critic.backward(retain_graph=True)
+        opt_critic.step()
+    gen_fake = critic(fake).reshape(-1)
+    loss_gen = -torch.mean(gen_fake)                            <span class="fm-combinumeral">④</span>
+    gen.zero_grad()
+    loss_gen.backward()
+    opt_gen.step()
+    return loss_critic, loss_gen</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> A batch of real images with labels</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> A batch of generated images with labels</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> The total loss for the critic has three components: loss from evaluating real images, loss from evaluating fake images, and the gradient penalty loss.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Trains the generator with the Wasserstein loss</p>
+<p class="body">In the <code class="fm-code-in-text">train_batch()</code> function, we first train the critic with real images. We also ask the generator to create a batch of fake data with the given label. We then train the critic with fake images. In the <code class="fm-code-in-text">train_batch()</code> function, we also train the generator with a batch of fake data. <a id="idIndexMarker106"/></p>
+<p class="fm-callout"><span class="fm-callout-head">NOTE</span> The loss for the critic has three components: loss from evaluating real images, loss from evaluating fake images, and the gradient penalty loss.</p>
+<p class="body">We now train the model for 100 epochs:</p>
+<pre class="programlisting">for epoch in range(1,101):
+    closs=0
+    gloss=0
+    for _,_,onehots,img_and_labels in data_loader:              <span class="fm-combinumeral">①</span>
+        loss_critic, loss_gen = train_batch(onehots,\
+                                img_and_labels,epoch)           <span class="fm-combinumeral">②</span>
+        closs+=loss_critic.detach()/len(data_loader)
+        gloss+=loss_gen.detach()/len(data_loader)
+    print(f"at epoch {epoch},\
+    critic loss: {closs}, generator loss {gloss}")
+    plot_epoch(epoch)
+torch.save(gen.state_dict(),'files/cgan.pth')                   <span class="fm-combinumeral">③</span></pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Iterates through all batches in the training dataset</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Trains the model with a batch of data</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Saves the weights in the trained generator</p>
+<p class="body">After each epoch of training, we print out the critic loss and the generator loss to ensure that the losses are in a reasonable range. We also generate 32 images of faces with glasses as well as 32 images without glasses by using the <code class="fm-code-in-text">plot_epoch()</code> function we defined earlier. We save the weights in the trained generator in the local folder after training is done so that later we can generate images using the trained model.<a id="idIndexMarker107"/></p>
+<p class="body">This training takes about 30 minutes if you are using GPU training. Otherwise, it may take several hours, depending on the hardware configuration on your computer. Alternatively, you can download the trained model from my website: <a class="url" href="https://gattonweb.uky.edu/faculty/lium/gai/cgan.zip">https://gattonweb.uky.edu/faculty/lium/gai/cgan.zip</a>. Unzip the file after downloading. <a id="idIndexMarker108"/><a id="idIndexMarker109"/><a id="idIndexMarker110"/><a id="marker-112"/><a id="idIndexMarker111"/></p>
+<h2 class="fm-head" id="heading_id_16">5.5 Selecting characteristics in generated images</h2>
+<p class="body">There are at least two ways to generate images with a certain characteristic. The first is to attach a label to a random noise vector before feeding it to the trained cGAN model. Different labels lead to different characteristics in the generated image (in our case, whether the image has eyeglasses). The second way is to select the noise vector you feed to the trained model: while one vector leads to an image with a male face, another leads to an image with a female face. Note that the second way works even in a traditional GAN such as the ones we trained in chapter 4. It works in a cGAN as well. <a id="idIndexMarker112"/><a id="idIndexMarker113"/></p>
+<p class="body">Better yet, in this section, you’ll learn to combine these two methods so you can select two characteristics simultaneously: an image of a male face with eyeglasses or a female face without eyeglasses, and so on.</p>
+<p class="body">There are pros and cons for each one of these two methods in selecting a certain characteristic in generated images. The first way, the cGAN, requires labeled data to train the model. Sometimes, labeled data is costly to curate. However, once you have successfully trained a cGAN, you can generate a wide range of images with a certain characteristic. In our case, you can generate many different images with eyeglasses (or without eyeglasses); each one is different from the other. The second way, handpicking a noise vector, doesn’t need labeled data to train the model. However, each handpicked noise vector can only generate one image. If you want to generate many different images with the same characteristic as the cGAN, you’ll need to handpick many different noise vectors ex ante.</p>
+<h3 class="fm-head1" id="heading_id_17">5.5.1 Selecting images with or without eyeglasses</h3>
+<p class="body">By attaching a label of either [1, 0] or [0, 1] to a random noise vector before you feed it to the trained cGAN model, you can select whether the generated image has eyeglasses.<a id="idIndexMarker114"/><a id="idIndexMarker115"/><a id="marker-113"/></p>
+<p class="body">First, we’ll use the trained model to generate 32 images with glasses and plot them in a 4 <span class="cambria">×</span> 8 grid. To make results reproducible, we’ll fix the random state in PyTorch. Further, we’ll use the same set of random noise vectors so that we look at the same set of faces.</p>
+<p class="body">We fix the random state at seed 0 and generate 32 images of faces with eyeglasses.</p>
+<p class="fm-code-listing-caption">Listing 5.9 Generating images of human faces with eyeglasses</p>
+<pre class="programlisting">torch.manual_seed(0)                                            <span class="fm-combinumeral">①</span>
+  
+generator=Generator(z_dim+2,img_channels,features).to(device)
+generator.load_state_dict(torch.load("files/cgan.pth",
+    map_location=device))                                       <span class="fm-combinumeral">②</span>
+generator.eval()
+  
+noise_g=torch.randn(32, z_dim, 1, 1)                            <span class="fm-combinumeral">③</span>
+labels_g=torch.zeros(32, 2, 1, 1)
+labels_g[:,0,:,:]=1                                             <span class="fm-combinumeral">④</span>
+noise_and_labels=torch.cat([noise_g,labels_g],dim=1).to(device)
+fake=generator(noise_and_labels)
+plt.figure(figsize=(20,10),dpi=50)
+for i in range(32):
+    ax = plt.subplot(4, 8, i + 1)
+    img=(fake.cpu().detach()[i]/2+0.5).permute(1,2,0)
+    plt.imshow(img.numpy())
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.08,hspace=-0.01)
+plt.show()</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Fixes the random state so results are reproducible</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Loads up the trained weights</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Generates a set of random noise vectors and saves it so we can select certain vectors from it to perform vector arithmetic</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Creates a label to generate images with eyeglasses</p>
+<p class="body">We create another instance of the <code class="fm-code-in-text">Generator()</code> class and name it <code class="fm-code-in-text">generator</code>. We then load up the trained weights that we saved in the local folder in the last section (or you can download the weights from my website: <a class="url" href="https://mng.bz/75Z4">https://mng.bz/75Z4</a>). To generate 32 images of human faces with eyeglasses; we first draw 32 random noise vectors in the latent space. We’ll also create a set of labels and name them <code class="fm-code-in-text">labels_g</code>, and they tell the generator to produce 32 images with eyeglasses. <a id="idIndexMarker116"/></p>
+<p class="body">If you run the program in listing 5.9, you’ll see 32 images as shown in figure 5.5.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="392" src="../../OEBPS/Images/CH05_F05_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.5 Images of human faces with eyeglasses that are generated by the trained cGAN model</p>
+</div>
+<p class="body"><a id="marker-114"/>First, all 32 images do have eyeglasses in them. This indicates that the trained cGAN model is able to generate images conditional on the provided labels. You may have noticed that some images have male features while others have female features. To prepare us for vector arithmetic in the next subsection, we’ll select one random noise vector that leads to an image with male features and one that leads to female features. After inspecting the 32 images in figure 5.5, we select images with index values 0 and 14, like so:</p>
+<pre class="programlisting">z_male_g=noise_g[0]
+z_female_g=noise_g[14]</pre>
+<p class="body">To generate 32 images without eyeglasses, we first produce another set of random noise vectors and labels:</p>
+<pre class="programlisting">noise_ng = torch.randn(32, z_dim, 1, 1)
+labels_ng = torch.zeros(32, 2, 1, 1)
+labels_ng[:,1,:,:]=1</pre>
+<p class="body">The new set of random noise vectors is named <code class="fm-code-in-text">noise_ng</code>, and the new set of labels <code class="fm-code-in-text">labels_ng</code>. Feed them to the generator and you should see 32 images without eyeglasses, as shown in figure 5.6.</p>
+<p class="body">None of the 32 faces in figure 5.6 has eyeglasses in it: the trained cGAN model can generate images contingent upon the given label. We select images with indexes 8 (male) and 31 (female) to prepare for vector arithmetic in the next subsection:</p>
+<pre class="programlisting">z_male_ng=noise_ng[8]
+z_female_ng=noise_ng[31]</pre>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="392" src="../../OEBPS/Images/CH05_F06_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.6 Images of human faces without eyeglasses that are generated by the trained cGAN model</p>
+</div>
+<p class="body"><a id="marker-115"/>Next, we’ll use label interpolation to perform label arithmetic. Recall that the two labels, <code class="fm-code-in-text">noise_g</code> and <code class="fm-code-in-text">noise_ng</code>, instruct the trained cGAN model to create images with and without eyeglasses, respectively. What if we feed an interpolated label (a weighted average of the two labels [1, 0] and [0, 1]) to the model? What type of images will the trained generator produce? Let’s find out.<a id="idIndexMarker119"/><a id="idIndexMarker120"/></p>
+<p class="fm-code-listing-caption">Listing 5.10 Label arithmetic in cGAN</p>
+<pre class="programlisting">weights=[0,0.25,0.5,0.75,1]                                     <span class="fm-combinumeral">①</span>
+plt.figure(figsize=(20,4),dpi=300)
+for i in range(5):
+    ax = plt.subplot(1, 5, i + 1)
+    # change the value of z
+    label=weights[i]*labels_ng[0]+(1-weights[i])*labels_g[0]    <span class="fm-combinumeral">②</span>
+    noise_and_labels=torch.cat(
+        [z_female_g.reshape(1, z_dim, 1, 1),
+         label.reshape(1, 2, 1, 1)],dim=1).to(device)
+    fake=generator(noise_and_labels).cpu().detach()             <span class="fm-combinumeral">③</span>
+    img=(fake[0]/2+0.5).permute(1,2,0)
+    plt.imshow(img)
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.08,hspace=-0.01)
+plt.show()</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates five weights</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Creates a weighted average of the two labels</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Gives the new label to the trained model to create an image</p>
+<p class="body">We first create five weights (w): 0, 0.25, 0.5, 0.75, and 1, equally spaced between 0 and 1. Each of these five values of w is the weight we put on the no eyeglasses label <code class="fm-code-in-text">labels_ng</code>. The complementary weight is put on the eyeglasses label <code class="fm-code-in-text">labels_g</code>. The interpolated label therefore has a value of <code class="fm-code-in-text">w*labels_ng+(1-w)*labels_g</code>. We then feed the interpolated label to the trained model, along with the random noise vector <code class="fm-code-in-text">z_female_g</code> that we saved earlier. The five generated images, based on the five values of w, are plotted in a 1 <span class="cambria">×</span> 5 grid, as shown in figure 5.7. <a id="idIndexMarker121"/><a id="idIndexMarker122"/></p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="164" src="../../OEBPS/Images/CH05_F07_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.7 Label arithmetic in cGAN. We first create two labels: the no eyeglasses label <code class="fm-code-in-text">labels_ng</code> and the eyeglasses label <code class="fm-code-in-text">labels_g</code>. These two labels instruct the trained generator to produce images with and without eyeglasses, respectively. We then create five interpolated labels, each as a weighted average of the original two labels: <code class="fm-code-in-text">w*labels_ng+(1-w)*labels_g</code>, where the weight <code class="fm-code-in-text">w</code> takes five different values, 0, 0.25, 0.5, 0.75, and 1. The five generated images based on the five interpolated labels are shown in the figure. The image on the far left has eyeglasses. As we move from the left to the right, the eyeglasses gradually fade away, until the image on the far right has no eyeglasses in it.</p>
+</div>
+<p class="body">When you look at the five generated images in figure 5.7 from the left to the right, you’ll notice that the eyeglasses gradually fade away. The image on the left has eyeglasses while the image on the right has no eyeglasses. The three images in the middle show some signs of eyeglasses, but the eyeglasses are not as conspicuous as those in the first image.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 5.1</p>
+<p class="fm-sidebar-text">Since we used the random noise vector <code class="fm-code-in-text1">z_female_g</code> in listing 5.10, the images in figure 5.7 have a female face. Change the noise vector to <code class="fm-code-in-text1">z_male_g</code> in listing 5.10 and rerun the program; see what the images look like. <a id="idIndexMarker123"/><a id="idIndexMarker124"/><a id="idIndexMarker125"/><a id="marker-116"/><a id="idIndexMarker126"/></p>
+</div>
+<h3 class="fm-head1" id="heading_id_18">5.5.2 Vector arithmetic in latent space</h3>
+<p class="body">You may have noticed that some generated human face images have male features while others have female features. You may wonder: Can we select male or female features in generated images? The answer is yes. We can achieve this by selecting noise vectors in the latent space.<a id="idIndexMarker127"/><a id="idIndexMarker128"/><a id="idIndexMarker129"/></p>
+<p class="body">In the last subsection, we have saved two random noise vectors, <code class="fm-code-in-text">z_male_ng</code> and <code class="fm-code-in-text">z_female_ng</code>, that lead to images of a male face and a female face, respectively. Next, we feed a weighted average of the two vectors (i.e., an interpolated vector) to the trained model and see what the generated images look like.<a id="idIndexMarker130"/><a id="idIndexMarker131"/></p>
+<p class="fm-code-listing-caption">Listing 5.11 Vector arithmetic to select image characteristics</p>
+<pre class="programlisting">weights=[0,0.25,0.5,0.75,1]                                 <span class="fm-combinumeral">①</span>
+plt.figure(figsize=(20,4),dpi=50)
+for i in range(5):
+    ax = plt.subplot(1, 5, i + 1)
+    # change the value of z
+    z=weights[i]*z_female_ng+(1-weights[i])*z_male_ng       <span class="fm-combinumeral">②</span>  
+    noise_and_labels=torch.cat(
+        [z.reshape(1, z_dim, 1, 1),
+         labels_ng[0].reshape(1, 2, 1, 1)],dim=1).to(device)    
+    fake=generator(noise_and_labels).cpu().detach()         <span class="fm-combinumeral">③</span>
+    img=(fake[0]/2+0.5).permute(1,2,0)
+    plt.imshow(img)
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.08,hspace=-0.01)
+plt.show()</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Creates five weights</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> Creates a weighted average of the two random noise vectors</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> Feeds the new random noise vector to the trained model to create an image</p>
+<p class="body">We have created five weights, 0, 0.25, 0.5, 0.75, and 1. We iterate through the five weights and create five weighted averages of the two random noise vectors, <code class="fm-code-in-text">w*z_female_ng+(1-w)*z_male_ng</code>. We then feed the five vectors, along with the label, <code class="fm-code-in-text">labels_ng</code>, to the trained model to obtain five images, as shown in figure 5.8.<a id="marker-117"/></p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="164" src="../../OEBPS/Images/CH05_F08_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.8 Vector arithmetic in GAN. We first save two random noise vectors <code class="fm-code-in-text">z_female_ng</code> and <code class="fm-code-in-text">z_male_ng</code>. The two vectors lead to images of female and male faces, respectively. We then create five interpolated vectors, each as a weighted average of the original two vectors: <code class="fm-code-in-text">w*z_female_ng+(1-w)*z_male_ng</code>, where the weight <code class="fm-code-in-text">w</code> takes five different values, 0, 0.25, 0.5, 0.75, and 1. The five generated images based on the five interpolated vectors are shown in the figure. The image on the far left has male features. As we move from the left to the right, the male features gradually fade away and the female features gradually appear, until the image on the far right shows a female face.</p>
+</div>
+<p class="body">Vector arithmetic can transition from one instance of an image to another instance. Since we happen to have selected a male and a female image, when you look at the five generated images in figure 5.8 from the left to the right, you’ll notice that male features gradually fade away and female features gradually appear. The first image shows an image with a male face while the last image shows an image with a female face.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 5.2</p>
+<p class="fm-sidebar-text">Since we used the label <code class="fm-code-in-text1">labels_ng</code> in listing 5.11, the images in figure 5.8 have no eyeglasses in them. Change the label to <code class="fm-code-in-text1">labels_g</code> in listing 5.11 and rerun the program to see what the images look like. <a id="idIndexMarker132"/><a id="idIndexMarker133"/></p>
+</div>
+<h3 class="fm-head1" id="heading_id_19">5.5.3 Selecting two characteristics simultaneously</h3>
+<p class="body">So far, we have selected one characteristic at a time. By selecting the label, you have learned how to generate images with or without eyeglasses. By selecting a specific noise vector, you have learned how to select a specific instance of the generated image. <a id="idIndexMarker134"/><a id="idIndexMarker135"/><a id="marker-118"/></p>
+<p class="body">What if you want to select two characteristics (glasses and gender, for example) at the same time? There are four possible combinations of the two independent characteristics: male faces with glasses, male faces without glasses, female faces with glasses, and female faces without glasses. Next we’ll generate an image of each type.</p>
+<p class="fm-code-listing-caption">Listing 5.12 Selecting two characteristics simultaneously</p>
+<pre class="programlisting">plt.figure(figsize=(20,5),dpi=50)
+for i in range(4):                                          <span class="fm-combinumeral">①</span>
+    ax = plt.subplot(1, 4, i + 1)
+    p=i//2    
+    q=i%2    
+    z=z_female_g*p+z_male_g*(1-p)                           <span class="fm-combinumeral">②</span>
+    label=labels_ng[0]*q+labels_g[0]*(1-q)                  <span class="fm-combinumeral">③</span>
+    noise_and_labels=torch.cat(
+        [z.reshape(1, z_dim, 1, 1),
+         label.reshape(1, 2, 1, 1)],dim=1).to(device)       <span class="fm-combinumeral">④</span>
+    fake=generator(noise_and_labels)
+    img=(fake.cpu().detach()[0]/2+0.5).permute(1,2,0)
+    plt.imshow(img.numpy())
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.08,hspace=-0.01)
+plt.show()</pre>
+<p class="fm-code-annotation"><span class="fm-combinumeral">①</span> Iterates through 0 to 3</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">②</span> The value of p, which can be either 0 or 1, selects the random noise vector to generate a male or female face.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">③</span> The value of q, which can be either 0 or 1, selects the label to determine whether the generated image has eyeglasses in it or not.</p>
+<p class="fm-code-annotation"><span class="fm-combinumeral">④</span> Combines the random noise vector with the label to select two characteristics</p>
+<p class="body">To generate four images to cover the four different cases, we need to use one of the noise vectors as the input: <code class="fm-code-in-text">z_female_g</code> or <code class="fm-code-in-text">z_male_g</code>. We also need to attach to the input a label, which can be either <code class="fm-code-in-text">labels_ng</code> or <code class="fm-code-in-text">labels_g.</code> To use one single program to cover all four cases, we iterate through four values of i, 0 to 3, and create two values, p and q, which are the integer quotient and the remainder of the value i divided by 2. Therefore, the values of p and q can be either 0 or 1. By setting the value of the random noise vector to <code class="fm-code-in-text">z_female_g*p+z_male_g*(1-p)</code>, we can select a random noise vector to generate either a male or female face. Similarly, by setting the value of the label to <code class="fm-code-in-text">labels_ng[0]*q+labels_g[0]*(1-q)</code>, we can select a label to determine whether the generated image has eyeglasses in it or not. Once we combine the random noise vector with the label and feed them to the trained model, we can select two characteristics simultaneously. <a id="idIndexMarker136"/><a id="idIndexMarker137"/><a id="idIndexMarker138"/><a id="idIndexMarker139"/></p>
+<p class="body">If you run the program in listing 5.12, you’ll see four images as shown in figure 5.9.</p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="200" src="../../OEBPS/Images/CH05_F09_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.9 Selecting two characteristics simultaneously in the generated image. We select a noise vector from the following two choices: <code class="fm-code-in-text">z_female_ng</code> and <code class="fm-code-in-text">z_male_ng</code>. We also select a label from the following two choices: <code class="fm-code-in-text">labels_ng</code> and <code class="fm-code-in-text">labels_g</code>. We then feed the noise vector and the label to the trained generator to create an image. Based on the values of the noise vector and the label, the trained model can create four types of images. By doing this, we effectively select two independent characteristics in the generated image: a male or a female face and whether the image has eyeglasses in it or not.</p>
+</div>
+<p class="body">The four generated images in figure 5.9 have two independent characteristics: a male or a female face and whether the image has eyeglasses in it or not. The first image shows an image of a male face with glasses; the second image is a male face without glasses. The third image is a female face with glasses, while the last image shows a female face without glasses.</p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 5.3</p>
+<p class="fm-sidebar-text">We used the two random noise vectors <code class="fm-code-in-text1">z_female_g</code> and <code class="fm-code-in-text1">z_male_g</code> in listing 5.12. Change the two random noise vectors to <code class="fm-code-in-text1">z_female_ng</code> and <code class="fm-code-in-text1">z_male_ng</code> instead and rerun the program to see what the images look like. <a id="idIndexMarker140"/><a id="idIndexMarker141"/><a id="idIndexMarker142"/><a id="marker-119"/><a id="idIndexMarker143"/></p>
+</div>
+<p class="body">Finally, we can conduct label arithmetic and vector arithmetic simultaneously. That is, we can feed an interpolated noise vector and an interpolated label to the trained cGAN model and see what the generated image looks like. You can achieve that by running the following code block:</p>
+<pre class="programlisting">plt.figure(figsize=(20,20),dpi=50)
+for i in range(36):
+    ax = plt.subplot(6,6, i + 1)
+    p=i//6
+    q=i%6 
+    z=z_female_ng*p/5+z_male_ng*(1-p/5)
+    label=labels_ng[0]*q/5+labels_g[0]*(1-q/5)
+    noise_and_labels=torch.cat(
+        [z.reshape(1, z_dim, 1, 1),
+         label.reshape(1, 2, 1, 1)],dim=1).to(device)
+    fake=generator(noise_and_labels)
+    img=(fake.cpu().detach()[0]/2+0.5).permute(1,2,0)
+    plt.imshow(img.numpy())
+    plt.xticks([])
+    plt.yticks([])
+plt.subplots_adjust(wspace=-0.08,hspace=-0.01)
+plt.show()</pre>
+<p class="body">The code is similar to that in listing 5.12, except that p and q each can take six different values: 0, 1, 2, 3, 4, and 5. The random noise vector, <code class="fm-code-in-text">z_female_ng*p/5+z_male_ng*(1-p/5)</code>, takes six different values based on the value of p. The label, <code class="fm-code-in-text">labels_ng[0]*q/5+labels_g[0]*(1-q/5)</code>, takes six different values based on the value of q. We therefore have 36 different combinations of images based on the interpolated noise vector and the interpolated label. If you run the previous program, you’ll see 36 images as shown in figure 5.10.<a id="marker-120"/></p>
+<div class="figure">
+<p class="figure1"><img alt="" class="calibre4" height="777" src="../../OEBPS/Images/CH05_F10_Liu.png" width="773"/></p>
+<p class="figurecaption">Figure 5.10 Conducting vector arithmetic and label arithmetic simultaneously. The value of i changes from 0 to 35; p and q are the integer quotient and remainder, respectively, when i is divided by 6. Therefore, p and q each can take six different values: 0, 1, 2, 3, 4, and 5. The interpolated noise vector, <code class="fm-code-in-text">z_female_ng*p/5+z_male_ng*(1-p/5)</code>, and the interpolated label, <code class="fm-code-in-text">labels_ng[0]*q/5+labels_g[0]*(1-q/5)</code>, can each take six different values. In each row, when you go from left to right, the eyeglasses gradually fade away. In each column, when you go from top to bottom, the image changes gradually from a male face to a female face.</p>
+</div>
+<p class="body">The are 36 images in figure 5.10. The interpolated noise vector is a weighted average of the two random noise vectors, <code class="fm-code-in-text">z_female_ng</code> and <code class="fm-code-in-text">z_male_ng</code>, which generate a female face and a male face, respectively. The label is a weighted average of the two labels, <code class="fm-code-in-text">labels_ng</code> and <code class="fm-code-in-text">labels_g</code>, which determine whether the generated image has eyeglasses in it or not. The trained model generates 36 different images based on the interpolated noise vector and the interpolated label. In each row, when you go from the left to the right, the eyeglasses gradually fade away. That is, we conduct label arithmetic in each row. In each column, when you go from the top to the bottom, the image changes gradually from a male face to a female face. That is, we conduct vector arithmetic in each column. <a id="idIndexMarker144"/><a id="idIndexMarker145"/><a id="idIndexMarker146"/><a id="idIndexMarker147"/></p>
+<div class="fm-sidebar-block">
+<p class="fm-sidebar-title">Exercise 5.4</p>
+<p class="fm-sidebar-text">In this project, there are two values in the label: one indicates eyeglasses and one indicates no eyeglasses. Therefore, we can use a binary value instead of one-hot variables as labels. Change the programs in this chapter and use values 1 and 0 (instead of [1, 0] and [0, 1]) to represent images with and without glasses. Attach 1 or 0 to the random noise vector so that you feed a 101-value vector to the generator. Attach one channel to the input image before you feed it to the critic: if an image has eyeglasses in it, the fourth channel is filled with 0s; if the image has no eyeglasses in it, the fourth channel is filled with 1s. Then create a generator and a critic; use the training dataset to train them. The solution is provided in the book’s GitHub repository, along with solutions to the other three exercises in this chapter.</p>
+</div>
+<p class="body"><a id="marker-121"/>Now that you have witnessed what GAN models are capable of, you’ll explore deeper in the next chapter by conducting style transfers with GANs. For example, you’ll learn how to build a CycleGAN model and train it using celebrity face images so that you can convert blond hair to black hair or black hair to blond hair in these images. The exact same model can be trained on other datasets: for example, you can train it on the human face dataset you used in this chapter so that you can add or remove eyeglasses in human face images. <a id="idIndexMarker148"/><a id="idIndexMarker149"/><a id="idIndexMarker150"/><a id="idIndexMarker151"/></p>
+<h2 class="fm-head" id="heading_id_20">Summary</h2>
+<ul class="calibre5">
+<li class="fm-list-bullet">
+<p class="list">By selecting a certain noise vector in the latent space and feeding it to the trained GAN model, we can select a certain characteristic in the generated image, such as whether the image has a male or female face in it.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">A cGAN is different from a traditional GAN. We train the model on labeled data and ask the trained model to generate data with a specific attribute. For example, one label tells the model to generate images of human faces with eyeglasses while another tells the model to create human faces without eyeglasses.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">After a cGAN is trained, we can use a series of weighted averages of the labels to generate images that transition from an image represented by one label to an image represented by another label—for example, a series of images in which the eyeglasses gradually fade away on the same person’s face. We call this label arithmetic.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">We can also use a series of weighted averages of two different noise vectors to create images that transition from one attribute to another—for example, a series of images in which the male features gradually fade away, and female features gradually appear. We call this vector arithmetic.</p>
+</li>
+<li class="fm-list-bullet">
+<p class="list">Wasserstein GAN (WGAN) is a technique used to improve the training stability and performance of GAN models by using Wasserstein distance instead of the binary cross-entropy as the loss function. Further, for the Wasserstein distance to work correctly, the critic in WGANs must be 1-Lipschitz continuous, meaning the gradient norms of the critic’s function must be at most 1 everywhere. The gradient penalty in WGANs adds a regularization term to the loss function to enforce the Lipschitz constraint more effectively.<a id="marker-122"/></p>
+</li>
+</ul>
+<hr class="calibre6"/>
+<p class="fm-footnote"><a id="footnote-002"/><sup class="footnotenumber1"><a class="url1" href="#footnote-002-backlink">1</a></sup>  Mehdi Mirza, Simon Osindero, 2014, “Conditional Generative Adversarial Nets.” <a class="url" href="https://arxiv.org/abs/1411.1784">https://arxiv.org/abs/1411.1784</a>.</p>
+<p class="fm-footnote"><a id="footnote-001"/><sup class="footnotenumber1"><a class="url1" href="#footnote-001-backlink">2</a></sup>  Martin Arjovsky, Soumith Chintala, and Léon Bottou, 2017, “Wasserstein GAN.” <a class="url" href="https://arxiv.org/abs/1701.07875">https://arxiv.org/abs/1701.07875</a>.</p>
+<p class="fm-footnote"><a id="footnote-000"/><sup class="footnotenumber1"><a class="url1" href="#footnote-000-backlink">3</a></sup>  Martin Arjovsky, Soumith Chintala, and Leon Bottou, 2017, “Wasserstein GAN.” <a class="url" href="https://arxiv.org/abs/1701.07875">https://arxiv.org/abs/1701.07875</a>; and Ishaan Gulrajani, Faruk Ahmed, Martin Arjovsky, Vincent Dumoulin, and Aaron Courville, 2017, “Improved Training of Wasserstein GANs.” <a class="url" href="https://arxiv.org/abs/1704.00028">https://arxiv.org/abs/1704.00028</a>.</p>
+</div></body></html>

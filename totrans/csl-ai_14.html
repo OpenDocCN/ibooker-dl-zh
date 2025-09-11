@@ -1,0 +1,2064 @@
+<html><head></head><body>
+<div id="sbo-rt-content"><div class="readable-text" id="p1">
+<h1 class="readable-text-h1"><span class="chapter-title-numbering"><span class="num-string">11</span> </span> <span class="chapter-title-text">Building a causal inference workflow</span></h1>
+</div>
+<div class="introduction-summary">
+<h3 class="introduction-header sigil_not_in_toc">This chapter covers</h3>
+<ul>
+<li class="readable-text" id="p2">Building a causal analysis workflow</li>
+<li class="readable-text" id="p3">Estimating causal effects with DoWhy</li>
+<li class="readable-text" id="p4">Estimating causal effects using machine learning methods</li>
+<li class="readable-text" id="p5">Causal inference with causal latent variable models</li>
+</ul>
+</div>
+<div class="readable-text" id="p6">
+<p>In chapter 10, I introduced a causal inference workflow, and in this chapter we’ll focus on building out this workflow in full. We’ll focus on one type of query in particular—causal effects—but the workflow generalizes to all causal queries.</p>
+</div>
+<div class="readable-text intended-text" id="p7">
+<p>We’ll focus on causal effect inference, namely estimation of average treatment effects (ATEs) and conditional average treatment effects (CATEs) because they are the most popular causal queries.</p>
+</div>
+<div class="readable-text intended-text" id="p8">
+<p>In chapter 1, I mentioned “the commodification of inference”—how modern software libraries enable us to abstract away the statistical and computational details of the inference algorithm. The first thing you’ll see in this chapter is how the DoWhy library “commodifies” causal inference, enabling us to focus at a high level on the causal assumptions of the algorithms and whether they are appropriate for our problem.</p>
+</div>
+<div class="readable-text intended-text" id="p9">
+<p>We’ll see the phenomenon at play again in an example that uses probabilistic machine learning to do causal effect inference on a causal generative model with latent variables. Here, we’ll see how deep learning with PyTorch provides another way to commodify inference.</p>
+</div>
+<div class="readable-text" id="p10">
+<h2 class="readable-text-h2" id="sigil_toc_id_259"><span class="num-string">11.1</span> Step 1: Select the query</h2>
+</div>
+<div class="readable-text" id="p11">
+<p>Recall the causal inference workflow from chapter 10, shown again in figure 11.1.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p12">
+<img alt="figure" height="158" src="../Images/CH11_F01_Ness.png" width="740"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.1</span> A workflow for a causal inference analysis</h5>
+</div>
+<div class="readable-text" id="p13">
+<p>Let’s return to our online gaming example and use this workflow to answer a simple question:</p>
+</div>
+<div class="readable-text" id="p14">
+<blockquote>
+<div>
+     How much does side-quest engagement drive in-game purchases?
+    </div>
+</blockquote>
+</div>
+<div class="readable-text" id="p15">
+<p>We’ll call the cause of interest, <em>Side-Quest Engagement</em> (<em>E</em>), the “treatment” variable; <em>In-Game Purchases</em> (<em>I</em>) will be the “outcome” variable. Our query of interest is the average treatment effect (ATE):</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p16">
+<p><em>E</em>(<em>I</em><em><sub>E</sub></em><sub>=“high”</sub> – <em>I</em><sub><em>E</em></sub><sub>=“low”</sub>)</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p17">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Refresher: Why ATEs and CATEs dominate </h5>
+</div>
+<div class="readable-text" id="p18">
+<p>Estimating ATEs and CATEs is the most popular causal effect inference task for several reasons, including the following:</p>
+</div>
+<ul>
+<li class="readable-text" id="p19"> We can rely on causal effect inference techniques when randomized experiments are not feasible, ethical, or possible. </li>
+<li class="readable-text" id="p20"> We can use causal effect inference techniques to address practical issues with real-world experiments (e.g., post-randomization confounding, attrition, spillover, missing data, etc.). </li>
+<li class="readable-text" id="p21"> In an era when companies can run many different digital experiments in online applications and stores, causal effect inference techniques can help prioritize experiments, reducing opportunity costs. </li>
+</ul>
+</div>
+<div class="readable-text" id="p22">
+<p>Further, as we investigate our gaming data, we find data from a past experiment designed to test the effect of <em>encouraging </em>side-quest engagement on in-game purchases. In this experiment, all players were randomly assigned either to the treatment group or a control group. In the treatment group, the game mechanics were modified to tempt players into engaging in more side-quests, while the control group played the unmodified version of the game. We’ll define the <em>Side-Quest Group Assignment</em> (<em>A</em>) variable as whether the player was assigned to the treatment group in this experiment or the control group.</p>
+</div>
+<div class="readable-text intended-text" id="p23">
+<p>Why not just go with the estimate of the ATE produced by this experiment? This would be an estimate of <em>E</em>(<em>I</em><sub><em>A</em></sub><sub>=“treatment”</sub> – <em>I</em><sub><em>A</em></sub><sub>=“control”</sub>).</p>
+</div>
+<div class="readable-text intended-text" id="p24">
+<p>This is the causal effect of the modification of game mechanics on in-game purchases. While this drives side-quest engagement, we know side-quest engagement is also driven by other potentially confounding factors. So we’ll focus on <em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=“high”</sub> – <em>I</em><sub><em>E</em></sub><sub>=“low”</sub>).</p>
+</div>
+<div class="readable-text" id="p25">
+<h2 class="readable-text-h2" id="sigil_toc_id_260"><span class="num-string">11.2</span> Step 2: Build the model</h2>
+</div>
+<div class="readable-text" id="p26">
+<p>Next, we’ll build our causal model. Since we are targeting an ATE, we can stick with a DAG. Let’s suppose we build a more detailed version of our online gaming example and produce the causal DAG in figure 11.2. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p27">
+<img alt="figure" height="432" src="../Images/CH11_F02_Ness.png" width="732"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.2</span> An expanded version of the online gaming DAG. With respect to the causal effect of side-quest engagement on in-game purchases, we add two additional confounders and two instruments.</h5>
+</div>
+<div class="readable-text" id="p28">
+<p>The expanded model adds some new variables:</p>
+</div>
+<ul>
+<li class="readable-text" id="p29"> <em>Side-Quest Group Assignment (A)</em><em> </em>—Assigned a value of 1 if a player was exposed to the mechanics that encouraged more side-quest engagement in the randomized experiment; 0 otherwise. </li>
+<li class="readable-text" id="p30"> <em>Customization Level (C)</em><em> </em>—A score quantifying the player’s customizations of their character and the game environment. </li>
+<li class="readable-text" id="p31"> <em>Time Spent Playing (T)</em><em> </em>—How much time the player has spent playing. </li>
+<li class="readable-text" id="p32"> <em>Prior Experience (Y)</em><em> </em>—How much experience the player had prior to when they started playing the game. </li>
+<li class="readable-text" id="p33"> <em>Player Skill Level (S)</em><em> </em>—A score of how well the player performs in game tasks. </li>
+<li class="readable-text" id="p34"> <em>Total Inventory (V)</em><em> </em>—The amount of game items the player has accumulated. </li>
+</ul>
+<div class="readable-text" id="p35">
+<p>We are interested in the ATE of <em>Side-Quest Engagement</em> on <em>In-Game Purchases</em>, so we know, based on causal sufficiency (chapter 3), that we need to add common causes for these variables. We’ve already seen <em>Guild Membership</em> (<em>G</em><em> </em>), but now we add additional common causes: <em>Prior Experience</em>, <em>Time Spent Playing</em>, and <em>Player Skill Level</em>. We also add <em>Side-Quest Group Assignment</em> and <em>Customization Level</em> because these might be useful <em>instrumental variables</em>—variables that are causes of the treatment of interest, and where the only path of causality from the variable to the outcome is via the treatment. I’ll say more about instrumental variables in the next section.</p>
+</div>
+<div class="readable-text intended-text" id="p36">
+<p>Finally, we’ll add <em>Total Inventory</em>. This is a collider between <em>In-Game Purchases</em> and <em>Won Items</em>. Perhaps it is common for data scientists in our company to use this as a predictor of the <em>In-Game Purchases</em>. But as you’ll see, we’ll want to avoid adding collider bias to causal effect estimation. </p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p37">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Setting up your environment</h5>
+</div>
+<div class="readable-text" id="p38">
+<p>The following code was written with DoWhy 0.11 and EconML 0.15, which expects a version of NumPy before version 2.0. The specific pandas version was 1.5.3. Again, we use Graphviz for visualization, with python PyGraphviz library version 1.12. The code should work, save for visualization, if you skip the PyGraphviz installation.</p>
+</div>
+</div>
+<div class="readable-text" id="p39">
+<p>First, let’s build the DAG and visualize the graph with the PyGraphviz library.</p>
+</div>
+<div class="browsable-container listing-container" id="p40">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.1</span> Build the causal DAG</h5>
+<div class="code-area-container">
+<pre class="code-area">import pygraphviz as pgv    <span class="aframe-location"/> #1
+from IPython.display import Image   <span class="aframe-location"/> #2
+
+causal_graph = """
+digraph {
+    "Prior Experience" -&gt; "Player Skill Level";
+    "Prior Experience" -&gt; "Time Spent Playing";
+    "Time Spent Playing" -&gt; "Player Skill Level";
+    "Guild Membership" -&gt; "Side-quest Engagement";
+    "Guild Membership" -&gt; "In-game Purchases";
+    "Player Skill Level" -&gt; "Side-quest Engagement";
+    "Player Skill Level" -&gt; "In-game Purchases";
+    "Time Spent Playing" -&gt; "Side-quest Engagement";
+    "Time Spent Playing" -&gt; "In-game Purchases";
+    "Side-quest Group Assignment" -&gt; "Side-quest Engagement";
+    "Customization Level" -&gt; "Side-quest Engagement";
+    "Side-quest Engagement" -&gt; "Won Items";
+    "Won Items" -&gt; "In-game Purchases";
+    "Won Items" -&gt; "Total Inventory";
+    "In-game Purchases" -&gt; "Total Inventory";
+}
+"""    <span class="aframe-location"/> #3
+G = pgv.AGraph(string=causal_graph)   #3
+G.draw('/tmp/causal_graph.png', prog='dot')   <span class="aframe-location"/> #4
+Image('/tmp/causal_graph.png')   <span class="aframe-location"/> #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Download PyGraphviz and related libraries.
+     <br/>#2 Optional import for visualizing the DAG in a Jupyter notebook
+     <br/>#3 Specify the DAG as a DOT language string, and load a PyGraphviz AGraph object from the string.
+     <br/>#4 Render the graph to a PNG file.
+     <br/>#5 Display the graph.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p41">
+<p>This returns the graph in figure 11.3.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p42">
+<img alt="figure" height="576" src="../Images/CH11_F03_Ness.png" width="1010"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.3</span> Visualizing our model with the PyGraphviz library</h5>
+</div>
+<div class="readable-text" id="p43">
+<p>At this stage, we can validate our model using the conditional independence testing techniques outlined in chapter 4. But keep in mind that we can also focus on the subset of assumptions we rely on for causal effect estimation to work in the “refutation” (step 5) part of the workflow. </p>
+</div>
+<div class="readable-text" id="p44">
+<h2 class="readable-text-h2" id="sigil_toc_id_261"><span class="num-string">11.3</span> Step 3: Identify the estimand</h2>
+</div>
+<div class="readable-text" id="p45">
+<p>Next, we’ll run identification. Our causal query is</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p46">
+<p><em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=“high”</sub> – <em>I</em><sub><em>E</em></sub><sub>=“low”</sub>)</p>
+</div>
+<div class="readable-text" id="p47">
+<p>For simplicity, let’s recode “high” as 1 and “low” as 0.</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p48">
+<p><em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=1</sub> – <em>I</em><sub><em>E</em></sub><sub>=0</sub>)</p>
+</div>
+<div class="readable-text" id="p49">
+<p>This query is on level 2 of the causal hierarchy. We are not running an experiment; we only have observational data—samples from a level 1 distribution. Our identification task is to use our level 2 query and our causal model and identify a level 1 estimand, an operation we can apply to the distribution of the variables in our data.</p>
+</div>
+<div class="readable-text intended-text" id="p50">
+<p>First, let’s download our data and see what variables are in our observational distribution.</p>
+</div>
+<div class="browsable-container listing-container" id="p51">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.2</span> Download and display the data</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import pandas as pd
+data = pd.read_csv(
+    "https://raw.githubusercontent.com/altdeep/causalML/master/datasets
+  <span class="">↪</span>/online_game_example_do_why.csv"    <span class="aframe-location"/> #1
+)
+print(data.columns)    <span class="aframe-location"/> #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 Download an online gaming dataset.
+     <br/>#2 Print the variables.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p52">
+<p>This prints out the following set of variables:</p>
+</div>
+<div class="browsable-container listing-container" id="p53">
+<div class="code-area-container">
+<pre class="code-area">Index(['Guild Membership', 'Player Skill Level', 'Time Spent Playing',
+       'Side-quest Group Assignment', 'Customization Level',
+       'Side-quest Engagement', 'Won Items', 'In-game Purchases',
+       'Total Inventory'],
+      dtype='object')</pre>
+</div>
+</div>
+<div class="readable-text" id="p54">
+<p>Our level 1 observational distribution includes all the variables in the DAG except <em>Prior Experience</em>. Thus, <em>Prior Experience</em> is a latent variable (figure 11.4).<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p55">
+<img alt="figure" height="432" src="../Images/CH11_F04_Ness.png" width="732"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.4</span> <em>Prior Experience</em> is not observed in the data; it is a latent (unobserved) variable with respect to our DAG.</h5>
+</div>
+<div class="readable-text" id="p56">
+<p>We specified the base distribution for the estimand using y0’s domain-specific language for probabilistic expressions:</p>
+</div>
+<div class="browsable-container listing-container" id="p57">
+<div class="code-area-container">
+<pre class="code-area">Identification.from_expression(
+    graph=dag,
+    query=query,
+    estimand=observational_distribution
+)</pre>
+</div>
+</div>
+<div class="readable-text" id="p58">
+<p>Here, we’ll use DoWhy. With DoWhy, we specify the observational distribution by just passing in the pandas DataFrame, along with the DAG and the causal query, to the constructor of the <code>CausalModel</code> class.</p>
+</div>
+<div class="browsable-container listing-container" id="p59">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.3</span> Instantiate an instance of DoWhy’s <code>CausalModel</code></h5>
+<div class="code-area-container">
+<pre class="code-area">from dowhy import CausalModel    <span class="aframe-location"/> #1
+
+model = CausalModel(
+    data=data,    <span class="aframe-location"/> #2
+    treatment='Side-quest Engagement',    <span class="aframe-location"/> #3
+    outcome='In-game Purchases',   #3
+    graph=causal_graph   <span class="aframe-location"/> #4
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Install DoWhy and load the CausalModel class.
+     <br/>#2 Instantiate the CausalModel object with the data, which represents the level 1 observational distribution from which we derive the estimands.
+     <br/>#3 Specify the target causal query we wish to estimate, namely the causal effect of the treatment on the outcome.
+     <br/>#4 Provide the causal DAG.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p60">
+<p>Next, the <code>identify_effect</code> methods will show us possible estimands we can target, given our causal model and observed variables.</p>
+</div>
+<div class="browsable-container listing-container" id="p61">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.4</span> Run identification in DoWhy</h5>
+<div class="code-area-container">
+<pre class="code-area">identified_estimand = model.identify_effect()   <span class="aframe-location"/> #1
+print(identified_estimand)</pre>
+<div class="code-annotations-overlay-container">
+     #1 The identify_effect method of the CausalModel class lists identified estimands.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p62">
+<p>The <code>identified_estimand</code> object is an object of the class <code>IdentifiedEstimand</code>. Printing it will list the estimands, if any, and the assumptions they entail. In our case, we have three estimands we can target:</p>
+</div>
+<ul>
+<li class="readable-text" id="p63"> The backdoor adjustment estimand through the adjustment set <em>Player Skill Level</em>, <em>Guild Membership</em>, and <em>Time Spent Playing</em> </li>
+<li class="readable-text" id="p64"> The front-door adjustment estimand through the mediator <em>Won Items</em> </li>
+<li class="readable-text" id="p65"> Instrumental variable estimands through <em>Side-Quest Group Assignment</em> and <em>Customization Level</em> </li>
+</ul>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p66">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Graphical identification in DoWhy</h5>
+</div>
+<div class="readable-text" id="p67">
+<p>At the time of writing, DoWhy does implement graphical identification algorithms like y0, but these are experimental and are not the default identification approach. The default approach looks for commonly used estimands (e.g., backdoor, front door, instrumental variables) based on the structure of your graph. There may be identifiable estimands that the default approach misses, but these would be estimands that are not commonly used.</p>
+</div>
+</div>
+<div class="readable-text" id="p68">
+<p>Let’s examine these estimands more closely.</p>
+</div>
+<div class="readable-text" id="p69">
+<h3 class="readable-text-h3" id="sigil_toc_id_262"><span class="num-string">11.3.1</span> The backdoor adjustment estimand</h3>
+</div>
+<div class="readable-text" id="p70">
+<p>Let’s look at the printed summary for the first estimand, the backdoor adjustment estimand:</p>
+</div>
+<div class="browsable-container listing-container" id="p71">
+<div class="code-area-container">
+<pre class="code-area">Estimand type: EstimandType.NONPARAMETRIC_ATE
+### Estimand : 1
+Estimand name: backdoor
+Estimand expression:
+           d                                                                  
+────────────────────────(E[In-game Purchases|Time Spent Playing,Guild 
+d[Side-quest Engagement]                                                      
+
+Membership, Player Skill Level])
+
+Estimand assumption 1, Unconfoundedness: If U→{Side-quest Engagement} and U→In-game Purchases then P(In-game Purchases|Side-quest Engagement,Time Spent Playing,Guild Membership,Player Skill Level,U) = P(In-game Purchases|Side-quest Engagement,Time Spent Playing,Guild Membership,Player Skill Level)</pre>
+</div>
+</div>
+<div class="readable-text" id="p72">
+<p>This printout tells us a few things:</p>
+</div>
+<ul>
+<li class="readable-text" id="p73"> <code>EstimandType.NONPARAMETRIC_ATE</code>—This means the estimand can be identified with graphical or “nonparametric” methods, such as the do-calculus. </li>
+<li class="readable-text" id="p74"> <code>Estimand name: backdoor</code>—This is the backdoor adjustment estimand. </li>
+<li class="readable-text" id="p75"> <code>Estimand expression</code>—The mathematical expression of the estimand. Since we want the ATE, we modify the backdoor estimand to target the ATE. </li>
+<li class="readable-text" id="p76"> <code>Estimand assumption 1</code>—The causal assumptions underlying the estimand. </li>
+</ul>
+<div class="readable-text" id="p77">
+<p>The last item is the most important. For each estimand, DoWhy lists the causal assumptions that must hold for valid estimation of the target causal query. In this case, the assumption is that there are no hidden (unmeasured) confounders, which DoWhy refers to as <code>U</code>. Estimation of a backdoor adjustment estimand assumes that all confounders are adjusted for.</p>
+</div>
+<div class="readable-text intended-text" id="p78">
+<p>Note that we do not need to observe <em>Prior Experience</em> to obtain a backdoor adjustment estimand. We just need to observe an adjustment set of common causes that d-separates or “blocks” all backdoor paths.</p>
+</div>
+<div class="readable-text intended-text" id="p79">
+<p>The next estimand in the printout is an instrumental variable estimand. </p>
+</div>
+<div class="readable-text" id="p80">
+<h3 class="readable-text-h3" id="sigil_toc_id_263"><span class="num-string">11.3.2</span> The instrumental variable estimand</h3>
+</div>
+<div class="readable-text" id="p81">
+<p>The printed summary for the second estimand, the instrumental variable estimand, is as follows (note, I shortened the variable names to acronyms so the summary fits this page):</p>
+</div>
+<div class="browsable-container listing-container" id="p82">
+<div class="code-area-container">
+<pre class="code-area">### Estimand : 2
+Estimand name: iv
+Estimand expression:
+
+<code> </code><code>⎡</code><code>                </code><code> </code><code>                        </code><code>-1</code><code>⎤</code>
+<code> </code><code>⎢</code><code>    d           </code><code>⎛</code><code>     d                </code><code>⎞</code><code/><code>  ⎥</code>
+<code>E</code><code>⎢</code><code>──────────(IGP)</code><code>⋅     </code><code>───────────([SQE]) </code><code> </code><code/><code/><code>  ⎥</code>
+<code> </code><code>⎣</code><code>d[SQGA CL]      </code><code>⎝</code><code> d[SQGA  CL]          </code><code>⎠</code><code/><code/><code/><code>  ⎦</code>
+
+Estimand assumption 1, As-if-random: 
+    If U→→IGP then ¬(U →→{SQGA,CL})
+Estimand assumption 2, Exclusion:
+    If we remove {SQGA,CL}→{SQE} then ¬({SQGA,CL}→IGP)</pre>
+</div>
+</div>
+<div class="readable-text" id="p83">
+<p>There are two level 2 definitional requirements for a variable to be a valid instrument:</p>
+</div>
+<ol>
+<li class="readable-text" id="p84"> <em>As-if-random</em>—Any backdoor paths between the instrument and the outcome can be blocked. </li>
+<li class="readable-text" id="p85"> <em>Exclusion</em>—The instrument is a cause of the outcome only indirectly through the treatment. </li>
+</ol>
+<div class="readable-text" id="p86">
+<p>The variables in our model that satisfy these constraints are <em>Side-Quest Group Assignment</em> and <em>Customization Level</em>, as shown in figure 11.5.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p87">
+<img alt="figure" height="432" src="../Images/CH11_F05_Ness.png" width="757"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.5</span> <em>Side-Quest Group Assignment</em> and <em>Customization Level</em> are valid instrumental variables.</h5>
+</div>
+<div class="readable-text" id="p88">
+<p>The printout of <code>identified_estimand</code> shows the two constraints:</p>
+</div>
+<ol>
+<li class="readable-text" id="p89"> <code>Estimand</code> <code>assumption</code> <code>1,</code> <code>As-if-random</code>—DoWhy assumes that none of the other causes of the outcome (<em>In-Game Purchases</em>) are also causes of either instrument. In other words, there are no backdoor paths between the instruments and the outcome. </li>
+<li class="readable-text" id="p90"> <code>Estimand assumption</code> <code>2,</code> <code>Exclusion</code>—This says that if we remove the causal path from the instruments to the treatment (<em>Side-quest Engagement</em>), there would be no causal paths from the instruments to the outcome (<em>In-Game Purchases</em>). In other words, there are no causal paths between the instruments and the outcome that are not mediated by the treatment. </li>
+</ol>
+<div class="readable-text" id="p91">
+<p>Note that DoWhy’s constraints are relatively restrictive; DoWhy prohibits the <em>existence </em>of backdoor paths and non-treatment-mediated causal paths between the instrument and the outcome. In practice, it would be possible to block these paths with backdoor adjustment. DoWhy is making a trade-off that favors a simpler interface.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p92">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Parametric assumptions for instrumental variable estimation</h5>
+</div>
+<div class="readable-text" id="p93">
+<p>The level 2 graphical assumptions are not sufficient for instrumental variable identification; additional parametric assumptions are needed. DoWhy, by default, makes a linearity assumption. With a linear assumption, you can derive the ATE as a simple function of the coefficients of linear models of outcome and the treatment given the instrument. DoWhy does this by fitting linear regression models.</p>
+</div>
+</div>
+<div class="readable-text" id="p94">
+<p>Next, we’ll look at the third estimand identified by DoWhy—the front door estimand.</p>
+</div>
+<div class="readable-text" id="p95">
+<h3 class="readable-text-h3" id="sigil_toc_id_264"><span class="num-string">11.3.3</span> The front-door adjustment estimand</h3>
+</div>
+<div class="readable-text" id="p96">
+<p>Let’s move on to the assumptions in the third estimand, the front-door estimand. DoWhy’s printed summary is as follows (again, I shortened the variable names to acronyms in the printout so it fits the page):</p>
+</div>
+<div class="browsable-container listing-container" id="p97">
+<div class="code-area-container">
+<pre class="code-area">### Estimand : 3
+Estimand name: frontdoor
+Estimand expression:
+
+ ⎡     d                d        ⎤
+E⎢────────────(IGP)⋅───────([WI])⎥
+ ⎣d[WI]       d[SQE]             ⎦
+
+ Estimand assumption 1, Full-mediation: 
+    WI intercepts (blocks) all directed paths from SQE to IGP.
+Estimand assumption 2, First-stage-unconfoundedness:
+    If U→{SQE} and U→{WI}
+    then P(WI|SQE,U) = P(WI|SQE)
+Estimand assumption 3, Second-stage-unconfoundedness:
+    If U→{WI} and U→IGP
+    then P(IGP|WI, SQE, U) = P(IGP|WI, SQE)</pre>
+</div>
+</div>
+<div class="readable-text" id="p98">
+<p>As we saw in chapter 10, the front-door estimand requires a mediator on the path from the treatment to the outcome—in our DAG, this is <em>Won Items</em>. The printout for <code>identified_estimand</code> lists three key assumptions for the front-door estimand:</p>
+</div>
+<ol>
+<li class="readable-text" id="p99"> <code>Full-mediation</code>—The mediator (<em>Won-Items</em>) intercepts all directed paths from the treatment (<em>Side-Quest Engagement</em>) to the outcome (<em>In-Game Purchases</em>). In other words, conditioning on <em>Won-Items</em> would d-separate (block) all the paths of causal influence from the treatment to the outcome. </li>
+<li class="readable-text" id="p100"> <code>First-stage-unconfoundedness</code>—There are no hidden confounders between the treatment and the mediator. </li>
+<li class="readable-text" id="p101"> <code>Second-stage-unconfoundedness</code>—There are no hidden confounders between the outcome and the mediator. </li>
+</ol>
+<div class="readable-text" id="p102">
+<p>With our DAG and the variables observed in the data, DoWhy has identified three estimands for the ATE of <em>Side-Quest Engagement</em> on <em>In-Game Purchases</em>. Remember, the estimand is the thing we estimate, so which estimand should we estimate? </p>
+</div>
+<div class="readable-text" id="p103">
+<h3 class="readable-text-h3" id="sigil_toc_id_265"><span class="num-string">11.3.4</span> Choosing estimands and reducing “DAG anxiety”</h3>
+</div>
+<div class="readable-text" id="p104">
+<p>In step 2 of the causal inference workflow, we specified our causal assumptions about the domain as a DAG (or SCM or other causal model). The subsequent steps all rely on the assumptions we make in step 2. </p>
+</div>
+<div class="readable-text intended-text" id="p105">
+<p>Errors in step 2 can lead to errors in the results of the analysis, and while we can empirically test these assumptions to some extent (e.g., using the methods in chapter 4), we cannot verify all our causal assumptions with observational data alone. This dependence on our subjective and unverified causal assumptions leads to what I call “DAG anxiety”—a fear that if one gets any part of the causal assumptions wrong, then the output of the analysis becomes wrong. Fortunately, we don’t need to get all the assumptions right; we only need to rely on the assumptions required <em>to identify our selected estimand</em>. </p>
+</div>
+<div class="readable-text intended-text" id="p106">
+<p>This is what makes DoWhy’s <code>identify_effect</code> method so powerful. By showing us the assumptions required for each estimand it lists, we can compare these assumptions and target the estimand where we are most confident about those assumptions.</p>
+</div>
+<div class="readable-text intended-text" id="p107">
+<p>For example, the key assumption behind the backdoor adjustment estimand is that we can adjust for all sources of confounding from common causes. In our original DAG, we have an edge from <em>Time Spent Playing</em> to <em>Player Skill Level</em>. What if you weren’t sure about the direction of this edge, as illustrated in figure 11.6.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p108">
+<img alt="figure" height="432" src="../Images/CH11_F06_Ness.png" width="757"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.6</span> Uncertainty about the edge between <em>Time Spent Playing</em> and <em>Player Skill Level</em><em> </em>doesn’t matter with respect to the backdoor adjustment estimand of the ATE of interest.</h5>
+</div>
+<div class="readable-text" id="p109">
+<p>When we initially built the DAG, you might have been thinking that playing more causes skill level to increase. But now you may worry that perhaps the relationship is the other way around—that being more skilled causes you to want to spend more time playing. It doesn’t matter! At least, not with respect to the backdoor estimand for the target query—the ATE of <em>Side-Quest Engagement</em> on <em>In-Game Purchases</em>. </p>
+</div>
+<div class="readable-text intended-text" id="p110">
+<p>Suppose that instead you were worried that the model might have omitted edges that reflect direct influence that <em>Prior Experience</em> has on <em>Side-Quest Engagement</em> and <em>In-Game Purchases</em>. You worry that players might bring their habits in side-quest playing and virtual item purchasing from previous games they’ve played to the game environment you are modeling, as in figure 11.7.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p111">
+<img alt="figure" height="432" src="../Images/CH11_F07_Ness.png" width="732"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.7</span> Direct influence of a latent variable on the treatment and outcome would violate the assumption underpinning the backdoor adjustment estimand. If you are not confident in an estimand’s assumptions, target another.</h5>
+</div>
+<div class="readable-text" id="p112">
+<p>If this is true, your backdoor adjustment estimand assumption would be violated—you would have a confounder you couldn’t adjust for, a backdoor path you couldn’t block. In this case, you’ll need to consider whether the backdoor adjustment estimand is the right estimand to target. </p>
+</div>
+<div class="readable-text intended-text" id="p113">
+<p>Fortunately, in this example, we still have two other estimands to choose from. Neither the instrumental variable estimand nor the front-door adjustment estimand rely on our ability to adjust for all common causes. As long as we’re comfortable with the assumptions for either of these estimands, we can continue.</p>
+</div>
+<div class="readable-text" id="p114">
+<h3 class="readable-text-h3" id="sigil_toc_id_266"><span class="num-string">11.3.5</span> When you don’t have identification</h3>
+</div>
+<div class="readable-text" id="p115">
+<p>The stop sign in the causal inference workflow, shown again in figure 11.8, warns against proceeding with estimation when you don’t have identification.</p>
+</div>
+<div class="browsable-container figure-container" id="p116">
+<img alt="figure" height="158" src="../Images/CH11_F08_Ness.png" width="740"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.8</span> If you lack identification, do not proceed to estimation. Rather, consider how to acquire data that enables identification.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p117">
+<p>Let’s consider what happens if our observational distribution only contains a subset of our initial variables, as in figure 11.9.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p118">
+<img alt="figure" height="432" src="../Images/CH11_F09_Ness.png" width="732"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.9</span> <em>Player Skill Level</em>, <em>Won Items</em>,<em> Prior Experience</em>,<em> Side-Quest Group Assignment</em>,<em> and Customization Level become late</em>nt variables.</h5>
+</div>
+<div class="readable-text" id="p119">
+<p>In this case, we have some problems:</p>
+</div>
+<ul>
+<li class="readable-text" id="p120"> If <em>Player Skill Level</em> is latent, we can’t adjust for confounding from <em>Player Skill Level</em> and thus have no backdoor estimand. </li>
+<li class="readable-text" id="p121"> If <em>Won Items</em> is latent, we can’t identify a front-door estimand. </li>
+<li class="readable-text" id="p122"> If the instrumental variables are latent, we can’t target an instrumental variable estimand. </li>
+</ul>
+<div class="readable-text" id="p123">
+<p>When you lack identification, you should not proceed with the next step of estimation. Rather, use the results from identification to determine what additional variables to collect—consider how you can collect new data with</p>
+</div>
+<ul>
+<li class="readable-text" id="p124"> Additional confounders that would enable backdoor identification </li>
+<li class="readable-text" id="p125"> A mediator that would enable front-door identification </li>
+<li class="readable-text" id="p126"> Variables you can use as instruments </li>
+</ul>
+<div class="readable-text" id="p127">
+<p>Avoid the temptation to change the DAG to get identification with your current data—you are modeling the data generating process (DGP), not the data.</p>
+</div>
+<div class="readable-text intended-text" id="p128">
+<p>However, if you do have an identified estimand, you can move on to step 4—estimation.</p>
+</div>
+<div class="readable-text" id="p129">
+<h2 class="readable-text-h2" id="sigil_toc_id_267"><span class="num-string">11.4</span> Step 4: Estimate the estimand</h2>
+</div>
+<div class="readable-text" id="p130">
+<p>In step 4 of the causal inference workflow, we select an estimation method for whichever estimand we wish to target. In this section, we’ll walk through several estimators for each of our three estimands. Note that your results for estimation may vary slightly from those in the text, depending on modifications to the dataset and to random elements of the estimator.</p>
+</div>
+<div class="readable-text intended-text" id="p131">
+<p>In DoWhy, we do estimation using a method in the <code>CausalModel</code> class called <code>estimate_effect</code>, as in the following example.</p>
+</div>
+<div class="browsable-container listing-container" id="p132">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.5</span> Estimating the backdoor estimand with linear regression</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_reg = model.estimate_effect(
+    identified_estimand,   <span class="aframe-location"/> #1
+    method_name="backdoor.linear_regression", <span class="aframe-location"/> #2
+    confidence_intervals=True   <span class="aframe-location"/> #3
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 The estimate_effect method takes the output of the identify_effect method as input.
+     <br/>#2 method_name is of the form “[estimand].[estimator]”. Here we use the linear regression estimator to estimate the backdoor estimand.
+     <br/>#3 Return confidence intervals
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p133">
+<p>The first argument is the <code>identified_estimand</code> object. The second argument <code>method_name</code> is a string of the form <code>"[estimand].[estimator]"</code>, where <code>"[estimand]"</code> is the estimand we want to target, and <code>"[estimator]"</code> is the estimation method we want to use. Thus, <code>method_name="backdoor.linear_regression"</code> means we want to use linear regression to estimate the backdoor estimand.</p>
+</div>
+<div class="readable-text intended-text" id="p134">
+<p>In this section, we’ll see the benefits of distinguishing identification from estimation. In step 3 of the causal inference workflow, we compared identified estimands and selected an estimand with assumptions in which we are confident. That step frees us to focus on the statistical and computational trade-offs common across data science and machine learning when we choose an estimation method in step 4. We’ll walk through these trade-offs in this section. Let’s start by looking at the linear regression estimation of the backdoor estimand.</p>
+</div>
+<div class="readable-text" id="p135">
+<h3 class="readable-text-h3" id="sigil_toc_id_268"><span class="num-string">11.4.1</span> Linear regression estimation of the backdoor estimand</h3>
+</div>
+<div class="readable-text" id="p136">
+<p>In many causal inference texts, particularly from econometrics, the default approach to causal inference is regression—specifically, regressing the outcome on the treatment and any confounders we wish to adjust for or “control for.” What we are doing in this case is using linear regression to estimate the backdoor estimand.</p>
+</div>
+<div class="readable-text intended-text" id="p137">
+<p>Recall that in the case where <em>Side-Quest Engagement</em> is continuous, the ATE would be<code><span class="aframe-location"/></code></p>
+</div>
+<div class="browsable-container figure-container" id="p138">
+<img alt="figure" height="51" src="../Images/ness-ch11-eqs-4x.png" width="94"/>
+</div>
+<div class="readable-text" id="p139">
+<p>This is a function of x, not a point value. However, it becomes a point value when <em>E</em><em> </em>(<em>I</em><em> </em><sub><em>E</em></sub><sub>=</sub><sub><em>x</em></sub><em> </em>) is linear—the derivative of a linear function is a constant.</p>
+</div>
+<div class="readable-text intended-text" id="p140">
+<p>So we turn to regression. The backdoor adjustment estimand identifies <em>Guild Membership </em>(<em>G</em><em>  </em>), <em>Time Spent Playing</em> (<em>T</em><em>  </em>), and <em>Player Skill Level</em> (<em>S</em><em>  </em>) as the confounders we have to adjust for. In general, we have to sum or integrate over these variables in the backdoor adjustment estimand. But in the linear regression case, this simplifies to simply regressing <em>I</em> on the treatment <em>E</em> and the confounders <em>G</em>, <em>T</em>, and <em>S</em>. The coefficient estimate for <em>E</em> is the ATE. In the case of a binary treatment like our target ATE,</p>
+</div>
+<div class="readable-text indented-paragraph equation-paragraph" id="p141">
+<p><em>E</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=1</sub> – <em>I</em><em> </em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub><em> </em>)</p>
+</div>
+<div class="readable-text" id="p142">
+<p>we simply treat <em>E</em> as a regression dummy variable. The coefficient estimates for the confounders are <em>nuisance parameters—</em>meaning they are necessary to estimate the ATE, but we can discard them once we have it.</p>
+</div>
+<div class="readable-text intended-text" id="p143">
+<p>To illustrate, let’s print the results of our call to <code>estimate_method</code>.</p>
+</div>
+<div class="browsable-container listing-container" id="p144">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.6</span> Print the linear regression estimation results</h5>
+<div class="code-area-container">
+<pre class="code-area">print(causal_estimate_reg)</pre>
+</div>
+</div>
+<div class="readable-text" id="p145">
+<p>This prints a bunch of stuff, including the following:</p>
+</div>
+<div class="browsable-container listing-container" id="p146">
+<div class="code-area-container">
+<pre class="code-area">## Realized estimand
+b: In-game Purchases~Side-quest Engagement+Guild Membership+Time Spent Playing+Player Skill Level
+Target units: ate
+
+## Estimate
+Mean value: 178.08617115757784
+95.0% confidence interval: [[168.68114922 187.4911931 ]]</pre>
+</div>
+</div>
+<div class="readable-text" id="p147">
+<p><code>Realized estimand</code> shows the regression formula. <code>Estimate</code> shows the estimation results, the point value, and the 95% confidence interval.</p>
+</div>
+<div class="readable-text intended-text" id="p148">
+<p>Here we see why linear regression is so popular as an estimator:</p>
+</div>
+<ul>
+<li class="readable-text" id="p149"> The coefficient estimate of the treatment is a point estimate of the ATE. </li>
+<li class="readable-text" id="p150"> We adjust for backdoor confounders by simply including them in the regression model (no summation, no integration). </li>
+<li class="readable-text" id="p151"> The statistical properties of the estimator (confidence intervals, <em>p</em>-values, etc.) are well established. </li>
+<li class="readable-text" id="p152"> Many people are familiar with regression and how to evaluate a regression fit. </li>
+</ul>
+<div class="readable-text" id="p153">
+<p>Once we have backdoor identification, the question of whether we should use a linear regression estimator in this case involves the same considerations of whether a linear regression model is appropriate in non-causal explanatory modeling settings (e.g., is the relationship linear?).</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p154">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Valid backdoor adjustment sets: What you can and can’t adjust for</h5>
+</div>
+<div class="readable-text" id="p155">
+<p>You do not need to adjust for <em>all</em> confounding from common causes. Any valid backdoor adjustment set of common causes will do. As discussed in chapter 10, a valid backdoor adjustment set any set that satisfies the backdoor criterion, meaning that it d-separates <em>all</em> backdoor paths. For example, <em>Guild Membership</em>, <em>Time Spent Playing</em>, and <em>Player Skill Level</em> are a valid adjustment set. You don’t need <em>Prior Experience</em> because <em>Time Spent Playing</em> and <em>Player Skill Level</em> are sufficient to d-separate the backdoor path through <em>Prior Experience</em>. This is fortunate for us, since <em>Prior Experience</em> is unobserved. Though, if it were observed, we could add it to the adjustment set—this superset would also be a valid set.</p>
+</div>
+<div class="readable-text" id="p156">
+<p>DoWhy selects a valid adjustment set when it identifies a backdoor estimand. If you write your own estimator, you’ll select your own adjustment set.</p>
+</div>
+<div class="readable-text" id="p157">
+<p>Some applied regression texts argue that you should try to adjust for or “control for” any covariates in your data because they could be potential confounders. This is bad advice. Doing so only makes sense if you are sure the covariate is not a mediator or a collider between the treatment and outcome variables. Adjusting for a mediator will d-separate the causal path you mean to quantify with the ATE. Adjusting for a collider will add collider bias. This is a painfully common error in social science, one committed even by experts.</p>
+</div>
+</div>
+<div class="readable-text" id="p158">
+<h3 class="readable-text-h3" id="sigil_toc_id_269"><span class="num-string">11.4.2</span> Propensity score estimators of the backdoor estimand</h3>
+</div>
+<div class="readable-text" id="p159">
+<p>Propensity score methods are a collection of estimation methods for the backdoor estimand that use a quantity called the <em>propensity score</em>. The traditional definition of a propensity score is the probability of being exposed to the treatment conditional on the confounders. In the context of the online gaming example, this is the probability that a player has high <em>Side-Quest Engagement</em> given their <em>Guild Membership</em>, <em>Time Spent Playing</em>, and <em>Player Skill Level</em>, i.e., <em>P</em><em> </em>(<em>E</em><em>  </em>=<em> </em>1|<em>T</em><em>  </em>=<em> </em><em>t</em>, <em>G</em><em>  </em>=<em> </em><em>g</em>, <em>S</em><em>  </em>=<em> </em><em>s</em><em> </em>) where <em>t</em>, <em>g</em>, and <em>s</em> are that player’s values for <em>T</em>, <em>G</em>, and <em>S</em>. In other words, it quantifies the player’s “propensity” of being exposed to the treatment (<em>E</em><em>  </em>=<em> </em>1). Typically <em>P</em><em> </em>(<em>E</em><em>  </em>=<em> </em>1|<em>T</em><em>  </em>=<em> </em><em>t</em>, <em>G</em><em>  </em>=<em> </em><em>g</em>, <em>S</em><em>  </em>=<em> </em><em>s</em><em> </em>) is fit by logistic regression.</p>
+</div>
+<div class="readable-text intended-text" id="p160">
+<p>But we can take a more expansive, machine learning–friendly view of the propensity score. We can learn a propensity score function <em class="obliqued">λ</em>(...) of the backdoor adjustment set of confounders that renders those confounders conditionally independent of the treatment, as in figure 11.10.</p>
+</div>
+<div class="browsable-container figure-container" id="p161">
+<img alt="figure" height="388" src="../Images/CH11_F10_Ness.png" width="541"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.10</span> The propensity score is a compression of the causal influence of the common causes in the backdoor adjustment set.</h5>
+</div>
+<div class="readable-text intended-text" id="p162">
+<p>Here, we learn a function <em class="obliqued">λ</em>(<em>T</em>, <em>S</em>, <em>G</em><em> </em>) such that it effectively compresses the explanatory influence that <em>T</em>, <em>S</em>, and <em>G</em> have on <em>E</em>. The traditional function of <em>P</em><em> </em>(<em>E</em><em>  </em>=<em> </em>1|<em>G</em>, <em>S</em>, <em>T</em><em> </em>) compresses this influence into a probability value, but other approaches can work as well.</p>
+</div>
+<div class="readable-text" id="p163">
+<p>The utility of propensity score modeling is dimensionality reduction; now we only need to adjust for the score instead of all the confounders in the adjustment set. There are three common propensity score methods:<span class="aframe-location"/></p>
+</div>
+<ul>
+<li class="readable-text" id="p164"> Propensity score stratification </li>
+<li class="readable-text" id="p165"> Propensity score matching </li>
+<li class="readable-text" id="p166"> Propensity score weighting </li>
+</ul>
+<div class="readable-text" id="p167">
+<p>These methods make different trade-offs in how they go about backdoor adjustment. Let’s examine their use in DoWhy.</p>
+</div>
+<div class="readable-text" id="p168">
+<h4 class="readable-text-h4 sigil_not_in_toc">Propensity score stratification</h4>
+</div>
+<div class="readable-text" id="p169">
+<p>Propensity score stratification tries to break the data up into subsets (“strata”) according to propensity scores and then adjust over the strata. Note that this algorithm may take some time to run.</p>
+</div>
+<div class="browsable-container listing-container" id="p170">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.7</span> Propensity score stratification</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_strat = model.estimate_effect(
+    identified_estimand,
+    method_name="backdoor.propensity_score_stratification",    <span class="aframe-location"/> #1
+    target_units="ate",
+    confidence_intervals=True
+)
+
+print(causal_estimate_strat)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Propensity score stratification
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p171">
+<p>This produces the following results:</p>
+</div>
+<div class="browsable-container listing-container" id="p172">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 187.2931023294184
+95.0% confidence interval: (180.3291962554186, 196.4556029137768)</pre>
+</div>
+</div>
+<div class="readable-text" id="p173">
+<p>The propensity score estimator gives us an estimate and confidence interval that differ slightly from that of the regression estimator.</p>
+</div>
+<div class="readable-text" id="p174">
+<h4 class="readable-text-h4 sigil_not_in_toc">Propensity score matching</h4>
+</div>
+<div class="readable-text" id="p175">
+<p><em>Propensity score matching </em>tries to match individuals where treatment = 1 with individuals that have a similar propensity score but where treatment = 0 and then compare outcomes across matched pairs.</p>
+</div>
+<div class="browsable-container listing-container" id="p176">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.8</span> Propensity score matching</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_match = model.estimate_effect(
+    identified_estimand,
+    method_name="backdoor.propensity_score_matching",    <span class="aframe-location"/> #1
+    target_units="ate",
+    confidence_intervals=True
+)
+print(causal_estimate_match)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Propensity score matching
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p177">
+<p>This returns the following results:</p>
+</div>
+<div class="browsable-container listing-container" id="p178">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 199.8110290000004
+95.0% confidence interval: (183.23361900000054, 210.5281390000008)</pre>
+</div>
+</div>
+<div class="readable-text" id="p179">
+<p>Propensity score matching, despite also being a propensity score method, returns an estimate and confidence interval different from that of propensity score stratification.</p>
+</div>
+<div class="readable-text" id="p180">
+<h4 class="readable-text-h4 sigil_not_in_toc">Propensity score weighting</h4>
+</div>
+<div class="readable-text" id="p181">
+<p><em>Propensity score weighting </em>methods use the propensity score to calculate a weight in a class of inference algorithms called <em>inverse probability weighting</em>. We implement this method in DoWhy as follows.</p>
+</div>
+<div class="browsable-container listing-container" id="p182">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.9</span> Propensity score weighting</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_ipw = model.estimate_effect(
+    identified_estimand,
+    method_name="backdoor.propensity_score_weighting",   <span class="aframe-location"/> #1
+    target_units = "ate",
+    method_params={"weighting_scheme":"ips_weight"},   <span class="aframe-location"/> #2
+    confidence_intervals=True
+)
+print(causal_estimate_ipw)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Inverse probability weighting with the propensity score
+     <br/>#2 Parameters used to set the IPS algorithm
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p183">
+<p>This returns the following:</p>
+</div>
+<div class="browsable-container listing-container" id="p184">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 437.79246624944926
+95.0% confidence interval: (358.10472302821745, 515.2480572854872)</pre>
+</div>
+</div>
+<div class="readable-text" id="p185">
+<p>The fact that this estimator’s result differs so dramatically from the others suggest that it is relying on statistical assumptions that don’t hold in this data. </p>
+</div>
+<div class="readable-text intended-text" id="p186">
+<p>Next, we’ll move on to a popular class of backdoor estimators that implement machine learning.</p>
+</div>
+<div class="readable-text" id="p187">
+<h3 class="readable-text-h3" id="sigil_toc_id_270"><span class="num-string">11.4.3</span> Backdoor estimation with machine learning</h3>
+</div>
+<div class="readable-text" id="p188">
+<p>Recent developments in causal effect estimation focus on leveraging machine learning models, and most of these target the backdoor estimand. These approaches to causal effect estimation scale to large datasets and allow us to relax parametric assumptions, such as linearity. The following DoWhy code uses the sklearn and EconML libraries for these machine learning methods. DoWhy’s <code>estimate_effects</code> provides a wrapper to the EconML implementation of these methods.</p>
+</div>
+<div class="readable-text" id="p189">
+<h4 class="readable-text-h4 sigil_not_in_toc">Double machine learning</h4>
+</div>
+<div class="readable-text" id="p190">
+<p>Double machine learning (double ML) is a backdoor estimator that uses machine learning methods to fit two predictive models: a model of the outcome, given the adjustment set of confounders, and a model of the treatment, given the adjustment set. The approach then combines these two predictive models in a final-stage estimation to create a model of the target causal effect query.</p>
+</div>
+<div class="readable-text intended-text" id="p191">
+<p>The following code performs double ML using a gradient boosting model and regularized regression model (<code>LassoCV</code>) from sklearn. </p>
+</div>
+<div class="browsable-container listing-container" id="p192">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.10</span> Double ML with DoWhy, EconML, and sklearn</h5>
+<div class="code-area-container">
+<pre class="code-area">from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LassoCV
+from sklearn.ensemble import GradientBoostingRegressor
+
+featurizer = PolynomialFeatures(degree=1, include_bias=False)
+gb_estimate = model.estimate_effect(
+    identified_estimand,
+    method_name = "backdoor.econml.dml.DML",    <span class="aframe-location"/> #1
+    control_value = 0,
+    treatment_value = 1,
+    method_params={
+        "init_params":{
+            'model_y': GradientBoostingRegressor(),   <span class="aframe-location"/> #2
+            'model_t': GradientBoostingRegressor(),   <span class="aframe-location"/> #3
+            'model_final': LassoCV(fit_intercept=False),    <span class="aframe-location"/> #4
+            'featurizer': featurizer 
+        },
+        "fit_params":{}
+    }
+)
+print(gb_estimate)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Select the double ML estimator.
+     <br/>#2 Use a gradient boosting model to model the outcome given the confounders.
+     <br/>#3 Use a gradient boosting model to model the treatment given the confounders.
+     <br/>#4 Use linear regression with L1 regularization (LASSO) as the final model.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p193">
+<p>This produces the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p194">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 175.7229947190752</pre>
+</div>
+</div>
+<div class="readable-text" id="p195">
+<p>This gives us an estimate in the ballpark of some of the other estimators.</p>
+</div>
+<div class="readable-text" id="p196">
+<h4 class="readable-text-h4 sigil_not_in_toc">Meta learners</h4>
+</div>
+<div class="readable-text" id="p197">
+<p>Meta learners are another ML method for backdoor estimation. Broadly speaking, meta learners train a model (or models) of the outcome given the treatment variable and the confounders, and then account for the difference in prediction across treatment and control values of the treatment variable. They are particularly focused on highlighting heterogeneity of treatment effects across the data. The following code shows a meta learner example called a T-learner that uses a random forest predictor.</p>
+</div>
+<div class="browsable-container listing-container" id="p198">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.11</span> Backdoor estimation with a meta learner</h5>
+<div class="code-area-container">
+<pre class="code-area">from sklearn.ensemble import RandomForestRegressor    <span class="aframe-location"/> #1
+metalearner_estimate = model.estimate_effect(   #1
+    identified_estimand,   #1
+    method_name="backdoor.econml.metalearners.TLearner",   #1
+    method_params={   #1
+        "init_params": {'models': RandomForestRegressor()},    #1
+        "fit_params": {}    #1
+    }    #1
+)    #1
+
+print(metalearner_estimate)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Meta learner estimation of the backdoor estimand. This uses a T-learner with a random forest predictor.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p199">
+<p>This returns the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p200">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 197.20665049459512
+Effect estimates: [[ 192.6234]
+ [  -5.3165]
+ [ 133.2457]
+ ...
+ [  17.2561]
+ [-152.1482]
+ [ 264.887 ]]</pre>
+</div>
+</div>
+<div class="readable-text" id="p201">
+<p>The values under “Effect estimates” are the estimate of the CATE for each row of the data, conditional on the confounder values in the columns of that row.</p>
+</div>
+<div class="readable-text" id="p202">
+<h4 class="readable-text-h4 sigil_not_in_toc">Confidence intervals with machine learning methods</h4>
+</div>
+<div class="readable-text" id="p203">
+<p>DoWhy and EconML provide support for estimating confidence intervals for ML methods using a statistical method called nonparametric bootstrap, but this is computationally costly for large data. Cheap confidence interval estimation is one thing you give up for the flexibility and scalability of using ML methods for backdoor estimation.</p>
+</div>
+<div class="readable-text" id="p204">
+<h3 class="readable-text-h3" id="sigil_toc_id_271"><span class="num-string">11.4.4</span> Front-door estimation</h3>
+</div>
+<div class="readable-text" id="p205">
+<p>Recall from chapter 10 that the front-door estimator for our ATE, given our <em>Won Items</em> mediator, is<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p206">
+<img alt="figure" height="52" src="../Images/ness-ch11-eqs-5x.png" width="723"/>
+</div>
+<div class="readable-text" id="p207">
+<p>We can estimate this by fitting two statistical models, one that predicts <em>W</em> given <em>E</em>, and one that predicts <em>I</em> given <em>E</em> and <em>W</em>. DoWhy does this with linear regression by default, but you also have the option of selecting different predictive models.</p>
+</div>
+<div class="browsable-container listing-container" id="p208">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.12</span> Front door estimation with DoWhy</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_fd = model.estimate_effect(
+    identified_estimand,
+    method_name="frontdoor.two_stage_regression",    <span class="aframe-location"/> #1
+    target_units = "ate",
+    method_params={"weighting_scheme": "ips_weight"},    <span class="aframe-location"/> #2
+    confidence_intervals=True
+)
+print(causal_estimate_fd)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Select two-stage regression for the front-door estimand.
+     <br/>#2 Specify estimator hyperparameters.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p209">
+<p>This produces the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p210">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 170.20560581290403
+95.0% confidence interval: (141.53468188231938, 202.97221450388332)</pre>
+</div>
+</div>
+<div class="readable-text" id="p211">
+<p>The front-door estimate is similar to some of the backdoor estimators, but note that the confidence interval is skewed left.</p>
+</div>
+<div class="readable-text" id="p212">
+<h3 class="readable-text-h3" id="sigil_toc_id_272"><span class="num-string">11.4.5</span> Instrumental variable methods</h3>
+</div>
+<div class="readable-text" id="p213">
+<p>Instrumental variable-based estimation of the ATE is straightforward in DoWhy.</p>
+</div>
+<div class="browsable-container listing-container" id="p214">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.13</span> Instrumental variable estimation in DoWhy</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_iv = model.estimate_effect(
+    identified_estimand,
+    method_name="iv.instrumental_variable",   <span class="aframe-location"/> #1
+    method_params = {
+        "iv_instrument_name": "Side-quest Group Assignment"  <span class="aframe-location"/> #2
+    },
+    confidence_intervals=True
+)
+print(causal_estimate_iv)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Select instrumental variable estimation.
+     <br/>#2 Select side-quest engagement as the instrument.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p215">
+<p>This prints the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p216">
+<div class="code-area-container">
+<pre class="code-area">## Estimate
+Mean value: 205.82297621514252
+95.0% confidence interval: (-369.04011492007703, 923.6814756173349)</pre>
+</div>
+</div>
+<div class="readable-text" id="p217">
+<p>Note how large the confidence interval is despite the size of the data. This indicates that this estimator, with its default assumptions, might have too much variance to be useful.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p218">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Good instrumental variables should be “strong”</h5>
+</div>
+<div class="readable-text" id="p219">
+<p>One requirement for good instrumental variable estimation is that the instrument is strong, meaning it has a strong causal effect on the treatment variable. If you explore this data, you’ll find <em>Side-Quest Group Assignment</em> is a weak instrument. Weak instruments can lead to high variance estimates of the ATE. Keep this in mind when selecting an instrument.</p>
+</div>
+</div>
+<div class="readable-text" id="p220">
+<h4 class="readable-text-h4 sigil_not_in_toc">Regression discontinuity</h4>
+</div>
+<div class="readable-text" id="p221">
+<p>Regression discontinuity is an estimation method popular in econometrics. It uses a continuously valued variable related to the treatment variable, and it defines a threshold (a “discontinuity”) in the values of that variable that partition the data into “treatment” and “control” groups. It then compares observations lying closely on either side of the threshold, because those data points tend to have similar values for the confounders.</p>
+</div>
+<div class="readable-text intended-text" id="p222">
+<p>DoWhy treats regression discontinuity as an instrumental variable approach that uses continuous instruments. The <code>rd_variable_name</code> argument names a continuous instrument to use for thresholding, and <code>rd_threshold_value</code> is the threshold value. <code>rd_bandwidth</code> is the distance from the threshold within which confounders can be considered the same between treatment and control.</p>
+</div>
+<div class="browsable-container listing-container" id="p223">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.14</span> Regression discontinuity estimation with DoWhy</h5>
+<div class="code-area-container">
+<pre class="code-area">causal_estimate_regdist = model.estimate_effect(
+    identified_estimand,
+    method_name="iv.regression_discontinuity",   <span class="aframe-location"/> #1
+    method_params={
+        'rd_variable_name':'Customization Level',   <span class="aframe-location"/> #2
+        'rd_threshold_value':0.5,    <span class="aframe-location"/> #3
+        'rd_bandwidth': 0.15    <span class="aframe-location"/> #4
+    },
+    confidence_intervals=True,
+)</pre>
+<div class="code-annotations-overlay-container">
+     #1 DoWhy treats regression discontinuity as a special type of IV estimator.
+     <br/>#2 Use Customization Level as our instrument.
+     <br/>#3 The threshold value for the split (“discontinuity”)
+     <br/>#4 The distance from the threshold within which confounders are considered the same between treatment and control values of the treatment variable
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p224">
+<p>This returns the following results:</p>
+</div>
+<div class="browsable-container listing-container" id="p225">
+<div class="code-area-container">
+<pre class="code-area">Mean value: 156.85691281931338
+95.0% confidence interval: (-463.32687612531663, 940.698188663685)</pre>
+</div>
+</div>
+<div class="readable-text" id="p226">
+<p>Again, the variance is too large for us to rely on this estimator. The instrument is likely weak, or we need to tune the arguments passed to the estimator.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p227">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Conditional average treatment effect estimation and segmentation</h5>
+</div>
+<div class="readable-text" id="p228">
+<p>The conditional average treatment effect (CATE) is the ATE for a subset of the target population; i.e., we condition the ATE on specific values of covariates. DoWhy enables you to estimate the CATE as easily as the ATE. </p>
+</div>
+<div class="readable-text" id="p229">
+<p>Sometimes the goal of CATE estimation is <em>segmentation</em>—breaking the population down into segments that have a distinct CATE from other segments. A good tool for segmentation is EconML, which enables CATE-segmentation using regression trees. EconML can segment data into groups that respond similarly to intervention on the treatment variable, and find an optimal intervention value for each group in the leaf nodes of the regression tree.</p>
+</div>
+</div>
+<div class="readable-text" id="p230">
+<h3 class="readable-text-h3" id="sigil_toc_id_273"><span class="num-string">11.4.6</span> Comparing and selecting estimators</h3>
+</div>
+<div class="readable-text" id="p231">
+<p>In chapter 1, I mentioned a phenomenon called <em>the commodification of inference</em>. The way DoWhy reduces estimation to merely a set of arguments passed to the <code>estimate_effect</code> method is an example of this phenomenon. You don’t need a detailed understanding of the estimator to get going. Once you’ve selected the estimand you wish to target, you can switch out different estimators.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p232">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Advice: Start with synthetic data</h5>
+</div>
+<div class="readable-text" id="p233">
+<p>One excellent practice is to build your workflow on synthetic data, rather than real data. Simulate a synthetic dataset that matches the size and correlation structure of your data, as well as your causal and statistical assumptions about your data. For example, you can write a causal generative model of your data, and use your data to train its parameters. Using this model as ground truth, simulate some data and derive a ground truth ATE. </p>
+</div>
+<div class="readable-text" id="p234">
+<p>You can then see if DoWhy’s estimates get close to the ground truth ATE, and if its confidence intervals contain it. You can also see how well the estimators perform under the ideal conditions where all your assumptions are true—even in these conditions, the estimates will have biases and uncertainty. </p>
+</div>
+<div class="readable-text" id="p235">
+<p>Once you debug any problems that arise in these ideal conditions, you can switch out the synthetic data for real data. Then, the problems that arise are likely due to incorrect assumptions, and you can treat these by revisiting your assumptions.</p>
+</div>
+</div>
+<div class="readable-text" id="p236">
+<p>My suggestion is to compare estimators after adding the next step, <em>refutation</em>, to the workflow. Refutation will help you stress test both the causal assumptions in the estimand and the statistical assumptions in the estimator. This enables you to make empirical comparisons of different estimators. Then, once you know what estimator you want and have seen how it performs on your data, you can do a deep dive into the statistical nuts and bolts of your chosen estimator.</p>
+</div>
+<div class="readable-text" id="p237">
+<h2 class="readable-text-h2" id="sigil_toc_id_274"><span class="num-string">11.5</span> Step 5: Refutation</h2>
+</div>
+<div class="readable-text" id="p238">
+<p>We know that the result of our causal inference depends on our initial causal assumptions in step 2, or more specifically, the subset of those assumptions we rely on for identification in step 3. In step 4, we select an estimator that makes its own statistical assumptions. What if those causal and statistical assumptions are wrong?</p>
+</div>
+<div class="readable-text intended-text" id="p239">
+<p>We can address this in step 5 with <em>refutation</em><em>, where we actively search for evidence that our analysis is faulty</em>. We first saw this concept in chapter 4, when we saw how to refute the causal DAG by finding statistical evidence of dependence in the data that conflicts with the conditional independence implications of the causal DAG. In section 7.6.2, we saw how to refute a model by finding cases where its predicted intervention outcomes clash with real-world intervention outcomes. Here, we implement refutation as a type of <em>sensitivity analysis</em><em> that</em><em> </em>tries to refute the various assumptions underpinning an estimate by simulating violations to those assumptions.</p>
+</div>
+<div class="readable-text intended-text" id="p240">
+<p>The <code>CausalModel</code> class in DoWhy has a <code>refute_estimate</code> method that provides a suite of refuters we can run. Each refuter provides a different attack vector for our assumptions. The refuters we run with <code>refute_estimate</code> perform a simulation-based statistical test; the null hypothesis is that the assumptions are not refuted, and the alternative hypothesis is that the assumptions are refuted. The tests return a <em>p</em>-value. If we take a standard significance threshold of .05 and the p-value falls below this threshold, we conclude that our assumptions are refuted.</p>
+</div>
+<div class="readable-text intended-text" id="p241">
+<p>In this section, we’ll investigate a few of DoWhy’s refuters with various estimands and estimators.</p>
+</div>
+<div class="readable-text" id="p242">
+<h3 class="readable-text-h3" id="sigil_toc_id_275"><span class="num-string">11.5.1</span> Data size reduction</h3>
+</div>
+<div class="readable-text" id="p243">
+<p>One way to test the robustness of the analysis is to reduce the size of the data and see if we obtain similar results. We are assuming our analysis has more than enough data to achieve a stable estimation. We can refute this assumption by slightly reducing the size of the data and testing whether we get a similar estimate. Let’s try this with the estimator of the front-door estimand.</p>
+</div>
+<div class="browsable-container listing-container" id="p244">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.15</span> Refuting the assumption of sufficient data</h5>
+<div class="code-area-container">
+<pre class="code-area">identified_estimand.set_identifier_method("frontdoor")    <span class="aframe-location"/> #1
+res_subset = model.refute_estimate(
+    identified_estimand,    <span class="aframe-location"/> #2
+    causal_estimate_fd,  #2
+    method_name="data_subset_refuter",    <span class="aframe-location"/> #3
+    subset_fraction=0.8,    <span class="aframe-location"/> #4
+    num_simulations=100
+)
+print(res_subset)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Not always necessary, but clarifying the estimand targeted by the estimator we want to test can help avoid errors.
+     <br/>#2 The refute_estimate function takes in the identified estimand and the estimator that targets the estimand.
+     <br/>#3 Select data_subset_refuter, which tests if the causal estimate is different when we run the analysis on a subset of the data.
+     <br/>#4 Set the size of the subset to 80% the size of the original data.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p245">
+<p>This produces the following output (this is a random process so your results will differ slightly):</p>
+</div>
+<div class="browsable-container listing-container" id="p246">
+<div class="code-area-container">
+<pre class="code-area">Refute: Use a subset of data
+Estimated effect:170.20560581290403
+New effect:169.14858189323638
+p value:0.82</pre>
+</div>
+</div>
+<div class="readable-text" id="p247">
+<p>The <code>Estimated effect</code> is the effect from our original analysis. <code>New</code> <code>effect</code> is the average ATE across the simulations. We want these two effects to be similar, because otherwise it would mean that our analysis is sensitive to the amount of data we have. The <em>p</em>-value here is above the threshold, so we failed to refute this assumption.</p>
+</div>
+<div class="readable-text" id="p248">
+<h3 class="readable-text-h3" id="sigil_toc_id_276"><span class="num-string">11.5.2</span> Adding a dummy confounder</h3>
+</div>
+<div class="readable-text" id="p249">
+<p>One way to test our models is to add dummy common-cause confounders. If a variable is not a confounder, it has no bearing on the true ATE, so we assume that our causal effect estimation workflow will be unaffected by these variables. In truth, additional variables might add statistical noise that throws off our estimator. </p>
+</div>
+<div class="readable-text intended-text" id="p250">
+<p>The following listing attempts to refute the assumption that such noise does not affect the double ML estimator of the backdoor estimand. </p>
+</div>
+<div class="browsable-container listing-container" id="p251">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.16</span> Adding a dummy confounder</h5>
+<div class="code-area-container">
+<pre class="code-area">identified_estimand.set_identifier_method("backdoor")
+res_random = model.refute_estimate(   <span class="aframe-location"/> #1
+    identified_estimand,     #1
+    gb_estimate,    #1
+    method_name="random_common_cause",    #1
+    num_simulations=100,    #1
+)    #1
+print(res_random)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Runs 100 simulations of the addition of a dummy confounder to the model
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p252">
+<p>This returns output such as the following:</p>
+</div>
+<div class="browsable-container listing-container" id="p253">
+<div class="code-area-container">
+<pre class="code-area">Refute: Add a random common cause
+Estimated effect:175.2192519976428
+New effect:176.59119763647792
+p value:0.30000000000000004</pre>
+</div>
+</div>
+<div class="readable-text" id="p254">
+<p>Again, <code>Estimated effect</code> is the original causal effect estimate, and <code>New</code> <code>effect</code> is the new causal effect estimate obtained after adding a random common cause to the data and re-running the analysis. The dummy variable has no real effect, so we expect the ATE to be the same. Again, the <em>p</em>-value is above the significance threshold, so we failed to refute our assumptions.</p>
+</div>
+<div class="readable-text" id="p255">
+<h3 class="readable-text-h3" id="sigil_toc_id_277"><span class="num-string">11.5.3</span> Replacing treatment with a dummy</h3>
+</div>
+<div class="readable-text" id="p256">
+<p>We can also experiment with replacing the treatment variable with a dummy variable. This is analogous to giving our causal effect inference workflow a “placebo,” and seeing how much causality it ascribes to this fake treatment. Since this dummy variable will have no effect on the treatment, we expect the ATE to be 0. </p>
+</div>
+<div class="readable-text intended-text" id="p257">
+<p>Let’s try this with our inverse probability weighting estimator.</p>
+</div>
+<div class="browsable-container listing-container" id="p258">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.17</span> Replacing the treatment variable with a dummy variable</h5>
+<div class="code-area-container">
+<pre class="code-area">identified_estimand.set_identifier_method("backdoor")
+res_placebo = model.refute_estimate(
+identified_estimand,    <span class="aframe-location"/> #1
+    causal_estimate_ipw,     #1
+    method_name="placebo_treatment_refuter",     #1
+    placebo_type="permute",     #1
+    num_simulations=100     #1
+)
+
+print(res_placebo)</pre>
+<div class="code-annotations-overlay-container">
+     #1 This refuter replaces the treatment variable with a dummy (placebo) variable.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p259">
+<p>This produces the following output:</p>
+</div>
+<div class="browsable-container listing-container" id="p260">
+<div class="code-area-container">
+<pre class="code-area">Refute: Use a Placebo Treatment
+Estimated effect:437.79246624944926
+New effect:-531.2490111208127
+p value:0.0</pre>
+</div>
+</div>
+<div class="readable-text" id="p261">
+<p>In this case, the <em>p</em>-value is calculated under the null hypothesis that <code>New</code> <code>effect</code> is equal to 0. Again, a low <em>p</em>-value would refute our assumptions. </p>
+</div>
+<div class="readable-text intended-text" id="p262">
+<p>In this case, it would seem that our inverse probability weighting estimator was thrown off by this refuter. This result indicates that there is an issue somewhere in the joint assumptions made by the backdoor estimand and this estimator. If we then used this refuter with other backdoor estimators and they were not refuted, we would have narrowed down the source of the issue to the statistical assumptions made by this estimator.</p>
+</div>
+<div class="readable-text" id="p263">
+<h3 class="readable-text-h3" id="sigil_toc_id_278"><span class="num-string">11.5.4</span> Replacing outcome with a dummy outcome</h3>
+</div>
+<div class="readable-text" id="p264">
+<p>We can substitute the outcome variable with a dummy variable. The ATE in this case should be 0, because the treatment has no effect on this dummy. We’ll simulate it as a linear function of some of the confounders so the outcome still has a meaningful relationship with some of the covariates. </p>
+</div>
+<div class="readable-text intended-text" id="p265">
+<p>Let’s try this with the front door estimator.</p>
+</div>
+<div class="browsable-container listing-container" id="p266">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.18</span> Replacing the outcome variable with a dummy variable</h5>
+<div class="code-area-container">
+<pre class="code-area">import numpy as np
+
+coefficients = np.array([100.0, 50.0])
+bias = 50.0
+def linear_gen(df):     <span class="aframe-location"/> #1
+    subset = df[['guild_membership','player_skill_level']]    #1
+    y_new = np.dot(subset.values, coefficients) + bias    #1
+    return y_new     #1
+
+ref = model.refute_estimate(   <span class="aframe-location"/> #2
+    identified_estimand,     #2
+    causal_estimate_fd,    #2
+    method_name="dummy_outcome_refuter",    #2
+    outcome_function=linear_gen     #2
+)     #2
+
+res_dummy_outcome = ref[0]
+print(res_dummy_outcome)
+
+Refute: Use a Dummy Outcome
+Estimated effect:0
+New effect:-0.024480394297227835
+p value:0.86</pre>
+<div class="code-annotations-overlay-container">
+     #1 Create a function that generates a new dummy outcome variable as a linear function of the covariates.
+     <br/>#2 Runs refute_estimate with a dummy outcome refuter
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p267">
+<p>Again, the <em>p</em>-value is calculated under the null hypothesis that <code>New</code> <code>effect</code> equals 0, and a low <em>p</em>-value refutes our assumptions. In this case, our assumptions are not refuted.</p>
+</div>
+<div class="readable-text intended-text" id="p268">
+<p>Next, we’ll evaluate the sensitivity of the analysis to unobserved confounding.</p>
+</div>
+<div class="readable-text" id="p269">
+<h3 class="readable-text-h3" id="sigil_toc_id_279"><span class="num-string">11.5.5</span> Testing robustness to unmodeled confounders </h3>
+</div>
+<div class="readable-text" id="p270">
+<p>Our backdoor adjustment estimand assumes that the adjustment set blocks all backdoor paths. If there were a confounder that we failed to adjust for, that assumption is violated, and our estimate would have a confounder bias. That is not necessarily the worst thing; if we adjust for all the <em>major </em>confounders, bias from unknown confounders might be small and not impact our results by much. On the other hand, missing a major confounder could lead us to conclude that there is a nonzero ATE when one doesn’t exist, or conclude a positive ATE when the true ATE is negative, or vice versa. We can therefore test how robust our analysis is to the introduction of latent confounders that our model failed to capture. The hope is that the new estimate does not change drastically when we introduce some modest influence from a newly introduced confounder. </p>
+</div>
+<div class="browsable-container listing-container" id="p271">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.19</span> Adding an unobserved confounder</h5>
+<div class="code-area-container">
+<pre class="code-area">identified_estimand.set_identifier_method("backdoor")
+res_unobserved = model.refute_estimate(    <span class="aframe-location"/> #1
+    identified_estimand,    #1
+    causal_estimate_fd,     #1
+    method_name="add_unobserved_common_cause"    #1
+)
+
+print(res_unobserved)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Setting up a refuter that adds an unobserved common cause
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p272">
+<p>This code does not return a <em>p</em>-value. It produces the heatmap we see in figure 11.11, showing how quickly the estimate changes when the unobserved confounder assumption is violated. The horizontal axis shows the various levels of influence the unobserved confounder has on the outcome, and the vertical axis shows the various levels of influence the confounder can have on the treatment. The color corresponds to the new effect estimates that result at different levels of influence. </p>
+</div>
+<div class="browsable-container figure-container" id="p273">
+<img alt="figure" height="956" src="../Images/CH11_F11_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.11</span> A heatmap illustrating the effects of adding an unobserved confounder on the ATE estimate</h5>
+</div>
+<div class="readable-text" id="p274">
+<p>The code also prints out the following.</p>
+</div>
+<div class="browsable-container listing-container" id="p275">
+<div class="code-area-container">
+<pre class="code-area">Refute: Add an Unobserved Common Cause
+Estimated effect:187.2931023294184
+New effect:(-181.5795321684548, 398.98672237350416)</pre>
+</div>
+</div>
+<div class="readable-text" id="p276">
+<p>Here, we see that the ATE is quite sensitive to the effect the confounder has on the treatment. Note that you can change the default parameters of the refuter to experiment with different impacts the confounder could have on the treatment and outcome.</p>
+</div>
+<div class="readable-text intended-text" id="p277">
+<p>Now that we’ve run through a full workflow in DoWhy, let’s explore how we’d build a similar workflow using the tools of probabilistic machine learning.</p>
+</div>
+<div class="readable-text" id="p278">
+<h2 class="readable-text-h2" id="sigil_toc_id_280"><span class="num-string">11.6</span> Causal inference with causal generative models</h2>
+</div>
+<div class="readable-text" id="p279">
+<p>At the end of chapter 10, we calculated an ATE using the <code>do</code> intervention operator and a probabilistic inference algorithm. This is a powerful universal approach to doing causal inference that leverages cutting-edge probabilistic machine learning. But this wasn’t <em>estimation</em>. Estimation requires data. It would be <em>estimation </em>if we estimated the model parameters from data <em>before </em>running that workflow with the <code>do</code> function and probabilistic inference.</p>
+</div>
+<div class="readable-text intended-text" id="p280">
+<p>In this section, we’ll run through a full ATE estimation workflow that uses the <code>do</code> intervention operator and probabilistic inference. We used MCMC for the probabilistic inference step in chapter 10, but here we’ll use variational inference with a variational autoencoder to handle latent variables in the data. Further, we’ll use a Bayesian estimation approach, meaning we’ll assign prior probabilistic distributions to the parameters. The ATE inference step with the intervention operator will depend on sampling from the posterior distribution on parameters.</p>
+</div>
+<div class="readable-text intended-text" id="p281">
+<p>The advantage of this approach relative to using DoWhy is being able to use modern deep learning tools to work with latent variables as well as use Bayesian modeling to address uncertainty. Further, this approach will work in cases of causal identification that are not covered by DoWhy (e.g., edge cases of graphical identification, identification derived from assignment functions or prior distributions, partial identification, etc.).</p>
+</div>
+<div class="readable-text intended-text" id="p282">
+<p>This approach to ATE estimation is a specific case of a general approach to causal inference where we train a causal graphical model, <em>transform</em> the model in some way that reflects the causal query (e.g., with an intervention operator), and then run a probabilistic inference algorithm. Let’s review various ways we can transform a model for causal inference.</p>
+</div>
+<div class="readable-text" id="p283">
+<h3 class="readable-text-h3" id="sigil_toc_id_281"><span class="num-string">11.6.1</span> Transformations for causal inference</h3>
+</div>
+<div class="readable-text" id="p284">
+<p>We have seen several ways of modifying a causal model such that it can readily infer a causal query. We’ll call these “transformations”: we transform our model into a new model that targets a causal inference query. Let’s review the transformations we’ve seen so far.</p>
+</div>
+<div class="readable-text" id="p285">
+<h4 class="readable-text-h4 sigil_not_in_toc">Graph Surgery</h4>
+</div>
+<div class="readable-text" id="p286">
+<p>One of the transformations was basic <em>graph surgery</em>, illustrated in figure 11.12. This operation implements an <em>ideal intervention</em>, setting the intervention target to a constant and severing the causal influence from the parents. This operation allows us to use our model to infer <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=1</sub><em> </em>), the ATE, and similar level 2 queries, and it’s how we have been implementing interventions in pgmpy.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p287">
+<img alt="figure" height="237" src="../Images/CH11_F12_Ness.png" width="601"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.12</span> Graph surgery is a transformation that implements an ideal intervention by removing incoming causal influence on the target node and setting the target node to a constant.</h5>
+</div>
+<div class="readable-text" id="p288">
+<p>We implemented graph surgery in pgmpy by using the <code>do</code> method on the <code>BayesianNetwork</code> class, and then we added a hack that modified the <code>TabularCPD</code> object assigned to the intervention project so that the intervention value had a probability of 1. </p>
+</div>
+<div class="readable-text intended-text" id="p289">
+<p>PyMC is a probabilistic programming language similar to Pyro. It does implicit graph surgery by transforming the logic of the model. For example, PyMC might specify <em>E</em>, a function of <em>G,</em> as <code>E</code> <code>=</code> <code>Bernoulli("E",</code> <code>p=f(G))</code>. PyMC uses a <code>do</code> function to implement the intervention, as in <code>do(model, {"E":</code> <code>1.0})</code>. Under the hood, this function does implicit graph surgery by effectively replacing <code>E</code> <code>=</code> <code>Bernoulli("E",</code> <code>p=f(G))</code> with <code>E</code> <code>=</code> <code>1.0.</code> </p>
+</div>
+<div class="readable-text" id="p290">
+<h4 class="readable-text-h4 sigil_not_in_toc">Node-splitting</h4>
+</div>
+<div class="readable-text" id="p291">
+<p>In chapter 10, we discussed a slightly nuanced version of graph surgery called a node-splitting operation, illustrated in figure 11.13. Node-splitting converts the graph to a <em>single world intervention graph</em>, allowing us to infer level 2 queries just as graph surgery does. It also allows us to infer level 3 queries where the factual conditions and hypothetical outcome don’t overlap, such as <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub><em> </em>|<em>E</em><em>   </em>=<em> </em>1) (though doing so relies on an additional “single world assumption,” as discussed in chapter 10). <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p292">
+<img alt="figure" height="236" src="../Images/CH11_F13_Ness.png" width="634"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.13</span> The node-splitting transform splits the intervention target into a constant that keeps the children and a random variable that keeps the parents.</h5>
+</div>
+<div class="readable-text" id="p293">
+<p>Pyro’s <code>do</code> function implements node-splitting (though it behaves just like PyMC’s <code>do</code> function if you don’t target level 3 queries).</p>
+</div>
+<div class="readable-text" id="p294">
+<h4 class="readable-text-h4 sigil_not_in_toc">Multi-world transformation</h4>
+</div>
+<div class="readable-text" id="p295">
+<p>We also saw how to transform a structural causal model into a parallel world graph. Let’s call this a multi-world transformation, illustrated in figure 11.14.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p296">
+<img alt="figure" height="324" src="../Images/CH11_F14_Ness.png" width="853"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.14</span> Yet another transform converts the model into a parallel-world model.</h5>
+</div>
+<div class="readable-text" id="p297">
+<p>We created parallel-world models by hand in chapter 9 with pgmpy and Pyro. The y0 library produces parallel world graphs from DAGs. ChiRho, the causal library that extends Pyro, has a <code>TwinWorldCounterfactual</code> handler that does the multi-world transformation.</p>
+</div>
+<div class="readable-text" id="p298">
+<h4 class="readable-text-h4 sigil_not_in_toc">Transformation to a counterfactual graph</h4>
+</div>
+<div class="readable-text" id="p299">
+<p>Recall that we can also transform the causal DAG to a counterfactual graph (which, in the case of a level 2 query like <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>), will simplify to the result of graph surgery). Y0 creates a counterfactual graph from your DAG and a given query. Future versions of causal probabilistic ML libraries may provide the same transformation for a Pyro/PyMC/ChiRho type model.</p>
+</div>
+<div class="readable-text" id="p300">
+<h3 class="readable-text-h3" id="sigil_toc_id_282"><span class="num-string">11.6.2</span> Steps for inferring a causal query with a causal generative model</h3>
+</div>
+<div class="readable-text" id="p301">
+<p>Given a causal generative model and a target causal query, we have two steps to infer the target query: first, apply the transformation, and then run probabilistic inference.</p>
+</div>
+<div class="readable-text intended-text" id="p302">
+<p>We did this with the online gaming example at the end of chapter 10. We targeted <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub>) and <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub><em> </em>|<em>E</em><em>   </em>=<em> </em>1). For each of these queries, we used the <code>do</code> function in Pyro to modify the model to represent the intervention <em>E</em><em>  </em>=<em> </em>0. In the case of <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub><em> </em>|<em>E</em><em>   </em>=<em> </em>1), we also conditioned on <em>E</em><em>   </em>=<em> </em>1. Then we ran an MCMC algorithm to generate samples from these distributions. We also used the probabilistic inference with parallel-world graphs to implement level 3 counterfactual inferences in chapter 9.</p>
+</div>
+<div class="readable-text" id="p303">
+<h3 class="readable-text-h3" id="sigil_toc_id_283"><span class="num-string">11.6.3</span> Extending inference to estimation</h3>
+</div>
+<div class="readable-text" id="p304">
+<p>To extend this workflow to estimation, like the DoWhy methods in this chapter, we simply need to add a parameter estimation step to our causal graphical inference workflow:</p>
+</div>
+<ol>
+<li class="readable-text" id="p305"> Estimate model parameters. </li>
+<li class="readable-text" id="p306"> Apply the transformation. </li>
+<li class="readable-text" id="p307"> Run probabilistic inference on the transformed model. </li>
+</ol>
+<div class="readable-text" id="p308">
+<p>Let’s look at how to do this with the online game data. For simplicity, we’ll work with a reduced model that drops the instruments and the collider, since we won’t be using them.</p>
+</div>
+<div class="readable-text intended-text" id="p309">
+<p>We’ll model the causal Markov kernels of each node with some unique parameter vector. We can estimate the parameters any way we like, but to stay on brand with probabilistic reasoning, let’s use a Bayesian setup, treating each parameter vector as its own random variable with its own prior probability distribution. Figure 11.15 illustrates a plate model representation of the causal DAG (we discussed plate model visualizations in chapter 2), drawing these random variables as new nodes, using Greek letters to highlight the fact that they are parameters, rather than causal components of the real world DGP.</p>
+</div>
+<div class="browsable-container figure-container" id="p310">
+<img alt="figure" height="485" src="../Images/CH11_F15_Ness.png" width="841"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.15</span> A plate model of the causal DAG with new nodes representing parameters associated with each causal Markov kernel. There is a single plate with <em>N</em> identical and independent observations in the training data. <em class="obliqued">θ</em> corresponds to parameters, which are outside the plate, because the parameters are the same for each of the <em>N</em> data points.</h5>
+</div>
+<div class="readable-text" id="p311">
+<p>In this case, Bayesian estimation will target the posterior distribution:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p312">
+<img alt="figure" height="44" src="../Images/ness-ch11-eqs-6x.png" width="531"/>
+</div>
+<div class="readable-text" id="p313">
+<p>where <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-313-1.png" width="126"/></span> each represent the <em>N</em> examples of <em>E</em>, <em>Y</em>, <em>T</em>, <em>G</em>, <em>S</em>, <em>W</em>, <em>I</em> in the data.</p>
+</div>
+<div class="readable-text intended-text" id="p314">
+<p>Estimating the <em class="obliqued">θ</em>s in this case is easy. For example, in pgmpy we just run <code>model.fit(data, estimator=</code> <code>BayesianEstimator, ...)</code>, where “. . .” contains arguments that specify the type of prior to assign the <em class="obliqued">θ</em>s. Pgmpy uses the posterior to give us point estimates of the <em class="obliqued">θ</em>s. In Pyro, we just write sample statements for the <em class="obliqued">θ</em>s and use one of Pyro’s various inference algorithms to get samples from the posterior.</p>
+</div>
+<div class="readable-text intended-text" id="p315">
+<p>But the causal effect methods in DoWhy highlight the ability to do causal inferences when some causal variables are <em>latent</em>, such as confounders:</p>
+</div>
+<ul>
+<li class="readable-text" id="p316"> Backdoor adjustment with some latent confounders is possible (e.g., <em>Prior Experience</em>) if you have a valid adjustment set (<em>Time Spent Playing</em>, <em>Guild Membership</em>, and <em>Player Skill Level</em>). </li>
+<li class="readable-text" id="p317"> If too many confounders are latent, such that you do not have backdoor adjustment, you can use other techniques, such as using instrumental variables and front-door adjustment. </li>
+</ul>
+<div class="readable-text" id="p318">
+<p>So for causal generative modeling to compete with DoWhy, it needs to accommodate latent variables. Let’s consider the case where the backdoor adjustment estimand is not identified. Next, we’ll explore how we can train a latent causal generative model and then apply the transformation and probabilistic inference.</p>
+</div>
+<div class="readable-text intended-text" id="p319">
+<p>In this model, we’ll assume that <em>Guild Membership</em> is the only observed confounder, as in figure 11.16. In this case, we no longer have backdoor identification.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p320">
+<img alt="figure" height="485" src="../Images/CH11_F16_Ness.png" width="841"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.16</span> <em>Guild Membership</em> is the only observed confounder, so the backdoor estimand is not identified.</h5>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p321">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc"><span class="print-book-callout-head">Setting up your environment </span> </h5>
+</div>
+<div class="readable-text" id="p322">
+<p>The following code is written with torch 2.2, pandas 1.5, and pyro-ppl 1.9. We’ll use matplotlib and seaborn for plotting.</p>
+</div>
+</div>
+<div class="readable-text" id="p323">
+<p>Let’s first reload and modify the data to reflect this paucity of observed variables.</p>
+</div>
+<div class="browsable-container listing-container" id="p324">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.20</span> Load and reduce data to a subset of observed variables</h5>
+<div class="code-area-container">
+<pre class="code-area">import pandas as pd
+import torch
+
+url = ("https://raw.githubusercontent.com/altdeep/"   <span class="aframe-location"/> #1
+       "causalML/master/datasets/online_game_ate.csv")    #1
+df = pd.read_csv(url)     #1
+df = df[["Guild Membership", "Side-quest Engagement",  <span class="aframe-location"/> #2
+         "Won Items", "In-game Purchases"]]  #2
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    <span class="aframe-location"/> #3
+data = {   #3
+    col: torch.tensor(df[col].values, dtype=torch.float32).to(device)    #3
+    for col in df.columns  #3
+}   #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 Load the data.
+     <br/>#2 Drop everything but Guild Membership, Side-Quest Engagement, Won Items, and In-Game Purchases.
+     <br/>#3 Convert the data to tensors and dynamically set the device for performing tensor computations depending on the availability of a CUDA-enabled GPU.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p325">
+<p>Now we are targeting the following posterior:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p326">
+<img alt="figure" height="44" src="../Images/ness-ch11-eqs-8x.png" width="524"/>
+</div>
+<div class="readable-text" id="p327">
+<p>Targeting this posterior is harder because, since the observations of <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-327-1.png" width="48"/></span> are not observed, they are not available to help in inferring <em class="obliqued">θ</em><sub><em>Y</em></sub>, <em class="obliqued">θ</em><sub><em>T</em></sub>, and <em class="obliqued">θ</em><sub><em>S</em></sub>. In fact, in general, <em class="obliqued">θ</em><sub><em>Y</em></sub>, <em class="obliqued">θ</em><sub><em>T</em></sub>, and <em class="obliqued">θ</em><sub><em>S</em></sub> are <em>underdetermined</em>, meaning multiple configurations of {<em class="obliqued">θ</em><sub><em>Y</em></sub>, <em class="obliqued">θ</em><sub><em>T</em></sub>, <em class="obliqued">θ</em><sub><em>S</em></sub>} would be equally likely given the data. Further, we’ll have trouble estimating with <em class="obliqued">θ</em><sub><em>E</em></sub> and <em class="obliqued">θ</em><sub><em>I</em></sub><sub> </sub>because it will be hard to disentangle them from the other latent variables.</p>
+</div>
+<div class="readable-text intended-text" id="p328">
+<p>But it doesn’t matter! At least, not in terms of our goal of inferring <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><sub><em>e</em></sub>), because we know we have identified the front-door estimand of <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><sub><em>e</em></sub>). In other words, the existence of a front-door estimand proves we can infer <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><sub><em>e</em></sub>) from the observed variables regardless of the lack of identifiability of some of the parameters.</p>
+</div>
+<div class="readable-text" id="p329">
+<h3 class="readable-text-h3" id="sigil_toc_id_284"><span class="num-string">11.6.4</span> A VAE-inspired model for causal inference</h3>
+</div>
+<div class="readable-text" id="p330">
+<p>We’ll make our modeling easier by creating proxy variables <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-330-1.png" width="11"/></span> and <em class="obliqued">θ</em><sub><em>Z</em></sub> to stand in for {<span><img alt="equation image" height="30" src="../Images/eq-chapter-11-330-2.png" width="48"/></span>} and {<em class="obliqued">θ</em><sub><em>Y</em></sub>, <em class="obliqued">θ</em><sub><em>T</em></sub>, <em class="obliqued">θ</em><sub><em>S</em></sub>} respectively. Collapsing the latent confounders into these proxies reduces the dimensionality of the estimation problem, and any loss of information that occurs from collapsing these variables won’t matter because we are ultimately relying on information flowing through the front door. We’ll create a causal generative model inspired by the variational autoencoder, where <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-330-3.png" width="12"/></span> is a latent encoding and <em class="obliqued">θ</em><sub><em>E</em></sub> and <em class="obliqued">θ</em><sub><em>I</em></sub> become weights in decoders. This is visualized in figure 11.17.</p>
+</div>
+<div class="readable-text" id="p331">
+<p>Now our inference will target the posterior:<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p332">
+<img alt="figure" height="44" src="../Images/ness-ch11-eqs-11x.png" width="393"/>
+</div>
+<div class="readable-text" id="p333">
+<p>Our model will have two decoders. One decoder maps <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-333-1.png" width="12"/></span> and <em>G</em> to <em>E</em>, returning a derived parameter <em>ρ</em><code>_engagement</code> that acts as the probability that <em>Side-Quest Engagement</em> is high. Let’s call this network <code>Confounders2Engagement</code>. As shown in figure 11.17, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-333-2.png" width="11"/></span> is a vector with <em>K</em> elements, but we’ll set <em>K</em>=1 for simplicity.</p>
+</div>
+<div class="browsable-container figure-container" id="p334">
+<img alt="figure" height="530" src="../Images/CH11_F17_Ness.png" width="805"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.17</span> VAE-inspired model where latent vector <em>Z</em> of length <em>K</em> proxies for the latent confounders in figure 11.16</h5>
+</div>
+<div class="browsable-container listing-container" id="p335">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.21</span> Specify <code>Confounders2Engagement</code> neural network</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import torch.nn as nn
+
+class Confounders2Engagement(nn.Module):
+    def __init__(
+        self,
+        input_dim=1+1,   <span class="aframe-location"/> #1
+        hidden_dim=5   <span class="aframe-location"/> #2
+    ):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)   <span class="aframe-location"/> #3
+        self.f_engagement_<em>ρ</em> = nn.Linear(hidden_dim, 1)    <span class="aframe-location"/> #4
+        <span class="aframe-location"/>self.softplus = nn.Softplus()    #5
+        self.sigmoid = nn.Sigmoid()    <span class="aframe-location"/> #6
+
+    def forward(self, input):
+        input = input.t()
+      <span class="aframe-location"/>  hidden = self.softplus(self.fc1(input))     #7
+        <em>ρ</em>_engagement = self.sigmoid(self.f_engagement_<em>ρ</em>(hidden))   <span class="aframe-location"/> #8
+        <em>ρ</em>_engagement = <em>ρ</em>_engagement.t().squeeze(0)
+        return <em>ρ</em>_engagement</pre>
+<div class="code-annotations-overlay-container">
+     #1 Input is confounder proxy Z concatenated with Guild Membership.
+     <br/>#2 Choose a hidden dimension of width 5.
+     <br/>#3 Linear map from input to hidden dimension
+     <br/>#4 Linear map from hidden dimension to In-Game Purchases location parameter
+     <br/>#5 Activation function for hidden layer
+     <br/>#6 Activation function for Side-Quest Engagement parameter
+     <br/>#7 From input to hidden layer
+     <br/>#8 From hidden layer to 
+     <em>ρ</em>_engagement
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p336">
+<p>Next, let’s specify another neural net decoder that maps <em>Z</em>, <em>W</em>, and <em>G</em> to a location and scale parameter for <em>I</em><em> </em>. Let’s call this <code>PurchasesNetwork</code>.</p>
+</div>
+<div class="browsable-container listing-container" id="p337">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.22</span> <code>PurchasesNetwork</code> neural network</h5>
+<div class="code-area-container">
+<pre class="code-area">class PurchasesNetwork(nn.Module):
+    def __init__(
+        self,
+        input_dim=1+1+1,  <span class="aframe-location"/> #1
+        hidden_dim=5   <span class="aframe-location"/> #2
+    ):
+        super().__init__()
+        self.f_hidden = nn.Linear(input_dim, hidden_dim)   <span class="aframe-location"/> #3
+        self.f_purchase_μ = nn.Linear(hidden_dim, 1)    <span class="aframe-location"/> #4
+        self.f_purchase_σ = nn.Linear(hidden_dim, 1)    <span class="aframe-location"/> #5
+       <span class="aframe-location"/> self.softplus = nn.Softplus()     #6
+
+    def forward(self, input):
+        input = input.t()
+        <span class="aframe-location"/>hidden = self.softplus(self.f_hidden(input))     #7
+        <span class="aframe-location"/>μ_purchases = self.f_purchase_μ(hidden)   H #8
+        σ_purchases = 1e-6 + self.softplus(self.f_purchase_σ(hidden))   <span class="aframe-location"/> #9
+        μ_purchases = μ_purchases.t().squeeze(0)
+        σ_purchases = σ_purchases.t().squeeze(0)
+        return μ_purchases, σ_purchases</pre>
+<div class="code-annotations-overlay-container">
+     #1 Input is confounder proxy Z concatenated with Guild Membership and Won Items.
+     <br/>#2 Choose a hidden dimension of width 5.
+     <br/>#3 Linear map from input to hidden dimension
+     <br/>#4 Linear map from hidden dimension to In-Game Purchases location parameter
+     <br/>#5 Linear map from hidden dimension to In-Game Purchases scale parameter
+     <br/>#6 Activation for hidden layer
+     <br/>#7 From input to hidden layer
+     <br/>#8 Mapping from hidden layer to location parameter for purchases
+     <br/>#9 Mapping from hidden layer scale parameter for purchases. The 1e-6 lets us avoid scale values of 0.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p338">
+<p>Now we use both networks to specify the causal model. The model will take a dictionary of parameters called <code>params</code> and use them to sample the variables in the model. The Bernoulli distributions of <em>Guild Membership</em> and <em>Won Items</em> have parameters passed in a dictionary called <code>params</code>, with keys <em>ρ</em><code>_member</code><em> </em><em>representing</em><em> </em><em class="obliqued">θ</em><sub><em>G</em></sub>, and <em>ρ</em><code>_won_engaged</code> and <em>ρ</em><code>_won_not_engaged</code> together representing <em class="obliqued">θ</em><sub><em>W</em></sub>. <em>ρ</em><code>_engagement</code>, which represents the <em>Side-Quest Engagement</em> parameter <em/><em class="obliqued">θ</em><sub><em>E</em></sub>, is set by the output of <code>Confounders2Engagement</code>, and <code>μ_purchases</code> and <code>σ_purchases</code>, which jointly represent the <em>In-Game Purchases</em> parameter <em class="obliqued">θ</em><sub><em>Y</em></sub>, are the output of <code>PurchaseNetwork</code>. The parameter set <em class="obliqued">θ</em><sub><em>Z</em></sub> is a location and scale parameter for a normal distribution. Rather than a learnable <em class="obliqued">θ</em><sub><em>Z</em></sub>, I use fixed <em class="obliqued">θ</em><sub><em>Z</em></sub><sub> </sub><em>  </em>= <em> </em>{0, 1} and let the neural nets handle the linear transform for <em>Z</em>.</p>
+</div>
+<div class="browsable-container listing-container" id="p339">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.23</span> Specify the causal model</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">from pyro import sample
+from pyro.distributions import Bernoulli, Normal
+from torch import tensor, stack
+
+def model(params, device=device):    <span class="aframe-location"/> #1
+    z_dist = Normal(   <span class="aframe-location"/> #2
+        tensor(0.0, device=device),    #2
+        tensor(1.0, device=device))     #2
+    z = sample("Z", z_dist)   #2
+    member_dist = Bernoulli(params['<em>ρ</em>_member'])   <span class="aframe-location"/> #3
+    is_guild_member = sample("Guild Membership", member_dist)    #3
+    engagement_input = stack((is_guild_member, z)).to(device)   <span class="aframe-location"/> #4
+    <em>ρ</em>_engagement = confounders_2_engagement(engagement_input)    #4
+    engage_dist = Bernoulli(<em>ρ</em>_engagement)
+   <span class="aframe-location"/> is_highly_engaged = sample("Side-quest Engagement", engage_dist)     #5
+    p_won = (    <span class="aframe-location"/> #6
+        params['<em>ρ</em>_won_engaged'] * is_highly_engaged +     #6
+        params['<em>ρ</em>_won_not_engaged'] * (1 - is_highly_engaged)     #6
+    )    #6
+    won_items = sample("Won Items", Bernoulli(p_won))     #6
+   <span class="aframe-location"/> purchase_input = stack((won_items, is_guild_member, z)).to(device)     #7
+    μ_purchases, σ_purchases = purchases_network(purchase_input)   #7
+    purchase_dist = Normal(μ_purchases, σ_purchases)   <span class="aframe-location"/> #8
+    in_game_purchases = sample("In-game Purchases", purchase_dist)   #8</pre>
+<div class="code-annotations-overlay-container">
+     #1 The causal model
+     <br/>#2 A latent variable that acts as a proxy for other confounders
+     <br/>#3 Whether someone is in a guild
+     <br/>#4 Use confounders_ 2_engagement to map is_guild_ member and z to a parameter for Side-Quest Engagement and In-Game Purchases.
+     <br/>#5 Modeling Side-Quest Engagement
+     <br/>#6 Modeling amount of Won Items
+     <br/>#7 Use purchases_network to map is_guild_member, z, and won_items to in_game_purchases.
+     <br/>#8 Model in_game_purchases.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p340">
+<p>This model represents a single data point. Now we need to extend the model to every example data point in the dataset. We’ll build a <code>data_model</code> that loads the neural networks, assigns priors to the parameters, and models the data.</p>
+</div>
+<div class="browsable-container listing-container" id="p341">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.24</span> Build a data model</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">import pyro
+from pyro import render_model, plate
+from pyro.distributions import Beta
+from pyro import render_model
+
+confounders_2_engagement = Confounders2Engagement().to(device)    <span class="aframe-location"/> #1
+purchases_network = PurchasesNetwork().to(device)   #1
+def data_model(data, device=device):
+    pyro.module("confounder_2_engagement", confounders_2_engagement)    <span class="aframe-location"/> #2
+    pyro.module("confounder_2_purchases", purchases_network)   #2
+    two = tensor(2., device=device)
+    five = tensor(5., device=device)
+    params = {
+      <span class="aframe-location"/>  '<em>ρ</em>_member': sample('<em>ρ</em>_member', Beta(five, five)),     #3
+        '<em>ρ</em>_won_engaged': sample('<em>ρ</em>_won_engaged', Beta(five, two)),   <span class="aframe-location"/> #4
+        '<em>ρ</em>_won_not_engaged': sample('<em>ρ</em>_won_not_engaged', Beta(two, five)),<span class="aframe-location"/> #5
+    }
+    N = len(data["In-game Purchases"])
+    with plate("N", N):   <span class="aframe-location"/> #6
+        model(params)    #6
+
+render_model(data_model, (data, ))</pre>
+<div class="code-annotations-overlay-container">
+     #1 Initialize the neural networks.
+     <br/>#2 pyro.module lets Pyro know about all the parameters inside the networks.
+     <br/>#3 Sample from prior distribution for 
+     <em>ρ</em>_member
+     <br/>#4 Sample from prior distribution for 
+     <em>ρ</em>_won_engaged
+     <br/>#5 Sample from prior distribution for 
+     <em>ρ</em>_won_not_engaged
+     <br/>#6 The plate context manager declares N independent samples (observations) from the causal variables.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p342">
+<p><code>render_model</code> lets us visualize the resulting plate model, producing figure 11.18. <em>ρ</em><code>_member</code>, <em>ρ</em><code>_won_engaged</code>, <em>ρ</em><code>_won_not_engaged</code> are the parameters we wish to estimate, alongside the weights in the neural nets.</p>
+</div>
+<div class="browsable-container figure-container" id="p343">
+<img alt="figure" height="415" src="../Images/CH11_F18_Ness.png" width="706"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.18</span> The plate model representation produced by Pyro</h5>
+</div>
+<div class="readable-text" id="p344">
+<p>Now that we’ve specified the model, lets set up inference with SVI.</p>
+</div>
+<div class="readable-text" id="p345">
+<h3 class="readable-text-h3" id="sigil_toc_id_285"><span class="num-string">11.6.5</span> Setting up posterior inference with SVI</h3>
+</div>
+<div class="readable-text" id="p346">
+<p>We have a data model over an underlying causal model, so we can now move on to inference. Using SVI, we need to build a <em>guide function </em>that represents a distribution that approximates the posterior—the guide function will have hyperparameters directly optimized during training, which will bring the approximating distribution as close as possible to the posterior.</p>
+</div>
+<div class="callout-container sidebar-container">
+<div class="readable-text" id="p347">
+<h5 class="callout-container-h5 readable-text-h5 sigil_not_in_toc">Why do inference with SVI and not MCMC?</h5>
+</div>
+<div class="readable-text" id="p348">
+<p>In chapter 10, we used an MCMC inference algorithm to derive <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=0</sub>) and <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=0</sub>|<em>E</em>=1) from <em>P</em>(<em>G</em>, <em>W</em>, <em>I</em>, <em>E</em>). The <em class="obliqued">θ</em> parameters were given. Now the <em class="obliqued">θ</em> parameters are unknown, and we are using <em>Bayesian estimation</em>, meaning we want to infer <em>I</em><em><sub>E</sub></em><sub>=</sub><em><sub>e</sub></em> conditional on values of those <em class="obliqued">θ</em> parameters sampled from a posterior distribution derived from training data. We do this by considering variables {<span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-1.png" width="12"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-2.png" width="12"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-3.png" width="16"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-4.png" width="8"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-5.png" width="11"/></span>} where {<span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-6.png" width="13"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-7.png" width="12"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-8.png" width="17"/></span>, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-9.png" width="8"/></span>} is a set of variables in the training data, <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-348-10.png" width="12"/></span> is a latent proxy for our latent confounders, and each of these variables are vectors of length <em>N</em>, the size of our training data. </p>
+</div>
+<div class="readable-text" id="p349">
+<p>The challenge is the computational complexity of MCMC algorithms generally grows exponentially in the dimension of the posterior. When <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-349-1.png" width="12"/></span> is a latent variable, it gets added to the posterior as another unknown along with the <em class="obliqued">θ</em>s, so the shape of the posterior increases by <span><img alt="equation image" height="30" src="../Images/eq-chapter-11-349-2.png" width="12"/></span>’s dimension, which is at least the size of the training data <em>N</em>. This poses a challenge when <em>N</em> is large. We want an inference method that works well with large data so we can leverage all that data to do cool things like use deep neural networks to help us proxy our latent confounders in a causal generative model. So here we use SVI instead of MCMC because SVI shines in high-dimensional large data settings.</p>
+</div>
+</div>
+<div class="readable-text" id="p350">
+<p>The main ingredient of the guide function is an encoder that will map <em>Side-Quest Engagement</em>, <em>Won Items</em>, and <em>In-Game Purchases</em> to <em>Z</em><em> </em>; i.e., it will <em>impute</em> the latent values of <em>Z</em>.</p>
+</div>
+<div class="browsable-container listing-container" id="p351">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.25</span> Create an encoder for <em>Z</em></h5>
+<div class="code-area-container">
+<pre class="code-area">class Encoder(nn.Module):
+    def __init__(self, input_dim=3, <span class="aframe-location"/> #1
+                 z_dim=1,    <span class="aframe-location"/> #2
+              <span class="aframe-location"/>   hidden_dim=5):     #3
+        super().__init__()
+        self.f_hidden = nn.Linear(input_dim, hidden_dim)
+        self.f_loc = nn.Linear(hidden_dim, z_dim)
+        self.f_scale = nn.Linear(hidden_dim, z_dim)
+        self.softplus = nn.Softplus()
+
+    def forward(self, input):
+        input = input.t()
+        hidden = self.softplus(self.f_hidden(input))  <span class="aframe-location"/> #4
+        z_loc = self.f_loc(hidden)  <span class="aframe-location"/> #5
+        z_scale = 1e-6 + self.softplus(self.f_scale(hidden))    <span class="aframe-location"/> #6
+        return z_loc.t().squeeze(0), z_scale.t().squeeze(0)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Input dimension is 3 because it will combine Side-Quest Engagement, In-Game Purchases, and Guild Membership.
+     <br/>#2 I use a simple univariate Z, but we could give it higher dimension with sufficient data.
+     <br/>#3 The width of the hidden layer is 5.
+     <br/>#4 Go from input to hidden layer.
+     <br/>#5 Mapping from hidden layer to location parameter for Z
+     <br/>#6 Mapping from hidden layer scale parameter to Z
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p352">
+<p>Now, using the encoder, we build the overall guide function. In the following guide, we’ll sample the parameters <em>ρ</em><code>_member</code>, <em>ρ</em><code>_won_engaged</code>, and <em>ρ</em><code>_won_not_engaged</code> from beta distributions parameterized by constants set using <code>param</code>. These “hyperparameters” are optimized during training, alongside the weights of the neural networks.</p>
+</div>
+<div class="browsable-container listing-container" id="p353">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.26</span> Build the guide function (approximating distribution)</h5>
+<div class="code-area-container code-area-with-html">
+<pre class="code-area">from pyro import param
+from torch.distributions.constraints import positive
+
+encoder = Encoder().to(device)
+
+def guide(data, device=device):
+    pyro.module("encoder", encoder)
+    α_member = param("α_member", tensor(1.0, device=device),    <span class="aframe-location"/> #1
+                     constraint=positive)   #1
+    β_member = param("β_member", tensor(1.0, device=device),    #1
+                        constraint=positive)  #1
+    sample('<em>ρ</em>_member', Beta(α_member, β_member))   #1
+    α_won_engaged = param("α_won_engaged", tensor(5.0, device=device),    <span class="aframe-location"/> #2
+                         constraint=positive)   #2
+    β_won_engaged = param("β_won_engaged", tensor(2.0, device=device),   #2
+                        constraint=positive)    #2
+    sample('<em>ρ</em>_won_engaged', Beta(α_won_engaged, β_won_engaged))   #2
+    α_won_not_engaged = param("α_won_not_engaged",   #2
+                        tensor(2.0, device=device),    #2
+                        constraint=positive)    #2
+    β_won_not_engaged = param("β_won_not_engaged",   #2
+                        tensor(5.0, device=device), #2
+                        constraint=positive)   #2
+    beta_dist = Beta(α_won_not_engaged, β_won_not_engaged)  #2
+    sample('<em>ρ</em>_won_not_engaged', beta_dist)   #2
+    N = len(data["In-game Purchases"])
+    with pyro.plate("N", N):
+        z_input = torch.stack(   <span class="aframe-location"/> #3
+            (data["Guild Membership"],     #3
+             data["Side-quest Engagement"],     #3
+             data["In-game Purchases"])    #3
+        ).to(device)     #3
+        z_loc, z_scale = encoder(z_input)   #3
+        pyro.sample("Z", Normal(z_loc, z_scale))    #3</pre>
+<div class="code-annotations-overlay-container">
+     #1 The guide samples 
+     <em>ρ</em>_member from a beta distribution where the shape parameters are trainable.
+     <br/>#2 
+     <em>ρ</em>_won_engaged and 
+     <em>ρ</em>_won_ not_engaged are also sampled from beta distributions with trainable parameters.
+     <br/>#3 
+     <em>ρ</em>_won_engaged and 
+     <em>ρ</em>_won_not_engaged are also sampled from beta distributions with trainable parameters.
+     <br/>#4 Z is sampled from a normal with parameters returned by the encoder.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p354">
+<p>Finally, we set up the inference algorithm and run the training loop.</p>
+</div>
+<div class="browsable-container listing-container" id="p355">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.27</span> Run the training loop</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.infer import SVI, Trace_ELBO
+from pyro.optim import Adam
+from pyro import condition
+
+pyro.clear_param_store()   <span class="aframe-location"/> #1
+adam_params = {"lr": 0.0001, "betas": (0.90, 0.999)}   <span class="aframe-location"/> #2
+optimizer = Adam(adam_params)    #2
+training_model = condition(data_model, data)    <span class="aframe-location"/> #3
+<span class="aframe-location"/>svi = SVI(training_model, guide, optimizer, loss=Trace_ELBO())     #4
+elbo_values = []   <span class="aframe-location"/> #5
+N = len(data['In-game Purchases'])    #5
+for step in range(500_000):    #5
+    loss = svi.step(data) / N    #5
+    elbo_values.append(loss)   #5
+    if step % 500 == 0:     #5
+        print(loss)     #5</pre>
+<div class="code-annotations-overlay-container">
+     #1 Reset parameter values in case we restart the training loop.
+     <br/>#2 Set up Adam optimizer. A learning rate (“lr”) of 0.001 may work better if using CUDA.
+     <br/>#3 Condition the data_model on the observed data.
+     <br/>#4 Set up SVI.
+     <br/>#5 Run the training loop.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p356">
+<p>We’ll now plot the loss curve to see how training performed.</p>
+</div>
+<div class="browsable-container listing-container" id="p357">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.28</span> Plot the losses during training</h5>
+<div class="code-area-container">
+<pre class="code-area">import math
+import matplotlib.pyplot as plt
+
+plt.plot([math.log(item) for item in elbo_values])    <span class="aframe-location"/> #1
+plt.xlabel('Step')     #1
+plt.ylabel('Log-Loss')     #1
+plt.title('Log Training Loss')     #1
+plt.show()     #1</pre>
+<div class="code-annotations-overlay-container">
+     #1 Plot the log of training loss, since loss is initially large.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p358">
+<p>The losses shown in figure 11.19 indicate training has converged.</p>
+</div>
+<div class="browsable-container figure-container" id="p359">
+<img alt="figure" height="876" src="../Images/CH11_F19_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.19</span> Log of ELBO loss during training</h5>
+</div>
+<div class="readable-text" id="p360">
+<p>We can print the trained values of the hyperparameters (<code>α_member</code>, <em class="obliqued">β</em><code>_member</code>, <code>α_won_engaged</code>, <em class="obliqued">β</em><code>_won_engaged</code>, <code>α_won_not_engaged</code>, and <em class="obliqued">β</em><code>_won_not_engaged</code>). </p>
+</div>
+<div class="browsable-container listing-container" id="p361">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.29</span> Print the values of the trained parameters in the guide function</h5>
+<div class="code-area-container">
+<pre class="code-area">print((    
+     pyro.param("α_member"),    
+     pyro.param("<span class="regular-symbol">β</span>_member"),    
+     pyro.param("α_won_engaged"),    
+     pyro.param("<span class="regular-symbol">β</span>_won_engaged"),    
+     pyro.param("α_won_not_engaged"),    
+     pyro.param("<span class="regular-symbol">β</span>_won_not_engaged")    
+))</pre>
+</div>
+</div>
+<div class="readable-text" id="p362">
+<p>This returned the following:</p>
+</div>
+<div class="browsable-container listing-container" id="p363">
+<div class="code-area-container">
+<pre class="code-area">(tensor(1.3953, grad_fn=&lt;AddBackward0&gt;), tensor(1.3558, grad_fn=&lt;AddBackward0&gt;), tensor(4.3976, grad_fn=&lt;AddBackward0&gt;), tensor(3.1667, grad_fn=&lt;AddBackward0&gt;), tensor(0.8065, grad_fn=&lt;AddBackward0&gt;), tensor(10.8452, grad_fn=&lt;AddBackward0&gt;))</pre>
+</div>
+</div>
+<div class="readable-text" id="p364">
+<p>We’ll approximate our posterior by sampling <em>ρ</em><code>_member</code>, <em>ρ</em><code>_won_engaged</code>, and <em>ρ</em><code>_won_not_engaged</code> from beta distributions with these values, sampling <em>Z</em> from a normal(0, 1), and then sampling the remaining causal variables based on these values. </p>
+</div>
+<div class="readable-text" id="p365">
+<h3 class="readable-text-h3" id="sigil_toc_id_286"><span class="num-string">11.6.6</span> Posterior predictive inference of the ATE</h3>
+</div>
+<div class="readable-text" id="p366">
+<p>Given a sample of the parameters and a sample vector of <em>Z</em> from the guide (our proxy for the posterior), we can simulate a new data set. A common way of checking how well a Bayesian model fits the data is to compare this simulated data with the original data. This comparison is called a <em>posterior predictive check</em>, and it helps us understand if the trained model is a good fit for the data. In the following code, we’ll do a posterior predictive check of <em>In-Game Purchases</em>; we’ll use the guide to generate samples and use those samples to repeatedly simulate <em>In-Game Purchase</em> datasets. For each simulated dataset, we’ll create a density curve. We’ll then plot these curves, along with the density curve of the <em>In-Game Purchases</em> in the original data.</p>
+</div>
+<div class="browsable-container listing-container" id="p367">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.30</span> Posterior predictive check of <em>In-Game Purchases</em></h5>
+<div class="code-area-container">
+<pre class="code-area">import matplotlib.pyplot as plt
+import seaborn as sns
+from pyro.infer import Predictive
+
+predictive = Predictive(data_model, guide=guide, num_samples=1000)    <span class="aframe-location"/> #1
+predictive_samples_all = predictive(data)    #1
+predictive_samples = predictive_samples_all["In-game Purchases"]    #1
+for i, sample_data in enumerate(predictive_samples):    <span class="aframe-location"/> #2
+    if i == 0:    #2
+        sns.kdeplot(sample_data,    #2
+            color="lightgrey", label="Predictive density")    #2
+    else:     #2
+        sns.kdeplot(sample_data,     #2
+            color="lightgrey", linewidth=0.2, alpha=0.5)     #2
+
+sns.kdeplot(    <span class="aframe-location"/> #3
+    data['In-game Purchases'],    #3
+    color="black",   #3
+    linewidth=1,    #3
+    label="Empirical density"     #3
+)   #3
+
+plt.legend()
+plt.title("Posterior Predictive Check of In-game Purchases")
+plt.xlabel("Value")
+plt.ylabel("Density")
+plt.show()</pre>
+<div class="code-annotations-overlay-container">
+     #1 Simulate data from the (approximate) posterior predictive distribution.
+     <br/>#2 For each batch of simulated data, create and plot a density curve of In-Game Purchases.
+     <br/>#3 Overlay the empirical density distribution of In-Game Purchases so we can compare it with the predictive plots.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p368">
+<p>This produces a plot as in figure 11.20. The degree to which the simulated distribution matches the empirical distribution depends on the model, the size of the data, and how well the model is trained.</p>
+</div>
+<div class="browsable-container figure-container" id="p369">
+<img alt="figure" height="830" src="../Images/CH11_F20_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.20</span> Posterior predictive check of <em>In-Game Purchases</em>. Grey lines are density curves calculated on simulations from the posterior predictive distribution. The black line is the empirical density (density curves calculated on the data itself). More overlap indicates the model fits the data well.</h5>
+</div>
+<div class="readable-text intended-text" id="p370">
+<p>Our Bayesian estimator of the ATE will be our approach of applying transformation and inference to the posterior distribution represented by our model and guide. Since the ATE is <em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub><em> </em>) – <em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub><em> </em>), we’ll do posterior predictive sampling from <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>) and <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub>). </p>
+</div>
+<div class="readable-text intended-text" id="p371">
+<p>First, we’ll use <code>pyro.do</code> to transform the model to represent the intervention. Then we’ll do forward sampling from the model using the <code>Predictive</code> class. This will sample 1,000 simulated datasets, each equal in length to the original data, and each corresponding to a random sample of <em>ρ</em><code>_member</code>, <em>ρ</em><code>_won_engaged</code>, <em>ρ</em><code>_won_unengaged</code>, and a data vector of <em>Z</em> values. Objects from the <code>Predictive</code> class do simple forward sampling. If we needed to condition on anything (e.g., conditioning on <em>E</em><em>  </em>=<em> </em>1 in<span class="aframe-location"/> <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub>|<em>E</em><em>  </em>=<em> </em>1)), we’d need to use another inference approach (e.g., importance sampling, MCMC, etc.). </p>
+</div>
+<div class="browsable-container listing-container" id="p372">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.31</span> Sampling from the posterior predictive distributions <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=</sub><sub>0</sub>) and <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=</sub><sub>1</sub>)</h5>
+<div class="code-area-container">
+<pre class="code-area">from pyro.infer import Predictive
+from pyro import do
+
+data_model_low_engagement = do(   <span class="aframe-location"/> #1
+    data_model, {"Side-quest Engagement": 0.})   #1
+predictive_low_engagement = Predictive(    <span class="aframe-location"/> #2
+    data_model_low_engagement, guide=guide, num_samples=1000)   #2
+predictive_low_engagement_samples = predictive_low_engagement(data)   #2
+
+data_model_high_engagement = do(   <span class="aframe-location"/> #3
+    data_model, {"Side-quest Engagement": 1.})    #3
+predictive_high_engagement = Predictive(   <span class="aframe-location"/> #4
+    data_model_high_engagement, guide=guide, num_samples=1000)   #4
+predictive_high_engagement_samples = predictive_high_engagement(data)</pre>
+<div class="code-annotations-overlay-container">
+     #1 Apply pyro.do transformation to implement intervention do(E=0).
+     <br/>#2 Sample 1,000 samples of datasets from P(I
+     <em><sub>E</sub></em>
+<sub>=</sub>
+<sub>0</sub>).
+     <br/>#3 Apply pyro.do transformation to implement intervention do(E=1).
+     <br/>#4 Sample 1,000 samples of datasets from P(I
+     <em><sub>E</sub></em>
+<sub>=</sub>
+<sub>1</sub>).
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p373">
+<p>We can plot these two sets of posterior predictive samples as follows:</p>
+</div>
+<div class="browsable-container listing-container" id="p374">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.32</span> Plot density curves of predictive datasets sampled from <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=</sub><sub>1</sub>) and <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=</sub><sub>0</sub>)</h5>
+<div class="code-area-container">
+<pre class="code-area">low_samples = predictive_low_engagement_samples["In-game Purchases"]    <span class="aframe-location"/> #1
+for i, sample_data in enumerate(low_samples):   #1
+    if i == 0:  #1
+        sns.kdeplot(sample_data,   #1
+            clip=(0, 35000), color="darkgrey", label="$P(I_{E=0})$")    #1
+    else:   #1
+        sns.kdeplot(sample_data,  #1
+            clip=(0, 35000), color="darkgrey",    #1
+            linewidth=0.2, alpha=0.5)   #1
+            #1
+high_samples = predictive_high_engagement_samples["In-game Purchases"]    #1
+for i, sample_data in enumerate(high_samples):   #1
+    if i == 0:    #1
+        sns.kdeplot(sample_data,   #1
+            clip=(0, 35000), color="lightgrey", label="$P(I_{E=1})$")    #1
+    else:   #1
+        sns.kdeplot(sample_data,    #1
+            clip=(0, 35000), color="lightgrey",   #1
+            linewidth=0.2, alpha=0.5)    #1
+title = ("Posterior predictive sample density "    <span class="aframe-location"/> #2
+         "curves of $P(I_{E=1})$ &amp; $P(I_{E=0})$")     #2
+plt.title(title)     #2
+plt.legend()     #2
+plt.xlabel("Value")   #2
+plt.ylabel("Density")     #2
+plt.ylim((0, .0010))    #2
+plt.xlim((0, 4000))     #2
+plt.show()     #2</pre>
+<div class="code-annotations-overlay-container">
+     #1 For each sample, use kdeplot to draw a curve. Plot 
+     <em>P</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>0</sub>) as dark grey and 
+     <em>P</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>1</sub>) as light gray.
+     <br/>#2 Plot the density curves.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p375">
+<p>Whereas figure 11.20 plotted a predictive distribution on <em>P</em>(<em>I</em><em>  </em>), figure 11.21 plots predictive density plots of <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em>  </em><sub>0</sub><em> </em>) and <em>P</em><em> </em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>). We can see that the distributions differ. <span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p376">
+<img alt="figure" height="812" src="../Images/CH11_F21_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.21</span> Posterior predictive visualization of density curves calculated from simulated data from <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=1</sub>) (light gray) and <em>P</em>(<em>I</em><em><sub>E</sub></em><sub>=0</sub>) (dark gray)</h5>
+</div>
+<div class="readable-text" id="p377">
+<p>Finally, to estimate <em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>) and <em>E</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>0</sub>), we just need take the means of each posterior predictive sample dataset simulated from <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>) and <em>P</em>(<em>I</em><sub><em>E</em></sub><sub>=</sub><em> </em><sub>1</sub>), respectively. This will yield 1,000 samples of posterior predictive values of the ATE. Variation between the samples reflects posterior uncertainty about the ATE.</p>
+</div>
+<div class="browsable-container listing-container" id="p378">
+<h5 class="listing-container-h5 browsable-container-h5 sigil_not_in_toc"><span class="num-string">Listing 11.33</span> Estimate the ATE</h5>
+<div class="code-area-container">
+<pre class="code-area">samp_high = predictive_high_engagement_samples['In-game Purchases']   <span class="aframe-location"/> #1
+exp_high = samp_high.mean(1)   #1
+samp_low = predictive_low_engagement_samples['In-game Purchases']   <span class="aframe-location"/> #2
+exp_low = samp_low.mean(1)    #2
+ate_distribution = exp_high - exp_low   <span class="aframe-location"/> #3
+
+sns.kdeplot(ate_distribution)    <span class="aframe-location"/> #4
+plt.title("Posterior distribution of the ATE")    #4
+plt.xlabel("Value")     #4
+plt.ylabel("Density")    #4
+plt.show()    #4</pre>
+<div class="code-annotations-overlay-container">
+     #1 Estimate 
+     <em>E</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>1</sub>).
+     <br/>#2 Estimate 
+     <em>E</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>0</sub>).
+     <br/>#3 Estimate the ATE = 
+     <em>E</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>1</sub>) – 
+     <em>E</em>(
+     <em>I</em>
+<em><sub>E</sub></em>
+<sub>=</sub>
+<sub>0</sub>).
+     <br/>#4 Use a density curve to visualize posterior variation in the ATE values.
+     <br/>
+</div>
+</div>
+</div>
+<div class="readable-text" id="p379">
+<p>This prints figure 11.22, a visualization of the posterior predictive distribution of the ATE.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p380">
+<img alt="figure" height="826" src="../Images/CH11_F22_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.22</span> Posterior predictive distribution of the ATE</h5>
+</div>
+<div class="readable-text" id="p381">
+<p>With a Bayesian approach, we get a posterior predictive distribution of the ATE. If we want a CATE, we can simply modify the posterior predictive inference to condition on other variables. If we want a point estimate of the ATE, we can take the mean of these predictive samples. More data reduces variance in the ATE distribution (assuming the ATE is identified) as in figure 11.23.<span class="aframe-location"/></p>
+</div>
+<div class="browsable-container figure-container" id="p382">
+<img alt="figure" height="845" src="../Images/CH11_F23_Ness.png" width="1100"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.23</span> Posterior uncertainty declines with more data.</h5>
+</div>
+<div class="readable-text" id="p383">
+<p>We can construct <em>credible intervals </em>(the Bayesian analog to confidence intervals) by taking percentiles from this distribution.</p>
+</div>
+<div class="readable-text" id="p384">
+<h3 class="readable-text-h3" id="sigil_toc_id_287"><span class="num-string">11.6.7</span> On the identifiability of the Bayesian causal generative inference</h3>
+</div>
+<div class="readable-text" id="p385">
+<p>We got these results with a causal latent variable model, where <em>Z </em>was the latent variable. We are no strangers to latent variable models in probabilistic machine learning, but are they safe for causal inference? For example, if we could do causal inference with this latent variable model, what is to stop us from using the model in figure 11.24?</p>
+</div>
+<div class="readable-text intended-text" id="p386">
+<p>We could train this model, apply the transformations, get samples from the posterior predictive distribution of the ATE, and get an answer. But we lack graphical identification in this case. Our answer would have confounder bias that we couldn’t fix with more data, at least not without some strong, non-graphical assumptions (e.g., in the priors or in the functional relationships between variables).</p>
+</div>
+<div class="readable-text intended-text" id="p387">
+<p>Our model has graphical identification. In our case, we observed a mediator in <em>Won Items</em>, so we know we have a front-door estimand. Our causal generative model estimation procedure is just another estimator of that estimand.</p>
+</div>
+<div class="browsable-container figure-container" id="p388">
+<img alt="figure" height="524" src="../Images/CH11_F24_Ness.png" width="802"/>
+<h5 class="figure-container-h5 sigil_not_in_toc"><span class="num-string">Figure 11.24</span> The causal latent variable model with no mediator <em>W</em>, and thus no identification. If we had fit this model and used it to infer the ATE, we’d get a result. But without identification, we wouldn’t be able to eliminate confounder bias, even with more data.<span class="aframe-location"/></h5>
+</div>
+<div class="readable-text" id="p389">
+<h3 class="readable-text-h3" id="sigil_toc_id_288"><span class="num-string">11.6.8</span> Closing thoughts on causal latent variable models</h3>
+</div>
+<div class="readable-text" id="p390">
+<p>This approach of combining causal generative models with latent variables and deep learning is not limited to ATEs—it is general to all causal queries. We only need to select the right transformation for the query. This approach “commodifies inference” by relying on auto-differentiation tools to do the statistical and computational heavy lifting, instead of having to understand and implement different estimators like in DoWhy. It also scales to multidimensional causes, outcomes, and other variables in a way DoWhy does not. An additional advantage is that tools like Pyro and PyMC allow you to put Bayesian priors on the causal models themselves. Since the lack of causal identification boils down to model uncertainty, putting priors on models gives us an additional way of encoding domain assumptions that yield additional identification.</p>
+</div>
+<div class="readable-text" id="p391">
+<h2 class="readable-text-h2" id="sigil_toc_id_289">Summary</h2>
+</div>
+<ul>
+<li class="readable-text" id="p392"> DoWhy provides a useful workflow for identifying and estimating causal effects. </li>
+<li class="readable-text" id="p393"> In step 1 of the causal inference workflow, we specify our target query. In this chapter, we focused on causal effects (ATEs and CATEs). </li>
+<li class="readable-text" id="p394"> In step 2 we specify our causal model. We specified a DAG in Graphviz DOT format and loaded it into a <code>CausalModel</code> in DoWhy. </li>
+<li class="readable-text" id="p395"> In step 3 we run identification. DoWhy identified backdoor, front-door, and instrumental variable estimands. </li>
+<li class="readable-text" id="p396"> Each estimand relies on a different set of causal assumptions. If you are more confident in the causal assumptions of one estimand than others, you should target that estimand. </li>
+<li class="readable-text" id="p397"> We targeted the backdoor estimand with linear regression, propensity score methods, and machine learning (ML) methods. </li>
+<li class="readable-text" id="p398"> The backdoor adjustment set is the set of backdoor variables we adjust for in the backdoor adjustment estimand. A valid adjustment set d-separates all backdoor paths. There could be more than one valid set. </li>
+<li class="readable-text" id="p399"> In step 4 we estimate our selected estimand. DoWhy makes it easy to try different estimators. </li>
+<li class="readable-text" id="p400"> Linear regression is a popular estimand because it is simple, familiar, and gives a point estimate of the ATE even for continuous causes. </li>
+<li class="readable-text" id="p401"> A propensity score is traditionally the probability a subject in the data is exposed to the treatment value of the binary cause (treatment) variable, conditional on the confounders in the adjustment set. It is often modeled using logistic regression. </li>
+<li class="readable-text" id="p402"> However, a propensity score can be any variable you construct that renders the treatment variable conditionally independent of the adjustment set. </li>
+<li class="readable-text" id="p403"> Propensity score methods include matching, stratification, and inverse probability weighting. </li>
+<li class="readable-text" id="p404"> ML methods targeting the backdoor estimand include double ML and meta learners. DoWhy provides a wrapper to EconML that implements several ML methods. </li>
+<li class="readable-text" id="p405"> Generally, ML methods are a good choice when you have larger datasets. They allow you to rely on fewer statistical assumptions. However, calculating confidence intervals on the estimates is computationally expensive. </li>
+<li class="readable-text" id="p406"> Instrumental variable estimation and front-door estimation don’t rely on having a valid backdoor adjustment set, but they rely on different causal assumptions. </li>
+<li class="readable-text" id="p407"> In step 5, we run refutation analysis. Refutation is a sensitivity analysis that attempts to refute the causal and statistical assumptions we rely on in estimating our target query. </li>
+<li class="readable-text" id="p408"> Causal generative models combine model transformations, such as graph mutilation, node-splitting, and multi-world transforms, with probabilistic inference to do causal inference. </li>
+<li class="readable-text" id="p409"> This approach becomes an estimator of an identified estimand when the model parameters are learned from data. </li>
+<li class="readable-text" id="p410"> When there are latent variables, such as latent confounders, you can train the causal generative model as a latent variable model. </li>
+<li class="readable-text" id="p411"> The causal inference with the latent variable model will work if you have graphical identification. If not, you’ll need to rely on other identifying assumptions.  </li>
+</ul>
+</div></body></html>
