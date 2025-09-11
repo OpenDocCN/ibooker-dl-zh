@@ -1,0 +1,1696 @@
+- en: 5 Pretraining on unlabeled data
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Computing the training and validation set losses to assess the quality of LLM-generated
+    text during training
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implementing a training function and pretraining the LLM
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Saving and loading model weights to continue training an LLM
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Loading pretrained weights from OpenAI
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Thus far, we have implemented the data sampling and attention mechanism and
+    coded the LLM architecture. It is now time to implement a training function and
+    pretrain the LLM. We will learn about basic model evaluation techniques to measure
+    the quality of the generated text, which is a requirement for optimizing the LLM
+    during the training process. Moreover, we will discuss how to load pretrained
+    weights, giving our LLM a solid starting point for fine-tuning. Figure 5.1 lays
+    out our overall plan, highlighting what we will discuss in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 5.1 The three main stages of coding an LLM. This chapter focuses on
+    stage 2: pretraining the LLM (step 4), which includes implementing the training
+    code (step 5), evaluating the performance (step 6), and saving and loading model
+    weights (step 7).'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Weight parameters
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In the context of LLMs and other deep learning models, *weights* refer to the
+    trainable parameters that the learning process adjusts. These weights are also
+    known as *weight parameters* or simply *parameters*. In frameworks like PyTorch,
+    these weights are stored in linear layers; we used these to implement the multi-head
+    attention module in chapter 3 and the `GPTModel` in chapter 4\. After initializing
+    a layer (`new_layer` `=` `torch.nn.Linear(...)`), we can access its weights through
+    the `.weight` attribute, `new_layer.weight`. Additionally, for convenience, PyTorch
+    allows direct access to all a model’s trainable parameters, including weights
+    and biases, through the method `model.parameters()`, which we will use later when
+    implementing the model training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.1 Evaluating generative text models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: After briefly recapping the text generation from chapter 4, we will set up our
+    LLM for text generation and then discuss basic ways to evaluate the quality of
+    the generated text. We will then calculate the training and validation losses.
+    Figure 5.2 shows the topics covered in this chapter, with these first three steps
+    highlighted.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.2 An overview of the topics covered in this chapter. We begin by recapping
+    text generation (step 1) before moving on to discuss basic model evaluation techniques
+    (step 2) and training and validation losses (step 3).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 5.1.1 Using GPT to generate text
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Let’s set up the LLM and briefly recap the text generation process we implemented
+    in chapter 4\. We begin by initializing the GPT model that we will later evaluate
+    and train using the `GPTModel` class and `GPT_CONFIG_124M` dictionary (see chapter
+    4):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 We shorten the context length from 1,024 to 256 tokens.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 It’s possible and common to set dropout to 0.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Considering the `GPT_CONFIG_124M` dictionary, the only adjustment we have made
+    compared to the previous chapter is that we have reduced the context length (`context_
+    length`) to 256 tokens. This modification reduces the computational demands of
+    training the model, making it possible to carry out the training on a standard
+    laptop computer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Originally, the GPT-2 model with 124 million parameters was configured to handle
+    up to 1,024 tokens. After the training process, we will update the context size
+    setting and load pretrained weights to work with a model configured for a 1,024-token
+    context length.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using the `GPTModel` instance, we adopt the `generate_text_simple` function
+    from chapter 4 and introduce two handy functions: `text_to_token_` `ids` and `token_ids_
+    to_text`. These functions facilitate the conversion between text and token representations,
+    a technique we will utilize throughout this chapter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.3 Generating text involves encoding text into token IDs that the LLM
+    processes into logit vectors. The logit vectors are then converted back into token
+    IDs, detokenized into a text representation.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Figure 5.3 illustrates a three-step text generation process using a GPT model.
+    First, the tokenizer converts input text into a series of token IDs (see chapter
+    2). Second, the model receives these token IDs and generates corresponding logits,
+    which are vectors representing the probability distribution for each token in
+    the vocabulary (see chapter 4). Third, these logits are converted back into token
+    IDs, which the tokenizer decodes into human-readable text, completing the cycle
+    from textual input to textual output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can implement the text generation process, as shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 5.1 Utility functions for text to token ID conversion
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 .unsqueeze(0) adds the batch dimension'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Removes batch dimension'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Using this code, the `model` generates the following text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Clearly, the model isn’t yet producing coherent text because it hasn’t undergone
+    training. To define what makes text “coherent” or “high quality,” we have to implement
+    a numerical method to evaluate the generated content. This approach will enable
+    us to monitor and enhance the model’s performance throughout its training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we will calculate a *loss metric* for the generated outputs. This loss
+    serves as a progress and success indicator of the training progress. Furthermore,
+    in later chapters, when we fine-tune our LLM, we will review additional methodologies
+    for assessing model quality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.1.2 Calculating the text generation loss
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Next, let’s explore techniques for numerically assessing text quality generated
+    during training by calculating a *text generation loss*. We will go over this
+    topic step by step with a practical example to make the concepts clear and applicable,
+    beginning with a short recap of how the data is loaded and how the text is generated
+    via the `generate_text_simple` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 5.4 illustrates the overall flow from input text to LLM-generated text
+    using a five-step procedure. This text-generation process shows what the `generate_text_simple`
+    function does internally. We need to perform these same initial steps before we
+    can compute a loss that measures the generated text quality later in this section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.4 For each of the three input tokens, shown on the left, we compute
+    a vector containing probability scores corresponding to each token in the vocabulary.
+    The index position of the highest probability score in each vector represents
+    the most likely next token ID. These token IDs associated with the highest probability
+    scores are selected and mapped back into a text that represents the text generated
+    by the model.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Figure 5.4 outlines the text generation process with a small seven-token vocabulary
+    to fit this image on a single page. However, our `GPTModel` works with a much
+    larger vocabulary consisting of 50,257 words; hence, the token IDs in the following
+    code will range from 0 to 50,256 rather than 0 to 6\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, figure 5.4 only shows a single text example (`"every` `effort` `moves"`)
+    for simplicity. In the following hands-on code example that implements the steps
+    in the figure, we will work with two input examples for the GPT model (`"every`
+    `effort` `moves"` and `"I` `really` `like"`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider these two input examples, which have already been mapped to token
+    IDs (figure 5.4, step 1):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Matching these inputs, the `targets` contain the token IDs we want the model
+    to produce:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that the targets are the inputs but shifted one position forward, a concept
+    we covered in chapter 2 during the implementation of the data loader. This shifting
+    strategy is crucial for teaching the model to predict the next token in a sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now we feed the inputs into the model to calculate logits vectors for the two
+    input examples, each comprising three tokens. Then we apply the `softmax` function
+    to transform these logits into probability scores (`probas`; figure 5.4, step
+    2):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Disables gradient tracking since we are not training yet'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Probability of each token in vocabulary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting tensor dimension of the probability score (`probas`) tensor is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first number, 2, corresponds to the two examples (rows) in the inputs, also
+    known as batch size. The second number, 3, corresponds to the number of tokens
+    in each input (row). Finally, the last number corresponds to the embedding dimensionality,
+    which is determined by the vocabulary size. Following the conversion from logits
+    to probabilities via the `softmax` function, the `generate_text_simple` function
+    then converts the resulting probability scores back into text (figure 5.4, steps
+    3–5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can complete steps 3 and 4 by applying the `argmax` function to the probability
+    scores to obtain the corresponding token IDs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Given that we have two input batches, each containing three tokens, applying
+    the `argmax` function to the probability scores (figure 5.4, step 3) yields two
+    sets of outputs, each with three predicted token IDs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 First batch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Second batch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, step 5 converts the token IDs back into text:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When we decode these tokens, we find that these output tokens are quite different
+    from the target tokens we want the model to generate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The model produces random text that is different from the target text because
+    it has not been trained yet. We now want to evaluate the performance of the model’s
+    generated text numerically via a loss (figure 5.5). Not only is this useful for
+    measuring the quality of the generated text, but it’s also a building block for
+    implementing the training function, which we will use to update the model’s weight
+    to improve the generated text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.5 An overview of the topics covered in this chapter. We have completed
+    step 1\. We are now ready to implement the text evaluation function (step 2).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Part of the text evaluation process that we implement, as shown in figure 5.5,
+    is to measure “how far” the generated tokens are from the correct predictions
+    (targets). The training function we implement later will use this information
+    to adjust the model weights to generate text that is more similar to (or, ideally,
+    matches) the target text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The model training aims to increase the softmax probability in the index positions
+    corresponding to the correct target token IDs, as illustrated in figure 5.6\.
+    This softmax probability is also used in the evaluation metric we will implement
+    next to numerically assess the model’s generated outputs: the higher the probability
+    in the correct positions, the better.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.6 Before training, the model produces random next-token probability
+    vectors. The goal of model training is to ensure that the probability values corresponding
+    to the highlighted target token IDs are maximized.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Remember that figure 5.6 displays the softmax probabilities for a compact seven-token
+    vocabulary to fit everything into a single figure. This implies that the starting
+    random values will hover around 1/7, which equals approximately 0.14\. However,
+    the vocabulary we are using for our GPT-2 model has 50,257 tokens, so most of
+    the initial probabilities will hover around 0.00002 (1/50,257).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For each of the two input texts, we can print the initial softmax probability
+    scores corresponding to the target tokens using the following code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: The three target token ID probabilities for each batch are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: The goal of training an LLM is to maximize the likelihood of the correct token,
+    which involves increasing its probability relative to other tokens. This way,
+    we ensure the LLM consistently picks the target token—essentially the next word
+    in the sentence—as the next token it generates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Backpropagation
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: How do we maximize the softmax probability values corresponding to the target
+    tokens? The big picture is that we update the model weights so that the model
+    outputs higher values for the respective token IDs we want to generate. The weight
+    update is done via a process called *backpropagation*, a standard technique for
+    training deep neural networks (see sections A.3 to A.7 in appendix A for more
+    details about backpropagation and model training).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Backpropagation requires a loss function, which calculates the difference between
+    the model’s predicted output (here, the probabilities corresponding to the target
+    token IDs) and the actual desired output. This loss function measures how far
+    off the model’s predictions are from the target values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we will calculate the loss for the probability scores of the two example
+    batches, `target_probas_1` and `target_probas_2`. The main steps are illustrated
+    in figure 5.7\. Since we already applied steps 1 to 3 to obtain `target_probas_1`
+    and `target_ probas_2`, we proceed with step 4, applying the *logarithm* to the
+    probability scores:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![figure](../Images/5-7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.7 Calculating the loss involves several steps. Steps 1 to 3, which
+    we have already completed, calculate the token probabilities corresponding to
+    the target tensors. These probabilities are then transformed via a logarithm and
+    averaged in steps 4 to 6.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'This results in the following values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: Working with logarithms of probability scores is more manageable in mathematical
+    optimization than handling the scores directly. This topic is outside the scope
+    of this book, but I’ve detailed it further in a lecture, which can be found in
+    appendix B.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we combine these log probabilities into a single score by computing the
+    average (step 5 in figure 5.7):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The resulting average log probability score is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The goal is to get the average log probability as close to 0 as possible by
+    updating the model’s weights as part of the training process. However, in deep
+    learning, the common practice isn’t to push the average log probability up to
+    0 but rather to bring the negative average log probability down to 0\. The negative
+    average log probability is simply the average log probability multiplied by –1,
+    which corresponds to step 6 in figure 5.7:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: This prints `tensor(10.7940)`. In deep learning, the term for turning this negative
+    value, –10.7940, into 10.7940, is known as the *cross entropy* loss. PyTorch comes
+    in handy here, as it already has a built-in `cross_entropy` function that takes
+    care of all these six steps in figure 5.7 for us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cross entropy loss
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: At its core, the cross entropy loss is a popular measure in machine learning
+    and deep learning that measures the difference between two probability distributions—typically,
+    the true distribution of labels (here, tokens in a dataset) and the predicted
+    distribution from a model (for instance, the token probabilities generated by
+    an LLM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the context of machine learning and specifically in frameworks like PyTorch,
+    the `cross_entropy` function computes this measure for discrete outcomes, which
+    is similar to the negative average log probability of the target tokens given
+    the model’s generated token probabilities, making the terms “cross entropy” and
+    “negative average log probability” related and often used interchangeably in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before we apply the `cross_entropy` function, let’s briefly recall the shape
+    of the logits and target tensors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: The resulting shapes are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As we can see, the `logits` tensor has three dimensions: batch size, number
+    of tokens, and vocabulary size. The `targets` tensor has two dimensions: batch
+    size and number of tokens.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For the `cross_entropy` loss function in PyTorch, we want to flatten these
+    tensors by combining them over the batch dimension:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: The resulting tensor dimensions are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Remember that the `targets` are the token IDs we want the LLM to generate, and
+    the `logits` contain the unscaled model outputs before they enter the `softmax`
+    function to obtain the probability scores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Previously, we applied the `softmax` function, selected the probability scores
+    corresponding to the target IDs, and computed the negative average log probabilities.
+    PyTorch’s `cross_entropy` function will take care of all these steps for us:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The resulting loss is the same that we obtained previously when applying the
+    individual steps in figure 5.7 manually:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: Perplexity
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '*Perplexity* is a measure often used alongside cross entropy loss to evaluate
+    the performance of models in tasks like language modeling. It can provide a more
+    interpretable way to understand the uncertainty of a model in predicting the next
+    token in a sequence.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Perplexity measures how well the probability distribution predicted by the model
+    matches the actual distribution of the words in the dataset. Similar to the loss,
+    a lower perplexity indicates that the model predictions are closer to the actual
+    distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Perplexity can be calculated as `perplexity` `=` `torch.exp(loss)`, which returns
+    `tensor(48725.8203)` when applied to the previously calculated loss.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Perplexity is often considered more interpretable than the raw loss value because
+    it signifies the effective vocabulary size about which the model is uncertain
+    at each step. In the given example, this would translate to the model being unsure
+    about which among 48,725 tokens in the vocabulary to generate as the next token.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have now calculated the loss for two small text inputs for illustration purposes.
+    Next, we will apply the loss computation to the entire training and validation
+    sets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.1.3 Calculating the training and validation set losses
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We must first prepare the training and validation datasets that we will use
+    to train the LLM. Then, as highlighted in figure 5.8, we will calculate the cross
+    entropy for the training and validation sets, which is an important component
+    of the model training process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.8 Having completed steps 1 and 2, including computing the cross entropy
+    loss, we can now apply this loss computation to the entire text dataset that we
+    will use for model training.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: To compute the loss on the training and validation datasets, we use a very small
+    text dataset, the “The Verdict” short story by Edith Wharton, which we have already
+    worked with in chapter 2\. By selecting a text from the public domain, we circumvent
+    any concerns related to usage rights. Additionally, using such a small dataset
+    allows for the execution of code examples on a standard laptop computer in a matter
+    of minutes, even without a high-end GPU, which is particularly advantageous for
+    educational purposes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  Interested readers can also use the supplementary code for this book to
+    prepare a larger-scale dataset consisting of more than 60,000 public domain books
+    from Project Gutenberg and train an LLM on these (see appendix D for details).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The cost of pretraining LLMs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: To put the scale of our project into perspective, consider the training of the
+    7 billion parameter Llama 2 model, a relatively popular openly available LLM.
+    This model required 184,320 GPU hours on expensive A100 GPUs, processing 2 trillion
+    tokens. At the time of writing, running an 8 × A100 cloud server on AWS costs
+    around $30 per hour. A rough estimate puts the total training cost of such an
+    LLM at around $690,000 (calculated as 184,320 hours divided by 8, then multiplied
+    by $30).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following code loads the “The Verdict” short story:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'After loading the dataset, we can check the number of characters and tokens
+    in the dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: The output is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: With just 5,145 tokens, the text might seem too small to train an LLM, but as
+    mentioned earlier, it’s for educational purposes so that we can run the code in
+    minutes instead of weeks. Plus, later we will load pretrained weights from OpenAI
+    into our `GPTModel` code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we divide the dataset into a training and a validation set and use the
+    data loaders from chapter 2 to prepare the batches for LLM training. This process
+    is visualized in figure 5.9. Due to spatial constraints, we use a `max_length=6`.
+    However, for the actual data loaders, we set the `max_length` equal to the 256-token
+    context length that the LLM supports so that the LLM sees longer texts during
+    training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.9 When preparing the data loaders, we split the input text into training
+    and validation set portions. Then we tokenize the text (only shown for the training
+    set portion for simplicity) and divide the tokenized text into chunks of a user-specified
+    length (here, 6). Finally, we shuffle the rows and organize the chunked text into
+    batches (here, batch size 2), which we can use for model training.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Note  We are training the model with training data presented in similarly sized
+    chunks for simplicity and efficiency. However, in practice, it can also be beneficial
+    to train an LLM with variable-length inputs to help the LLM to better generalize
+    across different types of inputs when it is being used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To implement the data splitting and loading, we first define a `train_ratio`
+    to use 90% of the data for training and the remaining 10% as validation data for
+    model evaluation during training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Using the `train_data` and `val_data` subsets, we can now create the respective
+    data loader reusing the `create_dataloader_v1` code from chapter 2:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: We used a relatively small batch size to reduce the computational resource demand
+    because we were working with a very small dataset. In practice, training LLMs
+    with batch sizes of 1,024 or larger is not uncommon.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an optional check, we can iterate through the data loaders to ensure that
+    they were created correctly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We should see the following outputs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Based on the preceding code output, we have nine training set batches with two
+    samples and 256 tokens each. Since we allocated only 10% of the data for validation,
+    there is only one validation batch consisting of two input examples. As expected,
+    the input data (`x`) and target data (`y`) have the same shape (the batch size
+    times the number of tokens in each batch) since the targets are the inputs shifted
+    by one position, as discussed in chapter 2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we implement a utility function to calculate the cross entropy loss of
+    a given batch returned via the training and validation loader:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The transfer to a given device allows us to transfer the data to a GPU.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can now use this `calc_loss_batch` utility function, which computes the loss
+    for a single batch, to implement the following `calc_loss_loader` function that
+    computes the loss over all the batches sampled by a given data loader.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 5.2 Function to compute the training and validation loss
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Iteratives over all batches if no fixed num_batches is specified'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Reduces the number of batches to match the total number of batches in the
+    data loader if num_batches exceeds the number of batches in the data loader'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Sums loss for each batch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Averages the loss over all batches'
+  prefs: []
+  type: TYPE_NORMAL
+- en: By default, the `calc_loss_loader` function iterates over all batches in a given
+    data loader, accumulates the loss in the `total_loss` variable, and then computes
+    and averages the loss over the total number of batches. Alternatively, we can
+    specify a smaller number of batches via `num_batches` to speed up the evaluation
+    during model training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s now see this `calc_loss_loader` function in action, applying it to the
+    training and validation set loaders:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 If you have a machine with a CUDA-supported GPU, the LLM will train on the
+    GPU without making any changes to the code.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Disables gradient tracking for efficiency because we are not training yet'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Via the “device” setting, we ensure the data is loaded onto the same device
+    as the LLM model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting loss values are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: The loss values are relatively high because the model has not yet been trained.
+    For comparison, the loss approaches 0 if the model learns to generate the next
+    tokens as they appear in the training and validation sets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we have a way to measure the quality of the generated text, we will
+    train the LLM to reduce this loss so that it becomes better at generating text,
+    as illustrated in figure 5.10.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-10.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.10 We have recapped the text generation process (step 1) and implemented
+    basic model evaluation techniques (step 2) to compute the training and validation
+    set losses (step 3). Next, we will go to the training functions and pretrain the
+    LLM (step 4).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Next, we will focus on pretraining the LLM. After model training, we will implement
+    alternative text generation strategies and save and load pretrained model weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.2 Training an LLM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: It is finally time to implement the code for pretraining the LLM, our `GPTModel`.
+    For this, we focus on a straightforward training loop to keep the code concise
+    and readable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  Interested readers can learn about more advanced techniques, including
+    *learning rate warmup*, *cosine annealing*, and *gradient clipping*, in appendix
+    D.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-11.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.11 A typical training loop for training deep neural networks in PyTorch
+    consists of numerous steps, iterating over the batches in the training set for
+    several epochs. In each loop, we calculate the loss for each training set batch
+    to determine loss gradients, which we use to update the model weights so that
+    the training set loss is minimized.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The flowchart in figure 5.11 depicts a typical PyTorch neural network training
+    workflow, which we use for training an LLM. It outlines eight steps, starting
+    with iterating over each epoch, processing batches, resetting gradients, calculating
+    the loss and new gradients, and updating weights and concluding with monitoring
+    steps like printing losses and generating text samples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  If you are relatively new to training deep neural networks with PyTorch
+    and any of these steps are unfamiliar, consider reading sections A.5 to A.8 in
+    appendix A.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can implement this training flow via the `train_model_simple` function in
+    code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 5.3 The main function for pretraining LLMs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Initializes lists to track losses and tokens seen'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Starts the main training loop'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Resets loss gradients from the previous batch iteration'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Calculates loss gradients'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Updates model weights using loss gradients'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Optional evaluation step'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Prints a sample text after each epoch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Note that the `train_model_simple` function we just created uses two functions
+    we have not defined yet: `evaluate_model` and `generate_and_print_sample`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `evaluate_model` function corresponds to step 7 in figure 5.11\. It prints
+    the training and validation set losses after each model update so we can evaluate
+    whether the training improves the model. More specifically, the `evaluate_model`
+    function calculates the loss over the training and validation set while ensuring
+    the model is in evaluation mode with gradient tracking and dropout disabled when
+    calculating the loss over the training and validation sets:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Dropout is disabled during evaluation for stable, reproducible results.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Disables gradient tracking, which is not required during evaluation, to
+    reduce the computational overhead'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Similar to `evaluate_model`, the `generate_and_print_sample` function is a
+    convenience function that we use to track whether the model improves during the
+    training. In particular, the `generate_and_print_sample` function takes a text
+    snippet (`start_context`) as input, converts it into token IDs, and feeds it to
+    the LLM to generate a text sample using the `generate_text_simple` function we
+    used earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Compact print format'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While the `evaluate_model` function gives us a numeric estimate of the model’s
+    training progress, this `generate_and_print_sample` text function provides a concrete
+    text example generated by the model to judge its capabilities during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: AdamW
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '*Adam* optimizers are a popular choice for training deep neural networks. However,
+    in our training loop, we opt for the *AdamW* optimizer. AdamW is a variant of
+    Adam that improves the weight decay approach, which aims to minimize model complexity
+    and prevent overfitting by penalizing larger weights. This adjustment allows AdamW
+    to achieve more effective regularization and better generalization; thus, AdamW
+    is frequently used in the training of LLMs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s see this all in action by training a `GPTModel` instance for 10 epochs
+    using an `AdamW` optimizer and the `train_model_simple` function we defined earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The .parameters() method returns all trainable weight parameters of the
+    model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Executing the `train_model_simple` function starts the training process, which
+    takes about 5 minutes to complete on a MacBook Air or a similar laptop. The output
+    printed during this execution is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Intermediate results removed to save space'
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we can see, the training loss improves drastically, starting with a value
+    of 9.781 and converging to 0.391\. The language skills of the model have improved
+    quite a lot. In the beginning, the model is only able to append commas to the
+    start context (`Every` `effort` `moves` `you,,,,,,,,,,,,`) or repeat the word
+    `and`. At the end of the training, it can generate grammatically correct text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similar to the training set loss, we can see that the validation loss starts
+    high (9.933) and decreases during the training. However, it never becomes as small
+    as the training set loss and remains at 6.452 after the 10th epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before discussing the validation loss in more detail, let’s create a simple
+    plot that shows the training and validation set losses side by side:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Creates a second x-axis that shares the same y-axis'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Invisible plot for aligning ticks'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting training and validation loss plot is shown in figure 5.12\. As
+    we can see, both the training and validation losses start to improve for the first
+    epoch. However, the losses start to diverge past the second epoch. This divergence
+    and the fact that the validation loss is much larger than the training loss indicate
+    that the model is overfitting to the training data. We can confirm that the model
+    memorizes the training data verbatim by searching for the generated text snippets,
+    such as `quite` `insensible` `to` `the` `irony` in the “The Verdict” text file.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-12.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.12 At the beginning of the training, both the training and validation
+    set losses sharply decrease, which is a sign that the model is learning. However,
+    the training set loss continues to decrease past the second epoch, whereas the
+    validation loss stagnates. This is a sign that the model is still learning, but
+    it’s overfitting to the training set past epoch 2.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: This memorization is expected since we are working with a very, very small training
+    dataset and training the model for multiple epochs. Usually, it’s common to train
+    a model on a much larger dataset for only one epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  As mentioned earlier, interested readers can try to train the model on
+    60,000 public domain books from Project Gutenberg, where this overfitting does
+    not occur; see appendix B for details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-13.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.13 Our model can generate coherent text after implementing the training
+    function. However, it often memorizes passages from the training set verbatim.
+    Next, we will discuss strategies to generate more diverse output texts.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: As illustrated in figure 5.13, we have completed four of our objectives for
+    this chapter. Next, we will cover text generation strategies for LLMs to reduce
+    training data memorization and increase the originality of the LLM-generated text
+    before we cover weight loading and saving and loading pretrained weights from
+    OpenAI’s GPT model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.3 Decoding strategies to control randomness
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s look at text generation strategies (also called decoding strategies) to
+    generate more original text. First, we will briefly revisit the `generate_text_simple`
+    function that we used inside `generate_and_print_sample` earlier. Then we will
+    cover two techniques, *temperature scaling* and *top-k sampling*, to improve this
+    function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We begin by transferring the model back from the GPU to the CPU since inference
+    with a relatively small model does not require a GPU. Also, after training, we
+    put the model into evaluation mode to turn off random components such as dropout:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, we plug the `GPTModel` instance (`model`) into the `generate_text_simple`
+    function, which uses the LLM to generate one token at a time:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: The generated text is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: As explained earlier, the generated token is selected at each generation step
+    corresponding to the largest probability score among all tokens in the vocabulary.
+    This means that the LLM will always generate the same outputs even if we run the
+    preceding `generate_text_simple` function multiple times on the same start context
+    (`Every` `effort` `moves` `you`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.3.1 Temperature scaling
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Let’s now look at temperature scaling, a technique that adds a probabilistic
+    selection process to the next-token generation task. Previously, inside the `generate_text_simple`
+    function, we always sampled the token with the highest probability as the next
+    token using `torch.argmax`, also known as *greedy decoding*. To generate text
+    with more variety, we can replace `argmax` with a function that samples from a
+    probability distribution (here, the probability scores the LLM generates for each
+    vocabulary entry at each token generation step).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To illustrate the probabilistic sampling with a concrete example, let’s briefly
+    discuss the next-token generation process using a very small vocabulary for illustration
+    purposes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Next, assume the LLM is given the start context `"every` `effort` `moves` `you"`
+    and generates the following next-token logits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As discussed in chapter 4, inside `generate_text_simple`, we convert the logits
+    into probabilities via the `softmax` function and obtain the token ID corresponding
+    to the generated token via the `argmax` function, which we can then map back into
+    text via the inverse vocabulary:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE46]'
+  prefs: []
+  type: TYPE_PRE
+- en: Since the largest logit value and, correspondingly, the largest softmax probability
+    score are in the fourth position (index position 3 since Python uses 0 indexing),
+    the generated word is `"forward"`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To implement a probabilistic sampling process, we can now replace `argmax`
+    with the `multinomial` function in PyTorch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE47]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The printed output is `"forward"` just like before. What happened? The `multinomial`
+    function samples the next token proportional to its probability score. In other
+    words, `"forward"` is still the most likely token and will be selected by `multinomial`
+    most of the time but not all the time. To illustrate this, let’s implement a function
+    that repeats this sampling 1,000 times:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE48]'
+  prefs: []
+  type: TYPE_PRE
+- en: The sampling output is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE49]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we can see, the word `forward` is sampled most of the time (582 out of 1,000
+    times), but other tokens such as `closer`, `inches`, and `toward` will also be
+    sampled some of the time. This means that if we replaced the `argmax` function
+    with the `multinomial` function inside the `generate_and_print_sample` function,
+    the LLM would sometimes generate texts such as `every` `effort` `moves` `you`
+    `toward`, `every` `effort` `moves` `you` `inches`, and `every` `effort` `moves`
+    `you` `closer` instead of `every` `effort` `moves` `you` `forward`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can further control the distribution and selection process via a concept
+    called *temperature scaling.* Temperature scaling is just a fancy description
+    for dividing the logits by a number greater than 0:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE50]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Temperatures greater than 1 result in more uniformly distributed token probabilities,
+    and temperatures smaller than 1 will result in more confident (sharper or more
+    peaky) distributions. Let’s illustrate this by plotting the original probabilities
+    alongside probabilities scaled with different temperature values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE51]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Original, lower, and higher confidence'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting plot is shown in figure 5.14.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-14.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.14 A temperature of 1 represents the unscaled probability scores for
+    each token in the vocabulary. Decreasing the temperature to 0.1 sharpens the distribution,
+    so the most likely token (here, “forward”) will have an even higher probability
+    score. Likewise, increasing the temperature to 5 makes the distribution more uniform.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: A temperature of 1 divides the logits by 1 before passing them to the `softmax`
+    function to compute the probability scores. In other words, using a temperature
+    of 1 is the same as not using any temperature scaling. In this case, the tokens
+    are selected with a probability equal to the original softmax probability scores
+    via the `multinomial` sampling function in PyTorch. For example, for the temperature
+    setting 1, the token corresponding to “forward” would be selected about 60% of
+    the time, as we can see in figure 5.14.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Also, as we can see in figure 5.14, applying very small temperatures, such as
+    0.1, will result in sharper distributions such that the behavior of the `multinomial`
+    function selects the most likely token (here, `"forward"`) almost 100% of the
+    time, approaching the behavior of the `argmax` function. Likewise, a temperature
+    of 5 results in a more uniform distribution where other tokens are selected more
+    often. This can add more variety to the generated texts but also more often results
+    in nonsensical text. For example, using the temperature of 5 results in texts
+    such as `every` `effort` `moves` `you` `pizza` about 4% of the time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 5.1
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Use the `print_sampled_tokens` function to print the sampling frequencies of
+    the softmax probabilities scaled with the temperatures shown in figure 5.14\.
+    How often is the word `pizza` sampled in each case? Can you think of a faster
+    and more accurate way to determine how often the word `pizza` is sampled?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.3.2 Top-k sampling
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We’ve now implemented a probabilistic sampling approach coupled with temperature
+    scaling to increase the diversity of the outputs. We saw that higher temperature
+    values result in more uniformly distributed next-token probabilities, which result
+    in more diverse outputs as it reduces the likelihood of the model repeatedly selecting
+    the most probable token. This method allows for the exploring of less likely but
+    potentially more interesting and creative paths in the generation process. However,
+    one downside of this approach is that it sometimes leads to grammatically incorrect
+    or completely nonsensical outputs such as `every` `effort` `moves` `you` `pizza`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Top-k sampling*, when combined with probabilistic sampling and temperature
+    scaling, can improve the text generation results. In top-k sampling, we can restrict
+    the sampled tokens to the top-k most likely tokens and exclude all other tokens
+    from the selection process by masking their probability scores, as illustrated
+    in figure 5.15.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-15.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.15 Using top-k sampling with k = 3, we focus on the three tokens associated
+    with the highest logits and mask out all other tokens with negative infinity (`–inf`)
+    before applying the `softmax` function. This results in a probability distribution
+    with a probability value 0 assigned to all non-top-k tokens. (The numbers in this
+    figure are truncated to two digits after the decimal point to reduce visual clutter.
+    The values in the “Softmax” row should add up to 1.0.)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The top-k approach replaces all nonselected logits with negative infinity value
+    (`-inf`), such that when computing the softmax values, the probability scores
+    of the non-top-k tokens are 0, and the remaining probabilities sum up to 1\. (Careful
+    readers may remember this masking trick from the causal attention module we implemented
+    in chapter 3, section 3.5.1.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In code, we can implement the top-k procedure in figure 5.15 as follows, starting
+    with the selection of the tokens with the largest logit values:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE52]'
+  prefs: []
+  type: TYPE_PRE
+- en: The logits values and token IDs of the top three tokens, in descending order,
+    are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE53]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Subsequently, we apply PyTorch’s `where` function to set the logit values of
+    tokens that are below the lowest logit value within our top-three selection to
+    negative infinity (`-inf`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE54]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Identifies logits less than the minimum in the top 3'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Assigns –inf to these lower logits'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Retains the original logits for all other tokens'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting logits for the next token in the nine-token vocabulary are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE55]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Lastly, let’s apply the `softmax` function to turn these into next-token probabilities:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE56]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As we can see, the result of this top-three approach are three non-zero probability
+    scores:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE57]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can now apply the temperature scaling and multinomial function for probabilistic
+    sampling to select the next token among these three non-zero probability scores
+    to generate the next token. We do this next by modifying the text generation function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.3.3 Modifying the text generation function
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Now, let’s combine temperature sampling and top-k sampling to modify the `generate_
+    text_simple` function we used to generate text via the LLM earlier, creating a
+    new `generate` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 5.4 A modified text generation function with more diversity
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE58]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The for loop is the same as before: gets logits and only focuses on the
+    last time step.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Filters logits with top_k sampling'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Applies temperature scaling'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Carries out greedy next-token selection as before when temperature scaling
+    is disabled'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Stops generating early if end-of-sequence token is encountered'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s now see this new `generate` function in action:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE59]'
+  prefs: []
+  type: TYPE_PRE
+- en: The generated text is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE60]'
+  prefs: []
+  type: TYPE_PRE
+- en: As we can see, the generated text is very different from the one we previously
+    generated via the `generate_simple` function in section 5.3 (`"Every` `effort`
+    `moves` `you` `know,"` `was` `one` `of` `the` `axioms` `he` `laid...!` ), which
+    was a memorized passage from the training set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 5.2
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Play around with different temperatures and top-k settings. Based on your observations,
+    can you think of applications where lower temperature and top-k settings are desired?
+    Likewise, can you think of applications where higher temperature and top-k settings
+    are preferred? (It’s recommended to also revisit this exercise at the end of the
+    chapter after loading the pretrained weights from OpenAI.)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 5.3
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: What are the different combinations of settings for the `generate` function
+    to force deterministic behavior, that is, disabling the random sampling such that
+    it always produces the same outputs similar to the `generate_simple` function?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.4 Loading and saving model weights in PyTorch
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Thus far, we have discussed how to numerically evaluate the training progress
+    and pretrain an LLM from scratch. Even though both the LLM and dataset were relatively
+    small, this exercise showed that pretraining LLMs is computationally expensive.
+    Thus, it is important to be able to save the LLM so that we don’t have to rerun
+    the training every time we want to use it in a new session.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, let’s discuss how to save and load a pretrained model, as highlighted in
+    figure 5.16\. Later, we will load a more capable pretrained GPT model from OpenAI
+    into our `GPTModel` instance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-16.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.16 After training and inspecting the model, it is often helpful to
+    save the model so that we can use or continue training it later (step 6).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'Fortunately, saving a PyTorch model is relatively straightforward. The recommended
+    way is to save a model’s `state_dict`, a dictionary mapping each layer to its
+    parameters, using the `torch.save` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE61]'
+  prefs: []
+  type: TYPE_PRE
+- en: '`"model.pth"` is the filename where the `state_dict` is saved. The `.pth` extension
+    is a convention for PyTorch files, though we could technically use any file extension.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Then, after saving the model weights via the `state_dict`, we can load the
+    model weights into a new `GPTModel` model instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE62]'
+  prefs: []
+  type: TYPE_PRE
+- en: As discussed in chapter 4, dropout helps prevent the model from overfitting
+    to the training data by randomly “dropping out” of a layer’s neurons during training.
+    However, during inference, we don’t want to randomly drop out any of the information
+    the network has learned. Using `model.eval()` switches the model to evaluation
+    mode for inference, disabling the dropout layers of the `model`. If we plan to
+    continue pretraining a model later—for example, using the `train_model_simple`
+    function we defined earlier in this chapter—saving the optimizer state is also
+    recommended.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Adaptive optimizers such as AdamW store additional parameters for each model
+    weight. AdamW uses historical data to adjust learning rates for each model parameter
+    dynamically. Without it, the optimizer resets, and the model may learn suboptimally
+    or even fail to converge properly, which means it will lose the ability to generate
+    coherent text. Using `torch.save`, we can save both the model and optimizer `state_dict`
+    contents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE63]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Then we can restore the model and optimizer states by first loading the saved
+    data via `torch.load` and then using the `load_state_dict` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE64]'
+  prefs: []
+  type: TYPE_PRE
+- en: Exercise 5.4
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: After saving the weights, load the model and optimizer in a new Python session
+    or Jupyter notebook file and continue pretraining it for one more epoch using
+    the `train_model_simple` function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 5.5 Loading pretrained weights from OpenAI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Previously, we trained a small GPT-2 model using a limited dataset comprising
+    a short-story book. This approach allowed us to focus on the fundamentals without
+    the need for extensive time and computational resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, OpenAI openly shared the weights of their GPT-2 models, thus eliminating
+    the need to invest tens to hundreds of thousands of dollars in retraining the
+    model on a large corpus ourselves. So, let’s load these weights into our `GPTModel`
+    class and use the model for text generation. Here, *weights* refer to the weight
+    parameters stored in the `.weight` attributes of PyTorch’s `Linear` and `Embedding`
+    layers, for example. We accessed them earlier via `model.parameters()` when training
+    the model. In chapter 6, will reuse these pretrained weights to fine-tune the
+    model for a text classification task and follow instructions similar to ChatGPT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that OpenAI originally saved the GPT-2 weights via TensorFlow, which we
+    have to install to load the weights in Python. The following code will use a progress
+    bar tool called `tqdm` to track the download process, which we also have to install.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can install these libraries by executing the following command in your
+    terminal:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE65]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The download code is relatively long, mostly boilerplate, and not very interesting.
+    Hence, instead of devoting precious space to discussing Python code for fetching
+    files from the internet, we download the `gpt_download.py` Python module directly
+    from this chapter’s online repository:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE66]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, after downloading this file to the local directory of your Python session,
+    you should briefly inspect the contents of this file to ensure that it was saved
+    correctly and contains valid Python code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can now import the `download_and_load_gpt2` function from the `gpt_download
+    .py` file as follows, which will load the GPT-2 architecture settings (`settings`)
+    and weight parameters (`params`) into our Python session:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE67]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Executing this code downloads the following seven files associated with the
+    `124M` parameter GPT-2 model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE68]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note  If the download code does not work for you, it could be due to intermittent
+    internet connection, server problems, or changes in how OpenAI shares the weights
+    of the open-source GPT-2 model. In this case, please visit this chapter’s online
+    code repository at [https://github.com/rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch)
+    for alternative and updated instructions, and reach out via the Manning Forum
+    for further questions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Assuming the execution of the previous code has completed, let’s inspect the
+    contents of `settings` and `params`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE69]'
+  prefs: []
+  type: TYPE_PRE
+- en: The contents are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE70]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Both `settings` and `params` are Python dictionaries. The `settings` dictionary
+    stores the LLM architecture settings similarly to our manually defined `GPT_CONFIG_124M`
+    settings. The `params` dictionary contains the actual weight tensors. Note that
+    we only printed the dictionary keys because printing the weight contents would
+    take up too much screen space; however, we can inspect these weight tensors by
+    printing the whole dictionary via `print(params)` or by selecting individual tensors
+    via the respective dictionary keys, for example, the embedding layer weights:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE71]'
+  prefs: []
+  type: TYPE_PRE
+- en: The weights of the token embedding layer are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE72]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We downloaded and loaded the weights of the smallest GPT-2 model via the `download_
+    and_load_gpt2(model_size="124M",` `...)` setting. OpenAI also shares the weights
+    of larger models: `355M`, `774M`, and `1558M`. The overall architecture of these
+    differently sized GPT models is the same, as illustrated in figure 5.17, except
+    that different architectural elements are repeated different numbers of times
+    and the embedding size differs. The remaining code in this chapter is also compatible
+    with these larger models.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/5-17.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5.17 GPT-2 LLMs come in several different model sizes, ranging from 124
+    million to 1,558 million parameters. The core architecture is the same, with the
+    only difference being the embedding sizes and the number of times individual components
+    like the attention heads and transformer blocks are repeated.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'After loading the GPT-2 model weights into Python, we still need to transfer
+    them from the `settings` and `params` dictionaries into our `GPTModel` instance.
+    First, we create a dictionary that lists the differences between the different
+    GPT model sizes in figure 5.17:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE73]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Suppose we are interested in loading the smallest model, `"gpt2-small` `(124M)"`.
+    We can use the corresponding settings from the `model_configs` table to update
+    our full-length `GPT_CONFIG_124M` we defined and used earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE74]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Careful readers may remember that we used a 256-token length earlier, but the
+    original GPT-2 models from OpenAI were trained with a 1,024-token length, so we
+    have to update the `NEW_CONFIG` accordingly:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE75]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Also, OpenAI used bias vectors in the multi-head attention module’s linear
+    layers to implement the query, key, and value matrix computations. Bias vectors
+    are not commonly used in LLMs anymore as they don’t improve the modeling performance
+    and are thus unnecessary. However, since we are working with pretrained weights,
+    we need to match the settings for consistency and enable these bias vectors:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE76]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'We can now use the updated `NEW_CONFIG` dictionary to initialize a new `GPTModel`
+    instance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE77]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'By default, the `GPTModel` instance is initialized with random weights for
+    pretraining. The last step to using OpenAI’s model weights is to override these
+    random weights with the weights we loaded into the `params` dictionary. For this,
+    we will first define a small `assign` utility function that checks whether two
+    tensors or arrays (`left` and `right`) have the same dimensions or shape and returns
+    the right tensor as trainable PyTorch parameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE78]'
+  prefs: []
+  type: TYPE_PRE
+- en: Next, we define a `load_weights_into_gpt` function that loads the weights from
+    the `params` dictionary into a `GPTModel` instance `gpt.`
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 5.5 Loading OpenAI weights into our GPT model code
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE79]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Sets the model’s positional and token embedding weights to those specified
+    in params.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Iterates over each transformer block in the model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 The np.split function is used to divide the attention and bias weights into
+    three equal parts for the query, key, and value components.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 The original GPT-2 model by OpenAI reused the token embedding weights in
+    the output layer to reduce the total number of parameters, which is a concept
+    known as weight tying.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the `load_weights_into_gpt` function, we carefully match the weights from
+    OpenAI’s implementation with our `GPTModel` implementation. To pick a specific
+    example, OpenAI stored the weight tensor for the output projection layer for the
+    first transformer block as `params["blocks"][0]["attn"]["c_proj"]["w"]`. In our
+    implementation, this weight tensor corresponds to `gpt.trf_blocks[b].att.out_proj
+    .weight`, where `gpt` is a `GPTModel` instance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Developing the `load_weights_into_gpt` function took a lot of guesswork since
+    OpenAI used a slightly different naming convention from ours. However, the `assign`
+    function would alert us if we try to match two tensors with different dimensions.
+    Also, if we made a mistake in this function, we would notice this, as the resulting
+    GPT model would be unable to produce coherent text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s now try the `load_weights_into_gpt` out in practice and load the OpenAI
+    model weights into our `GPTModel` instance `gpt`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE80]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If the model is loaded correctly, we can now use it to generate new text using
+    our previous `generate` function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE81]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The resulting text is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE82]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can be confident that we loaded the model weights correctly because the model
+    can produce coherent text. A tiny mistake in this process would cause the model
+    to fail. In the following chapters, we will work further with this pretrained
+    model and fine-tune it to classify text and follow instructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 5.5
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Calculate the training and validation set losses of the `GPTModel` with the
+    pretrained weights from OpenAI on the “The Verdict” dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 5.6
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Experiment with GPT-2 models of different sizes—for example, the largest 1,558
+    million parameter model—and compare the generated text to the 124 million model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: When LLMs generate text, they output one token at a time.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: By default, the next token is generated by converting the model outputs into
+    probability scores and selecting the token from the vocabulary that corresponds
+    to the highest probability score, which is known as “greedy decoding.”
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using probabilistic sampling and temperature scaling, we can influence the diversity
+    and coherence of the generated text.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Training and validation set losses can be used to gauge the quality of text
+    generated by LLM during training.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pretraining an LLM involves changing its weights to minimize the training loss.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The training loop for LLMs itself is a standard procedure in deep learning,
+    using a conventional cross entropy loss and AdamW optimizer.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pretraining an LLM on a large text corpus is time- and resource-intensive, so
+    we can load openly available weights as an alternative to pretraining the model
+    on a large dataset ourselves.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

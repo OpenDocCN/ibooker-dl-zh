@@ -1,0 +1,1533 @@
+- en: 3 Ranking and content-based relevance
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Executing queries and returning search results
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ranking search results based on how relevant they are to an incoming query
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Keyword match and filtering versus vector-based ranking
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Controlling and specifying custom ranking functions with function queries
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Catering ranking functions to a specific domain
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Search engines fundamentally do three things: ingest content (*indexing*),
+    return content matching incoming queries (*matching*), and sort the returned content
+    based on some measure of how well it matches the query (*ranking*). Additional
+    layers can be added, allowing users to provide better queries (autosuggest, chatbot
+    dialogs, etc.) and to extract better answers from the results or summarize the
+    results by using large language models (see chapters 14–15), but the core functions
+    of the search engine are matching and ranking on indexed data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Relevance* is the notion of how well the returned content matches the query.
+    Normally, the content being matched is documents, and the returned and ranked
+    content is the matched documents along with corresponding metadata. In most search
+    engines, the default relevance sorting is based upon a score indicating how well
+    each keyword in a query matches the same keyword in each matched document. Alternatively,
+    queries can be mapped into numerical vector representations, with the score then
+    representing how similar the query vector is to each matched document. The best
+    matches yield the highest relevance score, and they are returned at the top of
+    the search results. The relevance calculation is highly configurable and can be
+    adjusted on a per-query basis, allowing sophisticated ranking behavior.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we’ll provide an overview of how relevance is calculated, how
+    the relevance function can be easily controlled and adjusted through function
+    queries, and how we can implement popular domain-specific and user-specific relevance
+    ranking features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.1 Scoring query and document vectors with cosine similarity
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In section 2.3, we demonstrated the idea of measuring the similarity of two
+    vectors by calculating the cosine between them. We created vectors (lists of numbers,
+    where each number represents the strength of some feature) that represented different
+    food items, and we then calculated the cosine (the size of the angle between the
+    vectors) to determine their similarity. We’ll expand upon that technique in this
+    section, discussing how text queries and documents can map into vectors for ranking
+    purposes. We’ll then explore some popular text-based feature-weighting techniques
+    and how they can be integrated to create an improved relevance-ranking formula.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the code examples
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: All the code listings in the book are available in Jupyter notebooks running
+    in preconfigured Docker containers. This enables you to run interactive versions
+    of the code with a single command (`docker compose up`) without needing to spend
+    time on complicated system configuration and dependency management. The code examples
+    can also run with multiple search engines and vector databases. See appendix A
+    for instructions on how to configure and launch the Jupyter notebooks and follow
+    along in your web browser.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For brevity, the listings in this book may leave out certain lines of code,
+    such as imports or ancillary code, but the notebooks contain all implementation
+    details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we’ll dive into our first code listings for the book. It will
+    be helpful to start up the Docker containers needed to run the accompanying Jupyter
+    notebooks so you can follow along with the interactive code examples. Instructions
+    for doing this are provided in appendix A.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.1.1 Mapping text to vectors
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In a typical search application, we start with a collection of documents, and
+    we then try to rank documents based on how well they match some user’s query.
+    In this section, we’ll walk through the process of mapping the text of queries
+    and documents into vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the last chapter, we used the example of a search for food and beverage items,
+    like `apple juice`, so let’s reuse that example here. Let’s assume we have two
+    different documents we would like to sort based on how well they match this query.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Query:* `apple` `juice`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we mapped both documents (containing a combined 48 words) to vectors, they
+    would map to a 48-word vector space with the following dimensions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: If you recall in section 2.3, we proposed thinking of a query for the phrase
+    “apple juice” as a vector containing a feature for every word in any of our documents,
+    with a value of `1` for the terms “apple” and “juice”, and a value of `0` for
+    all other terms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the term “apple” is in the 3rd position, and “juice” is in the 28th position
+    of our 48-word vector space, a query vector for the phrase “apple juice” would
+    look as shown in figure 3.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH03_F01_Grainger.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.1 Query vector. The query for `apple` `juice` is mapped to a vector
+    containing one dimension for every known term, with a value of `1` for the terms
+    “apple” and “juice” and a value of `0` for all other terms.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Even though the query vector only contains a nonzero value for two dimensions
+    (representing the positions of “apple” and “juice”), it still contains values
+    of `0` for all other possible dimensions. Representing a vector like this, including
+    every possible value, is known as a *dense vector representation*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each of the documents also maps to the same vector space based upon each of
+    the terms it contains:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: With these dense vector representations of our query and documents, we can now
+    use linear algebra to measure the similarity between our query vector and each
+    of the document vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.1.2 Calculating similarity between dense vector representations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: To rank our documents, we just need to follow the same process we used in chapter
+    2 to calculate the cosine between each document and the query. This cosine value
+    will then become the relevance score by which we’ll be able to sort each document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following listing shows how we would represent the query and document vectors
+    in code, and how we would calculate the cosine similarity between the query and
+    each document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.1 Calculating cosine similarity between vectors
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: Interesting . . . both documents received the same relevance score, even though
+    the documents contain lengthy vectors with very different content. It might not
+    be immediately obvious what’s going on, so let’s simplify the calculation by focusing
+    only on the features that matter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.1.3 Calculating similarity between sparse vector representations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The key to understanding the calculation in the last section is realizing that
+    the only relevant features are the ones shared between the query and the document.
+    All other features (words appearing in documents that don’t match the query) have
+    zero effect on whether one document is ranked higher than another. As a result,
+    we can remove all the other insignificant terms from our vector to simplify the
+    example, converting from a dense vector representation to what is known as a *sparse
+    vector representation*, as shown in figure 3.2\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH03_F02_Grainger.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.2 Sparse vector representations only contain the “present” features,
+    unlike dense vector representations, which also contain the 0-valued entries for
+    every feature.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In most search engine scoring operations, we tend to deal with sparse vector
+    representations because they are more efficient to work with when scoring based
+    on the small number of features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition, we can further simplify our calculations by creating vectors that
+    only include “meaningful entries”—the terms that are present in the query—as shown
+    in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.2 Cosine similarity of sparse vector representations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Notice that doc1 and doc2 still yield equal relevance scores, but now the score
+    for each is `1.0`. If you remember, a `1.0` score from a cosine calculation means
+    the vectors are perfect matches, which is sensible considering that both vectors
+    are identical (`[1,` `1]`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In fact, you’ll notice several very interesting things:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This simplified sparse vector representation calculation still shows both doc1
+    and doc2 returning equivalent relevance scores, since they both match all the
+    words in the query.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Even though the absolute score between the dense vector representation similarity
+    (`0.2828`) and the sparse vector representation similarity (`1.0`) are different,
+    the scores are still the same relative to each other within each vector type.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The feature weights for the two query terms (“apple”, “juice”) are the same
+    between the query and each of the documents, resulting in a cosine score of `1.0`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Vectors vs. vector representations
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We’ve been careful to refer to “dense vector representations” and “sparse vector
+    representations” instead of “dense vectors” and “sparse vectors”. This is because
+    there is a conceptual distinction between the idea of a vector and its representation,
+    and this distinction often causes confusion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The sparsity of a *vector* refers to the proportion of the vector’s features
+    that have meaningful values. Specifically, a dense vector is any vector whose
+    features have mostly nonzero values, whereas a sparse vector is any vector whose
+    features have mostly zeros, regardless of how they are stored or represented.
+    Vector *representations*, on the other hand, deal with the data structures used
+    to work with the vectors. For sparse vectors, it can be wasteful to allocate memory
+    and storage space for all the zeros, so we will often use a sparse data structure
+    (such as an inverted index) to only store the nonzero values. Here is an example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*dense vector*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'feature_1: **1.1**, feature_2: **2.3**, feature_3: **7.1**, feature_4: **5.2**,
+    feature_5: **8.1**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*dense vector representation*: `[`**1.1**`,`**2.3**`,`**7.1**`,`**5.2**`,`**8.1**`]`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*sparse vector representation*: N/A (the vector is not sparse, so it can’t
+    be represented sparsely)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*sparse vector*: feature_1: **1.1**, feature_2: **0**, feature_3: **0**, feature_4:
+    **5.2**, feature_5: **0**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*dense vector representation*: `[`**1.1**`, 0.0, 0.0,`**5.2**`, 0.0 ]`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*sparse vector representation*: `{ 1:`**1.1**`, 4:`**5.2**`}`, or just `[`**1.1**`,`**5.2**`]`
+    if feature positions aren’t needed'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because a sparse vector contains predominantly zeros, and its corresponding
+    sparse vector representation contains nearly the opposite (only the nonzero values),
+    it is unfortunately common for people to confuse these concepts and incorrectly
+    refer to dense vector representations (of sparse vectors) as “dense vectors”,
+    or even refer to any vector with many dimensions as a “dense vector” and with
+    few dimensions as a “sparse vector”. You may find this confusion in other literature,
+    so it’s important to be aware of the distinction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since our query and document vectors are all sparse vectors (most values are
+    zero, since the number of features is the number of keywords in the search index),
+    it makes sense to use a sparse vector representation when doing keyword search.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Search engines adjust for these problems by not just considering each feature
+    in the vector as a `1` (exists) or a `0` (does not exist), but instead by providing
+    a score for each feature based upon how *well* the feature matches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.1.4 Term frequency: Measuring how well documents match a term'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The problem we encountered in the last section is that the features in our term
+    vectors only signify *if* the word “apple” or “juice” exists in a document, not
+    how well each document represents either of the terms. A side effect of representing
+    each term from the query with a value of `1` if it exists is that both doc1 and
+    doc2 will always have the same cosine similarity score for the query, even though,
+    qualitatively, doc2 is a much better match, since it talks about apple juice much
+    more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of using a value of `1` for each existing term, we can emulate “how
+    well” a document matches by using the *term frequency* (TF), which is a measure
+    of the number of times a term occurs within each document. The idea here is that
+    the more frequently a term occurs within a specific document, the greater the
+    likelihood that the document is more related to the query.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following listing shows vectors with a count of the number of times each
+    term occurs within the document or query as the feature weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.3 Cosine similarity of raw TF vectors
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: Contrary to what you might expect, doc1 is considered a better cosine similarity
+    match than doc2\. This is because the terms “apple” and “juice” both occur “the
+    same proportion of times” (one occurrence of each term for every occurrence of
+    the other term) in both the query and in doc1, making them the most textually
+    similar. In other words, even though doc2 is intuitively more about the query,
+    since it contains the terms in the query significantly more, cosine similarity
+    returns doc1, since it’s an exact match for the query, unlike doc2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Since our goal is for documents like doc2 with higher TF to score higher, we
+    can accomplish this by switching from cosine similarity to another scoring function,
+    such as *dot product* or *Euclidean distance*, that increases as feature weights
+    continue to increase. Let’s use the dot product (`a` `.` `b`), which is equal
+    to the cosine similarity multiplied by the length of the query vector times the
+    length of the document vector: `a` `.` `b` `=` `|a|` `×` `|b|` `×` `cos(θ)`. The
+    dot product will result in documents that contain more matching terms scoring
+    higher, as opposed to cosine similarity, which scores documents higher when they
+    contain a more similar proportion of matching terms between the query and documents.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Phrase matching and other relevance tricks
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: By now, you may be wondering why we keep treating “apple” and “juice” as independent
+    terms and why we don’t just treat “apple juice” as a phrase to boost documents
+    higher that match the exact phrase. Phrase matching is one of many easy relevance-tuning
+    tricks we’ll discuss later in the chapter. For now, we’ll keep our query-processing
+    simple and just deal with individual keywords to stay focused on our main goal—explaining
+    vector-based relevance scoring and text-based keyword-scoring features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next listing, we replace cosine similarity with a dot product calculation
+    to consider the magnitude of the document vectors (which increases with more matches
+    for each query term) in the relevance calculation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.4 Dot product of TF vectors
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, doc2 now yields a higher relevance score for the query than
+    doc1, an improvement that aligns better with our intuition. Note that the relevance
+    scores are no longer bounded between `0` and `1`, as they were with cosine similarity.
+    This is because the dot product considers the magnitude of the document vectors,
+    which can increase unbounded with additional matching keyword occurrences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While using the TF as the feature weight in our vectors certainly helps, textual
+    queries exhibit additional challenges that need to be considered. Thus far, our
+    documents have all contained every term from our queries, which does not match
+    with most real-world scenarios. The following example will better demonstrate
+    some of the limitations still present when using only term-frequency-based weighting
+    for our text-based sparse vector similarity scoring. Let’s start with the following
+    three text documents:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Let’s now map these documents into their corresponding (sparse) vector representations
+    and calculate a similarity score. The following listing ranks text similarity
+    based on raw TFs (term counts).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.5 Ranking text similarity based on term counts
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'While we receive different relevance scores now for each document, based on
+    the number of times each term matches, the ordering of the results doesn’t necessarily
+    match our expectations about which documents are the best matches. Intuitively,
+    we would instead expect the following ordering:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*doc2:* because it is about the book *The Cat in the Hat*'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*doc3:* because it matches all the words “the”, “cat”, “in”, and “hat”'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*doc1:* because it only matches the words “the” and “in”, even though it contains
+    them many times'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The problem here is that since a term is considered just as important every
+    time it appears, the relevance score is indiscriminately increasing with every
+    additional occurrence of that term. In this case, doc1 is getting the highest
+    score, because it contains 14 total term matches (the first “the” five times,
+    “in” four times, and the second “the” five times), yielding more total term matches
+    than any other document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It doesn’t really make sense that a document containing these words 14 times
+    should be considered 14 times as relevant as a document with a single match, though.
+    Instead, a document should be considered more relevant if it matches many different
+    terms from a query versus the same terms over and over. Often, real-world TF calculations
+    dampen the effect of each additional occurrence of a word by calculating TF as
+    a log or square root of the number of occurrences of each term (as we do in figure
+    3.3). Additionally, TF is often also normalized relative to document length by
+    dividing the TF by the total number of terms in each document. Since longer documents
+    are naturally more likely to contain any given term more often, this helps normalize
+    the score to account for those document length variabilities (per the denominator
+    for figure 3.3). Our final, normalized TF calculation can be seen in figure 3.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/grainger-ch3-eqs-0x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.3 Normalized TF calculation. *t* represents a term and `d` represents
+    a document. *TF* equals the square root of the number of times the term appears
+    in the current document (*f**[t,d]*) divided by the number of terms in the document
+    (`∑`*[t']*`[∈]`*d f**[t',d]*). The square root dampens the additional relevance
+    contribution of each additional occurrence of a term, while the denominator normalizes
+    that dampened frequency to the document length so that longer documents with more
+    terms are comparable to shorter documents with fewer terms.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Many variations of the TF calculation exist, only some of which perform document-length
+    normalization (the denominator) or dampen the effect of additional term occurrences
+    (the square root here, or sometimes using a logarithm). Apache Lucene (the search
+    library powering Solr, OpenSearch, and Elasticsearch), for instance, calculates
+    TF as only the square root of the numerator, but then multiplies it by a separate
+    document-length norm (equivalent to the square root of the denominator in our
+    equation) when performing certain ranking calculations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going forward, we’ll use this normalized TF calculation to ensure additional
+    occurrences of the same term continue to improve relevance, but at a diminishing
+    rate. The following listing shows the new TF function in effect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.6 Ranking text similarity based on TF
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The normalized `tf` function shows an improvement, as doc2 is now ranked the
+    highest, as expected. This is mostly because of the dampening effect on the number
+    of term occurrences in doc1 (which matched “the” and “in” so many times), such
+    that each additional occurrence contributes less to the feature weight than prior
+    occurrences. Unfortunately, doc1 is still ranked second-highest, so even the improved
+    TF calculation wasn’t enough to get the better matching doc3 higher.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The next step for improvement will be to factor in the relative importance of
+    terms, as “cat” and “hat” are intuitively more important than common words like
+    “the” and “in”. Let’s modify our scoring calculation to fix this oversight by
+    introducing a new variable that incorporates the importance of each term.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.1.5 Inverse document frequency: Measuring the importance of a term in the
+    query'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: While TF has proven useful at measuring how well a document matches each term
+    in a query, it does little to differentiate between the importance of the terms
+    in the query. In this section, we’ll introduce a technique using the significance
+    of specific keywords based on their frequency of occurrence across documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *document frequency* (DF) for a term is defined as the total number of documents
+    in the search engine that contain the term, and it serves as a good measure of
+    a term’s importance. The idea here is that more specific or rare words (like “cat”
+    and “hat”) tend to be more important than common words (like “the” and “in”).
+    The function used to calculate document frequency is shown in figure 3.4\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/grainger-ch3-eqs-1x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.4 Document frequency calculation. `D` is the set of all documents,
+    `t` is the input term, and `D[i]` is the *i*^(th) document in `D`. The lower the
+    document frequency for a term (`DF(t)`), the more specific and important the term
+    is when seen in queries.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Since we would like more important words to score higher, we take the *inverse
+    document frequency* (IDF), as defined in figure 3.5\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/grainger-ch3-eqs-2x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.5 Inverse document frequency. `|D|` is the total count of all documents,
+    `t` is the term, and `DF(t)` is the document frequency. The lower the `IDF(t)`,
+    the more insignificant the term, and the higher, the more the term in a query
+    should count toward the relevance score.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Carrying forward our `the` `cat` `in` `the` `hat` query example from the last
+    section, a vector of IDFs would thus look like the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.7 Calculating inverse document frequency
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The IDF function, which dictates the importance of a term in the query'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Mocked document counts simulating realistic statistics from an inverted
+    index'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 IDF is term-dependent, not document-dependent, so it is the same for both
+    queries and documents.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'These results look encouraging. The terms can now be weighted based on their
+    relative descriptiveness or significance to the query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '“hat”: `6.2786`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '“cat”: `5.5953`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '“in”: `1.1053`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '“the”: `1.0513`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We’ll next combine the TF and IDF ranking techniques you’ve learned thus far
+    into a balanced relevance ranking function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.1.6 TF-IDF: A balanced weighting metric for text-based relevance'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'We now have the two principal components of text-based relevance ranking:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: TF measures how well a term describes a document.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: IDF measures how important each term is.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Most search engines, and many other data science applications, use a combination
+    of these factors as the basis for textual similarity scoring, using a variation
+    of the function in figure 3.6.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/grainger-ch3-eqs-3x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.6 TF-IDF score. Combines both the TF and IDF calculations into a balanced
+    text-ranking similarity score.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: With this improved feature-weighting function in place, we can finally calculate
+    a balanced relevance score as follows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.8 Calculating TF-IDF for the query `the cat in the hat`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, our search results make sense! doc2 gets the highest score, since it
+    matches the most important words the most, followed by doc3, which contains all
+    the words, but not as many times, followed by doc1, which only contains an abundance
+    of insignificant words.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This TF-IDF calculation is at the heart of many search engine relevance algorithms,
+    including the default similarity algorithm, known as BM25, which is currently
+    used for keyword-based ranking in most search engines. We’ll introduce BM25 in
+    the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.2 Controlling the relevance calculation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the last section, we showed how queries and documents can be represented
+    as vectors and how cosine similarity, or other similarity measurements like the
+    dot product, can be used as a relevance function to compare queries and documents.
+    We introduced TF-IDF ranking, which can be used to create a feature weight that
+    balances both the strength of occurrence (TF) and significance of a term (IDF)
+    for each term in a term-based vector.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, we’ll show how a full relevance function can be specified and
+    controlled in a search engine, including common query capabilities, modeling queries
+    as functions, ranking versus filtering, and applying different kinds of boosting
+    techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.2.1 BM25: The industry standard default text-similarity algorithm'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: BM25 is the name of the default similarity algorithm in Apache Lucene, Apache
+    Solr, Elasticsearch, OpenSearch, and many other search engines. BM25 (short for
+    Okapi “Best Matching” version 25) was first published in 1994, and it demonstrates
+    improvements over standard TF-IDF cosine similarity ranking in many real-world,
+    text-based ranking evaluations. For now, it still beats ranking models using embeddings
+    from most non-fine-tuned LLMs, so it serves as a good baseline for keyword-based
+    ranking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: BM25 still uses TF-IDF at its core, but it also includes several other parameters,
+    giving more control over factors like TF saturation point and document length
+    normalization. It also sums the weights for each matched keyword instead of calculating
+    a cosine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The full BM25 calculation is shown in figure 3.7\. The variables are defined
+    as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*t* = term; *d* = document; *q* = query.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*freq*(*t*, >*d*) is a simple TF, Σ[𝑡ϵ𝑑] 1 showing the number of times term
+    `t` occurs in document `d`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![equation image](../Images/eq-chapter-3-136-1.png)'
+  prefs:
+  - PREF_UL
+  type: TYPE_IMG
+- en: is a variation of IDF used in BM25, where *N* is the total number of documents
+    and *N*(*t*) is the number of documents containing term *t*.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|*d*| is the number of terms in document *d*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*avgdl* is the average number of terms per document in the index.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*k* is a free parameter that usually ranges from 1.2 to 2.0 and increases the
+    TF saturation point.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*b* is a free parameter usually set to around 0.75\. It increases the effect
+    of document normalization.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH03_F07_Grainger.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 3.7 BM25 scoring function. It still predominantly uses a simplified *TF*
+    and a variation of *IDF*, but it provides more control over how much each additional
+    occurrence of a term contributes to the score (the `k` parameter) and how much
+    scores are normalized based on document length (the `b` parameter).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: You can see that the numerator contains *freq* (simplified TF) and *IDF* parameters,
+    while the denominator adds the new normalization parameters *k* and *b*. The TF
+    saturation point is controlled by *k*, making additional matches on the same term
+    count less as *k* is increased, and by *b*, which controls the level of document
+    length normalization more as it increases. The *TF* for each term is calculated
+    as *freq*(*t*,*d*) / (*freq*(*t*,*d*) + *k* · (1 – *b* + *b* · |*d*| / *avgd**l*)),
+    which is a more complex calculation than the one we used in figure 3.3\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Conceptually, BM25 just provides a heuristically determined better way to normalize
+    the TF than traditional TF-IDF. It’s also worth noting that several variations
+    of the BM25 algorithm exist (BM25F, BM25+), and, depending on the search engine
+    you use, you might see some slight alterations and optimizations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of reimplementing all this math in Python as we test out BM25, let’s
+    now switch over to using our search engine and see how it performs the calculation.
+    Let’s start by creating a collection in the search engine (listing 3.9). A collection
+    contains a specific schema and configuration, and it is the unit upon which we
+    will index documents, search, rank, and retrieve search results. Then we’ll index
+    some documents (using our previous `the` `cat` `in` `the` `hat` example), as shown
+    in listing 3.10.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.9 Creating the `cat_in_the_hat` collection
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The engine is set to Apache Solr by default. See appendix B to use other
+    supported search engines and vector databases.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: Listing 3.10 Adding documents to a collection
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: With our documents added to the search engine, we can now issue our query and
+    see the full BM25 scores. The following listing searches with the query `the cat
+    in the hat` and requests the relevance calculation explanation for each document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.11 Ranking by and inspecting the BM25 similarity score
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: For the top-ranked document, doc2, you can see a portion of the score calculation
+    using the `tf` and `idf` components, and you can see the high-level scores for
+    each matched term in the query for the other two documents. If you would like
+    to dig deeper into the math, you can examine the full calculations in the Jupyter
+    notebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While the BM25 calculation is more complex than the TF-IDF feature weight calculations,
+    it still uses TF-IDF as a core part of its calculation. As a result, the BM25
+    ranking is in the same relative order as our TF-IDF calculations from listing
+    3.8:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Our query for `the cat in the hat` can still very much be thought of as a vector
+    of the BM25 scores for each of the terms: `["the", "cat", "in", "the", "hat"]`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'What may not be obvious is that the feature weights for each of these terms
+    are actually overridable functions. Instead of thinking of our query as a bunch
+    of keywords, we can think of our query as a mathematical function composed of
+    other functions, where some of those functions take keywords as inputs and return
+    numerical values (scores) to be used in the relevance calculation. For example,
+    our query could alternatively be expressed as this vector:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `query` function here simply calculates the BM25 of the term passed in,
+    relative to all the documents scored. So the BM25 of the entire query is the sum
+    of the TF-IDFs of each term. In Solr query syntax, this would be
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: If we execute this “functionized” version of the query, we get the exact same
+    relevance score as if we had executed the query directly. The following listing
+    shows the code that performs this version of the query.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 3.12 Text similarity using the `query` function
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: As expected, the scores are the same as before—we’ve simply substituted explicit
+    functions where implicit functions were previously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.2.2 Functions, functions, everywhere!
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We just encountered the `query` function (at the end of the previous section),
+    which performs the default (BM25) similarity calculation on keywords. Understanding
+    that every part of the query is actually a configurable scoring function opens
+    tremendous possibilities for manipulating the relevance algorithm. What *other*
+    kinds of functions can be used in queries? Can we use other features in our scoring
+    calculation—perhaps some that are not text-based?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is a partial list of functions and scoring techniques commonly applied
+    to influence relevance scores:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Geospatial boosting*—Documents near the user running the query should rank
+    higher.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Date boosting*—Newer documents should get a higher relevance boost.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Popularity boosting*—More popular documents should get a higher relevance
+    boost.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Field boosting*—Terms matching in certain fields should get a higher weight
+    than in other fields.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Category boosting*—Documents in categories related to query terms should get
+    a higher relevance boost.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Phrase boosting*—Documents matching multi-term phrases in the query should
+    rank higher than those only matching the words separately.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Semantic expansion*—Documents containing other words or concepts that are
+    highly related to the query keywords and context should be boosted.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using the book’s search-engine-agnostic search API
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Throughout the book and codebase, we’ve implemented a set of Python libraries
+    providing a generic API for indexing documents (`collection.add_documents( documents)`
+    or `collection.write(dataframe)`), querying documents (`collection.search(**query_parameters)`),
+    and performing other search engine operations. This allows you to execute the
+    same code in the book and corresponding notebooks regardless of which supported
+    search engine or vector database you have selected, delegating the creation of
+    engine-specific syntax to the client library. See appendix B for details about
+    how to switch seamlessly between engines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While these generic methods for invoking AI-powered search against your favorite
+    engine are powerful, it’s also helpful in some cases to see the details of the
+    underlying implementation within the search engine, and for more complicated examples
+    it can even be difficult to express the full power of what’s going on using the
+    higher-level engine-agnostic API. For this reason, we will occasionally also include
+    the raw search engine syntax for our default search engine (Apache Solr) in the
+    book. If you’re unfamiliar with Apache Solr and its syntax, please don’t get too
+    bogged down in the details. The important thing is to understand the concepts
+    well-enough that you can apply them to your search engine of choice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These techniques (and many more) are supported by most major search engines.
+    For example, field boosting can be accomplished in our search client by appending
+    a `^BOOST_AMOUNT` after any of the fields specified in `query_fields` for a query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This query request provides a 10X relevancy boost for matches in the `title`
+    field and a 2.5X relevancy boost for matches in the `description` field. When
+    mapped into Solr syntax, it looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: Every search engine is different, but many of these techniques are built into
+    specific query parsers in Solr, either through query syntax or through query parser
+    options, as with the `edismax` query parser just shown.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Boosting on full phrase matching, on two-word phrases, and on three-word phrases
+    is also a native feature of Solr’s `edismax` query parser:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Boost docs containing the exact phrase `"the` `cat` `in` `the` `hat"` in the
+    `title` field:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Boost docs containing the two-word phrases `"the cat"`, `"cat in"`, `"in the"`,
+    or `"the hat"` in the `title` or `description` field:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Boost docs containing the three-word phrases `"the` `cat` `in"` or `"in` `the`
+    `hat"` in the `description` field:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Many of the other relevance-boosting techniques require constructing custom
+    features using function queries. For example, if we want to create a query that
+    only boosts the relevance ranking of documents geographically closest to the user
+    running the search, we can issue the following Solr query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That last query uses the `sort` parameter to strictly order documents by the
+    `geodist` function, which takes the document’s location field name along with
+    the user’s latitude and longitude as parameters. This works great when considering
+    a single feature, but what if we want to construct a more complex sort based on
+    many features? To accomplish this, we can update our query to apply several functions
+    when calculating the relevance score, and then sort by the relevance score:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE37]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'That query has a few interesting characteristics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It constructs a query vector containing four features: BM25 relevance score
+    for the keywords (higher is better), geographical distance (lower is better),
+    publication date (newer is better), and popularity (higher is better).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each of the feature values is scaled between `0` and `25` so they are all comparable,
+    with the best score for each feature being `25`, and the worst score near `0`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Thus, a “perfect score” will add up to `100` (all 4 features scoring `25`),
+    and the worst score will be approximately `0`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Since the relative contribution of `25` is specified as part of the query for
+    each function, we can easily adjust the weights for any features on the fly to
+    influence the final relevance calculation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: With the last query, we have fully taken the relevance calculation into our
+    own hands by modeling the relevance features and giving them weights. While this
+    is very powerful, it still requires significant manual effort to determine which
+    features matter most for a given domain and to tune their weights. In chapter
+    10, we’ll walk through building machine-learned ranking models to automatically
+    make those decisions for us (a process known as *learning to rank*). For now,
+    our goal is just to understand the mechanics of modeling features in query vectors
+    and how to programmatically control their weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Deeper dives on function queries
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: If you’d like to learn more about how to utilize Solr’s function queries, we
+    recommend reading chapter 7 of *Solr in Action*, one of our previous books, by
+    Trey Grainger and Timothy Potter (Manning, 2014; [https://mng.bz/n0Y5](https://mng.bz/n0Y5)).
+    For a full list of available function queries in Solr, you can also check out
+    the documentation in the function query section of the Solr Reference Guide ([https://mng.bz/vJop](https://mng.bz/vJop)).
+    If you’re using a different search engine, check out their documentation for similar
+    guidance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve seen the power of utilizing functions as features in our queries, but
+    so far our examples have all been what are called “additive” boosts, where the
+    sum of the values of each function calculation comprises the final relevance score.
+    It is also frequently useful to combine functions in a fuzzier, more flexible
+    way through “multiplicative” boosts, which we’ll cover in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.2.3 Choosing multiplicative vs. additive boosting for relevance functions
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One last topic to address, concerning how we control our relevance functions,
+    is multiplicative versus additive boosting of relevance features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In all our examples to this point, we have added multiple features into our
+    query vector to contribute to the score. For example, the following Solr queries
+    will all yield equivalent relevance calculations, assuming they are filtered down
+    to the same result set (i.e., `filters=["the cat in the hat"]`):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE38]'
+  prefs: []
+  type: TYPE_PRE
+- en: The kind of relevance boosting in each of these examples is known as *additive
+    boosting*, and it maps well to our concept of a query as nothing more than a vector
+    of features that needs to have its similarity compared across documents. In additive
+    boosting, the relative contribution of each feature decreases as more features
+    are added, since the total score is just the sum of all the features’ scores.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Multiplicative boosting*, in contrast, allows a document’s entire calculated
+    relevance score to be scaled (multiplied) by one or more functions. Multiplicative
+    boosting enables boosts to “pile up” on each other, preventing the need for individually
+    constraining the weights of different sections of the query, as we did in section
+    3.2.2\. There, we had to ensure that the keyword scores, geographical distance,
+    age, and popularity of documents were each scaled to 25% of the relevance score
+    so that they would add up to a maximum score of 100%.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To supply a multiplicative boost in Apache Solr, you can either use the `boost`
+    query parser (syntax: `{!boost …}`) in your query vector or, if you are using
+    the `edismax` query parser, the simplified `boost` query param. The following
+    two queries will multiply a document’s relevance score by ten times the value
+    in the `popularity` field:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE39]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this example, the query for `the cat in the hat` still uses additive boosting
+    (the BM25 value of each keyword is added together), but the final score is multiplied
+    by 10 times the value in the `popularity` field. This multiplicative boosting
+    allows the popularity to scale the relevance score independently of any other
+    features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In general, multiplicative boosts offer you greater flexibility to combine different
+    relevance features without having to explicitly predefine a relevance formula
+    accounting for every potential contributing factor. On the other hand, this flexibility
+    can lead to unexpected consequences if the multiplicative boost values for particular
+    features get too high and overshadow other features. In contrast, additive boosts
+    can be a pain to manage, because you need to explicitly scale them so that they
+    can be combined while still maintaining a predictable contribution to the overall
+    score. However, with this explicit scaling, you maintain tight control over the
+    relevance scoring calculation and range of scores. Both additive and multiplicative
+    boosts can be useful, so it’s best to consider the problem at hand and experiment
+    with what gets you the best results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve now covered the major ways of controlling relevance ranking in the search
+    engine, but the matching and filtering of documents can often be just as important,
+    so we’ll cover them in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.2.4 Differentiating matching (filtering) vs. ranking (scoring) of documents
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We’ve spoken of queries and documents as feature vectors, but we’ve mainly discussed
+    search thus far as a process of either calculating a vector similarity (such as
+    cosine or dot product) or adding up document scores for each feature (keyword
+    or function) in the query.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once documents are indexed, there are two primary steps involved in executing
+    a query:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Matching*—Filtering results to a known set of possible answers'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ranking*—Ordering all the possible answers by relevance'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We can often completely skip the first step (matching) and still see the exact
+    same results on page one (and for many pages), since the most relevant results
+    should generally rank the highest and thus show up first. If you think back to
+    chapter 2, we even saw some vector scoring calculations (comparing feature vectors
+    for food items—i.e., “apple juice” versus “donut”) where we would have been unable
+    to filter results at all. We instead had to first score every document to determine
+    which ones to return based upon relevance alone. In this scenario (using dense
+    vector embeddings), we didn’t even have keywords or other attributes that could
+    be used as a filter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, if the initial matching phase is effectively optional, why do it at all?
+    One obvious answer is that it provides a significant performance optimization.
+    Instead of iterating through every single document and calculating a relevance
+    score, we can greatly speed up both our relevance calculations and the overall
+    response time of our search engine by first filtering the initial results to a
+    smaller set of documents that are logical matches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are additional benefits to being able to filter result sets, in that we
+    can provide analytics, such as the number of matching documents or counts of specific
+    values found in documents (known as *facets* or *aggregations*). Returning facets
+    and similar aggregated metadata from the search results helps the user subsequently
+    filter down by specific values to further explore and refine their result set.
+    Finally, there are plenty of scenarios where “having logical matches” should be
+    considered among the most important features in the ranking function, so simply
+    filtering on logical matches upfront can greatly simplify the relevance calculation.
+    We’ll discuss these trade-offs in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.2.5 Logical matching: Weighting the relationships between terms in a query'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We just mentioned that filtering results before scoring them is primarily a
+    performance optimization and that the first few pages of search results would
+    likely look the same regardless of whether you filter the results or just do relevance
+    ranking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This only holds true, however, if your relevance function successfully contains
+    features that already appropriately boost better logical matches. For example,
+    consider the difference between expectations for the following queries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`"statue of liberty"`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`statue AND of AND liberty`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`statue OR of OR liberty`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '`statue of liberty`'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: From a logical matching standpoint, the first query will be very precise, only
+    matching documents containing the *exact* phrase “statue of liberty”. The second
+    query will only match documents containing all the terms “statue”, “of”, and “liberty”,
+    but not necessarily as a phrase. The third query will match any document containing
+    any of the three terms, which means documents *only* containing “of” will match,
+    but documents containing “statue” and “liberty” should rank much higher due to
+    the BM25 scoring calculation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In theory, if phrase boosting is turned on as a feature, documents containing
+    the full phrase will likely rank highest, followed by documents containing all
+    terms, followed by documents containing any of the words. Assuming that happens,
+    you should see a similar ordering of results regardless of whether you filter
+    them to logical Boolean matches or whether you only sort based on a relevance
+    function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In practice, though, users often consider the logical structure of their queries
+    to be highly relevant to the documents they expect to see, so respecting this
+    logical structure and filtering *before* ranking allows you to remove results
+    that users’ queries indicate are safe to remove.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Sometimes the logical structure of user queries is ambiguous, however, such
+    as with our fourth example: the query `statue` `of` `liberty`. Does this logically
+    mean `statue` `AND` `of` `AND` `liberty`, `statue` `OR` `of` `OR` `liberty`, or
+    something more nuanced like `(statue` `AND` `of)` `OR` `(statue` `AND` `liberty)`
+    `OR` `(of` `AND` `liberty)`, which essentially means “match at least two of three
+    terms”. Using the “minimum match” (`min_match`) parameter in our search API enables
+    you to control these kinds of matching thresholds easily, even on a per-query
+    basis:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '100% of query terms must match (equivalent to `statue` `AND` `of` `AND` `liberty`):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE40]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At least one query term must match (equivalent to `statue` `OR` `of` `OR` `liberty`):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE41]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'At least two query terms must match (equivalent to `(statue` `AND` `of)` `OR
+    (statue` `AND` `liberty)` `OR` `(of` `AND` `liberty)`):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE42]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `min_match` param in our Python API supports specifying either a minimum
+    percentage (0% to 100%) of terms or a number of terms (1 to *N* terms) that must
+    match. This parameter corresponds with Solr’s `mm` parameter and OpenSearch’s
+    and Elasticsearch’s `minimum_should_match` parameter. In addition to accepting
+    a percentage or number of terms to match, those engines also support a step function
+    like `mm=2<-30% 5<3`. This example step function means “all terms are required
+    if there are less than 2 terms, up to 30% of terms can be missing if there are
+    less than 5 terms, and at least 3 terms must exist if there are 5 or more terms”.
+    When using Solr, the `mm` parameter works with the `edismax` query parser, which
+    is the primary query parser we will use for text-matching queries in this book
+    if Solr is configured as your engine (per appendix B). You can consult the “Extended
+    DisMax Parameters” section of the Solr Reference Guide for more details on how
+    to fine-tune your logical matching rules with these minimum match capabilities
+    ([https://mng.bz/mRo8](https://mng.bz/mRo8)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: When thinking about constructing relevance functions, the ideas of filtering
+    and scoring can often get mixed up, particularly since most search engines perform
+    both for their main query parameter. We’ll attempt to separate these concerns
+    in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3.2.6 Separating concerns: Filtering vs. scoring'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In section 3.2.4, we differentiated between the ideas of matching and ranking.
+    Matching of results is logical and is implemented by filtering search results
+    down to a subset of documents, whereas ranking of results is qualitative and is
+    implemented by scoring all documents relative to the query and then sorting them
+    by that calculated score. In this section, we’ll cover some techniques to provide
+    maximum flexibility in controlling matching and ranking by cleanly separating
+    out the concerns of filtering and scoring.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our search API has two primary ways to control filtering and scoring: the `query`
+    and `filters` parameters. Consider the following request:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE43]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this query, the search engine is being instructed to filter the possible
+    result set down to only documents with both a value of “books” in the `category`
+    field and a value of “kid” in the `audience` field. In addition to those filters,
+    however, the query also acts as a filter, so the result set gets further filtered
+    down to only documents containing (100%) of the values “the”, “cat”, “in”, and
+    “hat” in the `description` field.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The logical difference between the `query` and `filters` parameters is that
+    `filters` only acts as a filter, whereas `query` acts as *both* a filter and a
+    feature vector for relevance ranking. This dual use of the `query` parameter is
+    helpful default behavior for queries, but mixing the concerns of filtering and
+    scoring in the same parameter can be suboptimal for more advanced queries, especially
+    if we’re simply trying to manipulate the relevance calculation and not arbitrarily
+    removing results from our document set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are a few ways to address this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Model the `query` parameter as a function (functions only count toward relevance
+    and do not filter):'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE44]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Make your query match all documents (no filtering or scoring) and apply a boost
+    query (`bq`) parameter to influence relevance without scoring:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE45]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `query` parameter both filters and then boosts based upon relevance, `filters`
+    only filters, and `bq` only boosts. The two preceding approaches are logically
+    equivalent, but we recommend the second option, since it’s a bit cleaner to use
+    the dedicated `bq` parameter, which was designed to contribute toward the relevance
+    calculation without filtering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You may have noticed that both versions of the query also contain a filter query
+    `{!cache=false` `v=$user_query}` that filters on the `user_query`. Since the `query`
+    parameter intentionally no longer filters our search results, this `filters` parameter
+    is now required if we still want to filter to the user-entered query. The special
+    `cache=false` parameter is used to turn off caching of the filter. Caching of
+    filters is turned on by default in Solr, since filters tend to be reused often
+    across requests. Since the `user_query` parameter is user-entered and is wildly
+    variable in this case (not frequently reused across requests), it doesn’t make
+    sense to pollute the search engine’s caches with these values. If you try to filter
+    on user-entered queries without turning the cache off, it will waste system resources
+    and likely slow down your search engine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The overarching theme here is that it’s possible to cleanly separate logical
+    filtering from ranking features to maintain full control and flexibility over
+    your search results. While going through this effort may be overkill for simple
+    text-based ranking, separating these concerns becomes critical when attempting
+    to build out more sophisticated ranking functions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that you understand the mechanics of how to construct these kinds of purpose-built
+    ranking functions, let’s wrap up this chapter with a brief discussion of how to
+    apply these techniques to implement user- and domain-specific relevance ranking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3.3 Implementing user and domain-specific relevance ranking
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In section 3.2, we walked through how to modify the parameters of our query-to-document
+    similarity algorithm dynamically. That included passing in our own functions as
+    features that contribute to the score, in addition to text-based relevance ranking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'While text-based relevance ranking using BM25, TF-IDF, vector cosine similarity,
+    or some other kind of statistics-based approach on word occurrences can provide
+    decent generic search relevance out of the box, it can’t hold its own against
+    good domain-specific relevance factors. Here are some domain-specific factors
+    that often matter the most within various domains:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Restaurant search*—Geographical proximity, user-specific dietary restrictions,
+    user-specific taste preferences, price range'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*News search*—Freshness (date), popularity, geographical area'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*E-commerce*—Likelihood of conversion (click-through, add-to-cart, and/or purchase)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Movie search*—Name match (title, actor, etc.), popularity of movie, release
+    date, critic review score'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Job search*—Job title, job level, compensation range, geographical proximity,
+    job industry'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Web search*—Keyword match on page, popularity of page, popularity of website,
+    location of match on page (in title, header, body, etc.), quality of page (duplicate
+    content, spammy content, etc.), topic match between page and query'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These are just examples, but most search engines and domains have unique features
+    that need to be considered to deliver an optimal search experience. This chapter
+    has barely scratched the surface of the countless ways you can control the matching
+    and ranking functions to return the best content. An entire profession exists—called
+    *relevance engineering*—that is dedicated in many organizations to tuning search
+    relevance. If you’d like to dive deeper, we highly recommend one of our prior
+    books, *Relevant Search* by Doug Turnbull and John Berryman (Manning, 2016), which
+    is a guide to this kind of relevance engineering.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Every search engine and domain have unique features that need to be considered
+    to deliver an optimal search experience. Instead of having to manually model these
+    relevance features, an AI-powered search engine can utilize machine learning to
+    automatically generate and weight such features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The goal of this chapter was to give you the knowledge and tools you’ll need
+    in the coming chapters to affect relevance ranking as we begin integrating more
+    automated machine learning techniques. We’ll begin applying this in our next chapter
+    on crowdsourced relevance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We can represent queries and documents as dense or sparse numerical vectors
+    and assign documents a relevance rank based on a vector similarity calculation
+    (such as cosine similarity).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using TF-IDF or the BM25 similarity calculations (also based upon TF-IDF) for
+    our text similarity scores provides a more meaningful measure of feature (keyword)
+    importance in our queries and documents, enabling improved text ranking over just
+    looking at term matches alone.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Text similarity scoring is one of many kinds of functions we can invoke as a
+    feature within our queries for relevance ranking. We can inject functions within
+    our queries, along with keyword matching and scoring, as each keyword phrase is
+    effectively just a ranking function.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Treating “filtering” and “scoring” as separate concerns provides better control
+    when specifying our own ranking functions.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To optimize relevance, we need to both create domain-specific relevance functions
+    and use user-specific features instead of relying just on keyword matching and
+    ranking.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

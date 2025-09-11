@@ -1,0 +1,1188 @@
+- en: 9 Optimizing cost and quality
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Model choice and tuning
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Prompt engineering
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fine-tuning models
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Analyzing data with large language models is a great way to burn money quickly.
+    If you’ve been using GPT-4 (or a similarly large model) for a while, you’ve probably
+    noticed how fees pile up quickly, forcing you to recharge your account regularly.
+    But do we always need to use the largest (and most expensive) model? Can’t we
+    make smaller models perform almost as well? How can we get the most bang for our
+    buck?
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter is about saving money when using language models on large data
+    sets. Fortunately, we have quite a few options for doing so. First, we have lots
+    of choices when it comes to large language models. Selecting a model that is as
+    small (or, rather, as cheap) as possible while still performing well on our analysis
+    task can go a long way toward balancing our budget. Second, models typically have
+    various tuning parameters, allowing us to tune everything from the overall text
+    generation strategy to the way specific tokens are (de-)prioritized. We want to
+    optimize our settings there to turn small models into GPT-4 alternatives for certain
+    tasks. Third, we can use prompt engineering to tweak the way we ask the model
+    our questions, sometimes leading to surprisingly different results!
+  prefs: []
+  type: TYPE_NORMAL
+- en: And finally, if none of these methods cut it, we can choose to create our own
+    models, highly customized for only the task we care about. Of course, assuming
+    we don’t want to spend millions on pretraining, we won’t start training new models
+    from scratch. Instead, we will typically choose to fine-tune existing models with
+    just a few hundred samples. That’s often enough to get significantly better performance
+    than when using the base model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, what works best depends on the task we’re trying to solve, as well
+    as on data properties. Fortunately, if we want to analyze large amounts of data,
+    we can afford to spend a little money on trying different tuning options on a
+    data sample. Chances are, this upfront investment will pay off once we analyze
+    the entire data set! Throughout this chapter, we will apply all of these tuning
+    options in an example scenario.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.1 Example scenario
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You’re back at Banana and trying to classify user reviews. Users can leave free-form
+    text reviews about their experiences with Banana products on the Banana website.
+    You want to know whether those reviews are positive (i.e., the user was happy
+    with the product) or negative (i.e., reading them will scare away potential customers!).
+    Of course, you can use language models for that task (you saw that in chapter
+    4). For instance, you can use GPT-4 (at the time of writing, this is OpenAI’s
+    largest model for text processing). Provide GPT-4 with a review, together with
+    instructions for how to classify it (including a description of possible class
+    labels, such as “positive” and “negative”), and the output should be correct for
+    most reviews.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, analyzing data with GPT-4 costs about 6 cents per 1,000 tokens. That
+    (6 cents) may not sound like much, but Banana receives thousands of product reviews
+    every day! Let’s assume the average review contains about 100 tokens (about 400
+    characters). Furthermore, let’s assume that Banana receives about 10,000 reviews
+    per day. That means you collect 100 × 10,000 tokens per day: about 1 million tokens
+    per day and 365 million tokens per year. How much does it cost to analyze one
+    year’s worth of comments? About 365,000,000 × (0.06/1000) = 21,900 dollars.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: That may put a bit of a dent in your budget! Can’t you get it cheaper? For example,
+    at the time of writing, GPT-3.5 Turbo is priced at only around 0.0005 dollars
+    per thousand tokens (tokens are priced differently depending on whether they are
+    read or generated, but we will neglect that for now to simplify the calculations).
+    That means only 365,000,000 × (0.0005/1000) = 182.5 dollars to analyze one year’s
+    worth of comments. Much better! But to get satisfactory output quality, you may
+    have to do a little extra work to ensure that you’re using the model in the best
+    possible way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip Instead of GPT-3.5 Turbo, you can also use alternative models such as GPT-4o
+    mini (the model ID is `gpt-4o-mini`) in the following examples.
+  prefs: []
+  type: TYPE_NORMAL
+- en: That’s what we will do in this example. Starting from the most naive implementation
+    of our classifier, we will gradually refine our implementation and try all the
+    various tuning options discussed in the introduction to this chapter!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.2 Untuned classifier
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s begin with the base version of our classifier. Again, the goal is to
+    take a review and decide whether it should be classified as positive (`pos`) or
+    negative (`neg`). We will use the following prompt template to classify reviews:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In this prompt template, `[Review]` is a placeholder that gets replaced with
+    the actual review text. For example, after substitution, our prompt may look like
+    this (the first two lines correspond to an abbreviated version of the review to
+    classify, apparently a new movie streaming on Banana TV that doesn’t match the
+    reviewer’s taste):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Ideally, if we send this prompt to a GPT model, we expect either `pos` or `neg`
+    as the reply (in this specific case, we expect `neg`). Listing [9.1](#code__untuned)
+    shows the complete Python code; we won’t spend too much time discussing it because
+    it is similar to the classifiers we saw in chapter 4\. The `create_prompt` function
+    (**1**) instantiates the prompt template for a specific review (stored in the
+    input parameter `text`). The result is a prompt that we can send to our language
+    model using the `call_llm` function (**2**). We call GPT-3.5 Turbo here (**3**)
+    (saving costs). We also set `temperature` to `0`, which means we’re minimizing
+    randomness when generating output. This means you should see the same results
+    when running the code repeatedly. You may also notice that `call_llm` is a little
+    longer in listing [9.1](#code__untuned) than the versions we have seen in previous
+    listings. That’s because we retrieve not only the answer generated by our language
+    model but also the number of tokens used (**4**). Counting the number of tokens
+    will allow us to calculate the invocation costs on a data sample.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Listing 9.1 Classifying reviews as positive or negative: base version'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Generates prompts'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Invokes the LLM'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Generates an answer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Extracts answer and token usage'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Parses arguments'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Iterates over reviews'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Classifies the review'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Updates counters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will assume that reviews to classify are stored in a .csv file. We expect
+    users to specify the path of that .csv file as a command-line argument (**5**).
+    After reading the .csv file, we iterate over the reviews (**6**) in the order
+    in which they appear in the input file. For each review, we extract the associated
+    text (**7**) (we assume it’s stored in the `text` column), create a prompt for
+    classification, and call the language model. The result is the answer text generated
+    by the language model (hopefully it’s one of the two class labels, `pos` or `neg`),
+    as well as the number of tokens used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our goal is to try different methods of querying a language model and compare
+    the output quality and costs. To judge the output quality, we assume that the
+    input .csv file contains not only the review text but also a ground-truth label.
+    This means we assume that each review has already been associated with the correct
+    class label, stored in the `sentiment` column (because our two class labels describe
+    the sentiment of the review). After receiving the language model’s output, we
+    compare the output to the ground truth (**8**) and update the number of correctly
+    classified reviews (variable `nr_correct`). At the same time, we sum up the total
+    number of tokens used (because processing fees are proportional to that) and store
+    them in the counter called `nr_tokens`. After iterating over all reviews, listing
+    [9.1](#code__untuned) prints out the final number of correct classifications and
+    the number of tokens used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.3 Model tuning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s try it! You can find listing [9.1](#code__untuned) under Untuned Classifier
+    on the book’s website. We reuse the movie reviews from chapter 4; search for the
+    Reviews.csv link in the chapter 4 section. The file contains 10 reviews, along
+    with the corresponding ground truth. Let’s assume that the code for listing [9.1](#code__untuned)
+    and the reviews are stored in the same folder on disk. Open your terminal, switch
+    to that folder, and run the following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'You should see the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Incorrect label'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Nonexistent label'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first 10 lines describe the results for each review. We have the label generated
+    by the language model and then the ground-truth label (taken from the input file).
+    At the end, we have the number of correctly classified reviews and the number
+    of tokens used.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Out of 10 reviews, we classified 6 correctly. Well, at least that’s better than
+    50%, but it’s still not a great result. What went wrong? Looking at output gives
+    us some ideas. There are cases (**1**) where the language model simply picks the
+    wrong class label. That’s not unexpected. However, there are also cases (**2**)
+    where the language model picks a class label that doesn’t even exist! Granted,
+    it’s not too far off (`negative` instead of `neg`), and that seems easy to fix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We focus on the (probably) low-hanging fruit of making the language model generate
+    only one of our two possible class labels. How do we do that? Enter the `logit_bias`
+    parameter. The `logit_bias` parameter enables users to change the likelihood that
+    certain tokens are selected (we briefly discussed this and other GPT parameters
+    in chapter 3). In this specific case, we would like to significantly increase
+    the probability of the tokens associated with our two class labels (`neg` and
+    `pos`). The `logit_bias` parameter is specified as a Python dictionary, mapping
+    token IDs to a bias. A positive bias means we want to increase the probability
+    that the language model generates the corresponding token. A negative bias means
+    we decrease the probability of generating the associated token.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, we want to increase the chances that GPT-3.5 selects one of the
+    two tokens representing class labels. So we want to select a high bias for those
+    two token IDs. Bias scores range from –100 to +100\. We will go with the maximum
+    and assign a bias of +100 to the tokens representing class labels. First we need
+    to find their token IDs. Language models represent text as a sequence of token
+    IDs. To change token bias, we need to reference the IDs of the tokens we care
+    about.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *tokenizer* is the component that transforms text into token IDs. You can
+    find tokenizers for all GPT models at [https://platform.openai.com/tokenizer](https://platform.openai.com/tokenizer).
+    We’re using GPT-3.5, so select the one labeled GPT 3.5 & GPT-4\. Figure [9.1](#fig__gpttokenizer)
+    shows the tokenizer web interface.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can enter text in the text box and click the Token IDs button to see the
+    token IDs for our input text. Using the tokenizer, we learn that the token `pos`
+    has ID 981 and the token `neg` has token ID 29875\. Now we’re ready to add a bias
+    to our model invocation as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Defines the bias'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH09_F01_Trummer.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 9.1 GPT tokenizer at [https://platform.openai.com/tokenizer](https://platform.openai.com/tokenizer):
+    enter text to learn the associated token IDs.'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Compared to the previous call (in listing [9.1](#code__untuned)), we add the
+    logit bias (**1**) by mapping the IDs of the two tokens we’re interested in (`pos`
+    with token ID 981 and `neg` with token ID 29875) to the highest possible bias
+    value of 100\. That should fix the problem of generating tokens that do not correspond
+    to class labels, right?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning The code described next causes problems and results in long running
+    times and significant monetary fees. Do not try it without integrating the fix
+    presented at the end of this section!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s try it to be sure. You can add the logit bias to the code from listing
+    [9.1](#code__untuned). Alternatively, later in this chapter, we will present a
+    tunable version of the classifier that will allow you to try different combinations
+    of tuning parameters (including the logit bias). If you execute the classifier
+    with biases added, you will likely see output similar to the following (actually,
+    as executing the code takes a long time and incurs non-negligible costs, you may
+    just want to trust me on this):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Nonexistent labels for each input:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Increased token usage'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Oh, no—not a single correct classification! What happened? Comparing generated
+    “labels” to the ground truth reveals the problem (**1**): we’re only generating
+    the two possible tokens (which is great!) but just way too many of them (which
+    is not so great!). That increases token consumption (**2**) (note that the output
+    length was limited for generating the example output; otherwise, token consumption
+    would be much higher), but more importantly, it means our output does not correspond
+    to any class label.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why does the model generate so many tokens?
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We essentially restrict the model to generate text using only two tokens. Those
+    are the two tokens we want to see in our output. However, we forgot to enable
+    the model to generate any tokens that indicate the end of output! That is why
+    the model cannot stop generating.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are multiple ways to fix this. We could, of course, add postprocessing
+    to extract only the first token from the output generated by the language model.
+    That would (mostly) fix our problem with the class labels. Look at the output,
+    and you’ll see that using the first token leads to correct output in 7 of 10 cases.
+    However, there is (another) problem with this approach: we’re paying to generate
+    tokens that we don’t ultimately use! That’s clearly not what we want. So let’s
+    tune our model even more by restricting the output length as well. All we need
+    is a single token (this works only because our two possible class labels can be
+    represented by a single token). That’s what the `max_tokens` parameter does. Let’s
+    use it when calling our language model:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Defines the bias'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When you try it (which should be fast and not costly), you should see this
+    output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Improves on the untuned classifier'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Reduces token usage'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Much better! We have improved the number of correctly handled cases from six
+    (for the unturned version) to seven (**1**). That may not sound like much. However,
+    thinking about the entire data set, it essentially means we have improved precision
+    from 60% to 70%: that is, thousands more reviews will now be classified correctly!
+    There is a caveat, of course. In reality, you should probably use a much larger
+    sample. Due to random variations, the accuracy you observe on a sample may not
+    be representative of the accuracy for the entire data set. To keep things simple
+    (and your cost relatively low when trying it), we restrict ourselves to 10 samples
+    here. As an additional bonus, our token consumption has again been reduced (**2**)
+    (actually, the gap in token consumption, compared to a version without any output
+    size bound, is likely to be much, much larger). Note that the two parameters discussed
+    here are only a small subset of the available tuning options. You will find more
+    details on relevant parameters in chapter 3\. Whenever you tune a model for a
+    new task, be sure to consider all parameters that may be potentially relevant.
+    Then try a few reasonable settings on a data sample to see which option performs
+    best.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.4 Model selection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s assume that we have maxed out our ability to get better performance by
+    tuning our current model. What else can we do? We can, of course, select a different
+    model. We saw a few GPT alternatives in the last chapter. If you can select a
+    model specifically trained for the task you’re interested in (e.g., text classification),
+    that’s often worth a look. Other factors that can influence your model choices
+    are whether the data you plan to apply the model to is sensitive and whether sending
+    that data to specific providers of language models is acceptable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you want to learn about the relative performance of different models, have
+    a look at [https://crfm.stanford.edu/helm/lite/latest/](https://crfm.stanford.edu/helm/lite/latest/).
+    This website contains the results of HELM, Stanford’s Holistic Evaluation of Language
+    Models benchmark. The benchmark compares language models on various scenarios
+    and contains results for specific tasks, as well as average performance, aggregated
+    over various scenarios. You may want to check this out to get a sense of which
+    models may be interesting to you. However, as various factors can influence a
+    language model’s performance, it still pays to evaluate different models on the
+    specific task you’re interested in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To keep things simple, let’s only consider GPT-4 as an alternative to GPT-3.5
+    Turbo (which we used up to this point). Replace the name of the model in the language
+    model invocation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Defines the bias'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Running the resulting code should lead to the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Correct classification result'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Best result so far'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Same number of tokens'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compared to the prior version, GPT-4 manages to solve one more test case accurately
+    (**1**)! That brings our accuracy to 80% (**2**), while our token consumption
+    remains constant (**3**). That, by the way, is not guaranteed to be the case if
+    we change the model. As different models may use different tokenizers, representing
+    the same text may require a different number of tokens for different models. In
+    this specific case, because GPT-4 and GPT-3.5 use the same tokenizer, the number
+    of tokens does not change.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Does that mean we’re paying the same amount of money? Not quite. Because GPT-4
+    incurs much higher fees per token, we’re paying roughly 120 times more than before
+    (the relative difference between the per-token prices of GPT-4 and GPT-3.5 Turbo).
+    That’s why we’re trying to make GPT-3.5 perform as well as possible without resorting
+    to GPT-4.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Occasionally, during model selection and model tuning, it makes sense to look
+    at the test data yourself. That gives you a better impression of the sweet spots
+    and limitations of various models and enables you to judge whether the test cases
+    on which your model performs badly are representative. For instance, the following
+    review is solved correctly by GPT-4 but not by GPT-3.5:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: This review contains positive (toward the end) as well as negative (the beginning)
+    aspects. Although the final verdict is positive, we may conclude that spending
+    more money to properly analyze borderline cases like that review is not worth
+    it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.5 Prompt engineering
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Setting aside options to swap models, what else can we do to improve performance
+    with our model? One area we haven’t looked at yet is the definition of the prompt
+    we use for classification. Changing the prompt template can have a significant
+    effect on result quality. The fact that prompt tuning is often crucial has even
+    led to the introduction of a dedicated term, *prompt engineering*, describing
+    the process of searching for optimal prompt templates. What’s more, the challenges
+    of prompt engineering have led to the creation of multiple platforms offering
+    prompt templates for a plethora of different tasks. If you’re out of ideas for
+    prompt variants, have a look at [https://promptbase.com/](https://promptbase.com/),
+    [https://prompthero.com/](https://prompthero.com/), and similar platforms. The
+    business model of such platforms is to enable users to buy and sell prompt templates
+    that optimize the performance of specific models for specific tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Figuring out what prompt works best typically requires some experimentation.
+    Next, we will focus on the basics and explore a classical technique to increase
+    output quality by changing the prompt. We’re talking about few-shot learning here,
+    which means we’re helping the model by giving it a few examples. That’s something
+    we know from everyday life: it is often hard to understand a new task or approach
+    based on a pure description alone. It is much better to see some examples to get
+    the hang of it. For instance, in the previous sections, we could have just discussed
+    the semantics of a few relevant model-tuning parameters. But isn’t it much better
+    to see how they can be tuned in a concrete example scenario?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course it is. Language models “feel” the same way, and adding a few helpful
+    examples can often improve their performance. So how do we show them examples?
+    Easy: we specify those examples as part of the prompt. For instance, in our classification
+    scenario, we want the language models to classify reviews. An example would be
+    a review together with the reference class label.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We will use the following prompt template to integrate a single sample into
+    the prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If we replace the placeholders with the sample review, the sample review solution,
+    and the review we’re interested in classifying, we get, for instance, the following
+    prompt:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Sample review'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Instructions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Sample solution'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Review to classify'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Instructions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You see a sample review (**1**), instructions (**2**), and the reference class
+    for the sample review (**3**). After that, you find the review we want to classify
+    (**4**) and the classification instructions (again) (**5**), but no solution yet
+    (of course not—that’s what we want the language model to generate). In this prompt,
+    we provide exactly one example of a correctly solved task to the model. Doing
+    so may help the model better understand what we’re asking it to do.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Of course, there are many options to provide samples in the prompt. We have
+    chosen what is arguably the most straightforward solution: we use the same prompt
+    structure twice for the two reviews. Because we’re using exactly the same structure,
+    our prompt is slightly redundant: we repeat the task instructions (**2** and **5**),
+    including the specification of the two possible class labels. Although we won’t
+    do so here, it might be interesting to experiment and see whether you can integrate
+    examples into the prompt in a different way, removing redundancies and reducing
+    the prompt length (thereby reducing the number of tokens processed and, ultimately,
+    processing fees).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Up to now, we have only considered adding a single example. But sometimes,
+    seeing one example is not enough. That’s why it may make sense to add more than
+    one example for the language model as well. Let’s assume that we have a few samples:
+    reviews with associated class labels, stored in a data frame called `samples`.
+    We can use the following code to generate prompts that integrate those samples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Creates a prompt for one review'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Generates a prompt for all reviews'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Integrates the samples'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Adds the review to classify'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `create_single_text_prompt` function (**1**) instantiates the following
+    template for a single review:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: We use the same function to specify sample reviews, as well as to specify the
+    review, along with the classification task that we want the language model to
+    solve for us. If we specify a sample review, the `[Label]` placeholder will be
+    replaced with the reference class label for the corresponding review. If we specify
+    the task the language model should solve, we do not know the correct class label
+    yet. In that case, we replace the `[Label]` placeholder with the empty string.
+    It will be up to the language model to complete the prompt with the actual class
+    label.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `create_prompt` function (**2**) generates the complete prompt, considering
+    all sample reviews, as well as the review we want to classify. First (**3**),
+    it iterates over the sample reviews. We assume that our `samples` data frame stores
+    review text in the `text` column and the associated class labels in the `sentiment`
+    column. We add a prompt part (**4**) for the sample review using the `create_single_text_prompt`
+    function (discussed earlier). Finally, we add instructions to classify the review
+    we’re interested in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s switch back to using GPT-3.5 Turbo. However, this time, we will use our
+    new prompt-generation function. For the moment, we will restrict ourselves to
+    a single example review in the prompt. On the book’s companion website, you can
+    find training reviews with the correct class labels under Reviews Training, leading
+    to the file train_reviews.csv. The reviews in this file do not overlap with those
+    in the reviews.csv file (which we use to test our approach). Adding just the first
+    review from train_reviews.csv as a sample to the prompts, you should now see the
+    following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Equivalent to GPT-4 result'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Token usage roughly doubles'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hooray! We have increased precision to 80% (**1**). That’s the same accuracy
+    we got when using GPT-4 on the original prompts (without sample reviews). At the
+    same time, our token usage has increased (**2**). More precisely, because we’re
+    adding a second review to each prompt (i.e., we have one sample review and the
+    review to classify), our token consumption has roughly doubled compared to the
+    last version. However, compared to using GPT-4 on shorter prompts, our current
+    approach is still about 60 times cheaper (because using GPT-4 is about 120 times
+    more expensive than using GPT-3.5 Turbo).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.6 Tunable classifier
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have seen quite a few tuning options, you may be tempted to try
+    new variations. For instance, do we still need to add bias (essentially restricting
+    the output to the two possible class labels) if we’re adding samples? Can we get
+    even better precision when using a larger model together with multiple samples
+    in the prompt? Changing your code to try a new combination quickly becomes tedious.
+    But no worries, we’ve got you covered! On the book’s website, you can find listing
+    [9.2](#code__tunableClassifier) under Tunable Classifier. This implementation
+    lets you try all the tuning variants by setting the right command-line parameters.
+    We will quickly discuss the code, which integrates all the code variants discussed
+    previously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generating prompts (**1**) works as described in the last section. The `create_prompt`
+    function takes the review text to classify and sample reviews as input. The sample
+    reviews are added to the prompt, potentially supporting the language models in
+    classifying the review we’re interested in. Note that we can still see how the
+    language model performs without any samples (by not specifying any samples). Classification
+    without any samples corresponds to a special case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 9.2 Tunable version of sentiment classifier
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Generates prompts with samples'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Calls language models with parameters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Parses command-line parameters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Reads samples from disk'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Classifies the review'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Updates the counters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Prints out the counters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Our `call_llm` function (**2**) integrates all the tuning parameters mentioned
+    earlier. First is the name of the model to call (the `model` parameter). Second,
+    we can specify the maximum number of output tokens (`max_tokens`). Finally, we
+    can specify bias: tokens that should be prioritized when generating output. The
+    `out_tokens` parameter allows users to specify a comma-separated list of token
+    IDs to which we assign a high priority (essentially limiting output to one of
+    these tokens). Although the model name is required, setting a value of `0` for
+    the `max_tokens` parameter and the empty string for the `out_tokens` parameter
+    allows us to avoid changing OpenAI’s default settings.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The tunable classifier uses quite a few command-line parameters (**3**). Let’s
+    discuss them in the order in which you need to specify them:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`file_path`—Path to the .csv file containing reviews used to evaluate our language
+    model'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`model`—Name of the language model we want to use (e.g., `gpt-3.5-turbo`)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`max_tokens`—Maximum number of output tokens to generate per input review'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`out_tokens`—A comma-separated list of tokens to prioritize when generating
+    output'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`nr_samples`—Number of review samples with solutions to integrate into each
+    prompt'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`sample_path`—Path to the .csv file containing reviews with correct class labels
+    to use as samples (this can be empty if the `nr_samples` parameter is set to `0`)'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Warning Limiting the number of output tokens is almost always a good idea. In
+    particular, you should do it whenever biasing output toward specific tokens without
+    including any of the “stop” tokens (indicating the end of output).
+  prefs: []
+  type: TYPE_NORMAL
+- en: After parsing input parameters, the classifier reads samples from disk (**4**)
+    and classifies reviews (**5**) while updating counters (**6**) that are ultimately
+    printed (**7**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s see how we can simulate all the different versions of our classifier
+    that we have discussed so far. Using the following invocation should give us the
+    untuned version of our classifier, assuming that the file reviews.csv is located
+    in the same directory as the code itself:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note that we don’t specify any tokens to prioritize (we specify the empty string),
+    don’t restrict the output length (setting it to `0` means no restrictions), and
+    set the number of samples in the prompt to `0` (which means we can set the path
+    to the file containing samples to the empty string as well).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following command, on the other hand, will give us the version that restricts
+    the output length while prioritizing the tokens that correspond to our class labels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Finally, we can get the last version we discussed, using one sample per prompt
+    while tuning the model as before, via the following command (assuming the file
+    train_reviews.csv is located in the same repository as the code):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: Feel free to try new combinations that we haven’t discussed!
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.7 Fine-tuning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: So far, we have done everything in our power to squeeze the best performance
+    out of existing models. Those models have been trained for tasks that are, perhaps,
+    similar but not *exactly* like the one we’re interested in. Wouldn’t it be nice
+    to get a model customized specifically for our task? That is possible when using
+    fine-tuning. Let’s see how to implement fine-tuning with OpenAI’s models in practice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fine-tuning means we take an existing model, such as OpenAI’s GPT-3.5 Turbo
+    model, and specialize it for a task we’re interested in. Of course, in principle,
+    we could train our model from scratch. But that is typically prohibitively expensive,
+    and in addition, we usually don’t find enough task-specific training data to sustain
+    a large model during training. That’s why it is much better to rely on fine-tuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fine-tuning is typically the last thing we try when maximizing performance for
+    a specific task. The reason is that fine-tuning requires a certain upfront investment
+    in terms of time and money. During fine-tuning, we pay OpenAI to create a customized
+    version of one of its base models just for our task. The price is based on the
+    size of the training data and the number of times that training data is read (i.e.,
+    the number of *epochs*). For example, at the time of writing, fine-tuning GPT-3.5
+    Turbo costs about 0.8 cents per 1,000 tokens of training data and epoch. Also,
+    after fine-tuning, we pay to use the fine-tuned model. The price per token is
+    higher for the fine-tuned model than for the base version. That makes sense as,
+    at least in theory, the fine-tuned model should perform better for our specific
+    task.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One possible advantage of fine-tuning is that we improve the accuracy of the
+    model output. Another possible advantage is that we may be able to shorten our
+    prompts. When using a generic model, the prompt needs to contain a description
+    of the task to perform (along with all relevant data). On the other hand, our
+    fine-tuned model should be specialized to perform a single task and perform well
+    on it. If the model only needs to do one task, in principle it should be possible
+    to leave the task description out of the prompt because it is implicit. Besides
+    the task description, we can leave out other information that is helpful for a
+    generic model but not required for a specialized one. For instance, it may be
+    necessary to integrate samples into the prompt for the generic model to obtain
+    reasonable output quality, whereas that is unnecessary for the fine-tuned version.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our specific scenario, we want to map reviews to a class label (based on
+    the underlying sentiment of the review author). Previously, we specified the classification
+    task as part of the prompt (and even provided some helpful examples). Now, perhaps,
+    when fine-tuning a model, we can leave out those instructions. More precisely,
+    we may no longer need to use prompts like the following (a prompt containing sample
+    reviews (**1**) with instructions (**2**) and sample solutions (**3**), along
+    with the review to classify (**4**) and corresponding instructions (**5**)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Sample review'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Instructions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Sample solution'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Review to classify'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Instructions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Instead, we can assume that the model implicitly knows that it should classify
+    reviews and which class labels are available. Under that assumption, we can simplify
+    the prompt to this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: This prompt merely states the review that we want to classify. We assume that
+    all other task-specific information (such as instructions and samples) is already
+    implicitly known to the model. As you certainly noticed, this prompt is much shorter
+    than the previous version. That means we *may* save money when using the fine-tuned
+    model instead of the base version. On the other hand, keep in mind that using
+    the fine-tuned model is more expensive per token than using the base version.
+    We postpone the corresponding calculations to later. But first, let’s see whether
+    we can even make such concise prompts work in practice via fine-tuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.8 Generating training data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: First we have to generate our training data for fine-tuning. We will use the
+    reviews with associated class labels contained in the file train_reviews.csv,
+    available on the companion website under Review Training. OpenAI expects training
+    data for fine-tuning in a very specific format. Before we can fine-tune, we need
+    to transform our .csv data into the required format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Training data for fine-tuning OpenAI’s chat models generally takes the form
+    of successful interactions with the model (i.e., examples where the model produces
+    the output we ideally want it to produce). In the case of OpenAI’s chat models,
+    such interactions are described via message histories. Each message is described
+    by a Python dictionary object. For instance, the following describes a successful
+    completion, given the earlier example review as input:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is a negative review (i.e., the review author does not want to recommend
+    the movie), and therefore, we ideally want the model to generate a message that
+    contains the single token `neg`. That’s the interaction depicted here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make fine-tuning worth it, you typically want to use at least 50 samples
+    and up to a few thousand samples. Using more samples for fine-tuning can improve
+    performance but is also more expensive. On the other hand, this is a one-time
+    fee because you can reuse the same fine-tuned model for a potentially large data
+    set (and the usage fees for the fine-tuned model do not depend on the amount of
+    training data used for fine-tuning). The example file (reviews_train.csv) contains
+    100 samples and is therefore within the range of data sizes where fine-tuning
+    may become useful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'OpenAI expects data for fine-tuning in JSON-lines format (such files typically
+    have the suffix .jsonl). Files that comply with this format essentially contain
+    one Python dictionary in each line. In this case, each line describes one successful
+    interaction with the model (using the same format as in the previous example).
+    To handle JSON-lines files more easily from Python, we will use the `jsonlines`
+    library. As a first step, go to the terminal and install the library using the
+    following command:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now we can use the library to transform our .csv data into the format required
+    by OpenAI. Listing [9.3](#code__createTrainingData) uses the `get_samples` function
+    (**1**) to prepare samples in the required format. The input is a pandas DataFrame
+    (`df` parameter) containing the training samples in the usual format (we assume
+    that the `text` column contains the reviews and the `sentiment` column contains
+    the associated class labels). We turn each sample into a successful message exchange
+    with the model. First, we create the message sent by the user (**2**), which only
+    includes the review text. Second, we create the desired answer message to generate
+    by the model (associated with the “assistant” role) (**3**). The full set of training
+    samples is a list of message exchanges, each prepared in the previously mentioned
+    format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 9.3 Generating training data for fine-tuning
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Generates training data'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Creates a user message'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Creates an assistant message'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Parses the command-line arguments'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Stores the training data in new format'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing [9.3](#code__createTrainingData) expects as input a path to the .csv
+    file with training samples, as well as the path to the output file (**4**). The
+    output file follows the JSON-lines format, so we ideally assign an output path
+    ending with .jsonl. After transforming the input .csv file into the fine-tuning
+    format, we use the `jsonlines` library to write the transformed samples into the
+    JSON-lines file (**5**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As usual, you don’t need to enter the code for this listing. You can find it
+    on the website under Prepare Fine-Tuning. Run it from the terminal using the following
+    command (we assume that the file train_reviews.csv is located in the same repository
+    as the code):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: You may want to manually inspect the train_reviews.jsonl file that was (hopefully)
+    generated by running this command. You should see one training sample on each
+    line, represented as a Python dictionary.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.9 Starting a fine-tuning job
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we have our training data in the right format, we can create a fine-tuning
+    job on OpenAI’s platform. Of course, because the model is stored only on OpenAI’s
+    platform, we cannot do the fine-tuning ourselves. Instead, we send our training
+    data to OpenAI and request to use that data to create a customized model. To create
+    a customized model, we must first choose a base model. In this case, we will start
+    from the GPT-3.5 Turbo model (which makes it easier to compare with the results
+    we have obtained so far).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We can create a fine-tuning job using the following code snippet (assuming
+    that `in_path` is the path to the file containing training data):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The `reply` object will contain a Python object with metadata about our fine-tuning
+    job (assuming the job creation succeeds). Most importantly, we get the ID of the
+    job we just created in the `reply.id` field. Fine-tuning jobs typically take a
+    while (around 15 minutes is typical for the fine-tuning job we describe here).
+    That means we have to wait until our fine-tuned model has been created. The job
+    ID allows us to verify the status of our fine-tuning job and retrieve the ID of
+    the freshly created model once it is available. We can retrieve status information
+    about our fine-tuning job using the following piece of Python code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: The `reply.status` field reports the status of the fine-tuning job, which will
+    eventually reach the value `succeeded`. After that has happened, we can retrieve
+    the ID of the fine-tuned model in `reply.fine_tuned_model`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing [9.4](#code__fineTune) starts the fine-tuning process, waits until the
+    corresponding job finishes, and finally prints out the ID of the generated model.
+    Given a path to a file containing training data, the code first uploads the file
+    containing training data (**1**). It retrieves the file ID assigned by OpenAI
+    and uses it to create a fine-tuning job (**2**). Then, we iterate until the fine-tuning
+    job completes successfully (**3**). In each iteration, we print out a timer (measuring
+    seconds since the start of the fine-tuning job) and check for status updates with
+    regard to the job (**4**). Finally, we retrieve the model ID and print it (**5**).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 9.4 Fine-tuning a GPT model using training data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Uploads training data to OpenAI'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Creates a fine-tuning job'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Iterates until the job completes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Gets the job status'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Retrieves the ID of the fine-tuned model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can find the code on the website under Start Fine-Tuning. Run it using
+    the following command (where train_reviews.jsonl is the previously generated file):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'If you run the script to completion, you will see output such as the following
+    (this is, of course, just part of the output; dots represent missing lines):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: After printing out the job ID, we receive regular updates on the job status,
+    typically proceeding from `validating_files` to `running` to (hopefully) `succeeded`.
+    The problem is that the job may take a while to finish (for the previous example,
+    about 14 minutes). If you don’t want to run the script continuously (e.g., to
+    switch off your computer), you can interrupt the script after the fine-tuning
+    job has started (you will know because the script prints out the job ID at that
+    point). The fine-tuning job will proceed as planned on OpenAI’s servers. Depending
+    on your setup, you may even receive an email notifying you once the job has finished.
+    Otherwise, you can periodically run this script.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 9.5 Checking for the status of fine-tuning jobs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Retrieves and prints the job metadata'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given the job ID (retrieved from the output of listing [9.4](#code__fineTune)),
+    the script retrieves and prints the job metadata (**1**), including the job status
+    and the ID of the resulting model (after the job has finished successfully).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 9.10 Using the fine-tuned model
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Congratulations! You have created a specialized model, fine-tuned to the task
+    (review classification) you care about. How can you use it? Fortunately, doing
+    so is straightforward using the OpenAI library. Instead of specifying the name
+    of one of the standard models (e.g., `gpt-3.5-turbo`), we now specify the ID of
+    our fine-tuned model, like so (replace the placeholder `[Fine-tuned model ID]`
+    with the actual model ID):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'As before, we assume that the `prompt` variable contains the prompt text. The
+    prompts, however, differ for our fine-tuned model. Previously, we described the
+    classification task, along with the review text. Now we have trained our custom
+    model to map the review text alone to an appropriate class. That means our prompt-generation
+    function simplifies to the following (in fact, you might argue that creating a
+    dedicated function is no longer required):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE34]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Instead of generating multipart prompts, we return the review text to classify.
+    You may want to find out what happens when using the simplified prompt with the
+    original model (`gpt-3.5-turbo`). You will see output like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE35]'
+  prefs: []
+  type: TYPE_PRE
+- en: Clearly, the model gets confused about our intentions—that is, what we expect
+    it to do with the input reviews. Instead of generating correct class labels, it
+    writes elaborate analyses commenting on the primary points raised in the reviews.
+    This is not unexpected. Imagine if someone handed you a review without any further
+    instructions. How would you know that the person wanted you to classify the review,
+    let alone the correct labels of the possible classes? It would be almost impossible
+    to do so, and the same applies to language models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, if we switch to our fine-tuned model and provide the same prompts
+    as input, we will get the following output instead:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE36]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Improved accuracy'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Lower token consumption'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that even without setting any tuning parameters (or providing any samples
+    in the prompt), we now get an accuracy of 70% (**1**), rather than the 60% in
+    our original version! Also, the number of tokens used is reduced by about 200
+    compared to the initial version (**2**). This is because we omit the instructions
+    (and class labels) in each prompt.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Okay! We have seen that we can fine-tune a model to classify reviews accurately
+    while reducing the prompt size. But the question remains: Was it worth it? Let’s
+    do some calculations to find that out. We set aside the cost of generating the
+    fine-tuned model because we only have to do that once (and in our example scenario,
+    we assume that we want to analyze one year’s worth of reviews). Without fine-tuning,
+    we can achieve the same accuracy (70%) with the generic model when exploiting
+    tuning parameters (setting bias and a limit on the number of output tokens). In
+    that case, we use 2,228 tokens for our 10 sample reviews. After fine-tuning, we
+    only use 2,085 tokens for our sample reviews. However, with the generic model,
+    we pay 0.05 cents per 1,000 input tokens. On the other hand, for the fine-tuned
+    model, we pay 0.3 cents per 1,000 tokens. That means our cost per token is six
+    times higher after fine-tuning! The moderate decrease in the number of tokens
+    processed does not amortize the higher fees per token in this specific scenario.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In general, fine-tuning can be very helpful in increasing quality and possibly
+    reducing costs. However, be aware that it comes with various overheads. Before
+    using a fine-tuned model in production, evaluate it experimentally, do your calculations,
+    and make sure it is worth it!
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Tuning parameter settings can influence model performance and cost.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Consider limiting output length and introducing token logit bias.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Do not always use the largest available model, as doing so increases cost.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Identify the best model for your task by evaluating it on samples.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The design of the prompt can have a significant effect on performance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Include samples of correctly solved tasks in the prompt for few-shot learning.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fine-tuning allows you to specialize base models to the tasks you care about.
+    It may allow you to reduce prompt size due to specialization.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Fine-tuning incurs overhead proportional to the amount of data trained on. It
+    also increases the cost per token when you use the resulting model.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

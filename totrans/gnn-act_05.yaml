@@ -1,0 +1,1982 @@
+- en: 4 Graph attention networks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Understanding attention and how it’s applied to graph attention networks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Knowing when to use GAT and GATv2 layers in PyTorch Geometric
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using mini-batching via the `NeighborLoader` class
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implementing and applying graph attention networks layers in a spam detection
+    problem
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this chapter, we extend our discussion of convolutional graph neural network
+    (convolutional GNN) architectures by looking at a special variant of such models,
+    the graph attention network (GAT). While these GNNs use convolution as introduced
+    in the previous chapter, they extend this idea with an *attention mechanism* to
+    highlight important nodes in the learning process [1, 2]. In contrast to the conventional
+    convolutional GNN, which weights all nodes equally, the attention mechanism allows
+    the GAT to learn what aspects in its training to put extra emphasis on.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As with convolution, *attention* is a widely used mechanism in deep learning
+    outside of GNNs. Architectures that rely on attention (particularly *transformers*)
+    have seen such success in addressing natural language problems that they now dominate
+    the field. It remains to be seen if attention will have a similar effect in the
+    graph world.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GATs shine when dealing with domains where some nodes have more importance than
+    the graph structure suggests. Sometimes in a graph, there can be a single high-degree
+    node that has an outsized importance on the rest of the graph, and the vanilla
+    message passing (covered in the previous chapter) will likely capture its significance
+    thanks to the node’s many neighbors. However, sometimes a node can have a large
+    effect despite having a similar degree to other nodes. Some examples include social
+    networks, where some members of a network have more influence on generating or
+    spreading information and news; fraud detection, where a small set of actors and
+    transactions drive deception; and anomaly detection, where a small subset of people,
+    behaviors, or events will fall outside the norm [3–5]. GATs are especially well
+    suited to these types of problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we’ll apply GATs to the domain of fraud detection. In our problem,
+    we detect fake customer reviews from the Yelp website. For this, we use a network
+    of user reviews derived from a dataset that contains Yelp reviews for hotels and
+    restaurants in the Chicago area [6, 7].
+  prefs: []
+  type: TYPE_NORMAL
+- en: After an introduction to the problem and the dataset, we first train a baseline
+    model without the graph structure before applying two versions of the GAT model
+    to the problem. At the end, we discuss class imbalance and some ways to address
+    this.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Code snippets will be used to explain the process, but the majority of code
+    and annotation can be found in the repository. As with previous chapters, we provide
+    a deeper dive into the theory in section 4.5 at the end of the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  Code from this chapter can be found in notebook form at the GitHub repository
+    ([https://mng.bz/JYoP](https://mng.bz/JYoP)). Colab links and data from this chapter
+    can be accessed in the same location.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.1 Detecting spam and fraudulent reviews
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: On consumer-oriented websites and e-commerce platforms such as Yelp, Amazon,
+    and Google Business Reviews, it’s common for user-generated reviews and ratings
+    to accompany the presentation and description of a product or a service. In the
+    United States, more than 90% of adults trust and rely on these reviews and ratings
+    when making a purchase decision [3]. At the same time, many of these reviews are
+    fake. Capital One estimated that 30% of online reviews weren’t real in 2024 [5].
+    In this chapter, we’re going to be training our model to detect fake reviews.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Spam or fraudulent review detection has been a well-trodden area in machine
+    learning and natural language processing (NLP). As such, several datasets from
+    primary consumer sites and platforms are available. In this chapter, we’re going
+    to use review data from Yelp.com, a platform of user reviews and ratings that
+    focuses on consumer services. On Yelp.com, users can look up local businesses
+    in their proximity and browse basic information about the business and written
+    feedback from users. Yelp uses internally developed tools and models to filter
+    reviews based on their trustworthiness. The process we’ll use to approach the
+    problem is shown in figure 4.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.1 We’ll tackle the fraudulent user review classification problem using
+    both non-graph and graph data.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'First, we’ll establish baselines using non-GNN models and tabular data: logistic
+    regression, XGBoost, and scikit-learn’s multilayer perceptron (MLP). Then, we’ll
+    apply graph convolutional network (GCN) and GAT to the problem, introducing graph
+    structural data.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This fraudulent review problem can be tackled as a node classification problem.
+    We’ll use GAT to perform node classification of the Yelp reviews, sifting the
+    fraudulent from the legitimate reviews. This classification is binary: “spam”
+    or “not spam.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We expect that the graph structural data and attention mechanism will give
+    an edge to the attention-based GNN models. We’ll follow this process in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Load and preprocess the dataset
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Define baseline models and results
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implement the GAT solution and compare it to baseline results
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 4.2 Exploring the review spam dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Derived from a broader Yelp review dataset, our data focuses on reviews from
+    Chicago’s hotels and restaurants. It has also been preprocessed so that the data
+    has a graph structure. This means we’re going to be using a specialized version
+    of the Yelp Multirelational dataset, characterized by its graph structure and
+    its focus on consumer reviews from many Chicago-based hotels and restaurants.
+    The Yelp Multirelational dataset is derived from the Yelp Review dataset and processed
+    into a graph. This dataset contains the following (final version of the dataset
+    is summarized in table 4.1):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*45,954 nodes* —Each node represents an individual review, with 14.5% of them
+    flagged as likely fraudulent and created by a bot to skew the reviews.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Preprocessed node features* —Our nodes come with 32 features that have been
+    normalized to facilitate machine learning algorithms.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*3,892,933 edges* —Edges connect reviews that have a common author or review
+    a common business. While the original dataset had multiple types of relational
+    edges, we use one with homogenous edges for easier analysis.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*No user or business IDs* —Distinguishing IDs have been removed.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Table 4.1 Overview of the Yelp Multirelational dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Yelp Review dataset for the city of Chicago processed into a graph, with
+    node features based on review text and user data |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of nodes (reviews)  | 45,954  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Filtered (fraudulent) nodes  | 14.5%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Node features  | 32  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Total number of edges (edges are assumed to be homogenous in our analysis)  |
+    3,846,979  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Reviews with a common writer  | 49,315  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Reviews of a common business and written in the same month  | 73,616  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Reviews of a common business that share the same rating  | 3,402,743  |'
+  prefs: []
+  type: TYPE_TB
+- en: Next, table 4.2 shows examples of text reviews from this dataset, ordered by
+    the star rating system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.2 Sampling of reviews from the YelpChi dataset for one restaurant, in
+    descending order by rating (5 being the highest)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Rating (1–5) | Date | Review* |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 5  | 7/7/08  | Perfection. Snack has become my favorite late lunch/early
+    dinner spot. Make sure to try the butter beans!!!  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4  | 7/1/13  | Ordered lunch for 15 from Snack last Friday. On time, nothing
+    missing and the food was great. I have added it to the regular company lunch list,
+    as everyone enjoyed their meal.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3  | 12/8/14  | The food at snack is a selection of popular Greek dishes.
+    The appetizer tray is good as is the Greek salad. We were underwhelmed with the
+    main courses. There are 4-5 tables here so it’s sometimes hard to get seated.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2  | 9/10/13  | Been meaning to try this place for a while-highly recommended
+    by a friend. Had the tuna sandwic… . good but got TERRIBLY SICK afterword. Also,
+    sage tea was nice.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1  | 8/12/12  | Lackluster service, soggy lukewarm spinach pie and two-day-old
+    cucumber salad. Go to Local instead!  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| *Spelling, grammar, and punctuation are uncorrected in these reviews.  |  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: 4.2.1 Explaining the node features
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Highlights of this dataset are its node features. These were extracted from
+    available metadata such as ratings, timestamps, and review text. They are divided
+    into the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Characteristics of the text review
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Characteristics of the reviewer
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Characteristics of the reviewed business
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'These features are then further divided into behavioral and textual features:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Behavioral features highlight patterns of behavior and actions of the reviewers.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Textual features are based on the text found in the reviews.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The process for calculating these features was developed by Rayana and Akoglu
+    [7] and Dou [9]. Taking the original formulas from Rayana and Akoglu, Dou preprocessed
+    and normalized the feature data that we use in this example. A summary of the
+    features is shown in figure 4.2\. (For more details on definitions and how they
+    were calculated, refer to the original paper [8].) These node features are summarized
+    here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Reviewer and business features:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Behavioral:*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Max. number of reviews written in a day (MNR)* —High value suggests spam.'
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of positive reviews (4-5 star) (PR)* —High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of negative reviews (1-2 star) (NR)* —High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Avg. rating deviation (avgRD)* —High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Weighted rating deviation (WRD)* —High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Burstiness (BST)* —Specifically, the time frame between the user’s first and
+    last review. High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Entropy of rating distribution (ERD)* —Low value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Entropy of temporal gaps* *D**t’s (ETG)* —Low value is spam indicative.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Text-based:*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Avg. review length in words (RL)* —Low value suggests spam.'
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Avg./Max. content similarity* *measured with cosine similarity using a bag-of-bigrams
+    approach (ACS, MCS)* —High value suggests spam.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Review features:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Behavioral:*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Rank order among all the reviews of a product* —Low value suggests spam.'
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Absolute rating deviation from product’s average rating (RD)* —High value
+    is suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Extremity of rating (EXT)* —High values (4-5 stars) are considered spammy.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Thresholded rating deviation of review (DEV)* —High deviation is suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Early time frame (ETF)* —Reviews that appear too early are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Singleton Reviewer Detection (ISR)* —If the review is a user’s sole review,
+    it’s marked as suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Text-based:*'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Percentage of ALL-capital words (PCW)* —High values are suspicious.'
+  prefs:
+  - PREF_UL
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Percentage of capital letters (PC)* —High values are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Review length in words* —Low values are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of 1st person pronouns like “I”, “my” (PP1)* —Low values are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of exclamation sentences (RES)* —High values are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of subjective words*—*Detected by sentiWordNet (SW)* —High values are
+    suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Ratio of objective words*—*Detected by sentiWordNet (OW)* —Low values are
+    suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Frequency of review*—*Approximated using locality-sensitive hashing (F)* —High
+    values are suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Description length based on unigrams and bigrams (DLu, DLb)* —Low values are
+    suspicious.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Figure 4.2 gives a summary of the set of features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.2 Summary definitions of node features used in the example. A label
+    of high means that a high value of the data indicates a tendency toward spamminess.
+    Likewise, a label of low means that a low value of the data indicates a tendency
+    toward spamminess. (For more details on the derivation of these features, refer
+    to [7].)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: This diverse mix of features requires varying degrees of intuition to interpret.
+    These features not only help in understanding the behavior of reviewers but also
+    in deducing the context and essence of the reviews. It’s clear that certain features,
+    such as Singleton Reviewer Detection or Review Length in Words can provide immediate
+    insights, while others, such as Entropy of Temporal Gaps Dt’s, require a more
+    considered understanding. Let’s next examine the distributions of these features
+    present in the data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.2.2 Exploratory data analysis
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this section, we download and explore the dataset with a focus on node features.
+    Node features will serve as the main tabular features in our non-graph baseline
+    models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The dataset can be downloaded from Yingtong Dou’s GitHub repository ([https://mng.bz/Pdyg](https://mng.bz/Pdyg)),
+    compressed in a zip file. The unzipped file will be in MATLAB format. Using the
+    `loadmat` function from the `scipy` library and a utility function from Dou’s
+    repository, we can produce the objects we need to start (see listing 4.1):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A `features` object containing the node features
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A `labels` object containing the node labels
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: An adjacency list object
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Listing 4.1 Load data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 loadmat is a scipy function that loads MATLAB files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Retrieves the node labels and features, respectively'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Retrieves and pickles an adjacency list. “Homo” means that this adjacency
+    list will be based on a homogenous set of edges; that is, we get rid of the multirelational
+    nature of the edges.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the adjacency list is extracted and pickled, it can then be called in the
+    future using
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the data loaded, we can now perform some exploratory data analysis (EDA)
+    to analyze the graph structure and node features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.2.3 Exploring the graph structure
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: To better understand fraud within our dataset, we explore the underlying graph
+    structure. By analyzing the connected components and various graph metrics, we
+    can get an overview of the network’s topology. This understanding will reveal
+    the data’s inherent characteristics and make sure there are no potential blockers
+    to effective GNN training. We present a detailed analysis of the connected components,
+    density, clustering coefficients, and other key metrics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To perform this structural EDA, we use our adjacency list to examine the structural
+    nature of our graph using the `NetworkX` library. In the following snippet of
+    code, we load the adjacency list object, convert it into a `NetworkX` graph object,
+    and then interrogate this graph object for three basic properties. The longer
+    code can be found in the repository:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: From the EDA, we obtain the properties listed in table 4.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.3 Graph properties
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Property | Value/details |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of nodes  | 45,954  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of edges  | 3,892,933  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Average node degree  | 84.71  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Density  | ~0.00  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Connectivity  | The graph isn’t connected.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Average clustering coefficient  | 0.77  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of connected components  | 26  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Degree distribution (first 10 nodes)  | [4, 4, 4, 3, 4, 5, 5, 6, 5, 19]  |'
+  prefs: []
+  type: TYPE_TB
+- en: Let’s dig into these properties. The graph is relatively large with 45,954 nodes
+    and 3,892,933 edges. This means the graph has a considerable level of complexity
+    and will likely contain intricate relationships. The average node degree is 84.71,
+    suggesting that, on average, nodes in the graph are connected to around 85 other
+    nodes. This indicates that the nodes in the graph are reasonably well connected,
+    and there’s a possibility of rich information flow between them. The graph’s density
+    is close to 0.00, which indicates it’s quite sparse. In other words, the number
+    of actual connections (edges) is much lower than the number of possible connections.
+    The density of a graph is its number of edges divided by its total possible edges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The graph isn’t fully connected and consists of 26 separate connected components.
+    The presence of multiple connected components may require special consideration
+    in modeling, especially if different components represent distinct data clusters
+    or phenomena. The average clustering coefficient of 0.77 is relatively high. This
+    metric gives an idea of the graph’s “cliquishness.” A high value means that nodes
+    tend to cluster together, forming tightly knit groups. This could be indicative
+    of local communities or clusters within the data, which can be crucial in understanding
+    patterns or anomalies, especially in fraud detection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given that we have 26 distinct components, it’s important to examine them to
+    plan for model training. We want to know whether the components are roughly the
+    same size, are a mix of sizes, or have one or two components dominating. Do the
+    properties of these separate graphs differ significantly? We run a similar analysis
+    on the 26 components and summarize the properties in table 4.4, with the components
+    displayed in descending order in terms of the number of nodes. The first column
+    contains the identifier of the component. From this table, we observe that one
+    large component dominates the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.4 Properties of the 26 graph components, sorted in descending order
+    by number of nodes
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Component ID | Number of nodes | Number of edges | Average node degree |
+    Density | Average clustering coeff |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3  | 45,900  | 38,92810  | 169.62  | 0  | 0.77  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 4  | 13  | 60  | 9.23  | 0.77  | 0.77  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2  | 6  | 14  | 4.67  | 0.93  | 0.58  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 1, 22  | 3  | 6  | 4  | 2  | 1  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 5–9, 14, 17, 24, 26  | 2  | 3  | 3  | 3  | 0  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 7–21, 23, 25  | 1  | 1  | 2  | 0  | 0  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| In the bottom three rows, several components have identical properties and
+    are put in the same row to save space.  |'
+  prefs: []
+  type: TYPE_TB
+- en: We see here that component 3 is the dominant component, followed by 25 components
+    that are tiny in comparison. These tiny components probably won’t have a strong
+    influence over our model, so we’ll focus on component 3\. Let’s contrast this
+    component with the overall graph, found in table 4.5\. Most of the properties
+    are very similar or the same, with the exception of the average node degree, for
+    which component 3 is twice as large.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.5 Comparing the largest component of the graph, component 3, to the
+    overall graph
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Attribute | Component No. 3 | Overall Graph | Insight/Contrast |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of nodes  | 45,900  | 45,954  | Component 3 contains almost all nodes
+    from the entire graph.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Number of edges  | 3,892,810  | 3,892,933  | Component 3 contributes almost
+    all edges of the entire graph.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Average node degree  | 169.62  | 84.71  | Nodes in component 3 are more densely
+    connected than in the overall graph.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Density  | 0.00  | 0.00  | Both the component and the entire graph are sparse;
+    this property is mainly driven by component 3\.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Average clustering coefficient  | 0.77  | 0.77  | Component 3 matches the
+    overall graph in terms of clustering, indicating its dominance in defining the
+    graph’s structure.  |'
+  prefs: []
+  type: TYPE_TB
+- en: 'For our GNN modeling purposes, what should we take away from this structural
+    analysis? Primarily, the overwhelming dominance of component 3 in both nodes and
+    edges underscores its significance in our dataset; almost the entirety of the
+    graph’s structure is encapsulated within this single component. This suggests
+    that the patterns, relationships, and anomalies within component 3 will heavily
+    influence the model’s training and outcomes. The higher average node degree in
+    component 3, compared to the overall graph, indicates a richer interconnectedness,
+    emphasizing the importance of capturing these dense connections effectively. Furthermore,
+    the identical density and clustering coefficient values between component 3 and
+    the entire graph highlight that this component is highly representative of the
+    dataset’s overall structural properties. We have two options:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Assume that the other components will have a minor effect on the model and train
+    without making any adjustments.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Model only component 3 itself, completely leaving the data of the smaller components
+    out of the training and test data.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: We looked at the structural properties of the graph data to get a glimpse into
+    the characteristics of the graph and got some valuable insights to guide GNN model
+    design and training for understanding potential fraud patterns. Next, we deep
+    dive into the node features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.2.4 Exploring the node features
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Having explored the structural nature of our graph, we turn to the node features.
+    In the code at the beginning of this section, we pulled out the node features
+    from the data file:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Note  As discussed previously, these feature definitions were handcrafted by
+    Rayana and others [7, 8]. Guided by the feature generation process, Dou et al.
+    [8] did the nontrivial work of further processing the Yelp review dataset to create
+    a set of normalized node features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With some additional work, shown in the code repository, we also add some tags
+    and descriptions to the features before we create a chart distribution for each
+    feature (example plots are shown in figures 4.3 to 4.5). Each set of plots corresponds
+    to features describing the review text, the reviewer, and the business. We want
+    to use these plots to check that the node features can be useful in distinguishing
+    fraud. Figure 4.3 shows the distributions of two of the features derived from
+    the characteristics of the reviews.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.3 Distribution plots of 2 of the 15 normalized node features based
+    on the review (see section 4.2.1 for feature definitions)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Figure 4.4 shows the distributions of two of the features derived from the characteristics
+    of the reviewers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.4 Distribution plots of two of the nine normalized node features based
+    on the reviewer (see section 4.2.1 for feature definitions)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Finally, figure 4.5 shows two of the distributions of the features derived from
+    the characteristics of the restaurant or hotel being reviewed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.5 Distribution plots of two of the eight normalized node features based
+    on the business being reviewed (see section 4.2.1 for feature definitions)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: By examining the histograms for the 32 node features, we can make several observations.
+    First, there’s a pronounced skewness in many of the features. Specifically, features
+    such as Rank, RD, and EXT lean toward a right-skewed distribution. This indicates
+    that the majority of data points fall on the histogram’s left side, but a few
+    higher-value points stretch the histogram toward the right. Conversely, features
+    such as MNR_user, PR_user, and NR_user, among others, display a left-skewed distribution.
+    In these cases, most of the data points concentrate on the histogram’s right side,
+    with a few lower-value points stretching the histogram to the left.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some features also exhibit a bimodal distribution, meaning that there are two
+    distinct peaks or groups within the data. This suggests that segmenting the data
+    and creating separate models for each group could be a useful strategy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, the long tails in several histograms suggest there are some outliers.
+    Given that certain models, such as linear regression, are highly sensitive to
+    extreme values, addressing these outliers could be crucial in refining and improving
+    our model. This could mean opting for outlier-resistant models, developing strategies
+    to mitigate their effect, or even removing them altogether.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given those general insights, let’s examine one of the feature plots more closely.
+    PP1 is the ratio of first-person pronouns (i.e., I, me, us, our, etc.) to second
+    person pronouns (you, your, etc.) in the review. This feature was developed due
+    to an observation that spam reviews typically contain more second person pronouns.
+    From the distribution plot for PP1, we observe that the distribution is skewed
+    left, with a tail that peaks at low values. Thus, if a low ratio is an indicator
+    of a spammy review, this feature would be good at distinguishing spam reviews.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To conclude our exploration of the node features, this data exhibits diverse
+    characteristics, with many opportunities for model training. Further preprocessing,
+    which could involve outlier handling, skewed feature transformation, data segmentation,
+    and feature scaling, may be crucial in optimizing the model’s predictive performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our exploration of the review spam dataset revealed some patterns, anomalies,
+    and insights. From the intricate structural characteristics of the dataset, represented
+    largely by dominant component 3, to the node features that provide promising indications
+    for distinguishing between genuine and fraudulent reviews, we’ve laid the groundwork
+    for our model training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In section 4.3, we’ll embark on training our baseline models. These initial
+    models serve as a foundation, helping us gauge the effectiveness of basic model
+    performance. Through these models, we’ll harness the potential of the data’s graph
+    structure and node features to separate fraud and spam from genuine reviews.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.3 Training baseline models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Given our dataset, we’ll begin the training phase by first developing three
+    baseline models: logistic regression, XGBoost, and an MLP. Note that for these
+    models, the data will have a tabular format, with the node features serving as
+    our columnar features. There will be one row or observation for every node of
+    our graph dataset. Next, we’ll develop an additional GNN baseline by training
+    a GCN to evaluate the effect of introducing graph structured data to our problem.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We now split our tabular data into test and train sets, and apply the three
+    baseline models. First, the test/train splitting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Splits data into test and train sets with an 80/20 split'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Double-checks the object shapes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can use this split data for each of the three models. For this training,
+    we’re only using the node features and labels. There is no use of the graph data
+    structure or geometry. For the baseline models and for the GNNs, we’ll mainly
+    rely on Receiver Operating Characteristic (ROC) and Area Under the Curve (AUC)
+    to gauge performance and to compare the performance of our GAT models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.3.1 Non-GNN baselines
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'We start by using a logistic regression model with the scikit-learn implementation
+    and the default hyperparameters:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Logistic regression model instantiation and training'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Accuracy score'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This model yields an AUC of 76.12%. For the ROC performance, we’ll also use
+    a function from scikit-learn. We’ll also recycle the true positive rate (`tpr`)
+    and false positive rate (`fpr`) to compare with our other baseline models:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 ROC curve calculation, yielding false positive rate (fpr) and true positive
+    rate (tpr)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In figure 4.6, we see the ROC curve. We find that the curve is relatively balanced
+    between false positives and false negatives but that the overall specificity is
+    quite poor, given how near it is to the diagonal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-6.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.6 ROC curve for logistic regression baseline model (orange line) and
+    chance line (blue diagonal line). An AUC of 76% indicates a model that can be
+    improved.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: XGBoost
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The XGBoost baseline follows the logistic regression, as shown in listing 4.2\.
+    We use a barebones model with the same training and test sets. For comparison,
+    we differentiate the names of the generated predictions (named `pred2`), the true
+    positive rate (`tpr2`), and the false positive rate (`fpr2`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.2 XGBoost baseline and plot
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 For comparison, we name the XGBoost predictions “ypred2”.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 For comparison, we distinguish the tpr and fpr of XGBoost and plot them
+    alongside the logistic regression result.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 4.7 shows the ROC curves for XGBoost and logistic regression. It’s clear
+    that XGBoost has superior performance for this metric.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.7 ROC curve for the XGBoost (dotted line), shown with the logistic
+    regression curve (solid line). We see that the XGBoost curve shows a better performance
+    than the logistic regression. The diagonal line is the chance line.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: XGBoost fares better than logistic regression with this data, yielding an AUC
+    of 94%, and with a superior ROC curve. This highlights that even a simple model
+    can be suitable for some problems, and it’s always a good idea to check performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multilayer perceptron
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: For the MLP baseline, we use PyTorch to build a simple, three-layer model, as
+    shown in listing 4.3\. As with PyTorch, we establish the model using a class,
+    defining the layers and the forward pass. In the MLP, we use binary cross-entropy
+    (BCE) as the loss function, which is commonly used in binary classification problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.3 MLP baseline and plot
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Imports needed packages for this section'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Defines the MLP architecture using a class'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Instantiates the defined model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Sets key hyperparameters'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Added to the account for class imbalance'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Defines the optimizer and the training criterion'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Uses BCE loss as the loss function'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Converts training data to torch data types: torch tensors'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#9 The training loop. In this example, we’ve specified 100 epochs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#10 Differentiates the tpr and fpr for comparison'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#11 Plots all three ROC curves together'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 4.8 shows the ROC results for logistic regression, XGBoost, and an MLP.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-8.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.8 ROC curves for all three baseline models. The curves for logistic
+    regression and MLP overlap. The XGBoost model shows the best performance for this
+    metric. The diagonal line is the chance line.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The MLP run for 100 epochs yields an accuracy of 85.9% in the middle of our
+    baselines. Its ROC curve is only slightly better than the logistic regression
+    models. These results are summarized in table 4.6.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.6 Log loss and ROC AUC for the three baseline models
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Model | Log Loss | ROC AUC |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| logistic regression  | 0.357  | 75.90%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| XGBoost  | 0.178  | 94.17%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multilayer perceptron  | 0.295  | 85.93%  |'
+  prefs: []
+  type: TYPE_TB
+- en: To summarize this section, we’ve run three baseline models to use as benchmarks
+    against our GNN models. These baselines used no structural graph data, only a
+    set of tabular features derived from the node features. We didn’t attempt to optimize
+    these models, and XGBoost ended up performing the best with an accuracy of 89.25%.
+    Next, we’ll train one more baseline using GCN and then apply the GATs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.3.2 GCN baseline
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this section, we’ll apply GNNs to our problem, starting with the GCN from
+    chapter 3 before moving on to a GAT model. We anticipate that our GNN models will
+    outperform other baselines thanks to the graph structural data, and the models
+    with an attention mechanism will be best. For the GNN models, we need to make
+    some changes to our pipeline. A lot of this has to do with the data preprocessing
+    and data loading.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data preprocessing
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'One critical first step is to prepare the data for use by our GNNs. This follows
+    some of what has already been covered in chapters 2 and 3\. The code for this
+    is provided in listing 4.4, where we take the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Establish the train/test split.* We use the same `test_train_split` function
+    from before, slightly tweaked to produce indices, and we only keep the resulting
+    indices.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Transform our dataset into PyG tensors.* For this, we start with the homogenous
+    adjacency list generated in an earlier section. Using NetworkX, we convert this
+    to a NetworkX `graph` object. From there, we use the PyG `from_networkx` function
+    to convert this to a PyG `data` object.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Apply the train/test split to the converted data objects.* For this, we use
+    the indices from the first step.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We want to show a variety of ways to arrange the training data for ingestion.
+    So, for the GCN, we’ll run the entire dataset through the model, while in the
+    GAT example, we’ll batch the training data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.4 Converting the datatypes of our training data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Establishes the train/test split. We’ll only use the index variables.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Establishes the train/test split. We’ll only use the index variables.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Takes the adjacency list and transforms it into PyG data objects'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Establishes the train/test split in the data objects'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the preprocessing done, we’re ready to apply the GCN and GAT solutions.
+    We detailed the GCN architecture in chapter 3\. In listing 4.5, we establish a
+    two-layer GCN, trained over 1,000 epochs. We choose two layers due to the insight
+    from chapter 3 that, in general, a low model depth improves performance and prevents
+    over-smoothing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.5 GCN definition and training
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Defines a two-layer GCN architecture'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Instantiates the model and puts the model and data on the GPU'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Training loop'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 For each epoch, we feed the entire data object through the model and then
+    use the training mask to calculate the loss.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Calculates false positive rate (fpr) and true positive rate (tpr)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applying the solutions
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: One item of note is the use of the masks in our training. While we establish
+    loss using the nodes in the training mask, for forward propagation, we must pass
+    the entire graph through the model. Why is this so? Unlike traditional machine
+    learning models that work on independent data points (e.g., rows in a tabular
+    dataset), GNNs operate on graph-structured data where the relationships between
+    nodes are critical. When training a GCN, each node’s embedding is updated based
+    on its neighbors’ information. Because this message-passing process involves aggregating
+    information from a node’s local neighborhood, the model needs access to the entire
+    graph structure so that it can compute these aggregations correctly and accurately
+    perform this process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: So, during training, even though we’re only interested in the prediction for
+    certain nodes (those in the training set), passing the entire graph through the
+    model ensures that all necessary context is considered. If only part of the graph
+    were passed through the model, the network would lack the complete information
+    needed to propagate messages correctly and update node representations effectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A training session of 100 epochs for the GCN yields an accuracy of 94.37%. By
+    introducing the graph data, we see incremental improvement against the XGBoost
+    model. Table 4.7 compares the model performance levels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.7 AUC for the four baseline models
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Model | AUC |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Logistic regression  | 75.90%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| XGBoost  | 94.17%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multilayer perceptron  | 85.93%  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GCN  | 94.37%  |'
+  prefs: []
+  type: TYPE_TB
+- en: To summarize, we’ve seen that including graph structural information using a
+    GNN model slightly improves performance compared to a purely feature-based or
+    tabular model. It’s clear that the XGBoost model has shown impressive results
+    even without the use of graph structures. However, the GCN model’s marginally
+    better performance underlines the potential of GNNs in using relational information
+    embedded in graph data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next phase of our study, our attention will turn to graph attention networks
+    (GATs). GATs have an attention mechanism that is especially tailored to learning
+    how to weigh the significance of neighbors during a message-passing step. This
+    can potentially offer even better model performance. In the next section, we’ll
+    delve into the details of training GAT models and comparing their outcomes with
+    the baselines we’ve established. Let’s proceed with GAT model training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.4 Training GAT models
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To train our GAT models, we’ll apply two PyG implementations (GAT and GATv2)
+    [2]. In this section, we’ll dive straight into training the models without discussing
+    what attention means for machine learning models and why it’s helpful. However,
+    for a short overview on attention and why attention might be all you need, see
+    section 4.5.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll be training two different GAT models. These both follow the same fundamental
+    idea—that we’re replacing the aggregation operator in our GCN with an attention
+    mechanism to learn what messages (node features) the model should pay the most
+    attention to. The first—GATConv—is a simple extension to the GCN in chapter 3
+    with the attention mechanism. The second is a slight variation to this model known
+    as GATv2Conv. This model is the same as GATConv except that it addresses a limitation
+    in the original implementation, namely that the attention mechanism is *static*
+    over individual GNN layers. Instead, for GATv2Conv, the attention mechanism is
+    dynamic across layers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To reiterate this, the original GAT model only computes the attention weights
+    once per training loop by using individual node and neighborhood features, and
+    these weights are static across all layers. In GATv2, the attention weights are
+    calculated on the node features as they are transformed through the layers. This
+    allows GATv2 to be more expressive, learning to emphasize the influence of node
+    neighborhoods throughout the trained model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both models introduce a significant computational overhead due to the introduction
+    of the attention mechanism. To address this, we introduce mini-batching to our
+    training loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.4.1 Neighborhood loader and GAT models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: From an implementation point of view, one key difference between the previously
+    studied convolutional models and our GAT models is the much larger memory requirements
+    of GAT models [9]. The reason for this is that GAT requires a calculation of attention
+    scores for every attention head and for every edge. This in turn requires the
+    PyTorch `autograd` method to hold tensors in memory that can scale up considerably,
+    depending on the number of edges, heads, and (twice) the number of node features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To get around this problem, we can divide our graph into batches and load these
+    batches into the training loop. This is in contrast to what we did with our GCN
+    model where we trained on one single batch (the entire graph). PyG’s `NeighborLoader`
+    (in its `dataloader` module) allows such mini-batch training, where we provide
+    implementation code for this in listing 4.6\. (PyG function `NeighborLoader` is
+    based on the “Inductive Representation Learning on Large Graphs” paper [10].)
+    The key input parameters for `NeighborLoader` are
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_neighbors`—How many neighbor nodes will be sampled, multiplied by the
+    number of iterations (i.e., GNN layers). In our example, we specify 1,000 nodes
+    over two iterations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`batch_size`—The number of nodes selected for each batch. In our example, we
+    set the batch size to be `128`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Listing 4.6 Setting up `NeighborLoader` for GAT
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Samples 1,000 neighbors for each node in two iterations'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Uses a batch size for sampling training nodes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In creating our GAT model, there are two key changes to make relative to our
+    GCN class. First, because we’re training in batches, we want to apply a batch-norm
+    layer. Batch normalization is a technique used to normalize the inputs of each
+    layer in a neural network to have a mean of 0 and a standard deviation of 1\.
+    This helps stabilize and accelerate the training process by reducing internal
+    covariate shift, allowing the use of higher learning rates, and improving the
+    overall performance of the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Second, we note that our GAT layers have an additional input parameter—`heads`—which
+    is the number of multihead attentions. In our example, our first `GATConv` layer
+    has two heads, as specified in listing 4.7\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The second `GATConv` layer, which is the output layer, has one head. In this
+    GAT model, because we want the final layer to have a single representation for
+    each node for our task, we use one head. Multiple heads would result in a confusing
+    output with multiple node representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.7 GAT-based architecture
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 GAT layers have a heads parameter, which determines the number of attention
+    mechanisms in each layer. In this implementation, the first layer (conv1) uses
+    multiple heads for richer feature extraction, while the final output layer (conv2)
+    uses a single head to aggregate the learned information into a # single output
+    for each node.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Because mini-batch training is being performed, a batch-norm layer is added.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our training routine for GAT is similar to the single-batch GCN, which we provide
+    in the following listing, except that we now need a nested loop for each batch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 4.8 Training loop for GAT
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Nested loop for mini-batch training. Each iteration here is a batch of nodes
+    loaded by NeighborLoader.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The steps outlined previously are the same for GATv2Conv, which can be found
+    in our repository. Training GATConv and GATv2Conv yields accuracies of 95.65%
+    and 95.10%, respectively. As shown in table 4.8, our GAT models outperform the
+    baseline models and GCN. Figure 4.9 shows the ROC results of the GCN and GAT models.
+    Figure 4.10 shows the ROC results of the GCN, GAT, and GATv2 models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.8 ROC AUC of the models
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Model | ROC AUC (%) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Logistic regression  | 75.90  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| XGBoost  | 94.17  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multilayer perceptron  | 85.93  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GCN  | 94.37  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GAT  | 95.65  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GATv2  | 95.10  |'
+  prefs: []
+  type: TYPE_TB
+- en: '![figure](../Images/4-9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.9 ROC curves for GCN and GATConv. The GATConv model shows the best
+    performance for this metric because it has a higher AUC and because its false
+    positive rate is markedly lower. The diagonal line is the chance line.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-10.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.10 ROC curves for GCN, GATConv, and GATv2\. Both GAT models outperform
+    GCN. GATv2 has the same higher false positive profile than GAT but has a similar
+    true positive rate.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'When observing the ROC curves, we see that both GAT models outperform the GCN.
+    We also see that both have better false positive rates. This is crucial for fraud/spam
+    detection as false positives can lead to genuine transactions/users being incorrectly
+    flagged, causing inconvenience and loss of trust. For GATv2, we notice that for
+    true positive rates, its performance is the same as for GCN and GAT. This indicates
+    that while it’s conservative in not mislabeling genuine transactions as fraudulent,
+    it might miss some actual frauds. These insights can lead to paths to refine the
+    models or to decision-making about which to use. Despite the favorable AUC curves
+    and scores, we must address one final problem that affects the usability of our
+    GAT models: class imbalance.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.4.2 Addressing class imbalance in model performance
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Class imbalance is a critical challenge in GNN problems, where the minority
+    class, often representing rare but important instances (e.g., fraudulent activities),
+    is significantly underrepresented compared to the majority class. In our dataset,
+    only 14.5% of the nodes are labeled as fraudulent, making it challenging for the
+    model to effectively learn from this sparse data. While high AUC scores may suggest
+    good overall performance, they can be misleading, masking poor performance on
+    the minority class that is crucial for a balanced evaluation. A deeper analysis
+    reveals a critical oversight: class imbalance significantly undermines our precision
+    and F1 scores.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In response to this challenge, several methods have been developed specifically
+    for GNNs to address class imbalance. Traditional techniques such as the Synthetic
+    Minority Over-sampling Technique (SMOTE) have been adapted to create graph-specific
+    methods such as GraphSMOTE, which generates synthetic nodes and edges to balance
+    the class distribution without disrupting the graph structure. Other approaches
+    include resampling techniques (both over-sampling and under-sampling), cost-sensitive
+    learning, architectural modifications, and attention mechanisms that focus on
+    minority class features [11, 12].
+  prefs: []
+  type: TYPE_NORMAL
+- en: While these methods help improve model performance, they come with unique challenges,
+    such as preserving the graph’s topology, maintaining node dependencies, and ensuring
+    scalability. Recent advancements, such as Graph-of-Graph Neural Networks (G2GNN),
+    have been developed to handle these problems more effectively. By understanding
+    and applying these strategies, we can enhance the robustness and fairness of GNN
+    models in real-world applications where class imbalance is a common problem. Taking
+    the GATv2 model from the previous section as the illustration, we compare its
+    F1, recall, and precision with that of XGBoost in table 4.9\. XGBoost has superior
+    performance, while GATv2 struggles to handle the imbalanced data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.9 Comparing F1, recall, and precision between the GATv2 and XGBoost
+    models trained in this chapter
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Metric | GATv2 | XGBoost |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| F1 score  | 0.254  | 0.734  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Precision  | 0.145  | 0.855  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Recall  | 1  | 0.643  |'
+  prefs: []
+  type: TYPE_TB
+- en: The GATv2 model’s performance reflects a common challenge faced in scenarios
+    with significant class imbalances. With the minority class constituting only 14.5%
+    of the data, the model emphasizes maximizing recall, achieving a perfect recall
+    score of 1.000\. This suggests that the model correctly identifies every instance
+    of the minority class, avoiding any missed detections of potentially crucial cases.
+    However, this comes at a significant cost to precision, which is notably low at
+    0.145\. This indicates that while the GAT is effective in detecting all true positives,
+    it also misclassifies many negative cases as positive, leading to a high number
+    of false positives. As a result, the F1 score, which reflects both precision and
+    recall, is low at 0.254, highlighting the inefficiency of the model in balancing
+    detection with accuracy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To alleviate this, we implemented two strategies aimed at mitigating class
+    imbalance: SMOTE illustrated in figure 4.11 and a custom reshuffling approach
+    shown in figure 4.12.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-11.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.11 An illustration of SMOTE, which seeks to provide a more balanced
+    dataset by upsampling the minority class. On the left, we begin with the original
+    dataset. In the middle, SMOTE creates synthetic data in the minority class. On
+    the right, with the synthetic data added to the minority class, the dataset is
+    more balanced.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: SMOTE was used to generate synthetic nodes, reflecting the average degree characteristics
+    of the original dataset, and to artificially enhance the representation of minority
+    classes. The reshuffling method took a different approach by avoiding the generation
+    of synthetic data. Instead, it ensures a balanced class representation in each
+    training batch by redistributing the majority class data across the batches. This
+    is achieved using the `BalancedNodeSampler` class, which guarantees that each
+    batch has an equal number of nodes from both the majority and minority classes.
+    For each batch, the sampler randomly selects a balanced set of nodes, extracts
+    the corresponding subgraph, and re-indexes the nodes to maintain consistency.
+    A typical batch redistribution from this process is illustrated in figure 4.12\.
+    This class is shown in listing 4.9.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-12.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.12 Illustration of the reshuffling method using an example of 100 data
+    points, with 76 in the majority class and 24 in the minority class. When creating
+    batches for training, each batch is made to contain equal portions of the majority
+    and minority classes.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Listing 4.9 `BalancedNodeSampler` class
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Optional: defines fixed sampling size per class'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Indices for the majority class'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Indices for the minority class'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Determines balanced batch size'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Randomly selects nodes for both classes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Combines samples from both classes into a single batch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Creates a mask for sampled nodes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Filters edges between sampled nodes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#9 Re-indexes sampled nodes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this case, SMOTE didn’t yield performance improvement. Therefore, we’ll focus
+    on the results of applying the reshuffling method. The metrics in table 4.10 demonstrate
+    that our interventions have not only improved the fairness of the models but also
+    enhanced their robustness by better capturing the minority class without sacrificing
+    overall accuracy. While the reshuffling method’s AUC doesn’t exceed XGBoost (94.17%),
+    it handles the class imbalance well with superior F1, precision, and recall.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 4.10 Comparing F1, precision, recall, and AUC of the GATv2 model trained
+    with a class reshuffling method
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Metric | Value |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Mean validation F1 score  | 0.809  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Mean validation precision  | 0.878  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Mean validation recall  | 0.781  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Mean validation AUC  | 0.914  |'
+  prefs: []
+  type: TYPE_TB
+- en: 4.4.3 *Deciding between GAT and XGBoost*
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The choice between using XGBoost and GATs should be informed by specific use-case
+    requirements and constraints. XGBoost offers efficiency and speed, which are advantageous
+    for projects with limited computational resources or when quick model training
+    is required. However, GATs provide the added benefit of deeply integrating node
+    relational data, which is essential for projects where internode relationships
+    are pivotal to understanding complex data patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GATs are particularly valuable for their ability to be integrated into broader
+    deep learning frameworks, offering enhanced node embeddings that encapsulate rich
+    contextual information, thus making them suitable for complex relational datasets.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our exploration into methods for addressing class imbalance has significantly
+    informed our understanding of model performance in real-world scenarios. These
+    insights are crucial for the effective development of robust and effective models,
+    especially in fields where precision and recall are critically balanced. In the
+    next, optional section, we go deeper into the concepts underlying GATs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.5 Under the hood
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this section, we discuss some of the additional details about attention and
+    GATs. This is provided for those who want to know what’s going on under the hood,
+    but you can safely skip this section if you’re more interested in learning how
+    to apply the models. We dive into the equations from the GAT paper [8] and explain
+    attention from a more intuitive perspective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.5.1 Explaining attention and GAT models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this section, we provide a foundational overview of attention mechanisms.
+    Attention, self-attention, and multihead attention are explained conceptually.
+    Then, GATs are positioned as an extension of convolutional GNNs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Concept 1: The various attention mechanism types'
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Attention is one of the most important concepts introduced into deep learning
+    in the past decade. It’s the basis for the, now famous, transformer model that
+    powers many of the breakthroughs in generative models such as large language models
+    (LLMs). Attention is the mechanism by which a model can learn what aspects in
+    its training to put extra emphasis on [13, 14]. What are the various types of
+    attention in a model?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Imagine you’re reading a novel where the storyline isn’t linear but rather jumps
+    around, connecting various characters, events, or even parallel storylines. While
+    reading a chapter about a specific character, you remember and consider other
+    parts of the book where this character has appeared or been mentioned. Your understanding
+    of this character at any given moment is influenced by these different parts of
+    the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In deep learning and GNNs, attention serves a similar purpose. When processing
+    a sentence in an NLP problem, attention means the model can learn the importance
+    of neighboring words. For a GNN considering a specific node in a graph, the model
+    uses attention to weigh the importance of neighboring nodes. This helps the model
+    decide which neighboring nodes are most relevant when trying to understand the
+    current node, similar to how you remember relevant parts of the book to better
+    understand a character.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Self-attention
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Imagine reading a sentence in the novel that refers to multiple characters and
+    events, some of which are related in complex ways. To understand this sentence
+    fully, you have to recall how each character and event relate to each other, all
+    within the scope of that sentence. You might find yourself focusing more on certain
+    characters or events that are crucial to understanding the context of the sentence
+    you’re currently reading.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For a GNN using self-attention, each node in a graph not only considers its
+    immediate neighbors but also takes into account its own features and position
+    in the graph. By doing this, each node receives a new representation influenced
+    by a weighted context of itself and other nodes, which helps in tasks that require
+    understanding the relationships between nodes in a complex graph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multihead attention
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Suppose you’re a member of a book club that is reading the novel, and each member
+    of your club is asked to focus on different aspects of the novel—one on character
+    development, another on plot twists, and yet another on thematic elements. When
+    you all come together to discuss, you get a multifaceted understanding of the
+    book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, in GNNs, multihead attention allows the model to have multiple “heads,”
+    or attention mechanisms, focusing on various aspects or features of the neighboring
+    nodes. These different heads can learn different patterns or relationships within
+    the graph, and their outputs are usually aggregated to form a more complete understanding
+    of each node’s role within the larger graph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Concept 2: GATs as variants of convolutional GNNs'
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: GATs extend convolutional GNNs by incorporating attention mechanisms. In traditional
+    convolutional GNNs such as GCNs, the contributions from all neighbors during the
+    message-passing step are equally weighted when aggregated. GATs, however, add
+    in attention scores to the aggregation function to weigh these contributions.
+    This is still permutation invariant (by design) but more descriptive than the
+    summation operation in GCNs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyG implementations
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'PyG offers two versions of GAT layers. The two are distinguished by the types
+    of attention used and the calculation of attention scores:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GATConv`—Based on Veličković’s paper [1], this layer uses self-attention to
+    calculate attention scores across the entire graph. It can also be configured
+    to use multihead attention, thereby employing multiple “heads” to focus on various
+    aspects of the input nodes.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GATv2Conv`—This layer improves upon GATConv by introducing *dynamic atten**tion*.
+    Here, self-attention scores are recalculated in a node-specific context across
+    layers, making the model more expressive in how it learns to weigh node representations
+    constructed during the message-passing step within each layer of a GNN. As with
+    `GATConv`, it supports multihead attention to capture various features or aspects
+    more effectively.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Tradeoffs vs. other convolutional GNNs
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'As implemented in PyG, GAT layers have advantages due to the use of attention.
+    There are performance tradeoffs to consider, however. Key factors to consider
+    are:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Performance*—GATs generally have higher performance than standard convolutional
+    GNNs as they can focus on the most relevant features.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Training time*—Increased performance comes at the cost of more time required
+    to train the models due to the added complexity of computing the attention mechanisms.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Scalability*—The computational cost also affects the scalability, making GATs
+    less suitable for very large or dense graphs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 4.5.2 Over-smoothing
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: You’ve learned how to change the aggregation operation used in the message-passing
+    step to include more complicated methods, such as attention mechanisms. However,
+    there is always a risk of performance degradation when applying multiple rounds
+    of message passing. This effect, known as *over-smoothing*, occurs because, after
+    multiple rounds of message passing [15], the updated features can converge to
+    similar values. An example of this is shown in figure 4.13\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/4-13.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 4.13 Example of over-smoothing based on changing node features
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: As we know, message passing occurs at each layer of a GNN. In fact, a GNN that
+    has many layers is more at risk of over-smoothing than one that has fewer layers.
+    This is one of the reasons why GNNs are typically more shallow than traditional
+    deep learning models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another cause of over-smoothing happens when a problem has a significant long-range
+    (in terms of number of hops) task that needs solving. For example, a node could
+    be influenced by a far-off node. This is also known as having a large “problem
+    radius.” Whenever we have a graph where nodes can have a very large effect on
+    other nodes despite being multiple hops away, then the problem radius should be
+    considered large. For example, social media networks might have a large problem
+    radius if certain individuals such as celebrities can influence other individuals
+    despite being distantly connected. Usually, this occurs when a graph is sufficiently
+    large to have distantly connected nodes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In general, if you think a problem may be at risk of over-smoothing, be careful
+    with how many layers you introduce to the GNN, that is, how deep you make it.
+    However, note that certain architectures appear less at risk of over-smoothing
+    than others. For example, GraphSAGE samples a fixed number of neighbors and aggregates
+    their information. This sampling can mitigate over-smoothing. On the other hand,
+    GCNs are more at risk because they don’t have this sampling process, and while
+    the attention mechanism partially lowers the risk, GATs can also suffer from over-smoothing
+    because the aggregation is still local.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4.5.3 Overview of key GAT equations
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this section, we’ll briefly cover the key equations given in the GAT paper
+    by Veličković et al. [1] and tie them to the concepts we’ve covered about GATs.
+    GATs use attention mechanisms to learn which neighboring nodes are more important
+    when updating a node’s features. They do this by computing attention scores (equations
+    1–3), which are then used to weigh and combine the features of neighboring nodes
+    (equations 4–6). The use of multihead attention enhances the model’s expressiveness
+    and robustness, allowing it to learn from multiple perspectives simultaneously.
+    This approach can be computationally expensive, but it generally improves the
+    performance of GNNs on various tasks such as node classification and link prediction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention coefficients calculation (equations 4.1–4.3)
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The first step in using GATs is to compute the attention scores or coefficients
+    for each pair of connected nodes. These coefficients indicate how much “attention”
+    or importance a node should give to its neighbor. Raw attention scores [1] are
+    calculated as
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.1)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Here, *e*[ij] represents the raw attention score from node iii to its neighbor
+    *j*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**h**[*i*] and **h**[*j*] are the feature vectors (representations) of nodes
+    *i* and *j*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '**W** is a learnable weight matrix that linearly transforms the features of
+    each node to a higher dimensional space.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*α* is an attention mechanism (usually a neural network) that computes the
+    importance score for each node pair.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The idea is to assess how much information node *i* should consider from node
+    *j*. Normalized attention coefficients [1] are calculated as
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.2)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Once we have raw scores *e*[ij], we normalize them using a softmax function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*α*[*ij*] represents the normalized attention coefficient that quantifies the
+    importance of node *j*’s features to node *i*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The softmax ensures that all attention coefficients for a given node iii sum
+    up to 1, making them comparable across different nodes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Following is a detailed computation of attention coefficients [1]:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.3)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Here, the attention mechanism *α* is implemented using a single-layer feed-forward
+    neural network with parameters **a**. The term ![figure](../Images/Equation-4-4.png)
+    involves concatenating the transformed feature vectors of nodes *i* and *j*, and
+    then applying a linear transformation followed by a nonlinear activation (leaky
+    rectified linear unit [leaky ReLU]).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Node representation update (equations 4.4–4.6)
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'After computing the attention coefficients, the next step is to use them to
+    aggregate information from the neighbors and update the node representations with
+    attention [1]:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.4)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This equation computes the new representation **h**[*i*]*''* for node *i*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The term ![figure](../Images/Equation-4-6.png) represents a weighted sum of
+    the neighboring node features, where each feature vector is weighted by its corresponding
+    attention coefficient *α*[*ij*].
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*σ* is a nonlinear activation function (like ReLU or sigmoid) that introduces
+    nonlinearity into the model, helping it learn complex patterns.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The multihead attention mechanism [1] is calculated as
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.5)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-7.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'To stabilize the learning process, GATs use multihead attention, as discussed
+    earlier:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, *K* attention heads independently compute different sets of attention
+    coefficients and corresponding weighted sums.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The results from all heads are concatenated to form a richer, more expressive
+    node representation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The following shows averaging for multihead attention in the final layer [1]:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: (4.6)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/Equation-4-9.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: In the final prediction layer of the network, instead of concatenating the outputs
+    from different heads, we take their average. This reduces the dimensionality of
+    the final output and simplifies the model’s prediction process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A graph attention network (GAT) is a specialized type of graph neural network
+    (GNN) that incorporates attention mechanisms to focus on the most relevant nodes
+    during the learning process.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GATs excel in domains where certain nodes have disproportionate importance,
+    such as social networks, fraud detection, and anomaly detection.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The chapter uses a dataset derived from Yelp reviews, focusing on detecting
+    fake reviews for hotels and restaurants in Chicago. Reviews are represented as
+    nodes, with edges representing shared characteristics (e.g., common authors or
+    businesses).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GATs were applied to this dataset to classify nodes (reviews) as fraudulent
+    or legitimate. The GAT models showed improvements over baseline models such as
+    logistic regression, XGBoost, and graph convolutional networks (GCNs).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GATs are memory-intensive due to their need to compute attention scores for
+    all edges. To handle this, mini-batching with the `NeighborLoader` class in PyTorch
+    Geometric (PyG) was used.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The GAT layers in PyG, such as `GATConv` and `GATv2Conv`, apply different types
+    of attention to graph learning problems.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Strategies such as SMOTE and class reshuffling can be employed to address class
+    imbalance. For our case, class reshuffling significantly improved model performance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

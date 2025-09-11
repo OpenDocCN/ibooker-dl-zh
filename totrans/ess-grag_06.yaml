@@ -1,0 +1,1563 @@
+- en: 7 Microsoft’s GraphRAG implementation
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Introducing Microsoft's GraphRAG
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Extracting and summarizing entities and relationships
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Calculating and summarizing communities of entities
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implementing global and local search techniques
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In chapter 6, you learned how to extract structured information from legal documents
+    to build a knowledge graph. In this chapter, you will explore a slightly different
+    extraction and processing pipeline using Microsoft’s GraphRAG (Edge et al., 2024)
+    approach. This end-to-end example still constructs a knowledge graph but places
+    greater emphasis on natural language summarization of entities and their relationships.
+    The whole pipeline is visualized in figure 7.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: '**Figure 7.1 Microsoft’s GraphRAG pipeline. (Image from Edge et al., 2024,
+    licensed under CC BY 4.0)**'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'A key innovation of Microsoft’s GraphRAG (MS GraphRAG: [https://github.com/microsoft/graphrag](https://github.com/microsoft/graphrag))
+    is its use of an LLM to build a knowledge graph through a two-stage process. In
+    the first stage, entities and relationships are extracted and summarized from
+    source documents to form the foundation of the knowledge graph, as illustrated
+    in the steps up to the Knowledge Graph in figure 7.1\. What distinguishes MS GraphRAG
+    is that, once the knowledge graph has been constructed, graph communities are
+    detected, and domain-specific summaries are generated for groups of closely related
+    entities. This layered approach transforms fragmented pieces of information from
+    various text chunks into a cohesive and organized representation of information
+    about specified entities, relationships, and communities.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These entity- and community-level summaries can then be used to provide relevant
+    information in response to user queries in a RAG application. With such a structured
+    knowledge graph, multiple retrieval approaches can be applied. In this chapter,
+    you’ll explore both global and local search retrieval approaches described in
+    the MS GraphRAG paper.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.1 Dataset selection
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: MS GraphRAG is designed to process unstructured text documents by extracting
+    key entities and generating summaries that connect information across multiple
+    text chunks. To ensure meaningful insights, our dataset should not only be rich
+    in entity information but also contain entity data spread across multiple chunks.
+    Since entity types are a configurable aspect of MS GraphRAG, they must be defined
+    in advance. Relevant entities typically include people, organizations, and locations
+    but can also extend to domain-specific concepts such as genes and pathways in
+    medicine or legal clauses in law.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make an informed decision about the entity types, it is important to explore
+    the dataset and identify the types of questions you want to answer. The choice
+    of entity types shapes the entire downstream process, influencing extraction,
+    linking, and summarization quality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, the MS GraphRAG paper utilized datasets from podcasts and news
+    articles. In both cases, entities such as people, organizations, and locations
+    are commonly mentioned. Additionally, depending on the subject, such as gaming
+    or healthy lifestyle podcasts, you may want to include domain-specific entities,
+    like game titles, health conditions, or nutritional concepts, to ensure comprehensive
+    extraction and analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here we use *The Odyssey* to evaluate MS GraphRAG, as it features a rich narrative
+    with people, gods, mystical weapons, and more. Moreover, key entities such as
+    Ulysses appear across multiple text chunks, making it a suitable dataset for testing
+    entity extraction and cross-chunk summarizations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the remainder of this chapter, you’ll implement the MS GraphRAG method. To
+    follow along, you’ll need access to a running, blank Neo4j instance. This can
+    be a local installation or a cloud-hosted instance; just make sure it’s empty.
+    You can follow the implementation directly in the accompanying Jupyter notebook
+    available at [https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch07.ipynb](https://github.com/tomasonjo/kg-rag/blob/main/notebooks/ch07.ipynb).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s dive in.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2 Graph indexing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Here you will construct the knowledge graph and generate entity and community
+    summaries. Throughout this construction, you’ll explore key considerations at
+    each step, including entity selection, graph connectivity, and how these choices
+    influence the quality of summaries and queries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Start by loading *The Odyssey* from the Gutenberg project ([https://www.gutenberg.org/ebooks/1727](https://www.gutenberg.org/ebooks/1727)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.1 Loading The Odyssey
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: With the text prepared, you can now walk through the MS GraphRAG pipeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2.1 Chunking
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: '*The Odyssey* consists of 24 books of varying lengths. Your first task is to
+    remove prefaces and footnotes and then divide the text into individual books,
+    as demonstrated in the following listing. This approach follows the narrative’s
+    natural divisions, providing a semantically meaningful way to structure the text.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.2 Removing preface and footnotes and splitting into books
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Now you need to check the number of tokens in each book to determine whether
+    further chunking is necessary. The code in the following listing provides basic
+    statistics on the token counts of the books.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.3 Counting the number of tokens in books
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: The token counts across the 24 books vary significantly, with an average of
+    6,515 tokens, a minimum of 4,459, and a maximum of 10,760\. Given this range,
+    further chunking is necessary to ensure that no individual section exceeds reasonable
+    token limits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: But what are reasonable chunk sizes? The researchers behind MS GraphRAG compared
+    different chunk sizes and analyzed their effect on the overall number of extracted
+    entities. The results of this comparison are shown in figure 7.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.2 Impact of chunk size and self-reflection iterations on entity extraction.
+    (Image from Edge et al., 2024, licensed under CC BY 4.0)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The results in figure 7.2 show that smaller chunk sizes tend to extract more
+    entity references overall. The line representing a 600-token chunk size is consistently
+    the highest, while the 2,400-token chunk size is the lowest. This suggests that
+    breaking text into smaller chunks allows the LLM to detect more entities compared
+    to using larger chunks. Additionally, figure 7.2 shows that increasing the number
+    of self-reflection iterations, meaning additional extraction passes on the same
+    document, leads to more entity references being detected across all chunk sizes.
+    This pattern indicates that repeated passes enable the LLM to extract more entities
+    that may have been missed in earlier iterations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Say you have decided to chunk the books using a 1,000-word limit (based on whitespace
+    splitting) with an overlap of 40 words, as shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.4 Chunking the books
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The books are chunked, and you can move on to the next step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2.2 Entity and relationship extraction
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The first step is to extract entities and relationships. We can borrow the MS
+    GraphRAG prompts from the appendix of their paper. The instruction section of
+    the prompt for entity and relationship extraction is shown in “Instructions for
+    entity and relationship extraction.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Instructions for entity and relationship extraction**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: -Goal-
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given a text document that is potentially relevant to this activity and a list
+    of entity types, identify all entities of those types from the text and all relationships
+    among the identified entities.
+  prefs: []
+  type: TYPE_NORMAL
+- en: -Steps-
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Identify all entities. For each identified entity, extract the following information:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'entity_name: Name of the entity, capitalized'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'entity_type: One of the following types: [{entity_types}]'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'entity_description: Comprehensive description of the entity’s attributes and
+    activities'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Format each entity as ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}
+    <entity_type>{tuple_delimiter}<entity_description>)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '2\. From the entities identified in step 1, identify all pairs of (source_entity,
+    target_ entity) that are **clearly related** to each other. For each pair of related
+    entities, extract the following information:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'source_entity: name of the source entity, as identified in step 1'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'target_entity: name of the target entity, as identified in step 1'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'relationship_description: explanation as to why you think the source entity
+    and the target entity are related to each other'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'relationship_strength: a numeric score indicating strength of the relationship
+    between the source entity and target entity'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Format each relationship as ("relationship"{tuple_delimiter}<source_entity>
+    {tuple_delimiter}<target_entity>{tuple_delimiter}<relationship_description> {tuple_delimiter}<relationship_strength>)
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 3\. Return output in English as a single list of all the entities and relationships
+    identified in steps 1 and 2\. Use **{record_delimiter}** as the list delimiter.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 4\. When finished, output {completion_delimiter}
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Instructions for entity and relationship extraction focuses on extracting structured
+    knowledge from a text document by identifying entities of specified types and
+    their relationships. The list of entity types is passed in as a variable `entity_types`.
+    The prompt instructs the LLM to extract entities, classify them by type, and provide
+    detailed descriptions. Then it identifies clearly related entity pairs, explains
+    their connection, and assigns a relationship strength score. Finally, it returns
+    all extracted entities and relationships in a structured, delimited format. This
+    is only part of the full prompt, which also includes few-shot examples and output
+    examples, but those are too extensive to include in the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 7.1
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Before running the extraction, take a moment to consider which entity types
+    would be most useful for *The Odyssey*. Since the list of entity types must be
+    predefined, think about the key elements of the narrative such as characters,
+    places, objects, and events that you want to extract. Try to define a set of entity
+    types that would capture the most meaningful relationships in the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For extracting meaningful entities from *The Odyssey*, say you have decided
+    to use the following entity types:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`PERSON`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ORGANIZATION`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`LOCATION`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GOD`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`EVENT`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`CREATURE`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`WEAPON_OR_TOOL`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some entity types, like `PERSON` and `GOD`, are relatively unambiguous since
+    they refer to well-defined categories of humans and deities. However, others,
+    like `EVENT` and `LOCATION`, are more ambiguous. An `EVENT` can refer to anything
+    from a single action to an entire war, making it difficult to establish a strict
+    boundary for classification. Similarly, `LOCATION` can refer to a broad category
+    like a country, a specific city, or even a named place within a city. This variability
+    makes consistent classification more challenging but also leaves more flexibility
+    for the LLM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With these predefined entity types, you will now implement the extraction function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.5 Entity and relationship extraction
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Selects entity types'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Passes extraction prompt as user message'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 LLM API call'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Parses output as a dictionary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in listing 7.5 extracts entities and relationships by first defining
+    the entity types to be identified. It then generates an extraction prompt using
+    these types and the input text, sends the prompt to the LLM, and processes the
+    response into a structured dictionary format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the function in listing 7.5, you will extract entities and relationships
+    for only the first book of *The Odyssey*. If desired, you can increase the number
+    of books to analyze a larger portion of the text. The code for this extraction
+    is shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.6 Extracting entities and relationships
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Defines the number of books to be processed'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Extracts entities and relationships'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Imports entities'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Imports relationships'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The function in listing 7.6 processes a set number of books, extracting entities
+    and relationships from each chunk. It then imports the entities into Neo4j, followed
+    by their relationships, building a structured graph representation of the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Begin by reviewing the extracted entities and relationships. You can count the
+    total number of entities and relationships using the code in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.7 Counting the number of extracted nodes and relationships
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: The graph contains 66 entities and 182 relationships, though these numbers may
+    vary between executions. MS GraphRAG focuses on extracting detailed descriptions
+    of both entities and their relationships. For example, let’s examine the extracted
+    descriptions for the character `ORESTES`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.8 Examining generated descriptions of `ORESTES`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'When examining the extracted descriptions for the character `ORESTES`, as shown
+    in listing 7.8, the results might look like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Orestes is Agamemnon’s son who killed Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Orestes is a person who was expected to take revenge on Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Orestes is praised for avenging his father’s murder by killing Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Orestes is the son of Agamemnon who killed Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Orestes is a person who was expected to take revenge on Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Orestes is praised for avenging his father’s murder by killing Aegisthus.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While some descriptions repeat the same facts, they collectively contain all
+    the key details and ensure no important information is lost across different text
+    chunks for a specific entity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, a single pair of entities can have multiple relationships. You can
+    explore the entity pair with the highest number of relationships using the code
+    in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.9 Examining generated relationship descriptions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: The entity pair with the most relationships is Telemachus and Minerva, with
+    a total of 14 relationships. Their interactions span various moments in the narrative,
+    highlighting Minerva’s role as a divine guide and mentor to Telemachus.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following are five of the extracted relationship descriptions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Telemachus spoke quietly to Minerva during the banquet.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Minerva, in disguise, advises and encourages Telemachus, giving him courage
+    and making him think of his father.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Minerva brings sleep to Telemachus’s mother, showing her divine influence.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Minerva is speaking to Telemachus, offering him guidance and reassurance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Minerva, disguised as Mentes, is greeted by Telemachus at the gate.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While some descriptions contain overlapping details, they reinforce Minerva’s
+    role as a mentor and divine protector, gradually shaping Telemachus’ journey.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2.3 Entity and relationship summarization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: To avoid inconsistencies, redundancies, and fragmentation in the extracted knowledge,
+    MS GraphRAG merges multiple descriptions of the same entity or relationship using
+    LLMs to generate concise summaries. Instead of treating each description separately,
+    the model synthesizes information from all descriptions, ensuring that key contextual
+    details are preserved in a single, enriched representation. This approach enhances
+    clarity, reduces duplication, and provides a more complete understanding of entities
+    and their relationships.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once again, you can reuse the summarization prompt from the paper, as shown
+    in “Instructions for entity and relationship summarization.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Instructions for entity and relationship summarization**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You are a helpful assistant responsible for generating a comprehensive summary
+    of the data provided below. Given one or two entities, and a list of descriptions,
+    all related to the same entity or group of entities. Please concatenate all of
+    these into a single, comprehensive description. Make sure to include information
+    collected from all the descriptions. If the provided descriptions are contradictory,
+    please resolve the contradictions and provide a single, coherent summary. Make
+    sure it is written in third person, and include the entity names so we have the
+    full context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#######'
+  prefs: []
+  type: TYPE_NORMAL
+- en: -Data-
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Entities: {entity_name}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Description List: {description_list}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#######'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The prompt in “Instructions for entity and relationship summarization” guides
+    the LLM to generate a single, coherent summary by merging multiple descriptions
+    of an entity or a pair of entities. It ensures that all relevant details are included
+    while resolving contradictions and removing redundancies. The output is written
+    in third person and explicitly names the entities to maintain clarity and context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the prompt in “Instructions for entity and relationship summarization,”
+    you can generate summaries for all entities that have more than a single description.
+    The code to summarize entity descriptions can be found in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.10 Entity summarization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Gets all entities that have more than a single description'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Constructs prompt'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Generates entity summary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in listing 7.10 queries the Neo4j database to find entities with multiple
+    descriptions and then uses an LLM to generate a unified summary. You can review
+    the summarized description of `ORESTES` by running the code in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.11 Inspecting the generated summary for `ORESTOS`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: The results are shown in “Generated summary for ORESTES.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Generated summary for ORESTES**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Orestes is the son of Agamemnon, known for avenging his father’s death by killing
+    Aegisthus. He was expected to take revenge on Aegisthus, who was responsible for
+    Agamemnon’s murder. Orestes is praised for fulfilling this expectation and successfully
+    killing Aegisthus, his father’s murderer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The summarization process has successfully generated a cohesive and enriched
+    description of an entity, as demonstrated by “Generated summary for ORESTES.”
+    By merging multiple descriptions, we ensure that key details are preserved while
+    reducing redundancy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we will apply the same summarization approach to relationships, consolidating
+    multiple relationship descriptions into a single, comprehensive summary. The results
+    are shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.12 Relationship summarization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Retrieves pairs of nodes with more than a single relationship'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Constructs prompt'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Generates the relationship summary using an LLM'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Stores results to Neo4j'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in listing 7.12 identifies pairs of entities in the database that share
+    multiple relationships and consolidates their descriptions into a single summary
+    using an LLM. By merging relationship descriptions, the process ensures that key
+    interactions between entities are captured comprehensively while eliminating redundancy.
+    Once generated, the summarized relationships are stored back into the database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can evaluate the generated relationship between `TELEMACHUS` and `MINERVA`,
+    as shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Listing 7.13 Evaluating the summarized relationship between `TELEMACHUS`
+    and `MINERVA`**'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: The results of code in listing 7.13 can be found in “Generated summary for relationship
+    between TELEMACHUS and MINERVA.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Generated summary for the relationship between TELEMACHUS and MINERVA**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Minerva plays a crucial role in the life of Telemachus, offering guidance and
+    support as he embarks on his quest to find his father, Ulysses. During a banquet,
+    Telemachus speaks quietly to Minerva, indicating a close and trusting relationship.
+    Minerva, often in disguise, such as when she appears as Mentes, advises and encourages
+    Telemachus, instilling in him the courage and determination to seek information
+    about his father. She provides counsel regarding his intended voyage, demonstrating
+    her commitment to his cause. Additionally, Minerva’s divine influence is evident
+    when she brings sleep to Telemachus’s mother, further showcasing her protective
+    and supportive role in Telemachus’s life.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the consolidated summaries for both entities and relationships, you have
+    successfully completed the first stage of MS GraphRAG indexing. By merging information
+    across text chunks, you have created a more coherent and enriched representation
+    of the extracted knowledge.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Considerations for entity and relationship summarization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: When working with larger datasets, you may encounter so-called super nodes.
+    Super nodes are entities that appear in numerous chunks and have an overwhelming
+    number of relationships. For example, if you were to process all of Ancient Greek
+    history, a node like `Athens` would accumulate a vast number of relationships
+    and descriptions. Without a ranking mechanism, summarizing such nodes could lead
+    to excessively long outputs, or worse, some descriptions might not even fit within
+    the prompt. To handle this, you would need to implement a filtering or ranking
+    strategy to prioritize the most relevant descriptions, ensuring that the summary
+    remains concise and informative.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now you are ready to move on to the next stage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2.4 Community detection and summarization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The second stage of the graph-indexing process focuses on community detection
+    and summarization. A community is a group of entities that are more densely connected
+    to each other than to the rest of the graph. Community detection results are illustrated
+    in figure 7.3\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.3 Example of community detection results
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Figure 7.3 illustrates a graph where nodes are grouped into distinct communities,
+    each representing a set of densely connected entities with stronger internal relationships.
+    Some communities are well integrated into the overall graph, while others appear
+    more isolated, forming disconnected subgraphs. Identifying these clusters helps
+    reveal underlying structures, themes, or key groups within the dataset. For example,
+    in a narrative like *The Odyssey*, a community might form around characters involved
+    in a particular event or location. By detecting and summarizing these communities,
+    we can capture higher-level relationships and insights that go beyond individual
+    entity connections.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in listing 7.14 applies the Louvain method, a community detection algorithm,
+    to identify groups of densely connected entities within the graph. (Leiden was
+    used in the original paper implementation and is also available in the GDS library)
+    The detected communities are then stored as a node property for downstream processing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.14 Calculating communities using the Louvain algorithm
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: The Louvain method was used to detect 9 communities in the graph, with sizes
+    ranging from 2 to 13 nodes. The number and size of detected communities from listing
+    7.14 can change depending on the graph structure, such as the number of extracted
+    entities and relationships. Additionally, Louvain is not deterministic, meaning
+    that even with the same input, the detected communities may vary slightly between
+    runs due to the algorithm’s optimization process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hierarchical community structure
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The MS GraphRAG paper uses the hierarchical nature of the Louvain algorithm
+    to capture community structures at multiple levels of granularity. This allows
+    for analyzing both broad and fine-grained communities within large graphs. However,
+    since we are working with a smaller graph, we will focus on a single level of
+    community detection and skip the hierarchical aspect.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now you can apply the summarization prompt to generate concise overviews of
+    each detected community. The instruction part of the prompt is available in “Instructions
+    for community summarization.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Instructions for community summarization**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You are an AI assistant that helps a human analyst to perform general information
+    discovery. Information discovery is the process of identifying and assessing relevant
+    information associated with certain entities (e.g., organizations and individuals)
+    within a network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Goal Write a comprehensive report of a community, given a list of entities that
+    belong to the community as well as their relationships and optional associated
+    claims. The report will be used to inform decision-makers about information associated
+    with the community and their potential impact. The content of this report includes
+    an overview of the community’s key entities, their legal compliance, technical
+    capabilities, reputation, and noteworthy claims.
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Report Structure
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The report should include the following sections:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'TITLE: community’s name that represents its key entities - title should be
+    short but specific. When possible, include representative named entities in the
+    title.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'SUMMARY: An executive summary of the community’s overall structure, how its
+    entities are related to each other, and significant information associated with
+    its entities.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'IMPACT SEVERITY RATING: a float score between 0-10 that represents the severity
+    of IMPACT posed by entities within the community. IMPACT is the scored importance
+    of a community.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'RATING EXPLANATION: Give a single sentence explanation of the IMPACT severity
+    rating.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'DETAILED FINDINGS: A list of 5-10 key insights about the community. Each insight
+    should have a short summary followed by multiple paragraphs of explanatory text
+    grounded according to the grounding rules below. Be comprehensive.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The prompt in “Instructions for community summarization” guides the AI assistant
+    in generating structured summaries of detected communities, ensuring they capture
+    key entities, relationships, and notable insights. The goal is to produce high-quality
+    summaries that can be effectively used downstream for RAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The full prompt for community summarization includes output instructions and
+    a few-shot example to maintain consistency and relevance in the generated summaries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the communities identified and a structured summarization prompt in place,
+    we can now generate comprehensive summaries for each detected community. These
+    community summaries consolidate key entities, relationships, and significant insights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in the following listing processes the detected communities and applies
+    the summarization prompt to generate meaningful descriptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.15 Generating community summaries
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Retrieves community information from database'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Constructs prompt'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 LLM call'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Parses output into dictionary'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Stores results to the database'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can now examine an example of a generated community summary using the code
+    shown in listing 7.16\. This will provide a concrete example of how the summarization
+    process captures key entities, relationships, and insights within a community.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.16 Retrieving an example community summary
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The results can be found in the “Generated summary” for relationship between
+    `TELEMACHUS` and `MINERVA`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Generated community summary**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Minerva, Telemachus, and the Ithacan Household The community centers around
+    Minerva, Telemachus, and the household of Ulysses, with significant interactions
+    involving divine guidance, familial loyalty, and the challenges posed by suitors.
+    Minerva plays a pivotal role in advising Telemachus, who is determined to find
+    his father and restore order to his home. The relationships among these entities
+    highlight themes of wisdom, courage, and resilience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Handling large communities in bigger graphs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: When dealing with larger graphs, communities can become too large to process
+    efficiently. If a community contains too many entities and relationships, including
+    all of them in the summarization prompt may exceed token limits or produce excessively
+    long summaries. To address this, a ranking mechanism should be implemented to
+    select only the most relevant entities and relationships. This ensures that the
+    summary remains concise, informative, and useful for downstream RAG applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Congratulations! You have successfully completed the graph-indexing step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3 Graph retrievers
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'With the graph-indexing process complete, we now move on to the graph retriever
+    stage. This stage focuses on retrieving relevant information from the structured
+    graph to answer queries effectively. While there are many possible retrieval strategies,
+    we will focus on two primary approaches: local search and global search. Local
+    search retrieves information from entities closely connected within a detected
+    community, whereas global search considers the entire graph structure to find
+    the most relevant information.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3.1 Global search
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Global search in GraphRAG uses community summaries as intermediate responses
+    to efficiently answer queries that require aggregating information across the
+    entire dataset. Instead of retrieving individual chunks of text based on vector
+    similarity, this method utilizes precomputed community-level summaries to generate
+    a structured response. A global search search diagram is visualized in figure
+    7.4\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.4 Global search
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'The process in figure 7.4 follows a map-reduce approach:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Map step*—Given a user query and, optionally, the conversation history, GraphRAG
+    retrieves LLM-generated community reports from a specified level in the graph’s
+    community hierarchy. In your implementation, the graph is structured with a single
+    level of communities, meaning all detected groups exist at the same hierarchical
+    depth. These reports are segmented into manageable text chunks, and each chunk
+    is processed by the LLM to produce an intermediate response. Each response consists
+    of a list of key points, each accompanied by a numerical importance rating.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Reduce step*—The most important points across all intermediate responses are
+    filtered and aggregated. These refined insights then serve as the final context
+    for the LLM, which synthesizes a cohesive answer to the user query. By structuring
+    the dataset into semantically meaningful clusters, GraphRAG enables efficient
+    and cohesive retrieval, even for broad, thematic queries.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Community hierarchy structure
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The quality of the response depends on the level of the community hierarchy
+    chosen for sourcing community reports. Lower-level communities provide detailed
+    reports, leading to more thorough responses, but they also increase the number
+    of LLM calls and processing time. Higher-level communities, with more abstracted
+    summaries, may be more efficient but risk losing granularity. Balancing detail
+    and efficiency is key to optimizing global search performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The map step uses the following system prompt, as shown in “The system prompt
+    for the map part of the retriever.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The system prompt for the map part of the retriever**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Role—
+  prefs: []
+  type: TYPE_NORMAL
+- en: You are a helpful assistant responding to questions about data in the tables
+    provided.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Goal—
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate a response consisting of a list of key points that responds to the
+    user’s question, summarizing all relevant information in the input data tables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should use the data provided in the data tables below as the primary context
+    for generating the response. If you don’t know the answer or if the input data
+    tables do not contain sufficient information to provide an answer, just say so.
+    Do not make anything up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Each key point in the response should have the following element:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Description: A comprehensive description of the point.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Importance Score: An integer score between 0-100 that indicates how important
+    the point is in answering the user’s question. An ''I don’t know'' type of response
+    should have a score of 0\.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The response should be JSON formatted as follows: {{ "points": [ {{"description":
+    "Description of point 1 [Data: Reports (report ids)]", "score": score_value}},
+    {{"description": "Description of point 2 [Data: Reports (report ids)]", "score":
+    score_value}} ] }}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The response shall preserve the original meaning and use of modal verbs such
+    as “shall”, “may” or “will”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Points supported by data should list the relevant reports as references as
+    follows: “This is an example sentence supported by data references [Data: Reports
+    (report ids)]”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Do not list more than 5 record ids in a single reference**. Instead, list
+    the top 5 most relevant record ids and add “+more” to indicate that there are
+    more.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example: “Person X is the owner of Company Y and subject to many allegations
+    of wrongdoing [Data: Reports (2, 7, 64, 46, 34, +more)]. He is also CEO of company
+    X [Data: Reports (1, 3)]”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where 1, 2, 3, 7, 34, 46, and 64 represent the id (not the index) of the relevant
+    data report in the provided tables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do not include information where the supporting evidence for it is not provided.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Data tables—
+  prefs: []
+  type: TYPE_NORMAL
+- en: '{context_data}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The map system prompt instructs the LLM to extract key points from the provided
+    context in response to a user query. Each key point includes a description and
+    an importance score (0–100) reflecting its relevance to the query. The response
+    is formatted as JSON, with references to supporting data report IDs. If insufficient
+    information is available, the response must indicate so without speculation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now you will examine the reduce step of the retriever, as shown in “The system
+    prompt for the reduce part of the retriever.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The system prompt for the reduce part of the retriever**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Role—
+  prefs: []
+  type: TYPE_NORMAL
+- en: You are a helpful assistant responding to questions about a dataset by synthesizing
+    perspectives from multiple analysts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Goal—
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate a response of the target length and format that responds to the user’s
+    question, summarize all the reports from multiple analysts who focused on different
+    parts of the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the analysts' reports provided below are ranked in the **descending
+    order of importance**.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you don’t know the answer or if the provided reports do not contain sufficient
+    information to provide an answer, just say so. Do not make anything up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final response should remove all irrelevant information from the analysts'
+    reports and merge the cleaned information into a comprehensive answer that provides
+    explanations of all the key points and implications appropriate for the response
+    length and format.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Add sections and commentary to the response as appropriate for the length and
+    format. Style the response in markdown.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The response shall preserve the original meaning and use of modal verbs such
+    as “shall”, “may” or “will”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The response should also preserve all the data references previously included
+    in the analysts' reports, but do not mention the roles of multiple analysts in
+    the analysis process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Do not list more than 5 record ids in a single reference**. Instead, list
+    the top 5 most relevant record ids and add “+more” to indicate that there are
+    more.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '“Person X is the owner of Company Y and subject to many allegations of wrongdoing
+    [Data: Reports (2, 7, 34, 46, 64, +more)]. He is also CEO of company X [Data:
+    Reports (1, 3)]”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where 1, 2, 3, 7, 34, 46, and 64 represent the id (not the index) of the relevant
+    data record.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do not include information where the supporting evidence for it is not provided.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Target response length and format—
+  prefs: []
+  type: TYPE_NORMAL
+- en: '{response_type}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The reduce system prompt directs the LLM to synthesize key points from multiple
+    analyst reports, which are ranked by importance. The response must be formatted
+    in Markdown, be structured appropriately for the target length and format, and
+    exclude irrelevant details. It preserves all referenced data while avoiding speculative
+    answers. The final output integrates and refines insights from the reports into
+    a coherent, comprehensive response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we can combine the map and reduce prompts into a global search function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.17 Global search
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Gets all communities above the rating threshold'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 For each community, gets an intermediate response'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Generates a final answer using all the intermediate responses as context'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `global_retriever` function in listing 7.17 implements the global search
+    method by using community summaries to generate a structured response. It follows
+    a three-step process:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Retrieve relevant communities *—The function queries a Neo4j database to retrieve
+    community summaries where the rating meets or exceeds the specified threshold.
+    This ensures that only the most relevant communities contribute to the final answer.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Generate intermediate responses *—For each community, an intermediate response
+    is generated using the map system prompt. The model processes the community summary
+    alongside the user’s query to extract key points.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Aggregate and generate final answer *—The reduce system prompt is then applied
+    to synthesize all intermediate responses into a coherent final answer, ensuring
+    that the most important points are retained and properly structured.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now we can test this function with an example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.18 Global search example
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: The results of the listing 7.18 can be found in “Response for ‘What is this
+    story about?’ using global search.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Response for ''What is this story about?'' using global search**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The story revolves around the intricate dynamics of a community involving key
+    figures such as Minerva, Telemachus, and the household of Ulysses. Central themes
+    include divine guidance, familial loyalty, and the challenges posed by suitors.
+    Minerva plays a crucial role in advising Telemachus, who is determined to find
+    his father, Ulysses, and restore order to his home. The relationships among the
+    characters emphasize themes of wisdom, courage, and resilience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, the narrative highlights the role of Mentes, the chief of the
+    Taphians, who is recognized as the son of Anchialus. Mentes is involved in a voyage
+    to Temesa, known for its iron cargo, and claims kingship over the Taphians [Data:
+    Reports (1)]. The story also centers around Odysseus, a key figure in Greek mythology,
+    and his connections with other significant entities such as the Achaeans, Laertes,
+    and the gods. The relationships in the story underscore the impact of divine intervention
+    on human affairs, showcasing how the gods influence the lives of Greek heroes
+    [Data: Reports (1, 2, 3, 4, 5)].'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Furthermore, the narrative explores the mythological elements involving Olympian
+    Jove, Aegisthus, Agamemnon, Orestes, and Mercury. It highlights themes of divine
+    intervention, betrayal, and vengeance. Olympian Jove discusses the actions of
+    Aegisthus, notorious for his betrayal and murder of Agamemnon, while Orestes avenges
+    his father’s death by killing Aegisthus, despite warnings from Mercury [Data:
+    Reports (1, 2, 3, 4, 5)]. These interconnected stories weave a rich tapestry of
+    mythological and heroic elements, emphasizing the enduring legacy and challenges
+    faced by these legendary figures.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The response in “Response for ‘What is this story about?’ using global search”
+    generated by the global search method provides a structured summary of the story
+    by synthesizing key themes and relationships from multiple chunks. It highlights
+    the central figures Minerva, Telemachus, and Ulysses—along with their roles in
+    the narrative, emphasizing divine guidance, familial loyalty, and challenges faced
+    by the household of Ulysses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 7.2
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Try running different types of queries using the global search function. Ask
+    broad questions that require synthesizing information across multiple community
+    summaries, such as “What are the central conflicts in this story?”
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3.2 Local search
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The local search method enhances LLM responses by combining structured knowledge
+    graph data with unstructured text from source documents. This approach is particularly
+    effective for entity-focused queries, such as “What are the healing properties
+    of chamomile?” where a deep understanding of a specific entity and its relationships
+    is required. The local search approach can be found in figure 7.5\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-5.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.5 Local search
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: When a user submits a query, the system visualized in figure 7.5 first identifies
+    semantically related entities within the knowledge graph using vector search.
+    These entities act as entry points for retrieving relevant information, including
+    directly connected entities, relationships, and summaries from community reports.
+    Additionally, text chunks from the input documents associated with these entities
+    are also extracted. The retrieved data is ranked and filtered to fit within a
+    constrained context window, ensuring that only the most relevant information is
+    included in the final response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To implement local search, we first need to calculate text embeddings for entities
+    and create a vector index. This allows us to efficiently retrieve the most relevant
+    entities based on the user’s query. By embedding entity descriptions and relationships
+    into a vector space, we can use similarity search to identify which entities are
+    most closely related to the input. Once these relevant entities are found, they
+    serve as entry points for retrieving additional structured and unstructured data.
+    The code for computing these embeddings and constructing the vector index is shown
+    in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.19 Generate text embeddings for all entities in the database
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Retrieves entities and their summaries'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Calculates embeddings based on entity summaries'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Stores embeddings to the database'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Creates vector index entities'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The code in listing 7.19 retrieves all entities from the database along with
+    their summaries, computes text embeddings for each entity based on its summary,
+    and stores the embeddings back into the database. Finally, it creates a vector
+    index to enable efficient similarity search on entity embeddings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The local search is finally implemented as a Cypher statement that expands the
+    initial set of relevant nodes, identified through vector search, to include their
+    connected entities, text chunks, summaries, and relationships. This Cypher statement
+    is shown in the following listing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.20 Cypher statement for local search
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Fetches related text chunks'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Fetches related community descriptions'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Fetches related relationships'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Fetches entity summaries'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All retrieved objects in listing 7.20, such as text chunks, community descriptions,
+    relationships, and entity summaries, are ranked and limited to ensure the prompt
+    remains manageable. Text chunks are ranked by how frequently they are associated
+    with relevant entities and limited to the top `topChunks`. Community descriptions
+    are ordered by rank and weight, selecting only the `topCommunities`. Relationships
+    are ranked by their importance and limited to `topInsideRels`. Finally, entity
+    summaries are retrieved without additional ranking constraints. This ensures only
+    the most relevant information is included in the response.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lastly, you need to define the summarizing prompt, which is again borrowed from
+    the paper and shown in “The system prompt for the local search.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**The system prompt for the local search**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Role—
+  prefs: []
+  type: TYPE_NORMAL
+- en: You are a helpful assistant responding to questions about data in the tables
+    provided.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Goal—
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate a response of the target length and format that responds to the user’s
+    question, summarizing all information in the input data tables appropriate for
+    the response length and format, and incorporating any relevant general knowledge.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you don’t know the answer, just say so. Do not make anything up.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Points supported by data should list their data references as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '“This is an example sentence supported by multiple data references [Data: <dataset
+    name> (record ids); <dataset name> (record ids)].”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do not list more than 5 record ids in a single reference. Instead, list the
+    top 5 most relevant record ids and add “+more” to indicate that there are more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'For example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '“Person X is the owner of Company Y and subject to many allegations of wrongdoing
+    [Data: Sources (15, 16), Reports (1), Entities (5, 7); Relationships (23); Claims
+    (2, 7, 34, 46, 64, +more)].”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where 15, 16, 1, 5, 7, 23, 2, 7, 34, 46, and 64 represent the id (not the index)
+    of the relevant data record.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Do not include information where the supporting evidence for it is not provided.
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Target response length and format—
+  prefs: []
+  type: TYPE_NORMAL
+- en: '{response_type}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: —Data tables—
+  prefs: []
+  type: TYPE_NORMAL
+- en: '{context_data}'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This system prompt in “The system prompt for the local search” is designed to
+    generate responses based on structured data tables while maintaining accuracy
+    and transparency. It instructs the assistant to synthesize information relevant
+    to the user’s query, ensuring that claims are supported by explicit data references.
+    The format for citing data sources enforces a structured approach, limiting the
+    number of record IDs per reference while indicating additional supporting records
+    when applicable. The prompt also emphasizes that if an answer is not found in
+    the provided data, the assistant should explicitly state so rather than fabricate
+    information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this in place, you can now implement local search.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.21 Local search implementation
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Fetches context using the local search Cypher statement'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Stringifies context'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Constructs prompt'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Generates final answer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.21 implements local search by first retrieving relevant context from
+    the knowledge graph using vector search and the Cypher query. The extracted context
+    is then converted into a string and incorporated into a structured prompt designed
+    to guide the LLM in generating an informed response. Finally, the prompt is sent
+    to the model to produce the final answer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can now test this implementation with an example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.22 Local search implementation
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: The results of the listing 7.22 can be found in “Response for ‘Who is Ulysses?’
+    using local search.”
+  prefs: []
+  type: TYPE_NORMAL
+- en: '**Response for “Who is Ulysses?” using local search**'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The story revolves around the intricate dynamics of a community involving key
+    figures such as Minerva, Telemachus, and the household of Ulysses. Central themes
+    include divine guidance, familial loyalty, and the challenges posed by suitors.
+    Minerva plays a crucial role in advising Telemachus, who is determined to find
+    his father, Ulysses, and restore order to his home. The relationships among the
+    characters emphasize themes of wisdom, courage, and resilience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Additionally, the narrative highlights the role of Mentes, the chief of the
+    Taphians, who is recognized as the son of Anchialus. Mentes is involved in a voyage
+    to Temesa, known for its iron cargo, and claims kingship over the Taphians [Data:
+    Reports (1)]. The story also centers around Odysseus, a key figure in Greek mythology,
+    and his connections with other significant entities such as the Achaeans, Laertes,
+    and the gods. The relationships in the story underscore the impact of divine intervention
+    on human affairs, showcasing how the gods influence the lives of Greek heroes
+    [Data: Reports (1, 2, 3, 4, 5)].'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Furthermore, the narrative explores the mythological elements involving Olympian
+    Jove, Aegisthus, Agamemnon, Orestes, and Mercury. It highlights themes of divine
+    intervention, betrayal, and vengeance. Olympian Jove discusses the actions of
+    Aegisthus, notorious for his betrayal and murder of Agamemnon, while Orestes avenges
+    his father’s death by killing Aegisthus, despite warnings from Mercury [Data:
+    Reports (1, 2, 3, 4, 5)]. These interconnected stories weave a rich tapestry of
+    mythological and heroic elements, emphasizing the enduring legacy and challenges
+    faced by these legendary figures.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The response in “Response for 'Who is Ulysses?' using local search” demonstrates
+    how local search retrieves and synthesizes relevant information from the knowledge
+    graph to provide a detailed, well-supported answer. By incorporating connected
+    entities, relationships, and community summaries, the system ensures that responses
+    capture both narrative context and factual depth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Exercise 7.3
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Try running different types of queries using the local search function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With such a graph index, different retriever strategies can be implemented.
+    For example, community summaries could be embedded separately and used as a standalone
+    vector retriever, allowing for more targeted retrieval depending on the query’s
+    focus.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Congratulations! You have successfully implemented complete MS GraphRAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: MS GraphRAG uses a two-stage process where entities and relationships are first
+    extracted and summarized from source documents, followed by community detection
+    and summarization to create a cohesive knowledge representation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The extraction process uses LLMs to identify entities, classify them by predefined
+    types (e.g., `PERSON`, `GOD`, `LOCATION`), and generate detailed descriptions
+    of both entities and their relationships, including relationship strength scores.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Entity and relationship descriptions from multiple text chunks are consolidated
+    through LLM-based summarization to create unified, nonredundant representations
+    that preserve key information.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The system detects communities of densely connected entities using algorithms
+    like the Louvain method and then generates community-level summaries to capture
+    higher-level themes and relationships.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Global search uses community summaries to answer broad, thematic queries through
+    a map-reduce approach.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Local search combines vector similarity search with graph traversal to answer
+    entity-focused queries.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The effectiveness of retrieval depends on factors like chunk size, entity type
+    selection, and community detection parameters, with smaller chunks generally leading
+    to more comprehensive entity extraction.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The system handles potential scaling challenges through ranking mechanisms for
+    managing large numbers of entities, relationships, and communities while maintaining
+    context relevance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL

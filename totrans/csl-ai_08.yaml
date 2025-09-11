@@ -1,0 +1,2390 @@
+- en: 6 Structural causal models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Converting a general causal graphical model to a structural causal model
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Mastering the key elements of SCMs
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implementing SCMs for rule-based systems
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Building an SCM from scratch using additive models
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Combining SCMs with deep learning
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In this chapter, I’ll introduce a fundamental causal modeling approach called
+    the structural causal model (SCM). An SCM is a special case of a causal generative
+    model that can encode causal assumptions beyond those we can capture with a DAG.
+    If a DAG tells us *what* causes what, an SCM tells us both *what* causes what
+    and *how* the causes affect the effects. We can use that extra “how” information
+    to make better causal inferences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this chapter, we’ll focus on defining and building an intuition for SCMs
+    using examples in code. In later chapters, we’ll see examples of causal inferences
+    that we can’t make with a DAG alone but we can make with an SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1 From a general causal graphical model to an SCM
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In the causal generative models we’ve built so far, we defined, for each node,
+    a conditional probability distribution given the node’s direct parents, which
+    we called a *causal Markov kernel*. We then *fit* these kernels using data. Specifically,
+    we made a practical choice to use some parametric function class to fit these
+    kernels. For example, we fit the parameters of a probability table using pgmpy’s
+    `TabularCPD` because it let us work with pgmpy’s convenient d-separation and inference
+    utilities. And we used a neural decoder in a VAE architecture because it solved
+    the problem of modeling a high-dimensional variable like an image. These practical
+    reasons have nothing to do with causality; our causal assumptions stopped at the
+    causal DAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, with SCMs, we’ll use the parametric function class to capture additional
+    causal assumptions beyond the causal DAG. As I said, the SCM lets us represent
+    additional assumptions of *how* causes affect their effects; for example, that
+    a change in the cause always leads to a proportional change in the effect. Indeed,
+    a probability table or a neural network can be *too flexible* to capture assumptions
+    about the “how” of causality; with enough data they can fit anything and thus
+    don’t imply strong assumptions. More causal assumptions enable more causal inferences,
+    at the cost of additional risk of modeling error.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SCMs are a special case of causal graphical models (CGMs)—one with more constraints
+    than the CGMs we’ve built so far. For clarity, I’ll use CGM to refer to the broader
+    set of causal graphical models that are not SCMs. To make the distinction clear,
+    let’s start by looking at how we might modify a CGM so it satisfies the constraints
+    of an SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.1 Forensics case study
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Imagine you are a forensic scientist working for the police. The police discover
+    decomposed human remains consisting of a skull, pelvic bone, several ribs, and
+    a femur. An apparent blunt force trauma injury to the skull leads the police to
+    open a murder investigation. First, they need you to help identify the victim.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When the remains arrive in your lab, you measure and catalog the bones. From
+    the shape of the pelvis, you can quickly tell that the remains most likely belong
+    to an adult male. You note that the femur is 45 centimeters long. As you might
+    suspect, there is a strong predictive relationship between femur length and an
+    individual’s overall height. Moreover, that relationship is causal. Femur length
+    is a cause of height. Simply put, having a long femur makes you taller, and having
+    a short femur makes you shorter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Indeed, when you consult your forensic text, it says that height is a *linear
+    function* of femur length. It provides the following probabilistic model of height,
+    given femur length (in males):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, 3.3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* = 25 + 3*x* + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, *x* is femur length in centimeters, and *y* is height in centimeters.
+    Of course, exact height will vary with other causal factors, and *n*[*y*] represents
+    variations in height from those factors. *N*[*y*] has a normal distribution with
+    mean 0 and scale parameter 3.3 cm.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is an example of an SCM. We’ll expand this example as we go, but the key
+    element to focus on here is that our model is assuming the causal mechanism underpinning
+    height (*Y*) is linear. Height (*Y*) is a linear function of its causes, femur
+    length (*X*) and *N*[*y*], which represents other causal determinants of height.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linear modeling is an attractive choice because it is simple, stands on centuries
+    of theory, and is supported by countless statistical and linear algebra software
+    libraries. But from a causal perspective, that’s beside the point. Our SCM is
+    not using this linear function because it is convenient. Rather, we are intentionally
+    asserting that the relationship between the cause and the effect is linear—that
+    for a change in femur length, there is a proportional change in height.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s drill down on this example to highlight the differences between a CGM
+    and an SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.2 Converting to an SCM via reparameterization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this section, we will start by converting the type of CGM we’ve become familiar
+    with into an SCM. Our conversion exercise will highlight those properties and
+    make clear the technical structure of the SCM and how it differs relative to the
+    CGMs we’ve seen so far. Note, however, that this “conversion” is intended to build
+    intuition; in general, you should build your SCM from scratch rather than try
+    to shoehorn non-SCMs into SCMs, for reasons we’ll see in section 6.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s suppose our forensic SCM were a CGM. We might implement it as in figure
+    6.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F01_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.1 A simple two-node CGM. Femur length (*X*) is a cause of height (*Y*).
+    *X* has a normal distribution with a mean of 47 centimeters and a standard deviation
+    of 2.3 centimeters. *Y* has a distribution with a mean of 25 + 3*x* centimeters
+    and a standard deviation of 3.3 centimeters.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Recall from chapter 2 that *x* ~ *P*(*X*) and *y* ~ *P*(*Y*|*X*=*x*) means we
+    generate from the probability distribution of *X* and conditional probability
+    distribution of *Y* given *X*. In this case, *P*(*X*), the distribution of femur
+    length, represented as a normal distribution with a mean of 47 centimeters and
+    a standard deviation of 2.3 centimeters. *P*(*Y*|*X*=*x*) is the distribution
+    on height given the femur length, given as a normal distribution with a mean of
+    25 + 3*x* centimeters and a standard deviation of 3.3 centimeters. We would implement
+    this model in Pyro as follows in listing 6.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting up your environment
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The code in this chapter was written using Python version 3.10, Pyro version
+    1.9.0, pgmpy version 0.1.25, and torch 2.3.0\. See [https://www.altdeep.ai/p/causalaibook](https://www.altdeep.ai/p/causalaibook)
+    for links to the notebooks that run the code. We are also using MATLAB for some
+    plotting; this code was tested with version 3.7.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.1 Pyro pseudocode of the CGM in figure 6.1
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 x and y are sampled from their causal Markov kernels, in this case normal
+    distributions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Repeatedly calling cgm_model will return samples from P(X, Y).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We are going to convert this model to an SCM using the following algorithm:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Introduce a new latent causal parent for *X* called *N*[*x*] and a new latent
+    causal parent for *Y* called *N*[*y*] with distributions *P*(*N*[*x*]) and *P*(*N*[*y*]).
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Make *X* and *Y* deterministic functions of *N*[*x*] and *N*[*y*] such that
+    *P*(*X*, *Y*) in this new model is the same as in the old model.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Following these instructions and adding in two new variables, we get figure
+    6.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F02_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.2 To convert the CGM to an SCM, we introduce latent “exogenous” parents,
+    *N**[x]* for *X* and *N**[y]* for *Y*, and probability distributions *P*(*N**[x]*)
+    and *P*(*N**[y]*) for these latents. We then set *X* and *Y* deterministically,
+    given their parents, via functions *f**[x]* and *f**[y]*.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We have two new latent variables *N*[*x*] and *N*[*y*] with distributions *P*(*N*[*x*])
+    and *P*(*N*[*y*]). *X* and *Y* each have their own functions *f*[*x*] and *f*[*y*]
+    that that deterministically set *X* and *Y*, given their parents in the graph.
+    This difference is key; *X* and *Y* are generated in the model described in figure
+    6.1 but set deterministically in this new model. To emphasize this, I use the
+    assignment operator “:=” instead of the equal sign “=” to emphasize that *f*[*x*]
+    and *f*[*y*] assign the values of *X* and *Y*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To meet our goal of converting our CGM to an SCM, we want *P*(*X*) and *P*(*Y*|*X*=*x*)
+    to be the same across both models. To achieve this, we have to choose *P*(*N*[*x*]),
+    *P*(*N*[*y*]), *f*[*x*], and *f*[*y*] such that *P*(*X*) is still Normal(47, 2.3)
+    and *P*(*Y*|*X*=*x*) is still Normal(25 + 3.3*x*, 3.3). One option is to do a
+    simple reparameterization. Linear functions of normally distributed random variables
+    are also normally distributed. We can implement the model in figure 6.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F03_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.3 A simple reparameterization of the original CGM produces a new SCM
+    model with the same *P*(*X*) and *P*(*Y*|*X*) as the original.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In code, we rewrite this as follows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.2 CGM rewritten as an SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 We sample these new latent variables from a standard normal distribution.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 X and Y are calculated deterministically as linear transformations of n_x
+    and n_y.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 The returned samples of P(X, Y) match the first model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: With this introduction of new exogenous variables *N*[*x*] and *N*[*y*], some
+    linear functions *f*[*x*] and *f*[*y*], and a reparameterization, we converted
+    the CGM to an SCM that encodes the same distribution *P*(*X*, *Y*). Next, let’s
+    look more closely at the elements we introduced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.3 Formalizing the new model
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'To build an SCM, we’re going to assume we’ve already built a causal DAG, as
+    in figure 6.1\. In figures 6.2 and 6.3, we see two kinds of variables: exogenous
+    and endogenous. The *endogenous variables* are the original variables *X* and
+    *Y*—we’ll define them as the variables we are modeling explicitly. These are the
+    variables we included in our causal DAG.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The *exogenous variables* (also called *noise* variables) are our new nodes
+    *N*[*x*] and *N*[*y*]. These variables represent all unmodeled causes of our endogenous
+    variables. In our formulation, we pair each of the endogenous variable with its
+    own exogenous variable parent; *X* gets new exogenous causal parent *N*[*x*],
+    and *Y* gets exogenous parent *N*[*y*]. We add these to our DAG for completeness
+    as in figures 6.2 and 6.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our formulation, we’ll assume exogenous variables have no parents and have
+    no edges between one another. In other words, they are root nodes in the graph,
+    and they are independent relative to other exogenous variables. Further, we’ll
+    treat the exogenous variables as latent variables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each endogenous variable also gets its own *assignment function* (also called
+    a *structural assignment*) *f*[*x*], and *f*[*y*]. The assignment function *deterministically*
+    sets the value of the endogenous variables *X* and *Y* given values of their parents
+    in the causal DAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Assignment functions are how we capture assumptions about the “how” of causality.
+    For instance, to say that the causal relationship between height (*Y*) and femur
+    length (*X*) is linear, we specify that *f*[*x*] is a linear function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While the endogenous variables are set deterministically, the SCM generates
+    the values of the exogenous variables from probability distributions. In our femur
+    example, we generate values *n*[*x*] and *n*[*y*] of exogenous variables *N*[*x*]
+    and *N*[*y*] from distributions *P*(*N*[*x*]) and *P*(*N*[*y*]), which are *N*(0,
+    2.3) and *N*(0, 3.3), as seen in figure 6.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Elements of the generative SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '*A set of endogenous variables (e.g., X, Y)*—These are the variables we want
+    to model explicitly. They are the models we build into our causal DAG.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A set of exogenous variables (e.g., N**[x]* *and N**[y]**)*—These variables
+    stand in for unmodeled causes of the endogenous variables. In our formulation,
+    each endogenous variable has one corresponding latent exogenous variable.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A set of assignment functions (e.g., f**[x]* *and f**[y]**)*—Each endogenous
+    variable has an assignment function that sets its value deterministically given
+    its parents (its corresponding exogenous variable and other endogenous variables).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A set of exogenous variable probability distributions (e.g., P(N**[x]**) and
+    P(N**[y]**))*—The SCM becomes a generative model with a set of distributions on
+    the exogenous variables. Given values generated from these distributions, the
+    endogenous variables are set deterministically.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Let’s look at another example of an SCM, this time using discrete variables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.4 A discrete, imperative example of an SCM
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Our femur example dealt with continuous variables like height and length. Let’s
+    now return to our rock-throwing example from chapter 2 and consider a discrete
+    case of an SCM. In this example, either Jenny or Brian or both throw a rock at
+    window if they are inclined to do so. The window breaks depending on whether either
+    or both Jenny and Brian throw and the strength of the windowpane.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How might we convert this model to an SCM? In fact, this model is *already*
+    an SCM. We captured this with the following code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.3 The rock-throwing example from chapter 2 is an SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The input values are instances of exogenous variables.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Jenny and Brian throw the rock if so inclined. jenny_throws_rock and brian_throws_rock
+    are endogenous variables.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 strength_of_impact is an endogenous variable. This entire if-then expression
+    is the assignment function for strength of impact.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 window_breaks is an endogenous variable. The assignment function is lambda
+    strength_of_impact, window_strength: strength_of_impact &gt; window_strength.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Each exogenous variable has a Uniform(0, 1) distribution.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You’ll see that it satisfies the requirements of an SCM. The arguments to the
+    `true_dgp` function (namely `jenny_inclination,` `brian_inclination,` `window_strength`)
+    are the exogenous variables. The named variables inside the function are the endogenous
+    variables, which are set deterministically by the exogenous variables.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Most SCMs you’ll encounter in papers and textbooks are written down as math.
+    However, this rock-throwing example shows us the power of reasoning causally with
+    an imperative scripting language like Python. Some causal processes are easier
+    to write in code than in math. It is only recently that tools such as Pyro have
+    allowed us to make sophisticated code-based SCMs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.5 Why use SCMs?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: More causal assumptions mean more ability to make causal inferences. The question
+    of whether to use an SCM instead of a regular CGM is equivalent to asking whether
+    the additional causal assumptions encoded in the functional assignments will serve
+    your causal inference goal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our femur example, our DAG says femur length causes height. Our SCM goes
+    further and says that for every unit increase in femur length, there is a proportional
+    increase in height. The question is whether that additional information helps
+    us answer a causal question. One example where such a linear assumption helps
+    make a causal inference is the use of *instrumental variable estimation* of causal
+    effects, which I’ll discuss in chapter 11\. This approach relies on linearity
+    assumptions to infer causal effects in cases where the assumptions in the DAG
+    alone are not sufficient to make the inference. Another example is where an SCM
+    can enable us to answer *counterfactual queries* using an algorithm discussed
+    in chapter 9.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Of course, if your causal inference is relying on an assumption, and that assumption
+    is incorrect, your inference will probably be incorrect. The “what” assumptions
+    in a DAG are simpler than the additional “how” assumptions in an SCM. An edge
+    in a DAG is a true or false statement that *X* causes *Y.* An assignment function
+    in an SCM model is a statement about *how* *X* causes *Y*. The latter assumption
+    is more nuanced and quite hard to validate, so it’s easier to get incorrect. Consider
+    the fact that there are longstanding drugs on the market that we know work, but
+    we don’t fully understand their mechanism of action—*how* they work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.6 Differences from related approaches
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: SCMs have a rich history across different fields. You may have seen formulations
+    that are similar to but nonetheless different from what we’ve laid out here. Here,
+    we’ll highlight the differentiating elements of this formulation and why they
+    matter to us.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generative SCMs with latent exogenous variables
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: We want to use our SCMs as generative models. To that end, we treat exogenous
+    variables (variables we don’t want to model explicitly) as latent proxies for
+    unmodeled causes of the endogenous variables. We just need to specify probability
+    distributions of the exogenous variables and we get a generative latent variable
+    model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flexible selection of assignment functions
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: You’ll find that the most common applications of SCMs use linear functions as
+    assignment functions, like we did in the femur example. However, in a generative
+    AI setting, we certainly don’t want to constrain ourselves to linear models. We
+    want to work with rich function classes we can write as code, optimize with automatic
+    differentiation, and apply to high-dimensional nonlinear problems, like images.
+    These function classes can do just as well in representing the “how” of causality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Connection to the DAG
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: We contextualize the SCM within the DAG-based view of causality. First, we build
+    a causal DAG as in chapters 3 and 4\. Each variable in the DAG becomes an endogenous
+    variable (a variable we want to model explicitly) in the SCM. For each endogenous
+    variable, we add a single latent exogenous parent node to the DAG. Next, we define
+    “assignment function” as a function that assigns a given endogenous variable a
+    value, given the values of its parents in the DAG. All of our DAG-based theory
+    still applies, such as the causal Markov property and independence of mechanism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that not all formulations of the SCM adhere so closely to the DAG. Some
+    practitioners who don’t adopt a graphical view of causality still use SCM-like
+    models (e.g., structural equation modeling in econometrics). And some variations
+    of graphical SCMs allow us to relax acyclicity and work with cycles and feedback
+    loops.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Independent exogenous variables
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Introducing one exogenous variable for every endogenous variable can be a nuisance;
+    sometimes it is easier to treat a node with no parents in the original DAG as
+    exogenous, or have the same exogenous parent for two endogenous nodes. But this
+    approach lets us add exogenous variables in a way that maintains the d-separations
+    entailed by the original DAG. It also allows us to make a distinction between
+    *endogenous* variables we care to model explicitly, and all the *exogenous* causes
+    we don’t want to model explicitly. This comes in handy when, for example, you’re
+    building a causal image model like in chapter 5, and you don’t want to explicitly
+    represent *all* the many causes of the appearance of an image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.1.7 Causal determinism and implications to how we model
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The defining element of the SCM is that endogenous variables are set deterministically
+    by assignment functions instead of probabilistically by drawing randomly from
+    a distribution conditioned on causal parents. This deterministic assignment reflects
+    the philosophical view of *causal determinism,* which argues that if you knew
+    all the causal factors of an outcome, you would know the outcome with complete
+    certainty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The SCM stands on this philosophical foundation. Consider again our femur-height
+    example, shown in figure 6.4\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F04_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.4 The original CGM samples endogenous variables from causal Markov
+    kernels. The new model sets the endogenous variables deterministically.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In the original CGM on the left of figure 6.4, we generate values of *X* and
+    *Y* from models of their causal Markov kernels. In the corresponding SCM on the
+    right, the endogenous variables are set deterministically, no longer drawn from
+    distributions. The SCM is saying that given femur length and all the other unmodeled
+    causes of height represented by *N*[*y*], height is a certainty.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that despite this deterministic view, the SCM is still a probabilistic
+    model of the joint probability distribution of the endogenous variables *P*(*X*,
+    *Y*). But in comparison to the CGM on the left of figure 6.4, the SCM on the right
+    shunts all the randomness of the model to the exogenous variable distributions.
+    *X* and *Y* are still random variables in the SCM, because they are functions
+    of *N*[*x*] and *N*[*y*], and a function of a random variable is a random variable.
+    But conditional on the exogenous variables, the endogenous variables are fully
+    determined (*degenerate*).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The causal determinism leads to eye-opening conclusions for us as causal modelers.
+    First, when we apply a DAG-based view of causality to a given problem*,* we implicitly
+    assume *the ground-truth data generating process* (DGP) is an SCM. We already
+    assumed that the ground-truth DGP had an underlying ground-truth DAG. Going a
+    step further and assuming that each variable in that DAG is set deterministically,
+    given all its causes (both those in and outside the DAG), is equivalent to assuming
+    the ground-truth DGP is an SCM. The SCM might be a black box, or we might not
+    be able to easily write it down in math or code, but it is an SCM nonetheless.
+    That means, whether we’re using a traditional CGM or an SCM, we are *modeling
+    a ground-truth SCM*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Second, it suggests that if we were to generate from the ground-truth SCM, all
+    the random variation in those samples would be *entirely due to exogenous causes*.
+    It would *not be due to an irreducible source of stochasticity* like, for example,
+    Heisenberg’s uncertainty principle or butterfly effects. If such concepts drive
+    the outcomes in your modeling domain, CGMs might not be the best choice.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we know we want to model a ground-truth SCM, let’s explore why we can’t
+    simply learn it from data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.2 Equivalence between SCMs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A key thing to understand about SCMs is that we can’t fully learn them from
+    data. To see why, let’s revisit the case where we turned a CGM into an SCM. Let’s
+    see why, in general, this can’t give us the ground-truth SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.2.1 Reparameterization is not enough
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: When we converted the generic CGM to the SCM, we used the fact that a linear
+    transformation of a normally distributed random variable produces a normally distributed
+    random variable. This ensured that the joint probability distribution of the endogenous
+    variables was unchanged.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We could use this “reparameterization trick” (as this technique is called in
+    generative AI) with other distributions. When we apply the reparameterization
+    trick, we are shunting all the uncertainty in those conditional probability distributions
+    to the distributions of the newly introduced exogenous variables. The problem
+    is that different “reparameterization tricks” can lead to different SCMs with
+    different causal assumptions, leading to different causal inferences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reparameterization trick for a Bernoulli distribution
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: As an example, let *X* represent the choice of a weighted coin and *Y* represent
+    the outcome of a flip of the chosen coin. *Y* is 1 if we flip heads and 0 if we
+    flip tails. *X* takes two values, “coin A” or “coin B”. Coin A has a .8 chance
+    of flipping heads, and coin B has a .4 chance of flipping heads, as shown in figure
+    6.5\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F05_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.5 A simple CGM. *X* is a choice of one of two coins with different
+    weights on heads and tails. *Y* is the outcome of the coin flip (heads or tails).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We can simulate an outcome of the flip with a variable *Y* sampled from a Bernoulli
+    distribution with parameter *p*[*x*], where *p*[*x*] is .8 or .4, depending on
+    the value of *x*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* ~ Bernoulli(*p*[*x*])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How could we apply the reparameterization trick here to make the outcome *Y*
+    be the result of a deterministic process?
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imagine that we have a stick that’s one meter long (figure 6.6).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F06_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.6 To turn the coin flip model into an SCM, first imagine a one meter
+    long stick.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'Imagine using a pocket knife to carve a mark that partitions the stick into
+    two regions: one corresponding to “tails” and one for “heads.” We cut the mark
+    at a point that makes the length of each region proportional to the probability
+    of the corresponding outcome; the length of the heads region is *p*[*x*] meters,
+    and the length of the tails region is 1 – *p*[*x*] meters. For coin *A*, this
+    would be .8 meters (80 centimeters) for the heads region and .2 meters for the
+    tails region (figure 6.7).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F07_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.7 Divide the stick into two regions corresponding to each outcome.
+    The length of the region is proportional to the probability of the outcome.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: After marking the partition, we will now randomly select a point on the stick’s
+    length where we will break the stick. The probability that the break will occur
+    in a given region is equal to the probability of that region’s associated outcome
+    (figure 6.8). The equality comes from having the length of the region correspond
+    to the probability of the outcome. If the break point is to the left of the partition
+    we cut with our pocket knife, *y* is assigned 0 (“heads”), and if the break point
+    is to the right, *y* is assigned 1 (“tails”).
+  prefs: []
+  type: TYPE_NORMAL
+- en: To randomly select a point to break the stick, we can generate from a uniform
+    distribution. Suppose we sample .15 from a uniform(0, 1) and thus break the stick
+    at a point .15 meters along its length, as shown in figure 6.8\. The .15 falls
+    into the “heads” region, so we return heads. If we repeat this stick-breaking
+    procedure many times, we’ll get samples from our target Bernoulli distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In math, we can write this new model as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ Uniform(0, 1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* := *I*(*n*[*y*] ≤ *p*[*x*])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where *p*[*x*] is .8 if *X* is coin *A*, or .4 if *X* is coin *B*. Here, *I*(.)
+    is the indicator function that returns 1 if *n*[*y*] < *p*[*x*] and 0 otherwise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F08_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.8 Generate from a uniform distribution on 0 to 1 meters, break the
+    stick at that point, and return the outcome associated with the region where the
+    break occurred. Repeated generation of uniform variates will cause breaks in the
+    “heads” region 80% of the time, because its length is 80% of the full stick length.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: This new model is technically an SCM, because instead of *Y* being generated
+    from a Bernoulli distribution, it is set deterministically by an indicator “assignment”
+    function. We did a reparameterization that shunted all the randomness to an exogenous
+    variable with a uniform distribution, and that variable is passed to the assignment
+    function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different “reparameterization tricks” lead to different SCMs
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The main reason to use SCM modeling is to have the functional assignments represent
+    causal assumptions beyond those captured by the causal DAG. The problem with the
+    reparameterization trick is that different reparameterization tricks applied to
+    the same CGM will create SCMs with different assignment functions, implying different
+    causal assumptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To illustrate, suppose that instead of a coin flip, *Y* was a three-sided die,
+    like we saw in chapter 2 (figure 6.9). *X* determines which die we’ll throw; die
+    A or die B (figure 6.10). Each die is weighted differently, so they have different
+    probabilities of rolling a 1, 2, or 3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F09_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.9 Three-sided dice
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F10_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.10 Suppose we switch the model from choosing a coin (two outcomes)
+    to choosing a three-sided die (three outcomes).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'We can extend the original model from a Bernoulli distribution (which is the
+    same as a categorical distribution with two outcomes) to a categorical distribution
+    with three outcomes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* ~ Categorical([*p*[*x*][1], *p*[*x*][2], *p*[*x*][3]])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: where *p*[*x*][1], *p*[*x*][2], and *p*[*x*][3] are the probabilities of rolling
+    a 1, 2, and 3 respectively (note that one of these is redundant, since *p*[*x*][1]
+    = 1 – *p*[*x*][2] – *p*[*x*][3]).
+  prefs: []
+  type: TYPE_NORMAL
+- en: We can use the stick-based reparameterization trick here as well; we just need
+    to extend the stick to have one more region. Suppose for die *A*, the probability
+    of rolling a 1 is *p*[*x*][1]=.1, rolling a 2 is *p*[*x*][2]=.3, and rolling a
+    3 is *p*[*x*][3]=.6\. We’ll mark our stick as in figure 6.11.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F11_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.11 Divide the stick into three regions corresponding to outcomes of
+    the three-sided die.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We’ll then use the same selection of a remote region using a generated uniform
+    variate as before (figure 6.12).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F12_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.12 The conversion to the stick-breaking SCM when *Y* has three outcomes
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'In math we’ll write this as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-4x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: But what if we mark the stick differently, such that we change the ordering
+    of the regions on the stick? In the second stick, the region order is 3, 1, and
+    then 2 (figure 6.13).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F13_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.13 Two different ways of reparameterizing a causal generative model
+    yield two different SCMs. They encode the same joint probability distribution
+    but different endogenous values given the same exogenous value.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In terms of the probability of each outcome (1, 2, or 3), the two sticks are
+    equivalent—the size of the stick regions assigned to each die-roll outcome are
+    the same on both sticks. But our causal mechanism has changed! These two sticks
+    can return *different* outcomes for a given value of *n*[*y*]. If we randomly
+    draw .15 and thereby break the sticks at the .15 meter point, the first stick
+    will break in region 2, returning a 2, and the second stick will break in region
+    3, returning a 3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In math, the second stick-breaking SCM has this form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-5x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Metaphorically speaking, imagine that in your modeling domain, the sticks are
+    always marked a certain way, with the regions ordered in a certain way. Then there
+    is no guarantee that a simple reparameterization trick will give you the ground-truth
+    marking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To drive the point home, let’s look back at the reparameterization trick we
+    performed to convert our femur-height model to an SCM (figure 6.14).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F14_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.14 Revisiting the femur-height SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'Suppose we create a new SCM that is the same, except that the assignment function
+    for *y* now looks like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* := 25 + 3*x* – *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we have a second SCM that subtracts *n*[*y*] instead of adding *n*[*y*].
+    A normal distribution is symmetric around its mean, so since *n*[*y*] has a normal
+    distribution with mean 0, the probability values of *n*[*y*] and –*n*[*y*] are
+    the same, so the probability distribution of *Y* is the same in both models. But
+    for the same values of *n*[*y*] and *x*, the actual assigned values of *y* will
+    be different. Next, we’ll examine this idea in formal detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.2.2 Uniqueness and equivalence of SCMs
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Given a causal DAG and a joint probability distribution on endogenous variables,
+    there can generally be multiple SCMs consistent with that DAG and joint probability
+    distribution. This means that we can’t rely on data alone to learn the ground-truth
+    SCM. We’ll explore this problem of *causal identifiability* in depth in chapter
+    10\. For now, let’s break this idea down using concepts we’ve seen so far.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Many SCMs are consistent with a DAG and corresponding distributions
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Recall the many-to-one relationships we outlined in figure 2.24, shown again
+    here in figure 6.15.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F15_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.15 We have many-to-one relationships as we move from the DGP to observed
+    data.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: If we can represent the underlying DGP as a ground-truth SCM, figure 6.15 becomes
+    as shown in figure 6.16.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F16_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.16 Different SCMs can entail the same DAG structure and distributions.
+    The SCMs can differ in assignment functions (and/or exogenous distributions).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In other words, given a joint distribution on a set of variables, there can
+    be multiple causal DAGs consistent with that distribution—in chapter 4 we called
+    these DAGs a *Markov equivalence class*. Further, we can have *equivalence classes
+    of SCMs*—given a causal DAG and a joint distribution, there can be multiple SCMs
+    consistent with that DAG and distribution. We saw this with how the two variants
+    of the stick-breaking die-roll SCM are both consistent with the DAG *X* (die choice)
+    → *Y* (die roll) and with the distributions *P*(*X*) (probability distribution
+    on die selection) and *P*(*Y*|*X*) (probability of die roll).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ground-truth SCM can’t be learned from data (without causal assumptions)
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: When we were working to build a causal DAG in previous chapters, our implied
+    objective was to reproduce the ground-truth causal DAG. Now we seek to reproduce
+    the ground-truth SCM, as in figure 6.16.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In chapter 4, we saw that data cannot distinguish between causal DAGs in an
+    equivalence class of DAGs. Similarly, data alone is not sufficient to recover
+    the ground-truth SCM. Again, consider the stick-breaking SCMs we derived. We derived
+    two marked sticks, with two different orderings of regions. Of course, there are
+    3 × 2 × 1 = 6 ways of ordering the three outcomes: ({1, 2, 3}, {1, 3, 2}, {2,
+    1, 3}, {2, 3, 2}, {3, 1, 2}, {3, 2, 1}). That’s six ways of marking the stick
+    and thus six different possible SCMs consistent with the distributions *P*(*X*)
+    and *P*(*Y*|*X*) (probability of die roll).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Suppose one of these marked sticks was the ground-truth SCM, and it was hidden
+    from us in a black box, as in figure 6.17\. Suppose we repeatedly ran the SCM
+    to generate some die rolls. Based on those die rolls, could we figure out how
+    the ground-truth stick was marked? In other words, which of the six orderings
+    was the black box ordering?
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F17_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.17 Suppose we didn’t know which “marked stick” was generating the observed
+    die rolls. There would be no way of inferring the correct marked stick from the
+    die rolls alone. More generally, SCMs cannot be learned from statistical information
+    in the data alone.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The answer is no. More generally, because of the many-to-one relationship between
+    SCMs and data, you cannot learn the ground-truth SCM from statistical information
+    in the data alone.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let that sink in for a second. I’m telling you that even with infinite data,
+    the most cutting-edge deep learning architecture, and a bottomless compute budget,
+    you cannot figure out the true SCM even in this trivial three-outcome stick-breaking
+    example. In terms of statistical likelihood, each SCM is equally likely, given
+    the data. To prefer one SCM to another in the equivalence class, you would need
+    additional assumptions, such as that {1, 2, 3} is the most likely marking because
+    the person marking the stick would probably mark the regions in order. That’s
+    a fine assumption to make, as long as you are *aware* you are making it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the practice of machine learning, we are often unaware that we are making
+    such assumptions. To illustrate, suppose you ran the following experiment. You
+    created a bunch of stick-breaking SCMs and then simulated data from those SCMs.
+    Then you vectorized the SCMs and used them as labels, and the simulated data as
+    features, in a deep supervised learning training procedure focused on predicting
+    the “true” SCM from simulated data, as illustrated in figure 6.18.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F18_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.18 You create many SCMs and simulate data from each of them. You could
+    then do supervised learning of a deep net that predicted the ground-truth SCM
+    from the simulated data. Given two SCMs of the same equivalence class, this approach
+    would favor the SCM with attributes that appeared more often in the training data.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Suppose then you fed the trained model data actual samples of three-sided die
+    rolls, with the goal of predicting the ground-truth SCM. That predictive model’s
+    prediction might favor a stick with the {1, 2, 3} ordering over the equivalent
+    {2, 3, 1} ordering. But it would only do so if the {1, 2, 3} ordering was more
+    common in the training data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Analogy to program induction
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The problem of learning an SCM from data is related to the challenge of program
+    induction in computer science. Suppose a program took “foo” and “bar” as inputs
+    and returned “foobar” as the output. What is the program? You might think that
+    the program simply concatenates the inputs. But it could be anything, including
+    one that concatenates the inputs along with the word “aardvark”, then deletes
+    the “aardvark” characters, and returns the result. The “data” (many examples of
+    inputs to and outputs of the program) are not enough distinguish which program
+    of all the possible programs is the correct one. For that you need additional
+    assumptions or constraints, such as an Occam’s razor type of inductive bias that
+    prefers the simplest program (e.g., the program with the *minimum description
+    length*).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Trying to learn an SCM from data is a special case of this problem. The program’s
+    inputs are the exogenous variable values, and the outputs are the endogenous variable
+    values. Suppose you have the causal DAG, just not the assignment functions. The
+    problem is that an infinite number of assignment functions could produce those
+    outputs, given the inputs. Learning an SCM from data requires additional assumptions
+    to constrain the assignment functions, such as constraining the function class
+    and using Occam’s razor (e.g., model selection criterion).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we’ll dive into implementing an SCM in a discrete rule-based setting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.3 Implementing SCMs for rule-based systems
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A particularly useful application for SCMs is modeling rule-based systems. By
+    “rule-based,” I mean that known rules, often set by humans, determine the “how”
+    of causality. Games are a good example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To illustrate, consider the *Monty Hall problem*—a probability-based brain teaser
+    named after the host of a 1960’s game show with a similar setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '6.3.1 Case study: The Monty Hall problem'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: A contestant on a game show is asked to choose between three closed doors. Behind
+    one door is a car; behind the others, goats. The player picks the first door.
+    Then the host, who knows what’s behind the doors, opens another door, for example
+    the third door, which has a goat. The host then asks the contestant, “Do you want
+    to switch to the second door, or do you want to stay with your original choice?”
+    The question is which is the better strategy, switching doors or staying?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The correct answer is to switch doors. This question appeared in a column in
+    *Parade* magazine in 1990, with the correct answer. Thousands of readers mailed
+    in, including many with graduate-level mathematical training, to refute the answer
+    and say that there is no advantage to switching, that staying or switching have
+    the same probability of winning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 6.19 illustrates the intuition behind why switching is better. Switching
+    doors is the correct answer because under the standard assumptions, the “switch”
+    strategy has a probability of two-thirds of winning the car, while the “stay”
+    strategy has only a one-third probability. It seems counterintuitive because each
+    door has an equal chance of having the car when the game starts. It seems as if,
+    once the host eliminates one door, each remaining door should have a 50-50 chance.
+    This logic is false, because the host doesn’t eliminate a door at random. He only
+    eliminates a door that isn’t the player’s initial selection *and* that doesn’t
+    have the car. A third of the times, those are the same door, and two-thirds of
+    the time they are different doors; that one-third to two-thirds asymmetry is why
+    the remaining doors don’t each have a 50-50 chance of having the car.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F19_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.19 The Monty Hall problem. Each door has an equal probability of concealing
+    a prize. The player chooses a door initially, the host reveals a losing door,
+    and the player has the option to switch their initial choice. Contrary to intuition,
+    the player should switch; if they switch, they will win two out of three times.
+    This illustration assumes door 1 is chosen, but the results are the same regardless
+    of the initial choice of door.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 6.3.2 A causal DAG for the Monty Hall problem
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Causal modeling makes the Monty Hall problem much more intuitive. We can represent
+    this game with the causal DAG in figure 6.20.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F20_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.20 A causal DAG for the Monty Hall problem
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'The possible outcomes for each variable are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Door with Car*—Indicates the door that has the car behind it. 1^(st) for the
+    first door, 2^(nd) for the second door, or 3^(rd) for the third door.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Player First Choice*—Indicates which door the player chooses first. 1^(st)
+    for the first door, 2^(nd) for the second door, or 3^(rd) for the third door.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Host Inclination*—Suppose the host is facing the doors, such that from left
+    to right they are ordered 1^(st), 2^(nd), and 3^(rd). This *Host Inclination*
+    variable has two outcomes, Left and Right. When the outcome is Left, the host
+    is inclined to choose the left-most available door; otherwise the host will be
+    inclined to choose the right-most available door.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Host Door Selection*—The outcomes are again 1^(st), 2^(nd), and 3^(rd).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Strategy*—The outcomes are Switch if the strategy is to switch doors from
+    the first choice, or Stay if the strategy is to stay with the first choice.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Player Second Choice*—Indicates which door the player chooses after being
+    asked by the host whether they want to switch or not. The outcomes again are 1^(st),
+    2^(nd), and 3^(rd).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Win or Lose*—Indicates whether the player wins; the outcomes are Win or Lose.
+    Winning occurs when *Player Second Choice* == *Door with Car*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Next, we’ll see how to implement this as an SCM in pgmpy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.3.3 Implementing Monty Hall as an SCM with pgmpy
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The rules of the game give us clear logic for the assignment functions. For
+    example, we can represent the assignment function for *Host Door Selection* with
+    table 6.1.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6.1 A lookup table for *Host Door Selection*, given *Player First Choice,
+    Door with Car**,* and *Host Inclination*. It shows which door the host selects,
+    given the player’s first choice, which door has the car, and the *Host Inclination*,
+    which refers to whether the host will choose the left-most or right-most door
+    in cases when the host has two doors to choose from.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Host Inclination | Left | Right |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Door with Car**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player First Choice**  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  |
+    3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  |
+    2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Host Door Selection**  | 2^(nd)  | 3^(rd)  | 2^(nd)  | 3^(rd)  | 1^(st)  |
+    1^(st)  | 2^(nd)  | 1^(st)  | 1^(st)  | 3^(rd)  | 3^(rd)  | 2^(nd)  | 3^(rd)  |
+    3^(rd)  | 1^(st)  | 2^(nd)  | 1^(st)  | 2^(nd)  |'
+  prefs: []
+  type: TYPE_TB
+- en: When the door with the car and the player’s first choice are different doors,
+    the host can only choose the remaining door. But if the door with the car and
+    the player’s first choice are the same door, the host has two doors to choose
+    from. He will choose the left-most door if *Host Inclination* is Left. For example,
+    if *Door with Car* and *Player First Choice* are both 1^(st), the host must choose
+    between the 2^(nd) and 3^(rd) doors. He will choose the 2^(nd) door if *Host Inclination*
+    == Left and the 3^(rd) if *Host Inclination* == Right.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This logic would be straightforward to write using if-then logic with a library
+    like Pyro. But since the rules are simple, we can use the far more constrained
+    pgmpy library to write this function as a conditional probability table (table
+    6.2).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6.2 We can convert the *Host Door Selection* lookup table (table 6.1)
+    to a conditional probability table that we can implement as a `TabularCPD` object
+    in pgmpy, where the probability of a given outcome is 0 or 1, and thus, deterministic.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Host Inclination | Left | Right |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Door with Car**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player First Choice**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Host Door Selection**  | 1^(st)  | 0  | 0  | 0  | 0  | 1  | 1  | 0  | 1  |
+    1  | 0  | 0  | 0  | 0  | 0  | 1  | 0  | 1  | 0  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2^(nd)  | 1  | 0  | 1  | 0  | 0  | 0  | 1  | 0  | 0  | 0  | 0  | 1  | 0  |
+    0  | 0  | 1  | 0  | 1  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 3^(rd)  | 0  | 1  | 0  | 1  | 0  | 0  | 0  | 0  | 0  | 1  | 1  | 0  | 1  |
+    1  | 0  | 0  | 0  | 0  |'
+  prefs: []
+  type: TYPE_TB
+- en: The entries in the table correspond to the probability of the *Host Door Selection*
+    outcome given the values of the causes. Each probability outcome is either 0 or
+    1, given the causal parents, so the outcome is completely deterministic given
+    the parents. Therefore, we can use this as our assignment function, and since
+    it is a conditional probability table, we can implement it using the `TabularCPD`
+    class in pgmpy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.4 Implementation of *Host Door Selection* assignment function in pgmpy
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The name of the variable'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 The cardinality (number of outcomes)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 The probability table. The values match the value in table 6.2, as long
+    as the ordering of the causal variables in the evidence argument matches the top-down
+    ordering of causal variable names in the table.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 The conditioning (causal) variables'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 The cardinality (number of outcomes) for each conditioning (causal) variable'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 The state names of each the variables'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This code produces `f_host_door_selection`, a `TabularCPD` object we can add
+    to a model of the class `BayesianNetwork`. We can then use this in a CGM as we
+    would a more typical `TabularCPD` object.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, we can create a look-up table for *Player Second Choice*, as shown
+    in table 6.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6.3 A lookup table for *Player Second Choice*, conditional on *Player
+    First Choice*, *Host Door Selection*, and *Strategy. Player Second Choice* cells
+    are empty in the impossible cases where *Player First Choice* and *Host Door Selection*
+    are the same.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Strategy | Stay | Switch |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Host Door Selection**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player First Choice**  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  |
+    3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  |
+    2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player Second Choice**  |  | 2^(nd)  | 3^(rd)  | 1^(st)  |  | 3^(rd)  |
+    1^(st)  | 2^(nd)  |  |  | 3^(rd)  | 2^(nd)  | 3^(rd)  |  | 1^(st)  | 2^(nd)  |
+    1^(st)  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: The host will never choose the same door as the player’s first choice, so *Host
+    Door Selection* and *Player First Choice* can never have the same value. The entries
+    of *Player Second Choice* are not defined in these cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Expanding this to a conditional probability table gives us table 6.4\. Again,
+    the cells with impossible outcomes are left blank.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 6.4 The result of converting the lookup table for *Player Second Choice*
+    (table 6.3) to a conditional probability table that we can implement as a `TabularCPD`
+    object
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Strategy | Stay | Switch |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Host Door Selection**  | **1^(st)**  | **2^(nd)**  | **3^(rd)**  | **1^(st)**  |
+    **2^(nd)**  | **3^(rd)**  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player First Choice**  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  |
+    3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  | 1^(st)  |
+    2^(nd)  | 3^(rd)  | 1^(st)  | 2^(nd)  | 3^(rd)  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **Player Second Choice**  | **1^(st)**  |  | 0  | 0  | 1  |  | 0  | 1  |
+    0  |  |  | 0  | 0  | 0  |  | 1  | 0  | 1  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **2^(nd)**  |  | 1  | 0  | 0  |  | 0  | 0  | 1  |  |  | 0  | 1  | 0  |  |
+    0  | 1  | 0  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| **3^(rd)**  |  | 0  | 1  | 0  |  | 1  | 0  | 0  |  |  | 1  | 0  | 1  |  |
+    0  | 0  | 0  |  |'
+  prefs: []
+  type: TYPE_TB
+- en: Unfortunately, we can’t leave the impossible values blank when we specify a
+    `Tabular-CPD`, so in the following code, we’ll need to assign arbitrary values
+    to these elements.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.5 Implementation of *Player Second Choice* assignment function in
+    pgmpy
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The probability values are 0 or 1, so the assignment function is deterministic.
+    In cases where the parent combinations are impossible, we still have to assign
+    a value.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: That gives us a second `TabularCPD` object. We’ll create one for each node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, let’s set up the causal DAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.6 Implementing the full Monty Hall SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Build the causal DAG.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`monty_hall_model` is now a causal DAG. It will become an SCM after we add
+    the exogenous variable distributions and assignment functions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following listing adds the exogenous variable distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.7 Create the exogenous variable distributions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 A CPD for the Host Inclination variable. In cases when the player chooses
+    the door with the car, the host has a choice between the two other doors. This
+    variable is “left” when the host is inclined to choose the left-most door, and
+    “right” if the host is inclined to choose the right-most door.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 A CPD for the variable representing which door has the prize car. Assume
+    each door has an equal probability of having the car.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 A CPD for the variable representing the player’s first door choice. Each
+    door has an equal probability of being chosen.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 A CPD for the variable representing the player''s strategy. “Stay” is the
+    strategy of staying with the first choice, and “switch” is the strategy of switching
+    doors.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Having created the exogenous distributions, we’ll now create the assignment
+    functions. We’ve already created `f_host_door_selection` and `f_second_choice`,
+    so we’ll add `f_win_or_lose`—the assignment function determining whether the player
+    wins or loses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.8 Create the assignment functions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Finally, we’ll add the exogenous distribution and the assignment functions to
+    `monty_hall_model` and create the SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.9 Create the SCM for the Monty Hall problem
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: We can run the variable elimination inference algorithm to verify the results
+    of the algorithm. Let’s query the probability of winning, given that the player
+    takes the “stay” strategy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.10 Inferring the winning strategy
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 We’ll use the inference algorithm called “variable elimination.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Print the probabilities of winning and losing when the player uses the “stay”
+    strategy.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Print the probabilities of winning and losing when the player uses the “switch”
+    strategy.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Print the probabilities that the player used a stay strategy versus a switch
+    strategy, given that the player won.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This inference produces the following output:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The probability of winning and losing under the “stay” strategy is 1/3 and
+    2/3, respectively. In contrast, here’s the output for the “switch” strategy:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: The probability of winning and losing under the “switch” strategy is 2/3 and
+    1/3, respectively. We can also condition on a winning outcome and infer the probability
+    that each strategy leads to that outcome.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: These are plain vanilla non-causal probabilistic inferences—we were just validating
+    that our SCM is capable of produce these inferences. In chapter 9, we’ll demonstrate
+    how this SCM enables causal *counterfactual* inferences that simpler models can’t
+    answer, such as “What would have happened had the losing player used a different
+    strategy?”
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.3.4 Exogenous variables in the rule-based system
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In this Monty Hall SCM, the root nodes (nodes with no incoming edges) in the
+    causal DAG function as the exogenous variables. This is slightly different from
+    our formal definition of an SCM, which states that exogenous variables represent
+    causal factors outside the system. *Host Inclination* meets that definition, as
+    this was not part of the original description. *Door with Car*, *Player First
+    Choice*, and *Strategy* are another matter. To remedy this, we could introduce
+    exogenous parents to these variables, and set these variables deterministically,
+    given these parents, as we do elsewhere in this chapter. But while modeling this
+    in pgmpy, that’s a bit redundant.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.3.5 Applications of SCM-modeling of rule-based systems
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: While the Monty Hall game is simple, do not underestimate the expressive power
+    of incorporating rules into assignment functions. Some of the biggest achievements
+    in AI in previous decades have been at beating expert humans in board games with
+    simple rules. Simulation software, often based on simple rules for how a system
+    transitions from one state to another, can model highly complex behavior. Often,
+    we want to apply causal analysis to rule-based systems engineered by humans (who
+    know and can rewrite those rules), such as an automated manufacturing system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4 Training an SCM on data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Given a DAG, we make a choice of whether to use a CGM or an SCM. Let’s suppose
+    we want to go with the SCM, and we want to “fit” or “train” this SCM on data.
+    To do this, we choose some *parameterized* *function class* (e.g., linear functions,
+    logistic functions, etc.) for each assignment function. That function class becomes
+    a specific function once we’ve fit its parameters on data. Similarly, for each
+    exogenous variable, we want to specify a canonical probability distribution, possibly
+    with parameters we can fit on data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our femur-height example, all the assignment functions were linear functions
+    and the exogenous variables were normal distributions. But with tools like Pyro,
+    you can specify each assignment function and exogenous distribution one by one.
+    Then you can train the parameters just as you would with a CGM. For example, instead
+    of taking this femur-height model from the forensic textbook:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, 3.3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* = 25 + 3*x* + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'you can just fit the parameters *α*, *β*, and *δ* of a linear model on actual
+    forensic data:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, *δ*)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* = *α* + *β**x* + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this forensics example, we use a linear assignment function because height
+    is proportional to femur length. Let’s consider other ways to capture how causes
+    influence their effects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.1 What assignment functions should I choose?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The most important choice in an SCM model is your choice of *function classes*
+    for the assignment functions, because these choices represent your assumptions
+    about the “how” of causality. You can use function classes common in math, such
+    as linear models. You can also use code (complete with if-then statements, loops,
+    recursion, etc.) like we did with the rock-throwing example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remember, you are modeling a ground-truth SCM. You are probably going to specify
+    your assignment functions differently from those in the ground-truth SCM, but
+    that’s fine. You don’t need your SCM to match the ground truth exactly; you just
+    need your model to be right about the “how” assumptions it is relying on for your
+    causal inferences.
+  prefs: []
+  type: TYPE_NORMAL
+- en: SCMs without “how” assumptions are just CGMs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Suppose you built an SCM where every assignment function is a linear function.
+    You are using a linear Gaussian assumption because your library of choice requires
+    it (e.g., `LinearGaussianCPD` is pretty much your only choice for modeling continuous
+    variables in pgmpy). However, you are not planning on relying on that linear assumption
+    for your causal inference. In this case, while your model checks the boxes of
+    an SCM, it is effectively a CGM with linear models of the causal Markov kernels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Suppose, for example, that instead of a linear relationship between *X* and
+    *Y*, *X* and *Y* followed a nonlinear S-curve, and your causal inference was sensitive
+    to this S-curve. Imagine that the ground-truth SCM captured this with an assignment
+    function in the form of the Hill equation (a function that arises in biochemistry
+    and that can capture S-curves). But your SCM instead uses a logistic function
+    fit on data. Your model, though wrong, will be sufficient to make a good causal
+    inference if your logistic assignment function captured everything it needed to
+    about the S-curve for your inference to work.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.2 How should I model the exogenous variable distributions?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In section 6.1.3, we formulated our generative SCM in a particular way, where
+    every node gets its own exogenous variable representing its unmodeled causes.
+    Under that formulation, the role of the exogenous variable distribution is simply
+    to provide sufficient variation for the SCM to model the joint distribution. This
+    means that, assuming you have selected your assignment function classes, you can
+    choose canonical distributions for the exogenous variables based on how well they
+    would fit the data after parameter estimation. Some canonical distributions may
+    fit better than others. You can contrast different choices using standard techniques
+    for model comparison and cross-validation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These canonical distributions can be parameterized, such as *N*(0, *δ*) in
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, *δ*)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* = *α* + *β**x* + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A more common approach in generative AI is to use constants in the canonical
+    distribution and only train the parameters of the assignment function:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, 1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* = *α* + *β**x* + *δ* *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Either is fine, as long as your choice captures your “how” assumptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '6.4.3 Additive models: A popular choice for SCM modeling'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Additive models are SCM templates that use popular trainable function classes
+    for assignment functions. They can be a great place to start in SCM modeling.
+    We’ll look at three common types of additive models: linear Gaussian additive
+    model (LiGAM), linear non-Gaussian additive model (LiNGAM), and the nonlinear
+    additive noise model (ANM). These models each encapsulate a pair of constraints:
+    one on the structure of the assignment functions, and one on the distribution
+    of the additive exogenous variables.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additivity makes this approach easier because there are typically unique solutions
+    to algorithms that learn the parameters of these additive models from data. In
+    some cases, those parameters have a direct causal interpretation. There are also
+    myriad software libraries for training additive models on data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s demonstrate the usefulness of additive models with an example. Suppose
+    you were a biochemist studying the synthesis of a certain protein in a biological
+    sample. The sample has some amount of an enzyme that reacts with some precursors
+    in the sample and synthesizes the protein you are interested in. You measure the
+    quantity of the protein you’re interested in. Let *X* be the amount of enzyme,
+    and let *Y* be the measured amount of the protein of interest. We’ll model this
+    system with an SCM, which has the DAG in figure 6.21.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F21_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.21 The amount of enzyme (*X*) is a cause the measured quantity of protein
+    (*Y*).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: We have qualitative knowledge ofhow causes affect effects, but we have to turn
+    that knowledge into explicit choices of function classes for assignment functions
+    and exogenous variable distributions. Additive models are a good place to start.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To illustrate, we’ll focus on the assignment function and exogenous variable
+    distribution for *Y*, the amount of the target protein in our example. Generating
+    from the exogenous variable, and setting *Y* via the assignment function, has
+    the following notation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *P*(*N*[*y*])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* := *f*[*y*](*x*, *n*[*y*])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*f*[*y*](.) denotes the assignment function for *y*, which takes a value of
+    the endogenous parent *X* and exogenous parent *N*[*y*] as inputs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In an *additive* assignment function, the exogenous variable is always added
+    to some function of endogenous parents. In our example, this means that the assignment
+    function for *Y* has the following form:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* := *f*[y](*x*, *n*[*y*]) = *g*(*x*) + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, *g*(.) is some trainable function of the endogenous parent(s), and *n*[*y*]
+    is added to the results of that function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For our protein *Y*, these models say that the measured amount of protein *Y*
+    is equal to some function of the enzyme amount *g*(*X*) plus some exogenous factors,
+    such as noise in the measurement device. This assumption is attractive, because
+    it lets us think of unmodeled exogenous causes as additive “noise.” In terms of
+    statistical signal processing, it is relatively easy to disentangle some core
+    signal (e.g., *g*(*x*)) from additive noise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In general, let *V* represent an endogenous variable in the model, *V*[*PA*]
+    represent the endogenous parents of *V*, and *N*[*v*] represent an exogenous variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*v* := *f*[*v*](*V*[*PA*], *n*[*v*]) = *g*(*V*[*PA*]) + *n*[*v*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additive SCMs have several benefits, but here we’ll focus on their benefit as
+    a template for building SCMs. We’ll start with the simplest additive model, the
+    linear Gaussian additive model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.4 Linear Gaussian additive model
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In a linear Gaussian additive model, the assignment functions are linear functions
+    of the parents, and the exogenous variables have a normal distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our enzyme example, *N*[*y*] and *Y* are given as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*n*[*y*] ~ *N*(0, *σ*[*y*])'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*y* := *β*[0] + *β*[*x*]*x* + *n*[*y*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, *β*[0] is an intercept term, and *β*[*x*] is a coefficient for *X*. We
+    are assuming that for every unit increase in the amount of enzyme *X*, there is
+    a *β*[*x*] increase in the expected amount of the measured protein. *N*[*y*] accounts
+    for variation around that expected amount due to exogenous causal factors, and
+    we assume it has a normal distribution with a mean of 0 and scale parameter *σ*[*y*].
+    For example, we might assume that *N*[*y*] is composed mostly of technical noise
+    from the measurement device, such as dust particles that interfere with the sensors.
+    We might know from experience with this device that this noise has a normal distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In general, for variable *V* with a set of *K* parents, *V*[*PA*] = {*V*[*pa*][,1],
+    …, *V*[*pa*][,][*K*]}:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-13x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This model defines parameters: *β*[0] is an intercept term, *β*[*j*] is the
+    coefficient attached to the *j*^(th) parent, and *σ*[*v*] is the scale parameter
+    of *N*[*v*]’s normal distribution.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s see an example of a LiNGAM model in Pyro.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.11 Pyro example of a linear Gaussian model
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The distributions of the exogenous variables are normal (Gaussian).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 The functional assignments are linear.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linear Gaussian SCMs are especially popular in econometric methods used in the
+    social sciences because the model assumptions have many attractive statistical
+    properties. Further, in linear models, we can interpret a parent causal regressor
+    variable’s coefficient as the causal effect (average treatment effect) of that
+    parent on the effect (response) variable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.5 Linear non-Gaussian additive models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Linear non-Gaussian additive models (LiNGAM) are useful when the Gaussian assumption
+    on exogenous variables is not appropriate. In our example, the amount of protein
+    *Y* cannot be negative, but that can easily occur in a linear model if *β*[0],
+    *x*, or *n*[*x*] have low values. LiNGAM models remedy this by allowing the exogenous
+    variable to have a non-normal distribution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.12 Pyro example of a LiNGAM model
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Instead of a normal (Gaussian) distribution, the exogenous variables have
+    a gamma distribution with the same mean and variance.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 These are the same assignment functions as in the linear Gaussian model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the preceding model, we use a gamma distribution. The lowest possible value
+    in a gamma distribution is 0, so *y* cannot be negative.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.6 Nonlinear additive noise models
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As I’ve mentioned, the power of the SCM is the ability to choose functional
+    assignments that reflect *how* causes affect their direct effects. In our hypothetical
+    example, you are a biochemist. Could you import knowledge from biochemistry to
+    design the assignment function? Here is what that reasoning might look like. (You
+    don’t need to understand the biology or the math, in this example, just the logic).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There is a common mathematical assumption in enzyme modeling called *mass action
+    kinetics*. In this model, *T* is the maximum possible amount of the target protein.
+    The biochemical reactions happen in real time, and during that time, the amount
+    of the target protein fluctuates before stabilizing at some equilibrium value
+    *Y*. Let *Y*(*t*) and *X*(*t*) be the amount of the target protein and enzyme
+    at a given time point. Mass action kinetics give us the following ordinary differential
+    equation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-14x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Here, *v* and *α* are *rate* *parameters* that characterize the rates at which
+    different biochemical reactions occur in time. This differential equation has
+    the following equilibrium solution,
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-15x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: where *Y* and *X* are equilibrium values of *Y*(*t*) and *X*(*t*), and *β* =
+    *v*/*α*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an enzyme biologist, you know that this equation captures something of the
+    actual mechanism underpinning the biochemistry of this system, like physics equations
+    such as Ohm’s law and SIR models in epidemiology. You elect to use this as your
+    assignment function for *Y*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-16x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'This is a nonlinear additive noise model (ANM). In general, ANMs have the following
+    structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*V* = *g*(*V*[*pa*]) + *N*[*v*]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our example *g*(*X*) = *T* × *β* *X* / (1 + *β* *X*). *N*[*y*] can be normal
+    (Gaussian) or non-Gaussian.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Connecting dynamic modeling and simulation to SCMs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Dynamic models describe how a system’s behavior evolves in time. The use of
+    dynamic modeling, as you saw in the enzyme modeling example, is one approach to
+    addressing this knowledge elicitation problem for SCMs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this section, I illustrated how an enzyme biologist could use a domain-specific
+    dynamic model, specifically an ODE, to construct an SCM. An ODE is just one type
+    of dynamic model. Another example is computer simulator models, such as the simulators
+    used in climate modeling, power-grid modeling, and manufacturing. Simulators can
+    also model complex social processes, such as financial markets and epidemics.
+    Simulator software is a growing multibillion dollar market.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In simulators and other dynamic models, specifying the “how” of causality can
+    be easier than in SCMs. SCMs require assignment functions to explicitly capture
+    the global behavior of the system. Dynamic models only require you to specify
+    the rules for how things change from instant to instant. You can then see global
+    behavior by running the simulation. The trade-off is that dynamic models can be
+    computationally expensive to run, and it is generally difficult to train parameters
+    of dynamic models on data or perform inferences given data as evidence. This has
+    motivated interesting research in combining the knowledge elicitation convenience
+    of dynamic models with the statistical and computational conveniences of SCMs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we’ll examine using regression tools to train these additive models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.7 Training additive model SCMs with regression tools
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In statistics, regression modeling finds parameter values that minimize the
+    difference between a parameterized function of a set of predictors and a response
+    variable. Regression modeling libraries are ubiquitous, and one advantage of additive
+    SCM models is that they can use those libraries to fit an SCM’s parameters on
+    data. For example, parameters of additive models can be fit with standard linear
+    and nonlinear regression parameter fitting techniques (e.g., generalized least
+    squares). We can also leverage these tools’ regression goodness-of-fit statistics
+    to evaluate how well the model explains the data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note that the predictors in a general regression model can be anything you like.
+    Most regression modeling pedagogy encourages you to keep adding predictors that
+    increase goodness-of-fit (e.g., adjusted R-squared) or reduce predictive error.
+    But in an SCM, your predictors are limited to direct endogenous causes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Can I use generalized linear models as SCMs?
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In statistical modeling, a generalized linear model (GLM) is a flexible generalization
+    of linear regression. In a GLM, the response variable is related to a linear function
+    of the predictors with a *link function*. Further, variance of the response variable
+    can be a function of the predictors. Examples include logistic regression, Poisson
+    regression, and gamma regression. GLMs are a fundamental statistical toolset for
+    data scientists.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a CGM (non-SCM), GLMs are good choices as models of causal Markov kernels.
+    But a common question is whether GLMs can be used as assignment functions in an
+    SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Several GLMs align with the structure of additive SCMs, but it’s generally best
+    not to think of GLMs as templates for SCMs. The functional form of assignment
+    functions in an SCM is meant to reflect the nature of the causal relationship
+    between a variable and its causal parents. The functional form of a GLM applies
+    a (in some cases nonlinear) link function to a linear function of the predictors.
+    The link function is designed to map that linear function of the predictors to
+    the mean of a canonical distribution (e.g., normal, Poisson, gamma). It is not
+    designed to reflect causal assumptions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.4.8 Beyond the additive model
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: If the “how” of an assignment function requires more nuance than you can capture
+    with an additive model, don’t constrain yourself to an additive model. Using biochemistry
+    as an example, it is not hard to come up with scenarios where interactions between
+    endogenous and exogenous causes would motivate a multiplicative model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For these more complex scenarios, it starts making sense to move toward using
+    probabilistic deep learning tools to implement an SCM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.5 Combining SCMs with deep learning
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s revisit the enzyme kinetic model, where the amount of an enzyme *X* is
+    a cause of the amount of a target protein *Y*, as in figure 6.22.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F22_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.22 The amount of enzyme (*X*) is a cause of the measured quantity of
+    protein (*Y*).
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: I said previously that, based on a dynamic mathematical model popular in the
+    study of enzyme biology, a good candidate for an additive assignment function
+    for *Y* is
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/ness-ch6-eqs-16x.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Further, suppose that we knew from experiments that *T* was 100 and *β* was
+    .08.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ideally, we would want to be able to reproduce these parameter values from data.
+    Better yet, we should like to leverage the automatic differentiation-based frameworks
+    that power modern deep learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.5.1 Implementing and training an SCM with basic PyTorch
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: First, let’s create a PyTorch version of the enzyme model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.13 Implement the PyTorch enzyme model
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Create the enzyme model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Initialize the parameter *D�*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Calculate the product of enzyme amount X and *D�*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Implement the function u / (u + 1) as sigmoid(log(u)), since the sigmoid
+    and log functions are native PyTorch transforms.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Multiply by T = 100.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Suppose we observed the data from this system, visualized in figure 6.23.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F23_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.23 Exampled enzyme data. *X* is the amount of enzyme, and *Y* is the
+    amount of target protein.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Let’s try to learn *β* from this data using a basic PyTorch workflow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.14 Fitting enzyme data with PyTorch
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Load the enzyme data from GitHub. *#2 Convert the data to tensors.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Create the training algorithm.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Print out losses during training.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Set a random seed for reproducibility.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Initialize an instance of the Adam optimizer. Use a low value for the learning
+    rate because loss is very sensitive to small changes in *D�*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Using mean squared loss error is equivalent to assuming Ny is additive and
+    symmetric.*  *When I run this code with the given random seed, it produces a value
+    of 0.1079 (you can access the value by printing `enzyme_model.`*β*`.data`), which
+    only differs slightly from the ground-truth value of .08\. This implementation
+    did not represent the exogenous variable *N*[y] explicitly, but statistics theory
+    tells us that using the mean squared error loss function is equivalent to assuming
+    *N*[y] was additive and had a normal distribution. However, it also assumes that
+    the normal distribution had constant variance, while the funnel shape in the scatterplot
+    indicates the variance of *N*[y] might increase with the value of *X*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.5.2 Training an SCM with probabilistic PyTorch
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The problem with this basic parameter optimization approach is that the SCM
+    should encode a distribution *P*(*X*, *Y*). So we can turn to a probabilistic
+    modeling approach to fit this model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.15 Bayesian estimation *β* in a probabilistic enzyme model
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The simple transform used in the assignment function for Y (amount of target
+    protein)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 The probabilistic model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 A prior on the parameter *β* that we mean to fit with this model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 A "plate" for the N=100 identical and independently distributed values of
+    X and Y'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 The marginal probability of the enzyme P(X) is a uniform distribution between
+    0 and 101.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 P(Y|X) is the conditional distribution of Y (protein concentration) given
+    X (and *β*). I model P(Y|X) with a normal distribution with both a mean and variance
+    that depends on Y.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Condition the model on the observed evidence.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Get the number of examples in the data (100).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#9 Set a random seed for reproducibility.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#10 To learn *β*, I use a gradient-based MCMC algorithm called a No-U-Turn
+    Sampler (NUTS). This algorithm is one of many probabilistic approaches for parameter
+    learning, and this choice is independent of the causal elements of your model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The problem with this approach is that it doesn’t have an explicit representation
+    of the exogenous variables. If we want to use a probabilistic machine learning
+    framework to build an SCM, we need to make exogenous variables explicit. That
+    is challenging with the preceding approach for one very nuanced reason: When I
+    write the following statement in Pyro code, `y` `=` `pyro.sample("Y",` `Normal(…,
+    …))`, Pyro knows to use that normal distribution to calculate the probability
+    value (in more precise terms, the *likelihood*) of each value of *Y* in the training
+    data. Those values are used in probabilistic inference algorithms like MCMC. But
+    if I write a statement that represents an assignment function, like `y` `=` `f(x,`
+    `ny)`, Pyro doesn’t automatically know how to calculate probability values for
+    *Y*, especially since as far as Pyro is concerned, *f*(.) can be anything.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: But there is another problem that is more important than this issue with inference.
+    So far, we’ve been assuming that we conveniently know a domain-based mathematical
+    functional form for *Y*’s assignment function. It would be nice to use deep learning
+    to fit the assignment functions, but this is problematic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 6.5.3 Neural SCMs and normalizing flows
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Suppose we used a neural network to model `y` `=` `f(x,` `ny)`. Indeed for a
+    given SCM, we could use a multilayer neural network to model each variable, given
+    its parents—call this a “neural SCM.” The problem is that we want the trainable
+    function class we use for our assignment functions to represent our assumptions
+    about the “how” of causality. Neural networks, as universal function approximators,
+    are, by definition, as assumption-free as curve-fitting functions get. Therefore,
+    to use a neural SCM, we need ways to constrain the neural assignment function
+    to remain faithful to our “how” assumptions. This could be done with constraints
+    on the training feature, loss function, and elements of the neural network architecture.
+    Normalizing flows are an example of the latter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Returning to the enzyme modeling example, let’s start by enumerating some basic
+    biological assumptions about the relationships between enzymes and the proteins
+    they help synthesize:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The process by which the protein leaves the system is independent of the amount
+    of enzyme. So we expect the amount of target protein to *monotonically increase*,
+    given the amount of enzyme.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: However, systems tend to saturate, such that there are diminishing returns in
+    adding more enzyme.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We need a neural network approach that *only* allows for monotonic functions
+    with diminishing returns. For this, we’ll use a deep generative modeling approach
+    called *normalizing flows*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Normalizing flows model a complex probability density as an invertible transformation
+    of a simple base density. I’m going to use flows to model the distribution of
+    endogenous variables as invertible transformations of exogenous variable distributions.
+    There are many different transformations, but I’m going to use *neural splines.[¹](#footnote-305)*
+    Splines are a decades-old approach to curve-fitting using piece-wise polynomials;
+    a neural spline is the neural network version of a spline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.16 Initializing splines for assignment functions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 A neural spline transform is a type of invertible PyTorch neural network
+    module.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We get a three-layer neural network with ReLU activation functions:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Normalizing flows solve our problem of not having a likelihood value for `y`
+    `=` `f(x,` `ny)`. Like other probabilistic machine learning models, they allow
+    us to connect an input random variable (like an exogenous variable) to an output
+    variable (like an endogenous variable) using layers of transformations. The key
+    difference is that normalizing flow models automatically calculate the probability
+    values of instances of the output variable in the data (using the *change-of-variable
+    formula* from probability theory). That automatic calculation relies on monotonicity;
+    our causal “how” assumption is that the relationship between enzyme concentration
+    and protein abundance is monotonic, and normalizing flows give us monotonicity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, in the following code, `NxDist` is the distribution of exogenous
+    variable *N*[*x*]. We set the distribution as a Uniform(0, 1). `f_x` is the assignment
+    function for *X*, implemented as an `AffineTransformation` that maps this distribution
+    to Uniform(1, 101).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.17 Transforming a distribution of *N*x to a distribution of *X*
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The exogenous distribution of X is Uniform(0, 1).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 The assignment function for f_x. The AffineTransform multiplies Nx by 100
+    and adds 1.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 XDist is an explicit representation of P(X). Multiplying by 100 and adding
+    1 gives you a Uniform(1, 101).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: So `XDist` allows us to calculate the probability value of *X* even when its
+    value is set deterministically by an assignment function. You can calculate the
+    log-probability value of 50 with `XDist.log_prob(torch.tensor([50.0]))`, which
+    under the Uniform(1, 101) distribution will be log(1/100).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s first specify the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.18 Specify the flow-based SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 The exogenous distribution of X is Uniform(0, 1).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 The assignment function for f_x. The AffineTransform multiplies Nx by 100
+    and adds 1.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 XDist is an explicit representation of P(X). Multiplying by 100 and adding
+    1 gives you a Uniform(1, 101).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 The exogenous distribution of Y is Normal(0, 1).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 We implement the assignment function for f_y with a neural spline. Optimization
+    will optimize the parameters of this spline.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 YDist is an explicit representation of P(Y|X).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now we run the training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.19 Train the SCM
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Register the neural spline functional assignment function for Y.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Initialize the optimizer.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Normalize Y, since the assignment function is working with neural networks.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Set all gradients to 0.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Use P(X) to calculate a log likelihood value for each value of X.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Use P(Y|X) to calculate a log likelihood value for each value of Y, given
+    X.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Fit the parameters of the neural network modules using maximum likelihood
+    as an objective.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Visualize losses during training.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 6.24 shows the training loss over training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F24_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.24 Training loss of the flow-based SCM-training procedure
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Now we can generate samples from the model and compare them to the training
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 6.20 Generate from the trained model
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Generate synthetic examples from the trained model.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Visualize the synthetic examples over the examples in the training data
+    to validate model fit.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 6.25 overlays generated samples with the actual examples in the training
+    data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/CH06_F25_Ness.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6.25 Generated examples from the trained model overlaid upon actual examples
+    in the training data
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The ability to have multilayered flows as in other neural network frameworks
+    makes this an extremely flexible modeling class. But this is not a mere curve-fitting
+    exercise. With the variational autoencoder example in chapter 5, you saw that
+    you can use neural networks to map causal parents to their child effects in the
+    general class of CGMs. But that is not sufficient for SCMs, even if you set endogenous
+    variables deterministically. Again, SCMs reflect causal assumptions about the
+    “how” of causality in the form of assignment functions. In this enzyme example,
+    we are asserting that the monotonic relationship between the enzyme and protein
+    abundance is important in the causal inferences we want to make, and so we’re
+    constraining the neural nets (and other transforms) in my assignment functions
+    to those that preserve monotonicity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Structural causal models (SCMs) are a type of causal graphical model (CGM) that
+    encode causal assumptions beyond the assumptions encoded in the causal DAG. The
+    causal DAG assumptions capture *what* causes *what*. The SCM additionally captures
+    *how* the causes affect the effects.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SCMs are composed of exogenous variables, probability distributions on those
+    exogenous variables, endogenous variables, and functional assignments.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Exogenous variables represent unmodeled causes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Endogenous variables are the variables explicitly included in the model, corresponding
+    to the nodes we’ve seen in previous causal DAGs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The functional assignments set each endogenous variable deterministically, given
+    its causal parents.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The SCM’s additional assumptions represent the “how” of causality in the form
+    of functional assignments.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SCMs represent a deterministic view of causality, where an outcome is known
+    for certain if all the causes are known.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can derive an SCM from a more general (non-SCM) CGM. But given a general
+    CGM, there are potentially multiple SCMs that entail the same DAG and joint probability
+    distribution as that CGM.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You can’t learn the functional assignments of an SCM from statistical information
+    in the data alone.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: SCMs are an ideal choice for representing well-defined systems with simple,
+    deterministic rules, such as games.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Additive noise models provide a useful template for building SCMs from scratch.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Normalizing flows are a useful probabilistic machine learning framework for
+    modeling SCMs when your causal “how” assumption is monotonicity.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[[1]](#footnote-source-1) For more information on neural splines, see C. Durkan,
+    A. Bekasov, I. Murray, and G. Papamakarios, “Neural spline flows,” in *Advances
+    in neural information processing systems*, *32 (NeurIPS 2019)*.*'
+  prefs: []
+  type: TYPE_NORMAL

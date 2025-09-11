@@ -1,0 +1,2613 @@
+- en: 7 Learning and inference at scale
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter covers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Strategies for handling data overload in small systems
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Recognizing graph neural network problems that require scaled resources
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Seven robust techniques for mitigating problems arising from large data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Scaling graph neural networks and tackling scalability challenges with PyTorch
+    Geometric
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For most of our journey through graph neural networks (GNNs), we’ve explained
+    key architectures and methods, but we’ve limited examples to problems of relatively
+    small scale. Our reason for doing so was to allow you to access example code and
+    data readily.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, real-world problems in deep learning are not often so neatly packaged.
+    One of the major challenges in real-world scenarios is training GNN models when
+    the dataset is large enough to fit in memory or overwhelm the processor [1].
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we explore the challenges of scalability, it’s crucial to have a clear mental
+    model of the GNN training process. Figure 7.1 revisits our familiar visualization
+    of this process. At its core, the training of a GNN revolves around acquiring
+    data from a source, processing this data to extract relevant node and edge features,
+    and then using these features to train a model. As the data grows in size, each
+    of these steps can become increasingly resource-intensive, making necessary the
+    scalable strategies we’ll explore in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-1.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: '**Figure 7.1 Mental model for the GNN training process. We will focus on scaling
+    our system for large data in this chapter.**'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In deep learning development projects, accounting for large or scaled-up data
+    in training and in deployment can make the difference between a successful and
+    a failed venture. The machine learning engineer working on tight deadlines with
+    demanding stakeholders doesn’t have the luxury of spending weeks on long training
+    routines or rectifying errors triggered by processor overloads. Heading off scale
+    problems by planning ahead can prevent such time sinks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, you’ll learn how to handle problems that arise when data is
+    too large for a small system. To characterize a scale problem, we focus on three
+    metrics: memory usage during processing or training, the time it takes to train
+    an epoch, and the time it takes for a problem to converge. We explain these metrics
+    and point to how to calculate them in the Python or PyTorch Geometric (PyG) environment.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this chapter, the emphasis is on scaling from modest beginnings, optimizing
+    from a single machine. While the primary focus of this book isn’t on data engineering
+    or architecting large-scale solutions, some of the concepts discussed here might
+    be pertinent in those contexts. To solve scale problems, seven methods are explained
+    that can be used in tandem or by themselves:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Choosing and configuring the processor (section 7.4)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using sparse versus dense representation of your dataset (section 7.5)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Choosing the GNN algorithm (section 7.6)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Training in batches based on sampling from your data (section 7.7)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using parallel or distributed computing (section 7.8)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using remote backends (section 7.9)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Coarsening your graph (section 7.10)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To illustrate how to make decisions regarding these methods in practice, examples
+    or mini-cases are provided. The fictional company GeoGrid Inc. (hereafter, GeoGrid)
+    is followed through various cases as the company deals with relevant problems
+    related to large data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition, the Amazon Products dataset you encountered in chapter 3, where
+    a graph convolutional network (GCN) and GraphSAGE were used to perform node classification,
+    is used to demonstrate the various methods. For relevant methods, example code
+    can be found in the GitHub repository for this book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter diverges from previous ones. Whereas earlier chapters honed in
+    on one or two examples to illustrate a range of concepts, the unique nature of
+    scale problems means that various methods will be explored, each accompanied by
+    brief examples. Consequently, this chapter’s sections can be read in any order
+    after section 7.3\.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ll start by reviewing the Amazon Products dataset from chapter 3 and introducing
+    GeoGrid. Then, we’ll discuss ways to characterize and measure scale, focusing
+    on the three metrics. Finally, we’ll go through each method in more detail and
+    provide code where appropriate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: NOTE  Code from this chapter can be found in notebook form at the GitHub repository
+    ([https://mng.bz/QDER](https://mng.bz/QDER)). Colab links and data from this chapter
+    can be accessed in the same locations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.1 Examples in this chapter
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this chapter, two cases are used to illustrate various concepts. We use the
+    Amazon Products dataset from chapter 3\. We’ll use this dataset to demonstrate
+    code examples, which can be found in the GitHub repository. Secondly, mini-cases
+    featuring a fictional company called GeoGrid will be used to illuminate guidelines
+    and the practice of using the methods presented.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.1.1 Amazon Products dataset
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: This subsection will reintroduce the dataset and its training from chapter 3\.
+    First, the dataset is reviewed and then the configuration of the hardware used
+    to train it. Finally, as a prelude to the sections that follow, we highlight a
+    couple of methods we applied in chapter 3 to accommodate the dataset size. This
+    dataset will be used extensively in the GitHub code examples of the sections that
+    follow.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In chapter 3, we studied node classification problems using two convolutional
+    GNNs: GCN and GraphSAGE. To this end, we used the Amazon Products dataset with
+    co-purchasing information, which is popularly used to illustrate and benchmark
+    node-classification [2]. This dataset (also referred to as *ogbn-products*) consists
+    of a set of product nodes linked by being purchased in the same transaction, illustrated
+    in figure 7.2\. Each product node has a set of features, including its product
+    category. The ogbn-products dataset consists of 2.5 million nodes and 61.9 million
+    edges. More information on this dataset is summarized in table 7.1.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-2.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.2 A graph representation of one of the co-purchases from the Amazon
+    Products dataset used in chapter 3\. Each product’s picture is a node, and the
+    co-purchases are the edges (shown as lines) between the products. For the four
+    products shown here, this graph is only the co-purchasing graph of one customer.
+    If we show the corresponding graph for all Amazon customers, the number of products
+    and edges could feature tens of thousands of product nodes and millions of co-purchasing
+    edges.
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: Note  For more details on this dataset and its origin, as well as GCN and GraphSAGE,
+    refer to chapter 3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7.1 Summary characteristics of the ogbn-products dataset
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Nodes | Edges | Average Node Degree | Number of Class Labels | Number of
+    Node Feature Dimensions | Size of Zipped Data (GB) |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| 2.5 million  | 61.9 million  | 51  | 47  | 100  | 1.38  |'
+  prefs: []
+  type: TYPE_TB
+- en: 'For the implemented code in chapter 3, we used a Colab instance with the following
+    configuration:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Storage: 56 GB HDD'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Two CPUs: 2-core Xeon 2.2GHz'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'CPU RAM: 13 GB'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'One GPU: Tesla T4'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'GPU RAM: 16 GB'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While we’ll discuss the details later, we’ve already identified three factors
+    that will affect whether we’ll have trouble due to too much data. One is obviously
+    the size of the dataset itself—not only in its raw, unzipped size in storage but
+    also its representation, which affects working size when processing and training
+    are applied to it (covered in detail in section 7.5). A second factor is the storage
+    and memory capacity of the hardware (section 7.4). Finally, the choice of GNN
+    training algorithm—such as GraphSAGE—will significantly influence the computational
+    demands, particularly in terms of time and memory constraints (section 7.6).
+  prefs: []
+  type: TYPE_NORMAL
+- en: As we were implementing the example in chapter 3, we indeed ran into problems
+    whose root cause was the size of the dataset. Our focus in that chapter was on
+    showcasing the algorithms, so we didn’t point this out and silently used one of
+    the methods to alleviate this problem. Specifically, we used an optimal representation
+    of the dataset (sparse instead of dense).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.1.2 GeoGrid
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As you navigate through this chapter, we’ll draw upon a fictional yet representative
+    example of a tech company—GeoGrid—grappling with the challenges and opportunities
+    in the field. GeoGrid is a geospatial data analysis and modeling company. Using
+    advanced technologies such as GNNs, the company provides solutions for problems
+    ranging from traffic prediction to climate change planning. As a startup in a
+    competitive space, GeoGrid is often faced with crucial technical decisions that
+    could make or break the company, especially as it competes for large-scale government
+    projects.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GeoGrid will be used to explore a range of concepts and technical decisions
+    related to scale problems. Whether the team is debating the pros and cons of different
+    machine learning architectures, considering the use of distributed data parallel
+    (DDP) training across multiple GPUs, or strategizing on how to scale their algorithms
+    for massive datasets, the company’s story offers a real-world context to the theories
+    and methodologies discussed in this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we’ll provide a framework to judge and characterize scale
+    problems. We’ll then summarize the methods of solving such problems. Finally,
+    we’ll survey these methods in detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2 Framing problems of scale
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Before we dive into solutions, let’s define the challenge presented by scaling.
+    This section provides an overview of the root causes of data size problems and
+    their symptoms. Then, it highlights the essential metrics that are crucial in
+    identifying, diagnosing, and remedying such problems [1, 3].
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'From the point of view of machine resources, the development process is broken
+    down into three phases. Of the following three, in this chapter, the focus will
+    be on preprocessing and training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Preprocessing* —Transforming a raw dataset into a format suitable for training'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Training* —Creating a GNN model by applying a training algorithm to the preprocessed
+    dataset'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Inference* —Creating predictions or other output from the trained model'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 7.2.1 Root causes
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In simple terms, problems of scale arise when the training data becomes too
+    large for our system. Determining when data size becomes problematic is complex
+    and depends on several factors, including hardware capabilities, graph size, and
+    constraints on time and space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Hardware speed and capacity
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: A suitable system has to be able to support the preprocessing and training process
+    via its memory capacity and processing speed. Memory should not only support the
+    graph size itself but also accommodate the data needed for implementing the transformations
+    and training algorithms. Processing speed should be enough to finish training
+    in some reasonable amount of time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We wrote this book assuming you have access to free cloud resources such as
+    those found on Google’s Colab and Kaggle, or modest local resources that host
+    at least one GPU processor. When these resources are exceeded, upgrading the hardware
+    setup may be an option if resources exist. For training on the largest enterprise
+    graphs, using computing clusters is unavoidable. We’ll look more closely at computing
+    hardware in section 7.4.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Graph size
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Fundamentally, we can go by the number of nodes and edges to get a rough idea
+    of scale and how it may affect our training solution. Understanding these characteristics
+    gives us an idea of how long an algorithm will take to process the graph. Further,
+    the data representation that holds the structural information will affect the
+    size of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Aside from structural information, nodes and edges can contain features that
+    encompass one or many dimensions. Often, the sizes of the node and edge features
+    can be greater than the graph’s structural information.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Defining the exact size of small, medium, and large graphs for GNNs is somewhat
+    contextual. This depends on the specific problem domain, hardware, and computational
+    resources available. At the time of writing, here’s a general categorization:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Small graphs* —These may include graphs with hundreds to a few thousand nodes
+    and edges. They can usually be processed on standard hardware without requiring
+    specialized resources.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Medium graphs* —This category might encompass graphs with tens of thousands
+    of nodes and edges. The complexity in medium-sized graphs may require more sophisticated
+    algorithms or hardware, such as GPUs, to process efficiently.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Large graphs* —Large graphs can include hundreds of thousands to millions
+    (or even billions) of nodes and edges. Handling such graphs often require distributed
+    computing and specialized algorithms designed for scalability.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Time and space complexity of algorithms* —Time and space complexity point
+    to the computational and memory resources needed to run the algorithm. These directly
+    affect processing speed, memory usage, and efficiency. Understanding these complexities
+    helps in making informed decisions about algorithm selection and resource allocation.
+    High time complexity may lead to slower runtimes, affecting your model training
+    schedule. High space complexity can limit the size of the dataset the GNN can
+    handle, affecting your ability to process large, complex graphs. We examine this
+    further in section 7.6\.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 7.2.2 Symptoms
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The root causes of scalability problems manifest in several ways. One common
+    problem is *long processing times*, which can occur when larger datasets require
+    more computational power and time to process. Slower algorithms can increase the
+    time required to train models, making it difficult to iterate and improve models
+    quickly. However, the amount of time that is seen as too long will depend on the
+    problem at hand. Several hours might be fine for results that need to be provided
+    weekly but can be far too long if the model needs to be retrained throughout the
+    day. Similarly, compute costs can quickly increase if processing times are long,
+    especially if a large machine is required to run the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another problem is *memory usage* at or over capacity, which can happen when
+    large datasets consume a significant amount of memory. If the dataset is too large
+    to fit into your system’s memory, it can cause the system to slow down or even
+    crash.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, an inability to scale to larger datasets can occur when your algorithms
+    and system setup can’t handle the *increase in data size*. Ensuring efficiency
+    in terms of time and space is critical for your system to remain effective and
+    scalable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.2.3 Crucial metrics
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'For understanding scalability insights, running empirical analyses on key performance
+    metrics is helpful. These metrics include memory, time per epoch, FLOPs, and convergence
+    speed, as described here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Memory usage* —Memory usage (units in gigabytes), specifically the amount
+    of RAM or processor memory available, plays a significant role in determining
+    the size and complexity of the models you can train [4, 5]. This is because GNNs
+    require storing node features, edge features, and adjacency matrices in memory.
+    If your graph is large or the node and edge features are high-dimensional, your
+    model will require more memory.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: There are several modules in PyTorch and Python that can do memory profiling.
+    PyTorch has a built-in profiler that can be used alone or in combination with
+    the PyTorch Profiler Tensorboard plugin [4]. There is also a `torch_ geometric.profile`
+    module. In addition, cloud notebooks hosted on Colab and Kaggle provide real-time
+    visualizations of memory usage per processor.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our repository’s code examples, we use two libraries for monitoring system
+    resources: `psutil` (Python system and process utilities library) and `pynvml`
+    (Python bindings for NVIDIA Management Library). `psutil` is a cross-platform
+    utility that provides an interface for retrieving information on system utilization
+    (CPU, memory, disks, network, sensors), running processes, and system uptime.
+    It’s particularly useful for system monitoring, profiling, and limiting process
+    resources in real time. Here’s a snippet of how `psutil` is used in the code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: In this snippet, `psutil.Process(os.getpid())` is used to get the current process,
+    and `memory_info().rss` retrieves the resident set size, or the portion of the
+    process’s memory that is held in RAM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Alongside `psutil`, `pynvml` is a Python library for interacting with NVIDIA
+    GPUs. It provides detailed information about GPU status, including usage, temperature,
+    and memory. `pynvml` allows users to programmatically retrieve GPU statistics,
+    making it an essential tool for managing and monitoring GPU resources in machine
+    learning and other GPU-accelerated applications. Here’s how `pynvml` is used in
+    the code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, `pynvml.nvmlInit()` initializes the NVIDIA Management Library, `pynvml
+    .nvmlDeviceGetHandleByIndex(0)` retrieves the handle of the GPU at index `0`,
+    and `pynvml.nvmlDeviceGetMemoryInfo(handle)` provides detailed information about
+    the GPU’s memory usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both `psutil` and `pynvml` are used in our examples for providing insights into
+    the performance characteristics of the preprocessing and training processes, offering
+    a detailed view of system and GPU resource utilization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Time per epoch* —Time per epoch (aka “seconds per epoch” because the unit
+    for this metric is usually in seconds) refers to the time it takes to complete
+    one pass over the entire training dataset. This factor is influenced by the size
+    and complexity of your GNN, the graph size, the batch size, and the computational
+    resources at your disposal. A model with a lower time per epoch is preferable
+    as it allows for more iterations and faster experimentation. The profilers proved
+    by PyTorch or PyG can also be used for such measurement.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the provided code, the time taken for each epoch is measured by calculating
+    the difference between the start and end times of the epoch. At the beginning
+    of each epoch, the current time is captured using `start_time` `=` `time.time()`.
+    The model is then trained for 1 epoch, and upon completion, the current time is
+    again captured using `end_time` `=` `time.time()`. The epoch time, which is the
+    time taken to complete 1 epoch of training, is then calculated as the difference
+    between the end time and start time (`epoch_time` `=` `end_time` `-` `start_time`).
+    This gives a precise measurement of how long it takes for the model to be trained
+    for 1 epoch, including all the steps involved in the training process such as
+    forward pass, loss calculation, backward pass, and model parameter updates.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*FLOPs* —Floating point operations (not to be confused with floating point
+    operations per second, FLOP/s [6, 7]) calculates the number of floating-point
+    operations that are needed to train a model. This can include operations such
+    as matrix multiplications, additions, and activations. For our purposes, the total
+    number of FLOPs gives an estimate of the computational cost of training the GNN.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'FLOPs aren’t all created equal in terms of execution time. This variability
+    arises from several factors. First, the types of operations involved can greatly
+    influence computational costs: simple operations such as addition and subtraction
+    are generally faster, while more complex operations, such as division or square
+    root calculations, typically take longer. Second, the execution time of FLOPs
+    can vary significantly depending on the hardware being used. Some processors are
+    optimized for specific types of operations, and specialized hardware such as GPUs
+    may handle certain operations more efficiently than CPUs. Additionally, the structure
+    of an algorithm affects how efficiently FLOPs are executed; operations that can
+    be parallelized may be processed faster on multicore systems, whereas sequential
+    operations that depend on previous results may take longer overall. Despite these
+    variations in execution time, the total number of FLOPs required for a given algorithm
+    remains constant.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the time of writing, while there are some external modules that can profile
+    PyTorch operations, these aren’t compatible with PyG models and layers. Efforts
+    seen in the literature rely on custom programming.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In our code examples on GitHub, we often use the `thop` library to estimate
+    the FLOPs associated with each epoch during the training of a neural network.
+    Here’s a brief snippet where FLOPs are calculated:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Heterogeneous GCNs'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The profile function from `thop` is invoked, with the model and a sample input
+    batch passed as arguments. It returns the total FLOPs and parameters for a forward
+    pass. In this context, FLOPs measure the total number of operations, not operations
+    per second.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FLOP is a useful metric for a general sense of the model’s computational requirements
+    and complexity when used alongside other indicators for a comprehensive understanding
+    of performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Convergence speed* —Convergence speed (units of seconds or minutes) is how
+    quickly the model learns or reaches an optimal state during training. Convergence
+    speed is influenced by factors such as the model’s complexity, the learning rate,
+    the optimizer used, and the quality of the training data. Faster convergence is
+    often desirable as it means the model requires fewer epochs to reach its optimal
+    state, saving time and computational resources.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As with memory and time-per-epoch profiling, the PyTorch and PyG profilers can
+    be used to measure time to convergence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In our code examples, convergence time is calculated by measuring the time interval
+    it takes to complete the training of the model over a specified number of epochs.
+    At the beginning of the training process, the `convergence_start_time` is recorded
+    using `time.time()`, marking the start of training. The model then undergoes training
+    through several epochs, with each epoch involving steps such as forward pass,
+    loss computation, backward pass, and parameter updates. After all epochs are completed,
+    the current time is captured again, and the `convergence_time` is calculated by
+    subtracting `convergence_start_time` from this final timestamp. This `convergence_time`
+    gives the total time taken for the model to complete its training over all epochs,
+    offering insights into the model’s efficiency and performance in terms of time.
+    The shorter the convergence time, the faster the model learns and reaches a satisfactory
+    level of performance, assuming quality of learning is maintained.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The right balance among these four factors depends on the specific project constraints
+    such as available computational resources, project timeline, and the complexity
+    and size of the dataset. For some real-world benchmarking of these metrics, Chiang
+    [8] does a great job at using these metrics to do a comparative analysis between
+    his proposed GNN, ClusterGCN, and benchmark GNNs. Given this background on what
+    constitutes a scale problem, as well as ways to benchmark and measure such problems,
+    we turn to methods that can alleviate these challenges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3 Techniques for tackling problems of scale
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: As we outlined in the previous section, when data becomes voluminous, we must
+    deal with problems related to memory constraints, processing time, and efficiency.
+    To navigate these challenges, it becomes essential to have a toolkit of strategies
+    at our disposal. In the following sections, we present an array of methods designed
+    to provide flexibility and control over the training process. These strategies
+    range from hardware configuration to algorithm optimization and are tailored to
+    suit different scenarios and requirements. These methods were drawn from best
+    practices in deep learning and graph deep learning across academia and industry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3.1 Seven techniques
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'First, we start with three basic choices that can be planned for ahead of time
+    and reconfigured during the course of a project. To prepare, choose the following
+    for your project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Hardware configuration* —These choices cover the processor type, the memory
+    configuration of the processor, and whether to use a single machine/processor
+    or many.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Dataset representation* —PyG provides support for dense and sparse tensors.
+    Conversion from dense to sparse may significantly reduce the memory footprint
+    when dealing with large graphs. You can convert dense adjacency matrices or node
+    feature matrices into sparse representations using PyG’s `torch_geometric .utils.to_sparse`
+    function.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*GNN architecture* —Certain GNN architectures are designed to be computationally
+    efficient and scalable for large graphs. Choosing an algorithm that scales well
+    can significantly mitigate size problems.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Given these three categories of choices, if the problem overwhelms our system,
+    then the following are techniques we can use to alleviate the problems:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Sampling* —Instead of training on the entire large graph, you can sample a
+    subset of nodes or subgraphs for each training iteration. The cost in complexity
+    (adding sampling and batching routines) can be made up for with the gains in memory
+    efficiency. To perform sampling of nodes or graphs, PyG provides functionalities
+    from its `torch_geometric.sampler` and `torch_geometric.loader` modules.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Parallelism and distributed computing* —You can use multiple processors or
+    clusters of machines to reduce the training time by spreading the dataset from
+    one to many machines during training. Depending on the way you do this, some development
+    and configuration overhead may be required.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Use of remote backends* —Instead of storing the training graph dataset in
+    memory, it can be stored completely in the backend database and pull in mini-batches
+    when needed. The simplest case of this involves storing data on the local hard
+    drive, and reading mini-batches iteratively from there. In PyG, this method is
+    called a *remote backend*. This is a relatively new method in PyG, with some examples
+    but not many. At the time of writing, two database companies have developed some
+    support for PyG’s remote backend functionality. This method requires the most
+    development and maintenance overhead, but it’s most rewarding in alleviating big
+    data problems.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Graph coarsening* —Graph coarsening techniques are used to reduce the size
+    of the graph while (hopefully) preserving its essential structure. These techniques
+    aggregate nodes and edges, creating a coarser version of the original graph. PyG
+    provides graph clustering and pooling operations for this purpose. The drawbacks
+    are that you must be careful that the coarsened graph will truly represent the
+    original, and, for supervised learning, you must make decisions about how targets
+    will be consolidated.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The multifaceted problem of scale in training GNNs requires a thoughtful approach.
+    Through the application of various levers such as hardware choice, optimization
+    techniques, memory management, and architectural decisions, you can tailor the
+    process to fit specific needs and constraints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.3.2 General Steps
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'In this section, we provide some general guidelines for planning and evaluating
+    a project with scale in mind. The general steps are provided here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Planning stage*'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Anticipate hardware needs* —Familiarize yourself with available hardware options
+    in advance. Many online and local systems have published configurations.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Understand your data* —Have a clear idea of your dataset size for every phase
+    of the machine learning lifecycle.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Memory-to-data ratio* —As a rule of thumb, your memory capacity should ideally
+    be between 4 and 10 times the size of your dataset.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Benchmarking stage*'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Establish baselines* —Benchmark these metrics using a representative dataset.
+    These initial figures can then serve as a foundation to predict training and experimentation
+    timelines for your project.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Metrics for training* —Monitor and measure key metrics such as memory utilization,
+    time per epoch, floating point operations per second (FLOP/s), and time to convergence.'
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Troubleshooting* —If you encounter challenges and lack the resources for a
+    hardware upgrade, consider implementing the strategies detailed in this chapter
+    to navigate around hardware constraints.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Now that we’ve learned about scale problems, the metrics to gauge them, and
+    a set of techniques to alleviate them, let’s dig into these individual methods
+    in more detail.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.4 Choice of hardware configuration
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: This section examines choosing and adjusting hardware configuration to solve
+    scale problems. First, we’ll review general choices for hardware configurations,
+    followed by taking a broad overview of relevant system and processor choices.
+    Guidelines and recommendations are given for these options. The section ends with
+    the first GeoGrid mini-case study.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.4.1 Types of hardware choices
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Various hardware configurations are available for training GNNs. Each configuration
+    is tailored to meet different needs and optimize performance:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Processor type* —PyTorch offers the flexibility to run on different types
+    of processors, including central processing units (CPUs), graphics processing
+    units (GPUs), neural processing units (NPUs), tensor processing units (TPUs),
+    and intelligence processing units (IPUs). While CPUs are ubiquitous and can handle
+    most general tasks, GPUs, equipped with parallel processing capabilities, are
+    specifically designed for intensive computations, making them ideal for training
+    large-scale neural network models. TPUs are custom accelerators for machine learning
+    tasks. They can offer even greater computational capabilities, but their availability
+    might be restricted. More details are given in the next subsection. Two other
+    accelerators, NPUs (processors specially designed to run neural network workloads
+    in phones, laptops, and edge devices) and IPUs (designed for highly parallel workloads
+    that require large-scale data processing), are important classes of processors.
+    PyTorch only supports Graphcore IPUs at this time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Memory size* *—*Each processor type comes with its associated RAM. The size
+    of this RAM plays a pivotal role in determining the scale of workload a system
+    can handle. Adequate RAM ensures smooth model training, especially for networks
+    that require processing large volumes of data or those with complex architectures.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Single versus multiple GPUs or TPUs* *—*For those fortunate enough to have
+    access to multiple GPUs or TPUs, they can significantly expedite training times.
+    PyTorch offers the `DistributedDataParallel` module, which harnesses the power
+    of multiple GPUs or TPUs to train a model in parallel. This means you can distribute
+    the computational load across several devices, enabling faster iteration and model
+    convergence.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Single machine versus computing clusters* *—*Beyond just the scope of a single
+    machine, sometimes training demands can scale up to require entire clusters. A
+    cluster, in this context, refers to a collective of machines, each equipped with
+    its distinct set of computational, memory, and storage resources. If you find
+    yourself with access to such a resource, PyTorch’s `DistributedDataParallel` module
+    is again the tool of choice, at least for clustering at a small scale. In this
+    case, it lets you span your training process across the entire cluster, which
+    proves invaluable when working with especially large models or massive datasets.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: As you scale up in terms of hardware capabilities—from individual processors
+    to multiple devices and then to whole clusters—the complexity of planning, setup,
+    and management also rises. Making informed decisions based on the task’s requirements
+    and available resources can make this journey smoother and more productive. As
+    highlighted in the introduction, we’ll focus on single machine optimizations in
+    this chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.4.2 Choice of processor and memory size
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'As we pivot to the topic of hardware considerations, it’s important to understand
+    the primary options for training GNNs: CPUs, GPUs, NPUs, IPUs, and TPUs. In this
+    section, we offer a concise overview of each type of hardware and present guidelines
+    for their application. These key points are encapsulated in table 7.2.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Central processing units (CPUs)* —CPUs excel in general-purpose computing
+    tasks, from data preprocessing to model training. However, they aren’t optimized
+    for specialized deep learning tasks, which can affect their speed and efficiency.
+    On the plus side, CPUs are generally more budget-friendly compared to other hardware
+    options, making them accessible for a broader range of users.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Graphics processing units (GPUs)* —GPUs are engineered for tasks requiring
+    parallel computing capabilities. From reading this book so far, you know they
+    frequently serve as the preferred hardware for training GNNs in a PyTorch environment,
+    particularly when using libraries (e.g., PyG) that are designed to make the most
+    of GPU parallelism. Most of the examples in this book have been run on NVIDIA
+    GPUs available on the Colab platform, which include Tesla T4, A100, and V100\.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Tensor processing units (TPUs)* —TPUs represent a specialized choice, built
+    by Google to boost machine learning computations. They provide rapid computational
+    speeds and can be cost-effective. However, their scope may be limited because
+    they are a proprietary technology primarily compatible with Google Cloud and TensorFlow,
+    and they may not offer full PyTorch compatibility.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Neural processing units (NPUs)* —Both AMD and Intel have NPU product lines,
+    accompanied by an acceleration library that can be integrated with PyTorch. NPUs
+    are dedicated hardware for parallelized processing, similar to TPUs. While GPUs
+    were designed originally for processing graphics, they typically contain circuits
+    that are dedicated to machine learning tasks. NPUs make a dedicated unit out of
+    these circuits, improving efficiency and performance. Apple typically provides
+    a similar dedicated unit (known as the Apple Neural Engine [ANE]) in most of their
+    laptops and computers.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Intelligent processing units (IPUs)* —These are specialized circuit chips,
+    designed and optimized with deep learning tasks in mind. IPUs were developed by
+    Graphcore and specialize in graph-based computing. These are extremely well suited
+    for GNN-based models as they allow for independent tasks to be parallelized as
+    needed for GNN models during message passing. IPUs are compatible with both PyTorch
+    and PyG but require rewriting certain tasks. Other companies designing very large
+    and powerful specialized chips include Cerebras and Groq.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Configuration considerations* —When selecting hardware, it’s crucial to account
+    for memory constraints, as GNNs are often data-intensive due to the unique structure
+    of graph data. The choice of hardware can also influence the pace of both training
+    and inference. Therefore, it’s essential to weigh the tradeoffs between cost and
+    performance, tailored to the specific demands of your project.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The principal factors to contemplate while selecting hardware for GNN training
+    in PyTorch include the processor type (e.g., CPU, GPU, or TPU), the available
+    memory, and your budgetary limitations. These considerations are organized for
+    quick reference in table 7.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7.2 Pros and cons of processor choice
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Hardware | Recommended Workload | Pros | Cons |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| CPU  | Preprocessing  | Suitable for data collection and preprocessing More
+    affordable than GPUs and TPUs'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Slower for training due to lack of accelerated parallel processing  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GPU  | Training  | Excellent for training due to parallel processing  | More
+    expensive than CPUs Surpassed by TPUs for deep learning tasks'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| TPU  | Preprocessing and training  | Faster computation time and cost-effectiveness
+    for deep learning tasks  | Requires specific software infrastructure'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Limited to Google platforms
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| NPU  | Training  | Optimized for deep learning and especially good for on-device
+    AI applications, reducing reliance on cloud services  | Limited to specific AI
+    workloads, primarily neural network-based tasks  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| IPU  | Training  | Especially good for graph-based tasks such as GNNs  |
+    Can be more complex to program and optimize compared to NPUs  |'
+  prefs: []
+  type: TYPE_TB
+- en: 'One last thing to consider is that certain processor types shine in particular
+    steps in the machine learning lifecycle:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Data collection and preprocessing* —CPUs are typically sufficient for these
+    steps. Often, they can handle a variety of tasks efficiently without requiring
+    specialized hardware. However, in our experience, for some memory-intensive, long
+    preprocessing steps, a TPU will perform better when available.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Model training* *—*Usually, this is the most compute-intensive part of the
+    lifecycle, and GPUs are usually the best option here. They are designed for parallel
+    processing, which accelerates the training of neural networks. GNNs, in particular,
+    benefit from this as they often involve calculations across multiple nodes and
+    edges in a graph. When available, TPUs may provide a performance edge.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Model evaluation and inference* *—*For evaluation and inference, the choice
+    between CPUs and GPUs depends on the specific use case. If cost-effectiveness
+    is more important, CPUs might be preferred. TPUs, with their high computational
+    speed and cost-effectiveness, could be a good choice for large-scale deployments,
+    but their usage is more limited compared to CPUs and GPUs.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note that the best choice of processor may vary depending on the specific requirements
+    of the project, such as the model complexity, the size of the dataset, the platform
+    used, and the available budget. We end this section with an example from our fictional
+    company, GeoGrid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'Dr. Smith works for GeoGrid, a leading mapping company, on a research project
+    involving GNNs to analyze the spread of infectious diseases across different cities.
+    Her dataset comprises data from 10,000 connected towns (nodes), with each town
+    having approximately 1,000 node features. This dataset has a size of 10 GB. The
+    following outlines some of the different steps required in preparing this project
+    for analysis using a GNN:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Planning stage*'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Anticipate hardware needs* —Dr. Smith reviews her university’s computational
+    resources and finds they have access to both GPUs and CPUs, but TPUs are currently
+    in limited supply.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Understand your data* —Dr. Smith estimates that her dataset will be about
+    10 GB in total. Via exploratory data analysis, she has determined that her data
+    is sparse.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Memory-to-data ratio* —Keeping the rule of thumb to reserve capacity of 4
+    to 10 times the data size in mind, she deduces that she’d ideally want access
+    to a machine with at least 40 GB to 100 GB of RAM.'
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Benchmarking stage* —Using a subset of her data, Dr. Smith benchmarks the
+    data preprocessing time and model training time on both a GPU and CPU. She notices
+    a significant speed-up when using the GPU for model training, as expected, but
+    the CPU performs comparatively well for data preprocessing. She decides to use
+    a CPU device for preprocessing and a GPU for model training.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Troubleshooting* —By investigating the cause of frequent system crashes and
+    memory errors, Dr. Smith realizes that her current GPU doesn’t have sufficient
+    memory to handle the larger graphs. Instead of requesting a machine with a device
+    with larger memory (in short supply at the time), she decides to use subgraph
+    sampling methods, a technique detailed in section 7.7, to make her data more manageable
+    for her current hardware.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Through this example, we see the importance of understanding your dataset and
+    available resources, benchmarking to set expectations, and troubleshooting to
+    find solutions within the constraints. Next, we examine the choice of how to represent
+    our data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.5 Choice of data representation
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Depending on the characteristics of your input graph(s), how you store and
+    represent them in PyG will have an effect on time and space constraints. In PyG,
+    the primary data classes, `torch_geometric.data.Data` and `torch_geometric.data.HeteroData`,
+    can be represented in two formats to represent graphs in a sparse or dense format.
+    In PyG, the difference between dense and sparse representation lies in how the
+    graph’s adjacency matrix and node features are stored in memory. Dense representation
+    has the following characteristics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The entire adjacency matrix is stored in memory, both zero and nonzero elements,
+    using a 2D tensor of size *N* × *N*, where *N* is the number of nodes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Node features are stored in a dense 2D tensor of size *N* × *F*, where *F* is
+    the number of features per node.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This representation is memory-intensive but allows for faster computation when
+    the graph is dense, meaning most of the graph’s vertices are connected to one
+    another; that is, its adjacency matrix has a high percentage of nonzero elements,
+    as explained in appendix A.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Sparse representation, on the other hand, has these characteristics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The adjacency matrix is stored in a sparse format, such as the COO (coordinate)
+    format, which only stores the nonzero elements’ indices and their values.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Node features can be stored in a sparse 2D tensor or a dictionary mapping node
+    with indices to their feature vectors.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This representation is memory-efficient, especially when the graph is sparse,
+    meaning few of the graph’s vertices are connected to one another; that is, its
+    adjacency matrix has a low percentage of nonzero elements, as explained in appendix
+    A. However, it may result in slower computation compared to dense representation
+    for specific tasks.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note  To understand the difference between sparse or dense formats and the characteristic
+    of a graph *being* sparse or dense, refer to appendix A, section A.2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In PyG, two approaches that can be used to convert a dense dataset into a sparse
+    representation are using the built-in function or performing the conversion manually:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`torch_geometric.transforms.ToSparseTensor`—This transformation in PyG can
+    be used to convert a dense adjacency matrix or edge index to a sparse tensor representation.
+    It constructs a sparse adjacency matrix using the COO (Coordinate) format. You
+    can apply this transformation to your dataset to convert the dense representation
+    to a sparse one:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '*Manual conversion* —You can manually convert a dense adjacency matrix or edge
+    index to a sparse representation using PyTorch or SciPy sparse tensor functionalities.
+    You can create a `torch_sparse.SparseTensor` or `scipy.sparse` matrix and construct
+    it from the dense representation:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Dense adjacency matrix'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In general, the primary motive for using sparse tensors is to save memory, especially
+    when dealing with large-scale graphs or matrices with a high percentage of zeros.
+    But, if your data has very few zero elements, dense tensors could provide a slight
+    advantage in terms of memory access and computation speed, as the overhead associated
+    with indexing and accessing sparse tensors may outweigh the space savings. Note
+    that converting your graph dataset from one representation to another can itself
+    tax your memory and processing power.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'A school district has hired GeoGrid to study the relationships of its honor
+    students across its many campuses. One aspect of this work is a social network
+    where students are nodes and associations between students are edges. Dr. Barker
+    is researching a social network graph of the students, hoping to determine patterns
+    of friendship formation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Initial analysis* —Dr. Barker finds that within this small community, almost
+    everyone knows everyone else. In terms of raw data, there are 1,000 students (nodes)
+    and around 450,000 friendships (edges). Dr. Barker compares the existing edges
+    to the total possible connections: *n(n-1)/2*, where n is the number of nodes;
+    this equals 499,500\. Because the existing edges (450,000) are nearly equal to
+    the total number of edges (499,500), he determines he is dealing with a dense
+    graph.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Dense representation* —Considering the density of the graph:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The adjacency matrix is of size 1,000 × 1,000\.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If each student has a feature vector capturing 10 attributes (e.g., grade, number
+    of clubs, etc.), the node features are stored in a tensor of size 1,000 × 10\.
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Given the high number of nonzero elements in the adjacency matrix due to the
+    dense nature of the graph, Dr. Barker first considers using the dense representation
+    for more efficient computation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Memory consideration* —However, as Dr. Barker’s research progresses, he plans
+    to incorporate more schools into his dataset, expecting the graph to become much
+    larger but not necessarily denser. He anticipates that the increased size could
+    become memory-intensive with a dense representation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Sparse representation* —To handle this potential problem, he decides to experiment
+    with sparse representation as well. He uses the `torch_geometric.transforms .ToSparseTensor`
+    transformation to convert his current dense graph dataset into a sparse tensor
+    representation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Results* —Upon conversion, he observes memory-saving with the sparse representation
+    that is substantial enough to choose it, especially considering his future plans.
+    Although there’s a slight increase in computation time, the memory savings make
+    the sparse format more suitable for his expanding dataset.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 7.6 Choice of GNN algorithm
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Choosing your GNN algorithm well is essential to ensure the scalability and
+    efficiency of your machine learning tasks, particularly when dealing with large-scale
+    graphs and limited computational resources. Leaving aside predictive performance
+    and task suitability, two ways to choose the GNN algorithm with scalability in
+    mind is by considering time and space complexity and by gauging a few key metrics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.6.1 Time and space complexity
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We gauge time and space complexity by using *Big O notation*, which is a kind
+    of math shorthand used to explain how fast a function grows or declines as the
+    input size changes. It’s like a speedometer for functions or algorithms, telling
+    you how they’ll behave when the input gets really big or goes toward a specific
+    value. It’s especially useful in machine learning engineering and development
+    to measure the efficiency of algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note  For a more comprehensive explanation of Big O notation, see Goodrich et
+    al. [9]. In addition, any beginning text on algorithms should cover this topic.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We also discuss time and space complexity with respect to graphs and graph
+    algorithms in the appendix, but here are a few examples of Big O notation for
+    time complexity, sorted in rising order:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Constant time complexity,* *O(1)* —This is the best-case scenario, where the
+    algorithm always takes the same amount of time, regardless of the input size.
+    An example is accessing an array element by its index.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Linear time complexity, O(n)* —The running time of the algorithm increases
+    linearly with the size of the input. An example is finding a specific value in
+    an array.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Logarithmic time complexity, O(log n)* —The running time increases logarithmically
+    with the size of the input. Algorithms with this type of time complexity are highly
+    efficient. An example is binary search.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Quadratic time complexity,* *O(n**²**)* —The running time of the algorithm
+    is proportional to the square of the size of the input. An example is bubble sort.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When you understand the basics of how to assess Big O, you can use the information
+    provided by the authors of a GNN algorithm to assess this. Often in a publication
+    of an algorithm, the authors will provide the steps of the algorithm itself, which
+    can be used to conduct a Big O analysis. In addition, authors will also often
+    provide their own complexity analysis.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Now that we’ve covered the benefits of Big O, we’ll list some of its caveats.
+    Conducting a standalone or comparative complexity analysis of GNN algorithms can
+    be challenging due to reasons that include the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Diverse operations* —GNN algorithms involve a variety of operations, such
+    as matrix multiplications, nonlinear transformations, and pooling. Each operation
+    has different complexities, making it hard to provide a singular measure. Further,
+    not all GNNs employ the same operations, so comparing them side-by-side can be
+    of limited use. Often, in the literature, when comparisons are made between GNNs,
+    one major operation is compared instead of the entire algorithm.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Implementation specifics* —The actual implementation of the GNN algorithm
+    such as the use of specific libraries, hardware optimization, or parallel computing
+    strategies, also influences the complexity.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'As an example, table 7.3 compares the complexity of GCN with GraphSAGE found
+    in Bronstein et al. [10]. This comparison specifically looks at one operation
+    (the convolution-like operation in forward propagation) on a type of input graph
+    (sparse). Specifically, Bronstein et al. compare the time and space complexities
+    of the operation *Y* = ReLU(*A* × *W*). Broken down, this operation consists of
+    two main stages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Matrix multiplication (A* × *W)* —This means we’re multiplying matrix A (which
+    could be our input data) by matrix X (our weights or parameters that the algorithm
+    is trying to optimize) and then by matrix W. Matrix multiplication is a way of
+    transforming our data.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Activation (ReLU)* —The rectified linear unit (ReLU) is a type of activation
+    function that’s used to introduce nonlinearity into our model. Essentially, ReLU
+    takes the result of our matrix multiplication and, for each element, if the value
+    is less than 0, it sets it to 0\. If it’s greater than 0, ReLU leaves it as is.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Table 7.3 Factors on the scalability of two graph algorithms: GCN and GraphSAGE.'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Algorithm | Time Complexity | Space Complexity | Memory/Epoch Time/Convergence
+    Speed | Notes |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GCN  | *O*( *Lnd*²)  | *O*( *Lnd* + *Ld*²)  | Memory: Bad Epoch time: Good'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Convergence speed: Bad'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Pros: Spectral convolution: Efficient and suitable for large-scale graphs'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Versatility: Applicable to various graph-related problems'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Node feature learning: Rich feature learning that captures the topological
+    structure of the graph'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Con:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: High memory and time complexity due to the need to store the entire adjacency
+    matrix and node features
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| GraphSAGE  | *O*( *Lbd*² *k* ^L)  | *O*( *bk* ^L)  | Memory: Good Epoch time:
+    Bad'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Convergence speed: Good'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Pro: Solves GCN’s scalability problem by using neighborhood sampling and
+    mini-batching'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Cons:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: May introduce redundant computations when sampled nodes appear multiple times
+    in the neighborhood
+  prefs: []
+  type: TYPE_NORMAL
+- en: Keeps *O*( *bk* ^L) nodes in memory for each batch, but the loss is computed
+    only on b of them
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| *n* = Number of nodes in the graph *d* = Dimensions of the node feature representation'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*L* = Number of message-passing iterations or layers in the algorithm'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*k* = Number of neighbors sampled per hop'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*b* = Number of nodes in a mini-batch'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One takeaway from this comparison is that while GCN’s complexities have a dependence
+    on the entire node count in the input graph, GraphSAGE’s complexity is independent
+    of this, offering a great improvement in both space and time performance. GraphSAGE
+    accomplishes this by employing neighborhood sampling and mini-batching.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'GeoGrid is tasked with predicting the likelihood of an area undergoing development
+    based on various urban factors. The nodes in the graph represent geographical
+    areas, while the edges could represent proximity to amenities, road networks,
+    or other areas that have undergone development:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Team analysis* —While the current project consists of only one metropolitan
+    area, GeoMap hopes to gradually expand the system in the future to have nationwide
+    coverage, including a database with millions of geographical nodes and billions
+    of edges. Each node has a feature vector that may include attributes such as land
+    value, proximity to public transit, and zoning regulations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Due to the current size of the graph, the plans to expand it, and the need for
+    timely predictions, GeoGrid’s data science team must carefully select an appropriate
+    GNN architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*GCN* —GCNs are easy to interpret, but their time complexity of O(*Lnd*) may
+    pose challenges as the graph scales. However, with the use of PyG’s mini-batch
+    method, the team can manage the graph without needing to store the entire adjacency
+    matrix, making GCN a reasonable candidate.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*GraphSAGE* —GraphSAGE offers a time complexity of O(*Lbdk*), appealing for
+    its memory efficiency and scalability. It allows for the adjustment of the mini-batch
+    size *b* and the number of sampled neighbors *k*, providing flexibility in performance
+    tuning.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*GAT* —Graph attention networks (GATs) offer the potential for nuanced insights
+    through attention mechanisms, but they come with added computational costs. While
+    the Big O complexity might be similar to GCN, the attention mechanisms could introduce
+    additional computational overhead.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Algorithm comparison
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: While GCN appears simpler than GraphSAGE, its dependency on the number of nodes
+    *n* can be problematic as the graph grows. GraphSAGE offers scalability due to
+    its dependency on *b* and *k*. GAT, although potentially more accurate, comes
+    with computational complexities due to its attention mechanism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using PyG for mini-batch processing makes GCN more manageable. However, the
+    team also liked GraphSAGE for its inherent scalability advantages. GAT, despite
+    its likely higher accuracy, could be too resource-intensive for this application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Decision* —After a thorough assessment, the GeoGrid team decides that GraphSAGE
+    offers the most balanced approach, optimizing between computational efficiency
+    and prediction accuracy.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Conclusion* —They plan to trial GAT in a controlled setting later to assess
+    whether its added computational demands genuinely yield more accurate urban development
+    predictions. They will set out user acceptance testing with clear metrics before
+    moving to production.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The previous three sections have covered the fundamental choices to be made
+    when planning to train a GNN with size problems in mind. In the next five sections,
+    we review the methods that can solve scale problems, including deep learning optimizations,
+    sampling, distributed processing, use of remote backends, and graph coarsening.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.7 Batching using a sampling method
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this section, we explore how to piece large data into batches chosen by a
+    sampling method. We’ll explain this in general, and then break down a few implementations
+    from the PyG package. We close with a GeoGrid case, highlighting the practical
+    choices and implications of using these methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Sampling: Literature versus implementation'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: In the literature, there is much discussion covering various types of sampling
+    techniques (usually classified as node-, layer-, and graph-sampling) designed
+    into GNN algorithms, but in this section, we’ll focus on sampling implementations
+    in the PyG package. Many of these techniques are derived from the literature,
+    but are nonetheless meant to generalize sampling to support various GNN algorithms
+    and training operations. For the purposes of this section, we use these sampling
+    implementations to support mini-batching.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A GCN provides a good illustration for this. While it’s true that the GCN model
+    as conceived in its standard form doesn’t involve sampling, PyG’s `NeighborSampler`
+    function can still be applied with the `GCNConv` layer. This is possible because
+    `NeighborSampler` is essentially a dataloader that returns a batch of subgraphs
+    from the larger graph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this context, the subgraphs are used to approximate the full graph convolution
+    operation. The obvious advantage is that we can work with large graphs that may
+    otherwise overwhelm the algorithm or our machine’s memory. A drawback is that
+    the accuracy of `GCNConv` with `NeighborSampler` might not be as high as the full
+    batch training due to this approximation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '7.7.1 Two concepts: Mini-batching and sampling'
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Two distinct methods—batching and sampling—can often be combined into one function.
+    *Batching* (done by *loaders* in PyG) is breaking up a large dataset into subsets
+    of nodes or edges to be run through the training process. But how do we determine
+    the subset of nodes or edges to include in the smaller groups? *Sampling* is the
+    specific mechanism that we use to choose the subsets. These subsets can be in
+    the form of connected subgraphs, but they don’t necessarily have to be. Batching
+    done in this way will alleviate the memory load. During an epoch, instead of storing
+    the entire graph in memory, we can store smaller pieces of it at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Batching with sampling can have drawbacks. One concern is the loss of essential
+    information. For instance, if we consider the message passing process, every node
+    and its neighborhood are critical for updating node information. Sampling could
+    miss important nodes, thus affecting the model’s performance. This can be likened
+    to omitting crucial messages in a message-passing framework. Additionally, the
+    sampling process may introduce bias, affecting the generalizability of the model.
+    This is equivalent to having a biased aggregation operation in a message passing
+    framework.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Batching implemented in PyG
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Batching methods can be found in the `loader` and `sampler` modules. Most of
+    these combine a sampling method with functions that batch and serve the sampled
+    data to a model training process. There are vanilla classes that allow you to
+    write custom samplers (`baseloader`, `basesampler`) as well as loaders with predetermined
+    sampling mechanisms [11, 12].
+  prefs: []
+  type: TYPE_NORMAL
+- en: Choosing the right sampler
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Choosing the ideal sampling method can be nontrivial and depends on the nature
+    of the graph and the training objectives. Different samplers will yield a range
+    of epoch times and convergence times. There is no general rule to determine the
+    best sampler; it’s best to experiment with limited sets of your data to see what
+    works best. Implementing sampling adds another layer of complexity to the GNN
+    architecture, just as message passing requires carefully orchestrated aggregation
+    and update steps.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.7.2 A glance at notable PyG samplers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'As we’ve seen, GNNs work by aggregating across local neighborhoods. However,
+    for very large graphs, it can be infeasible to consider all the nodes or edges
+    in the aggregation operation, so samplers are typically used instead. The following
+    lists some of the commonly used samplers that are also supported by default from
+    the PyG libraries:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`NeighborLoader`—Ideal for capturing local neighborhood dynamics and frequently
+    used in social network analysis.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ImbalancedSampler`—Built for imbalanced datasets, such as in fraud-detection
+    scenarios.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GraphSAINT` `Variants`—Designed to minimize the gradient noise, making them
+    apt for large-scale training [9].'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ShaDowKHopSampler`—Useful for sampling larger neighborhoods, capturing broader
+    structural information.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`DynamicBatchSampler`—Designed to group nodes by neighbor count, optimizing
+    batch-wise computational consistency.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`LinkNeighborLoader`—A loader that samples edges using a methodology analogous
+    to `neighborloader`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Note  This overview isn’t exhaustive, and functionalities may differ based on
+    the PyG version in use. For in-depth information, consult the official PyG documentation
+    ([https://mng.bz/DMBa](https://mng.bz/DMBa)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s look at a code snippet using the `Neighborloader` loader. The full code
+    is in the GitHub repository, and we’ll look at snippets here. The code runs a
+    training loop for a GNN using the sampler. For each batch, it moves node features,
+    labels, and adjacency information to the device, that is, the GPU. It then clears
+    prior gradients, performs a forward and backward pass through the model to compute
+    the loss, and updates the model parameters accordingly. To add neighbor batching
+    using the `NeighborSampler` in your code, you can follow these steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Import the required modules:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '2\. Define the mini-batch size and the number of layers to sample:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Sets the desired mini-batch size'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Sets the number of layers to sample for each node'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '3\. Create the `NeighborLoader` instance for sampling over a neighborhood during
+    mini-batch training:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: Here, `data` is the input graph, `input_nodes` contains the indices of the training
+    nodes, and `num_neighbors` specifies the number of neighbors to sample for each
+    layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4\. Modify your training loop to iterate over the mini-batches using the sampler,
+    as shown in the following listing.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Listing 7.1 Training loop using `NeighborSampler`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Initiates the training loop, iterating through batches using NeighborSampler.
+    batch_size is the size of the batch, n_id contains the node IDs, and adjs stores
+    adjacency information for the sampled subgraph.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Fetches node features (x) for nodes in the current batch and moves them
+    to the target device (usually GPU). This is similar to fetching embeddings in
+    a message-passing paradigm.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Fetches the corresponding labels (y) for nodes in the current batch, removes
+    any singleton dimensions, and moves them to the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Moves the adjacency information for the sampled subgraph to the device.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Sets the gradients of all optimized variables to zero. This is essential
+    for correct gradient computation during backpropagation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Forward pass through the GNN model to compute predictions. The model receives
+    the node features and adjacency information as input.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Computes the loss between the model output and the true labels using negative
+    log likelihood loss'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Backward pass to compute the gradients based on the loss'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#9 Updates the model parameters based on the computed gradients'
+  prefs: []
+  type: TYPE_NORMAL
+- en: To round out this section, we’ll look at a case where a team at GeoGrid has
+    to decide among three batchers for a project.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Let’s return to GeoGrid, a leading mapping company. A team is developing a graph-based
+    representation of the entire US road system, with intersections as nodes and road
+    segments as edges. The sheer scale of this project presented computational and
+    memory challenges.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'After a thorough investigation, the team shortlisted three prominent batching
+    techniques, for which we’ll assess the tradeoffs of each here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`GraphSAINTSampler` is advantageous for its noise-reduction capabilities, offering
+    more accurate gradient estimates, and is scalable—ideal for expansive systems
+    such as the US road network. However, its implementation might be complex, and
+    there’s a risk of overrepresenting highly connected nodes.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`NeighborSampler` is memory-efficient, focusing on essential road segments,
+    and emphasizes local neighborhood connections, offering insights into significant
+    intersections. Yet, it might omit crucial data from less-traveled routes and potentially
+    be biased toward densely connected nodes.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`ShaDowKHopSampler` effectively samples *k*-hop subgraphs, capturing larger
+    neighborhoods, and its depth is adjustable to accommodate various road system
+    complexities. However, certain *k* values can make it computationally demanding,
+    and the broad capture might introduce excessive and not immediately relevant data.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In the following, we demonstrate how different samplers are used in practice,
+    with the same GeoGrid company as our case study:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Decision* —After extensive deliberation, the team leaned toward `ShaDowKHopSampler`.
+    The method’s ability to capture broader neighborhoods without being restricted
+    to immediate neighbors seemed apt for the varied complexity of the US road system.
+    They believed that with the right value of *k*, determined by experimentation,
+    they could achieve a balance between depth and computational efficiency.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To counteract potential information overload and ensure relevance, GeoGrid planned
+    to check the results against real-world traffic data, ensuring the sampled graph
+    remained practical and accurate.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Conclusion* —GeoGrid’s decision to adopt the `ShaDowKHopSampler` stemmed from
+    an in-depth analysis of their requirements against the pros and cons of each technique.
+    By pairing the sampling method with real-world data, they aimed to strike a balance
+    between granularity and relevance in their graph representation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Now that we have a grasp on batching, we can examine two techniques that work
+    hand-in-hand with sampling: parallel processing and using a remote backend.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.8 Parallel and distributed processing
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Batching lends itself well to the next two methods, parallel processing and
+    the use of remote backends, because these methods work best when data is split
+    up. Parallel processing is a method of training machine learning models by spreading
+    the computational tasks across multiple compute nodes or multiple machines. In
+    this section, we focus on spreading the model training across multiple GPUs in
+    a single machine [13–17]. We’ll use PyTorch’s `DistributedDataParallel` for this
+    purpose.
+  prefs: []
+  type: TYPE_NORMAL
+- en: DataParallel and DistributedDataParallel
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: 'In the realm of PyTorch, you’ll encounter two main options for parallelizing
+    your neural network models: `DataParallel` and `DistributedDataParallel`. Each
+    has its merits and limitations, which are critical to making an informed decision.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`DataParallel` is tailored for multi-GPU setups on a single machine but comes
+    with a few caveats, such as the model’s replication during each forward pass incurs
+    additional computational costs. These limitations become more pronounced as your
+    model and data scale up.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, `DistributedDataParallel` scales across multiple machines
+    and GPUs. It outperforms `DataParallel` by allocating dedicated Compute Unified
+    Device Architecture (CUDA) buffers for inter-GPU communication and by generally
+    incurring less overhead. This makes it ideal for large-scale data and complex
+    models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both `DataParallel` and `DistributedDataParallel` offer pathways to parallelize
+    your models in PyTorch. Understanding their respective strengths and weaknesses
+    enables you to choose the technique that best suits your specific machine learning
+    challenges. Given its advantages in scalability and efficiency, especially for
+    complex or large-scale projects, we’ve chosen `DistributedDataParallel` as our
+    go-to option for model parallelization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.8.1 Using distributed data parallel
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: In plain language, distributed data parallel (DDP) is a way to train a machine
+    learning model on multiple graphics cards (GPUs) at the same time. The idea is
+    to split the data and the model across different GPUs, perform computations, and
+    then bring the results back together. To make this work, you first need to set
+    up a *process group*, which is just a way to organize the GPUs you’re using. Unlike
+    some other methods, DDP doesn’t automatically split your data; you have to do
+    that part yourself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you’re ready to train, DDP helps by synchronizing the updates made to the
+    model across all GPUs. This is done by sharing the gradients. Because all GPUs
+    get these updates, they’re all helping to improve the same model, even though
+    they’re working on different pieces of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The method is particularly fast and efficient, especially when compared to
+    running on a single GPU or using simpler methods of parallelism. However, there
+    are some technical details to keep in mind, such as making sure that you’re loading
+    and saving your model correctly if you’re using multiple machines. The general
+    steps to train are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Model instantiation* —Initialize the GNN model that will be used for training.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Distributed model setup* —Wrap the model in PyTorch’s `DistributedDataParallel`
+    to prepare it for distributed training.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Training loop* —Implement a training loop that includes forward propagation,
+    computing the loss, backpropagation, and updating the model parameters.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Process synchronization* —Use PyTorch’s distributed communication package
+    to synchronize all the processes, ensuring that all processes have finished training
+    before proceeding to the next step. This can be done using `dist.barrier()`before
+    moving on to the next epoch. Once all epochs are done, it destroys the process
+    group.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Entry point guard* —Use `if` `__name__` `==` `''__main__'':` to specify the
+    dataset and start the distributed training. This ensures that the training code
+    is executed only when the script is run directly, not when it’s imported as a
+    module.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using distributed processing requires careful handling of synchronization points
+    to ensure that the models are trained correctly. You must also ensure that your
+    machine or cluster has enough resources to handle the parallel computations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`Torch.distributed` supports various backends for distributed computing. The
+    two most recommended are the following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: NVIDIA Collective Communications Library (`NCCL`)—Nvidia’s NCCL is used for
+    GPU-based distributed training. It provides optimized primitives for collective
+    communications.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`Gloo`—Gloo is a collective communications library, developed by Facebook,
+    providing various operations such as broadcast, all-reduce, and so on. This library
+    is used for CPU training.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 7.8.2 Code example for DDP
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Following is an example of distributed training using PyTorch. For simplicity,
+    we train a simple neural network using the Modified National Institute of Standards
+    and Technology (MNIST) dataset. An example using GCN on the Amazon Products dataset
+    can be found in the GitHub repository. In that case, instead of Google Colab to
+    run the code, we use a Kaggle notebook, which has a dual GPU system. Another difference
+    in the GCN example is that we use the `NeighborLoader` dataloader, which uses
+    the `NeighborSampler` sampler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s break down what’s happening in this code. The GCN version essentially
+    follows this logic as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting up for distributed training
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The script imports necessary modules such as `torch`, `torch.distributed`, and
+    so on. It initializes the DDP environment using `dist.init_process_group`. It
+    sets up communication using NCCL and specifies a localhost address and port (tcp://localhost:23456)
+    for synchronization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Preparing the model and data
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The code defines a simple `Flatten` layer, which is a part of the neural network
+    that reshapes its input. The data transformation and loading steps are set up
+    using PyTorch’s DataLoader and torchvision datasets. The data loaded is MNIST.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training function
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: '`train` is the function responsible for training the model. It iterates through
+    batches of data, performs forward and backward passes, and updates the model parameters.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Main function
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Within the `main()` function, each process (representing a single GPU in this
+    example) sets its random seed and device (CUDA device based on the rank of the
+    process). The neural network model is defined as a sequential model with the `Flatten`
+    layer followed by a `Linear` layer. It’s then wrapped with `DistributedDataParallel`.
+    Loss function (`CrossEntropyLoss`) and optimizer (`SGD`) are defined.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiprocessing spawn
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Finally, the script uses the `mp.spawn` function to start the distributed training.
+    It runs `main()` on the `world_size` number of processes (basically, two GPUs).
+    Each process will train the model on its subset of data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Running the training
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Each process trains the model using its subset of data, but the gradients are
+    synchronized across all processes (GPUs) to ensure that the processors are updating
+    the same global model. This process is summarized in figure 7.3.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-3.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 7.3 Process diagram for initiating and running a training with multiple
+    processor devices
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: The following listing uses the `DistributedDataParallel` module to train a neural
+    network.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.2 Training using DDP
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Imports the DistributedDataParallel class for distributed training'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Imports the DataLoader utility for data loading'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Defines the main training function'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Defines the main function for the distributed training setup'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#5 Initializes the distributed process group'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#6 Specifies the total number of participating processes'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#7 Sets a random seed for reproducibility'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#8 Sets the device based on the process rank'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#9 Loads and transforms the MNIST dataset'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#10 Creates a DataLoader for the training data'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#11 Wraps the model for distributed training'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#12 Calls the training function to start the training process'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We end this section with another example from our friends at GeoGrid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: GeoGrid had the opportunity to submit a proof-of-concept for a government project
+    that aimed to use GNNs for complex environmental modeling. Winning this contract
+    could establish them as leaders in the field, but they were up against stiff competition.
+    The government set a tight deadline to review a proof-of-concept demo, making
+    the situation tense for GeoGrid, which was still in the early stages of development.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'During a team meeting, the focus shifted to a crucial technical decision and
+    an important dilemma: the potential use of DDP training across multiple GPUs.
+    The lead data scientist saw the allure of DDP’s capability to speed up training
+    times, offering a potentially impressive demonstration of efficiency and readiness
+    for the government project.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, an experienced engineer on the team harbored concerns. DDP,
+    despite its advantages, could introduce problems such as computational overhead
+    from synchronizing gradients between GPUs. Another layer of complexity came from
+    other team members who pointed out that their specialized GNN algorithms hadn’t
+    been tested with DDP. They expressed concerns over how the data would distribute
+    across the GPUs and the potential for imbalances and inefficiencies. Other concerns
+    centered around the time needed to develop and test the code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The team weighed these factors carefully. Producing a demo quickly and on time
+    would be desirable. Yet, the complexities and unknowns of applying DDP to their
+    specific GNN model could risk unexpected delays and costs, maybe causing them
+    to miss the submission deadline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Further consideration was given to the iterative nature of model development.
+    At the proof-of-concept stage, quick iterations for performance optimization were
+    crucial. Adding DDP into the mix could complicate debugging and extend the development
+    cycle:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Decision* —In the end, the team opted for a measured approach. They decided
+    to conduct a one-week feasibility study to rigorously evaluate the effect of using
+    DDP on their GNN architecture. This would allow them to make an informed decision
+    based on empirical data, which tracked convergence time and average time per epoch.
+    IT would be consulted to ensure that the necessary computational resources were
+    available exclusively for this critical study.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Conclusion* —The decision to roll out GNNs is typically highly dependent on
+    data, timelines, and compute requirements. Feasibility studies are an important
+    part of the decision-making progress, especially when identifying compute requirements.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: In the next section, we look at another technique that rests upon sampling,
+    training while drawing data directly from a remote storage system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.9 Training with remote storage
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A prominent approach to data pipelining in this book is to source data from
+    a data storage system and then preprocess this data by transforming it for use
+    in the GNN platform. This preprocessed data is stored in memory during training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By contrast, when data gets too big for memory, one approach is to integrate
+    the preprocessing into the training process. Instead of preprocessing the entire
+    dataset, placing it in memory, and then training, we can basically sample and
+    mini-batch directly from the initial data storage system when training. Using
+    an interface between our GNN platform and our data source, we can process each
+    batch pulled directly from the data source [18]. In PyG, this is called *remote
+    backend* and is designed to be agnostic of the particular backend that is used
+    [19–22].
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The benefit is that our dataset’s size is now limited by the capacity of our
+    database. The tradeoffs are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We have to do a bit of work to set up the remote backend, as detailed in this
+    section.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pulling from a remote backend will introduce I/O latency.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Integrating a remote backend adds complexity to a training setup. Basically,
+    more things can go wrong, and there will be more items to debug.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In PyG, remote backends are implemented by storing and sampling from two aspects
+    of a graph: the structural information (i.e., the edges) using a `GraphStore`,
+    and the node features using a `FeatureStore` (at the time of writing, edge features
+    aren’t yet supported). For storing graph structures, the PyG team recommends using
+    graph databases as the backend, such as Neo4J, TigerGraph, Kùzu, and ArangoDB.
+    Likewise for node features, the PyG team recommends using key-value databases,
+    such as Memcached, LevelDB, and RocksDB. The key elements to implementation of
+    a remote backend are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Remote data sources* —Databases that store your graph structure and node features.
+    This choice may be simply the database system you’re currently using to store
+    your graph.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A graphstore object* —The `torch_geometric.data.GraphStore` object stores
+    edge indices of a graph, enabling node sampling. Core components of your custom
+    class must be the connection to your database, and CRUD (create, read, update,
+    delete) functions, including `put_edge_index()`, `get_edge_index()`, and `remove_
+    edge_index()`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A featurestore object* —The `torch_geometric.data.FeatureStore` manages features
+    for graph nodes. The size of node features is considered to be a major storage
+    problem in graph learning applications. Like the `GraphStore`, custom implementations
+    include connecting to the remote database and CRUD functions.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A sampler* —A graph sampler, linked to a `GraphStore`, uses sampling algorithms
+    to produce subgraphs from input nodes via the `torch_geometric.sampler .BaseSampler`
+    interface. PyG’s default sampler pulls edge indices, converts them to Compressed
+    Sparse Column (CSC) format, and uses in-memory sampling routines. Custom samplers
+    can use specialized `GraphStore` methods by implementing `sample_from_nodes()`
+    and `sample_from_edges()` of the `BaseSampler` class. This involves node-level
+    and link-level sampling, respectively.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*A dataloader* —A dataloader operates similarly to what has been presented
+    in previous chapters. The differences here are that the dataloader uses the `GraphStore`,
+    `FeatureStore`, and `sampler` objects created instead of the usual PyG data objects.
+    An example from the PyG docs is shown in the next listing.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Listing 7.3 Loader object using remote backend
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: While custom classes and functionalities can be developed, using tools crafted
+    by database vendors is encouraged. Currently, KuzuDB and ArangoDB offer implementations
+    for PyG’s remote backend [14, 18–20, 23]. We close this section with another mini-case
+    featuring GeoGrid.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.9.1 Example
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'GeoGrid has a graph so large that it can’t fit into the memory of the available
+    hardware. They want to employ GNNs to analyze the large graph, predicting features
+    such as traffic congestion and route popularity. But how can they train a GNN
+    on a graph that doesn’t even fit into memory? Following are some specific examples
+    of working with large GNNs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Adopting remote backend with PyG* *—*GeoGrid uses PyG’s remote backend feature,
+    which aligns perfectly with the company’s need to handle large-scale graphs. They
+    use Neo4J as the graph database for storing the graph structure and RocksDB for
+    storing node features such as location type, historical traffic data, and so on.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Remote data sources* —GeoGrid chose Neo4J and RocksDB as their data storage
+    systems. The first task was to write scripts that load their vast graph data into
+    these databases. This involved data validation to ensure that the loaded data
+    was correct and consistent.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`GraphStore` *object* —The development team at GeoGrid spent a significant
+    amount of time implementing the `GraphStore` object. They needed to build secure
+    and reliable connections to the Neo4J database. Once the connections were established,
+    they implemented CRUD operations.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`FeatureStore` *object* —Similarly, implementing the `FeatureStore` object
+    for RocksDB wasn’t trivial. The main challenge was handling the varying sizes
+    and types of node features, which required thorough testing to ensure efficiency
+    and correctness.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Sampler* —Developing the custom sampling strategy was a project on its own.
+    The sampler needed to be both effective and efficient, and it went through several
+    iterations before it met the performance criteria.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Dataloader* —The `NodeLoader` was the final piece of the puzzle, combining
+    all the preceding elements into a coherent pipeline for training. The development
+    team had to ensure that the `NodeLoader` was optimized for speed to minimize I/O
+    latency.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Testing and troubleshooting
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: 'As with all software development, machine learning, or AI projects, testing
+    is a critical part of the workflow. The following lists some of the typical testing
+    and quality assurance (QA) steps when working on a project:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Unit testing* —Each component underwent rigorous unit testing. This was crucial
+    to catch bugs early and ensure that each part of the system worked as expected
+    in isolation.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Integration testing* —After unit testing, the team performed integration tests
+    where they ran the entire pipeline from loading a batch of data to running it
+    through the GNN model. They found a few bottlenecks and bugs, particularly with
+    the sampler and the database connections, which took considerable time to troubleshoot
+    and resolve.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*I/O latency* —One significant problem the company encountered was the I/O
+    latency when pulling data from Neo4J and RocksDB. GeoGrid optimized its queries
+    and also used some caching mechanisms to mitigate this.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Debugging* —During the development and testing phases, the team encountered
+    various bugs and errors, from data inconsistencies to unexpected behavior in the
+    sampling process. Each problem had to be debugged meticulously, adding to the
+    overall development time.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Despite these challenges, GeoGrid was able to successfully implement a scalable
+    solution for training GNNs on their enormous geographical graph. The project was
+    time-consuming and had its complexities, but the scalability and capability to
+    train on out-of-memory graphs were invaluable benefits that justified the effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.10 Graph coarsening
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: '*Graph coarsening* is a technique used to reduce the size of a graph while
+    preserving its essential features. This technique reduces the size and complexity
+    of a graph by creating a coarser version of the original graph. Graph coarsening
+    reduces the number of nodes and edges, making them more manageable and easier
+    to analyze. It involves aggregating or merging nodes and edges to form a simplified
+    representation of the original graph while trying to preserve its structural and
+    relational information.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One approach to graph coarsening involves starting with an input graph *G*,
+    with its labels *Y*, and then generating a coarsened graph *G’* using the following
+    steps [23]:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Apply a graph coarsening algorithm on *G*, producing a normalized partition
+    matrix (i.e., set of node clusters) *P*.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'Use this partition matrix to do the following:'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Construct a course graph, *G’*.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Compute the feature matrix of G’.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Compute the labels of G’.
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Train using the coarsened graph, producing a weight matrix that can be tested
+    on the original graph.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: 'While we can use graph coarsening to reduce the size of large graphs by reducing
+    vertices and edges, it has drawbacks. It can result in information loss, as key
+    details of the original graph may be removed, complicating subsequent analyses.
+    It may also introduce inaccuracies, not fully representing the original graph’s
+    structure. Finally, no universal method exists for graph coarsening, leading to
+    varied results and possible bias. In PyG, graph coarsening involves two steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Clustering* —This involves grouping similar nodes together to form super-nodes.
+    Each super-node represents a cluster of nodes in the original graph. The clustering
+    algorithm determines which nodes are similar based on certain criteria. In PyG,
+    there are various clustering algorithms available such as `graclus()` and `voxel_grid()`.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Pooling* —Once the clusters or super-nodes are formed, pooling is then used
+    to create a coarser graph from the original graph. Pooling combines the information
+    from the nodes in each cluster into a single node in the coarser graph. The `max_pool()`
+    and `avg_pool()` functions in PyG are pooling operations that input clusters from
+    the first step.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If used repeatedly, the combination of clustering and pooling allows us to create
+    a hierarchy of graphs, each one simpler than the last, as shown in figure 7.4.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![figure](../Images/7-4.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 7.4 Graph coarsening process: The original graph (left) is progressively
+    simplified through coarsening. The first stage (middle) merges nearby nodes to
+    create a coarsened graph, while the second stage (right) further reduces the graph’s
+    complexity, highlighting the essential structure for efficient processing.'
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: If used in supervised or semi-supervised learning, labels have to be generated
+    for the new set of nodes. This generation must be carefully tended to preserve
+    the new labels as closely as possible to the originals. Simple methods for this
+    involve using a centrality statistic for the new assigned label, such as the mode
+    or average of the labels in the cluster.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In listing 7.4, graph coarsening is implemented through the use of the Graclus
+    algorithm, which recursively applies a clustering procedure to the nodes of the
+    graph, grouping them into clusters of roughly equal size. The resulting clusters
+    are then merged into a new graph, which is coarser than the original one. This
+    is a type of hierarchical clustering that operates on the graph’s edge indices.
+    The function `graclus(edge_index)` clusters the nodes of the graph together based
+    on the structure of the graph. The resulting `cluster` tensor maps each node to
+    the cluster it belongs to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `max_pool` function is then applied to this clustered data. This operation
+    essentially coarsens the graph, reducing the number of nodes based on the clusters
+    formed by Graclus. The most influential node (based on certain criteria, e.g.,
+    edge weight) in each cluster becomes the representative of that cluster in the
+    coarsened graph.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Listing 7.4 Graph coarsening using `graclus` and `Max_Pool`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: '#1 Converts to undirected graph for the graclus function'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#2 Creates a batch vector for max_pool'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#3 Applies Graclus clustering'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '#4 Sets the early stopping criteria'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This code applies two major operations on the graph data, which changes its
+    structure and properties. The result is a coarsened version of the original graph.
+    The number of nodes decreases from 34 to 22 due to the max pooling operation.
+    Meanwhile, the number of edges also reduces from 156 to 98 as the graph becomes
+    more compact. This is summarized in table 7.4.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7.4 Input and output graphs from listing 7.4
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Input | Output |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| `Data(x=[34, 34], edge_index=[2, 156], y=[34], train_mask=[34])`  | `DataBatch(x=[22,
+    34], edge_index=[2, 98])`  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Nodes: 34 Edges: 156  | Nodes: 22 Edges: 98  |'
+  prefs: []
+  type: TYPE_TB
+- en: This table provides an overview of the structure and features of both the input
+    and output graphs described in listing 7.4\. The input graph is represented as
+    data, with 34 nodes, each having 34 features, as indicated by `x=[34,` `34]`.
+    It contains 156 edges, described by the edge index tensor `edge_index=[2,` `156]`.
+    Additionally, the input graph includes a label tensor `y=[34]`, representing one
+    label per node, and a training mask `train_mask=[34]`, specifying which nodes
+    are part of the training set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output graph, processed and represented as `DataBatch`, shows a reduction
+    in size. It now contains 22 nodes, while each node retains the original 34 features
+    (`x=[22,` `34]`). The number of edges is also reduced to 98, as indicated by `edge_
+    index=[2,` `98]`. This transformation demonstrates a typical graph reduction process,
+    which simplifies the graph for downstream tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 7.10.1 Example
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'GeoGrid has a mammoth task: to analyze an extensive graph of the US road system
+    for their ambitious traffic management solution. With an initial dataset comprising
+    50,000 nodes and 200,000 edges, the computational toll is daunting. In the initial
+    exploration when GeoGrid considered the computational load, graph coarsening seemed
+    like a tempting strategy. But apprehensions were high. Initial concerns ranged
+    from the loss of crucial information and the introduction of inaccuracies given
+    the complexities around label preservation and method bias.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: GeoGrid decided to proceed cautiously with a trial run using the Graclus algorithm
+    and `max_pool` for pooling on the entire graph. The trial run confirmed the company’s
+    fears. The graph’s size was reduced significantly but at the cost of losing detail
+    in high-traffic zones. Newly generated labels for clustered nodes didn’t reflect
+    the original optimally, affecting machine learning model performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Given the unsatisfactory trial results, GeoGrid explored alternative optimizations.
+    GeoGrid’s breakthrough idea was a multilayer analytical framework as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*National level* —A broad, high-level layer where each node signifies a state
+    or major region'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*State level* —An intermediate layer representing cities or counties'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*City level* —The most granular layer, focusing on individual intersections
+    and road segments'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The team speculated that applying graph coarsening at an intermediate layer
+    might alleviate some of the initial concerns. The state level became the company’s
+    target for coarsening, which promised a balance between computational efficiency
+    and data integrity. With this new approach in mind, GeoGrid reevaluated the disadvantages
+    of graph coarsening:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Loss of granular information* —While still a concern, the damage appeared
+    to be minimized because coarsening was being applied to an intermediate layer,
+    preserving the city level’s details.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Introduction of inaccuracies* —GeoGrid theorized that the other layers could
+    serve as compensatory mechanisms for any inaccuracies introduced at the state
+    level.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*Label preservation* —Coarsening at the state level seemed less risky regarding
+    label reconciliation, as they could reference both the national and city levels
+    for corrections.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: They went ahead and coarsened the state level with the same Graclus algorithm
+    and `max_pool` technique. The subsequent evaluation found that the loss of granularity
+    was acceptable for this specific layer, and any inaccuracies introduced were mostly
+    balanced by the city and national levels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Though the company initially shied away from graph coarsening, GeoGrid found
+    a way to incorporate it meaningfully into a more complex, multilayer system. The
+    compromise allowed GeoGrid to conserve computational resources without severely
+    compromising the model’s accuracy. However, they remained cautious and committed
+    to ongoing research to fully grasp the tradeoffs involved.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7.5 summarizes the tradeoffs of graph coarsening. Graph coarsening presents
+    a balance between computational efficiency and data fidelity. On the upside, it
+    enables quicker real-time processing, simplifies high-level analyses, and offers
+    scalability. Its flexibility allows selective application to specific layers of
+    a hierarchical graph, as demonstrated when GeoGrid applied coarsening only to
+    its state level layer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 7.5 Tradeoffs of using graph coarsening, with insights from the GeoGrid
+    case
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '| Category | Insight | GeoGrid’s Use Case |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Computational efficiency  | Ideal for real-time processing with limited computational
+    resources  | Enabled quicker analyses at the state level, reducing computational
+    load  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Simplified analysis  | Useful for high-level overviews for initial understanding
+    or macro-level decision-making  | The national level layer provided a broad picture,
+    serving as a basis for more detailed analyses at lower layers.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Scalability  | Allows handling of larger graphs that might otherwise be computationally
+    infeasible  | Multilayer approach could be further extended to include additional
+    hierarchical layers if needed.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Flexibility  | Can be applied to selected layers or segments of a graph,
+    rather than the entire graph  | Applied coarsening only to the state level layer,
+    mitigating some disadvantages while still gaining computational benefits  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Loss of granular information  | Not suitable for tasks requiring precise,
+    detailed data  | Initially avoided coarsening due to loss of critical details
+    at the intersection level  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Potential for inaccuracies  | Requires validation from more detailed layers
+    or additional data to mitigate inaccuracies  | The city level and national level
+    acted as checks against the coarsened state level.  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Label preservation challenges  | Requires additional steps to generate or
+    map new labels, which could introduce errors  | Found it easier to reconcile labels
+    when coarsening was applied to an intermediate layer  |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Method bias  | Choosing a coarsening algorithm can affect the outcome and
+    introduce biases.  | Identified as an area for ongoing research to understand
+    its effect better  |'
+  prefs: []
+  type: TYPE_TB
+- en: As we wrap up this section, it becomes clear that the ability to scale for expansive
+    datasets is crucial for individuals working with GNNs. Handling large-scale data
+    problems demands careful strategy, and this section has supplied a detailed outline
+    of diverse methods to address such hurdles. From choosing the ideal processor
+    to making decisions regarding sparse versus dense representations, from batch
+    processing strategies to distributed computation—the options for scaling optimization
+    are numerous.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As you move forward, the code provided in our repository can be used as a useful
+    benchmark, ensuring that the methods mentioned here aren’t just high-level ideas
+    but actionable plans.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Navigating the vast landscape of GNNs requires a blend of strategic foresight
+    and hands-on execution. Irrespective of your data’s size or complexity, the trick
+    lies in planning, optimizing, and iterating. Let our insights be your compass,
+    guiding you confidently through challenges, no matter their scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Time and scale optimization methods are critical when training on very large
+    datasets. We can characterize a large graph by the raw number of vertices and
+    edges, the size of their edge and node features, or the time and space complexity
+    of the algorithms used in the processing and training of our datasets.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'A few well-known techniques exist to manage scale problems, which can be used
+    singularly or in tandem:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Your choice of processor and its configuration
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using sparse versus dense representation of your dataset
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Your choice of the GNN algorithm
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Training in batches based on sampling from your data
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Using parallel or distributed computing
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use of remote backends
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Coarsening your graph
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Being selective of how graph data is represented for training can affect performance.
+    PyTorch Geometric (PyG) provides support for sparse and dense representations.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Choice of training algorithm can affect the time performance of training and
+    the space requirements of memory. Using Big O notation and benchmarking key metrics
+    can help you select the optimal GNN architecture.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Node or graph batching can improve time and space complexity by using portions
+    of your data instead of the full dataset in training.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Parallelism, dividing the work of training across several processor nodes on
+    one machine or across a cluster of machines, can improve the speed of execution
+    but requires the overhead of setting up and configuring the additional devices.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Remote backends pull directly from your external data source (graph database
+    and key/value stores) to mini-batch during training. This can alleviate memory
+    problems but requires additional work to set up and configure.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Graph coarsening can reduce memory requirements by replacing a graph with a
+    smaller version of itself. This smaller version is created by consolidating nodes.
+    A drawback of this method is that the coarsened graph will deviate from the representation
+    of the original graph. Graph coarsening is a tradeoff between computational efficiency
+    and data fidelity. It’s most effective when applied judiciously and as part of
+    a larger, layered analytical strategy. Application to intermediate layers can
+    mitigate some drawbacks.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
