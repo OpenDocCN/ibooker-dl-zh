@@ -1,0 +1,1996 @@
+- en: 7 Maximizing throughput with batch optimization
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 7 在批处理优化中最大化吞吐量
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖了
+- en: Making function evaluations in batches
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 批量进行函数评估
+- en: Extending BayesOpt to the batch setting
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 扩展贝叶斯优化到批处理设置
+- en: Optimizing hard-to-compute acquisition scores
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 优化难以计算的获取分数
+- en: The BayesOpt loop we have been working with thus far takes in one query at a
+    time and returns the function evaluation for the query before the next query is
+    made. We use this loop in settings where function evaluations can only be made
+    sequentially. However, many real-world scenarios of black box optimization allow
+    the user to evaluate the objective functions in batches. For example, when tuning
+    the hyperparameters of an ML model, we can try out different hyperparameter combinations
+    in parallel if we have access to multiple processing units or computers, instead
+    of running individual combinations one by one. By taking advantage of all the
+    resources available to us, we can increase the number of experiments we conduct
+    and maximize throughput during the function evaluation step of the BayesOpt loop.
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，我们一直使用贝叶斯优化循环，该循环一次处理一个查询，并在进行下一个查询之前返回查询的函数评估结果。我们在函数评估必须按顺序进行的情况下使用该循环。但是，很多黑盒优化的实际场景都允许用户批量评估目标函数。例如，在调整ML模型的超参数时，如果我们可以访问多个处理单元或计算机，我们可以并行尝试不同的超参数组合，而不是逐个运行单独的组合。通过利用所有可用资源，我们可以增加进行的实验数量并最大限度地提高贝叶斯优化循环的函数评估吞吐量。
+- en: We call this variant of BayesOpt in which multiple queries can be made in parallel
+    *batch Bayesian optimization*. Examples of batch BayesOpt other than hyperparameter
+    tuning include drug discovery, where a scientist uses each of multiple machines
+    in their laboratory to synthesize an individual drug prototype, and product recommendation,
+    where the recommendation engine presents multiple products to a customer at the
+    same time. Overall, any black box optimization setting in which more than one
+    experiment can be run simultaneously calls for batch BayesOpt.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将同时可以进行多个查询的BayesOpt变体称为*批处理贝叶斯优化*。除了超参数调整之外，批处理BayesOpt的其他例子包括药物发现，科学家使用实验室中的多台机器来合成单个药物原型，以及产品推荐，推荐引擎同时向客户呈现多个产品。总的来说，在多个实验可以同时运行的黑盒优化情景下，批处理BayesOpt是一个非常常见的设置。
+- en: Given that computational and physical resources are often parallelizable, batch
+    BayesOpt is one of the most common settings of BayesOpt in the real world. In
+    this chapter, we are introduced to batch BayesOpt and see how the policies we
+    have learned about in previous chapters can be extended to this setting. We discuss
+    why extending a BayesOpt policy to the batch setting is not a trivial endeavor
+    and why it requires careful consideration. We then learn about various strategies
+    that facilitate extending to the batch setting and how to implement BayesOpt policies
+    in Python using BoTorch.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 鉴于计算和物理资源通常可以并行化，批处理BayesOpt是贝叶斯优化在实际应用中最常见的设置之一。在本章中，我们介绍了批处理BayesOpt，并了解到我们在前几章中学习的策略如何扩展到此设置。我们讨论了为什么将BayesOpt策略扩展到批处理设置不是一个简单的任务，为什么它需要仔细考虑。然后，我们学习了各种策略，以便在Python中使用BoTorch实现BayesOpt策略。
+- en: By the end of the chapter, you will understand what batch BayesOpt is, when
+    the batch setting is applicable, and how to implement BayesOpt policies in this
+    setting. With the knowledge of how to parallelize BayesOpt in the batch setting,
+    we can make BayesOpt more practical and applicable in the real world.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章结尾时，你将理解批处理贝叶斯优化的概念，了解批处理贝叶斯优化的适用场景，以及如何在这种情况下实现贝叶斯优化策略。掌握在批处理贝叶斯优化中如何并行化贝叶斯优化，我们可以使贝叶斯优化在实际应用中更加实用和适用。
+- en: 7.1 Making multiple function evaluations simultaneously
+  id: totrans-9
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.1 同时进行多个函数评估
+- en: The ability to make multiple function evaluations at the same time in a black
+    box problem is common in many real-world scenarios, and batch BayesOpt is the
+    setting of BayesOpt in which this parallelism of function evaluations is taken
+    into account. In this section, we cover the exact setting of batch BayesOpt and
+    what challenges we might face when using BayesOpt policies to make multiple queries
+    to the objective function. This section will motivate the various strategies to
+    extend BayesOpt policies to the batch setting. We cover these strategies later
+    in the chapter, starting in section 7.2.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在黑箱问题中同时进行多个函数评估的能力在许多实际场景中很常见，批次BayesOpt是BayesOpt的一种设置，其中考虑了函数评估的并行性。在本节中，我们将介绍批量BayesOpt的确切设置以及在使用BayesOpt策略向目标函数提出多个查询时可能面临的挑战。本节将激发将BayesOpt策略扩展到批量设置的各种策略。我们将在本章后面的章节中介绍这些策略，从第7.2节开始。
+- en: 7.1.1 Making use of all available resources in parallel
+  id: totrans-11
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.1 充分利用所有可用资源并行处理
+- en: One of the defining characteristics of an expensive black box optimization problem
+    is that making function evaluations can be cost prohibitive. In section 1.1, we
+    examined the high cost of making function evaluations in many applications; hyperparameter
+    tuning a neural network takes a lot of time and computational resources, and the
+    cost of creating new drugs has been exponentially increasing in recent years,
+    to name two examples. This cost of querying the objective function in black box
+    optimization gives rise to the need to make the process of querying the objective
+    function more efficient. One way we can achieve this is via *parallelism*.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 昂贵的黑箱优化问题的一个定义性特征是进行函数评估可能成本过高。在第1.1节中，我们研究了在许多应用中进行函数评估的高成本；调整神经网络的超参数需要大量时间和计算资源，而创建新药物的成本近年来呈指数增长，这是两个例子。在黑箱优化中查询目标函数的成本促使我们需要使查询目标函数的过程更有效率。我们可以通过*并行性*来实现这一点的方式之一。
+- en: Definition *Parallelism* refers to the act of running independent processes
+    at the same time so that the total time taken to complete these processes is cut
+    short.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义*并行性*指的是同时运行独立进程，以便完成这些进程所需的总时间缩短。
+- en: The benefits of parallelism are summarized in figure 7.1, where three processes
+    (which can be programs to run, computations to complete, and so on) run either
+    sequentially or in parallel. When run in parallel, the three processes only take
+    one third of the total time required if run sequentially.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 并行性的好处总结在图7.1中，其中三个过程（可以是要运行的程序，要完成的计算等）要么顺序运行，要么并行运行。当并行运行时，三个过程只需原本顺序运行所需总时间的三分之一。
+- en: '![](../../OEBPS/Images/07-01.png)'
+  id: totrans-15
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-01.png)'
+- en: Figure 7.1 Illustration of the benefits of parallelism. Three generic processes
+    either run sequentially (left) or in parallel (right). When running in parallel,
+    the three processes only take one third of the total time required if run sequentially.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.1 并行性的好处示意图。三个通用过程可以顺序运行（左）或并行运行（右）。当并行运行时，三个过程只需原本顺序运行所需总时间的三分之一。
+- en: Parallelism is particularly common in computer science, where a computer may
+    use multiple processing units in parallel to process multiple programs at the
+    same time. If these programs are independent from each other (they don’t use each
+    other’s data or write to the same files), they can run in parallel without any
+    issue.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 并行性在计算机科学中特别常见，计算机可以并行使用多个处理单元同时处理多个程序。如果这些程序彼此独立（它们不使用彼此的数据或写入相同的文件），它们可以并行运行而不会出现任何问题。
+- en: The same idea applies to optimization settings that employ BayesOpt. For example,
+    an ML engineer tuning a neural network may take advantage of the multiple GPUs
+    to which they have access to train multiple models at the same time. A scientist
+    attempting to discover new drugs can experiment with more than one recipe using
+    the equipment in the lab to synthesize the multiple recipes simultaneously. Making
+    multiple queries at the same time allows us to obtain more information given the
+    same amount of time spent learning about the objective function.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 相同的理念适用于使用BayesOpt的优化设置。例如，一位ML工程师调整神经网络可以利用他们可以访问的多个GPU同时训练多个模型。试图发现新药物的科学家可以使用实验室中的设备同时合成多个配方。同时进行多个查询可以在相同的学习目标函数所花费的时间内获取更多信息。
+- en: What are GPUs?
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 什么是GPU？
+- en: '*GPUs*, or graphics processing units, are the hardware that is optimized to
+    perform parallel matrix multiplications. Therefore, they are commonly used for
+    training neural networks.'
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*GPU*，即图形处理单元，是优化执行并行矩阵乘法的硬件。因此，它们通常用于训练神经网络。'
+- en: Take the example of baking a batch of cookies. You *could* bake one cookie at
+    a time if you wanted to, but doing so would waste resources such as power for
+    the oven and time. Instead, you’re much more likely to bake multiple cookies simultaneously
+    in a batch.
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以烤一批饼干为例。如果你愿意的话，你*可以*一次只烤一个饼干，但这样做会浪费诸如烤箱能源和时间等资源。相反，你更有可能一次性同时烤多个饼干。
+- en: BayesOpt for baking cookies
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 烘焙饼干的贝叶斯优化
+- en: On the topic of baking, there is, in fact, a research paper on batch BayesOpt
+    ([https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46507.pdf](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46507.pdf))
+    that tackles optimizing cookie recipes by finding the optimal amount of eggs,
+    sugar, and cinnamon to use when making the cookie dough.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 关于烘焙的话题，事实上，有一篇关于批次贝叶斯优化的研究论文（[https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46507.pdf](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/46507.pdf)）讨论了通过找到制作饼干面团时使用的最佳鸡蛋、糖和肉桂的量来优化饼干配方的问题。
+- en: In BayesOpt, the batch setting allows multiple inputs of the objective function
+    to be evaluated at the same time. That is, we can send multiple queries, *x*[1],
+    *x*[2], ..., *x[k]*, to the black box that evaluates the objective all at once
+    and receive the corresponding objective values *f*(*x*[1]), *f*(*x*[2]), ...,
+    *f*(*x[k]*) in a batch. In contrast, in the classic sequential BayesOpt setting,
+    only after observing *f*(*x*[1]) can we proceed to query at another location *x*[2].
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在贝叶斯优化中，批次设置允许同时评估目标函数的多个输入。也就是说，我们可以一次性向评估目标的黑盒发送多个查询，*x*[1]，*x*[2]，...，*x*[k]，并一次性接收到相应的目标值*f*(*x*[1])，*f*(*x*[2])，...，*f*(*x[k]*)。相比之下，在经典的顺序贝叶斯优化设置中，只有在观察到*f*(*x*[1])后，我们才能继续在另一个位置*x*[2]处进行查询。
+- en: At each iteration of the batch BayesOpt loop, we pick out multiple input locations
+    to evaluate the objective function at, as opposed to a single location like we’ve
+    been doing thus far. This batch BayesOpt loop is illustrated in figure 7.2\. The
+    requirement for multiple queries at a time means we need new BayesOpt policies
+    to score the usefulness of these input locations. We talk more about why the BayesOpt
+    policies we have learned cannot be easily extended to the batch setting in the
+    next section. The other component of the BayesOpt loop, the GP, remains unchanged,
+    as we still need an ML model that produces probabilistic predictions. In other
+    words, it’s the decision-making component of BayesOpt that needs to be modified
+    for us to adopt the batch setting.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在每一次批次贝叶斯优化循环的迭代中，我们挑选出多个输入位置来评估目标函数，而不是像我们之前一直做的那样只评估单个位置。图7.2显示了这个批次贝叶斯优化循环。一次性需要多次查询的要求意味着我们需要新的贝叶斯优化策略来评分这些输入位置的有用性。我们将在下一节更多地讨论为什么我们学到的贝叶斯优化策略不能轻易扩展到批次设置中。贝叶斯优化循环的另一个组成部分，GP，保持不变，因为我们仍然需要一个产生概率预测的机器学习模型。换句话说，贝叶斯优化的决策组件需要修改以适应批次设置。
+- en: '![](../../OEBPS/Images/07-02.png)'
+  id: totrans-26
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-02.png)'
+- en: Figure 7.2 The batch BayesOpt loop. Compared to sequential BayesOpt, batch BayesOpt
+    requires multiple query points to be identified at step 2 and evaluates the objective
+    function at these points simultaneously at step 3.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.2 批次贝叶斯优化循环。与顺序贝叶斯优化相比，批次贝叶斯优化需要在步骤2中识别多个查询点，并在步骤3中同时评估这些点上的目标函数。
+- en: Acquisition scores of a policy
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 策略的收获分数
+- en: A BayesOpt policy assigns a score, called the *acquisition score*, to each input
+    location in the search space that quantifies how useful the input is in our search
+    for the global optimum of the objective function. Each policy uses a different
+    heuristic to compute this score, as detailed in chapters 4 to 6.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 贝叶斯优化策略为搜索空间中的每个输入位置分配一个称为*收获分数*的分数，该分数量化了输入在寻找目标函数全局最优解过程中的有用程度。每个策略使用不同的启发式来计算这个分数，详情见第4到6章。
+- en: The number of queries that could be made simultaneously—that is, the size of
+    the batch—is application dependent. For example, how many cookies you could bake
+    at the same time depends on the size of your oven and baking trays. The computing
+    resources you have available (the number of CPUs and GPUs) dictate how many neural
+    networks you can train in parallel when tuning the model’s hyperparameters. Figure
+    7.1 shows three processes running at the same time as an example, so the batch
+    size is 3.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 可以同时进行的查询数量——即批次的大小——取决于应用程序。例如，您可以同时烘烤多少块饼干取决于您的烤箱和烤盘的大小。您可用的计算资源（CPU 和 GPU
+    的数量）决定了调整模型超参数时可以并行训练多少神经网络。图 7.1 显示了同时运行三个进程的示例，因此批次大小为 3。
+- en: 7.1.2 Why can’t we use regular BayesOpt policies in the batch setting?
+  id: totrans-31
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.2 为什么我们不能在批处理设置中使用常规 BayesOpt 策略？
+- en: We said in the previous section that the BayesOpt policies we have learned under
+    the sequential setting (where queries to the objective function are made sequentially,
+    one after another) cannot be repurposed and used in the batch setting without
+    modifications. In this section, we discuss in more detail why this is the case
+    and why we need specialized policies for the batch setting.
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在上一节中说过，在顺序设置下学习的 BayesOpt 策略（其中对目标函数的查询是顺序地进行的，一个接一个地进行）不能重新用于批处理设置中而不经过修改。在本节中，我们将更详细地讨论为什么会出现这种情况，以及为什么我们需要专门针对批处理设置的策略。
+- en: Remember from section 4.1 that a BayesOpt policy assigns a score to each point
+    in the search space that quantifies how useful the point is in our search for
+    the global optimum of the objective function. We then look for the point that
+    gives the highest score and choose it as the next query of the objective function.
+    Figure 7.3 shows the score computed by the Expected Improvement (EI) policy (introduced
+    in section 4.3) as the curve in the bottom panel, where 1.75, as indicated by
+    the vertical mark on the lower curve, maximizes the score and is our next query.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从第 4.1 节我们知道，BayesOpt 策略会为搜索空间中的每个点分配一个分数，该分数量化了该点对我们寻找目标函数全局最优解的有用程度。然后，我们寻找给出最高分数的点，并将其选择为下一个查询的目标函数。图
+    7.3 显示了由预期改进（EI）策略（在第 4.3 节介绍）计算的分数，作为底部面板中的曲线，其中 1.75，如下所示的垂直标记在较低曲线上，最大化了分数，是我们的下一个查询。
+- en: '![](../../OEBPS/Images/07-03.png)'
+  id: totrans-34
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-03.png)'
+- en: Figure 7.3 An example of BayesOpt. The top panel shows the GP predictions and
+    the ground truth objective function, while the bottom panel shows the acquisition
+    scores made by EI, discussed in section 4.3\. The vertical tick on the lower curve
+    at 1.75 indicates the next query.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.3 BayesOpt 的一个例子。顶部面板显示了 GP 预测和地面真实目标函数，而底部面板显示了 EI 产生的采集分数，这在第 4.3 节中讨论过。在较低曲线上的垂直刻度为
+    1.75，表示下一个查询。
+- en: What would happen if we were to use the same EI score, the lower curve in figure
+    7.3, to pick out not one but multiple points to query the objective function with?
+    We would need to identify the many points that give the highest EI scores. However,
+    these points that give high EI scores would simply cluster around the point picked
+    under the sequential setting. This is because along the lower curve, if we were
+    to move an infinitesimal distance from 1.75, we would still receive a high EI
+    score. That is, the points close to the one giving the highest acquisition score
+    also give high acquisition scores.
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们使用相同的 EI 分数，即图 7.3 中的较低曲线，来挑选不止一个点来查询目标函数，会发生什么？我们需要确定许多给出最高 EI 分数的点。然而，这些给出高
+    EI 分数的点会简单地聚集在顺序设置下选择的点周围。这是因为沿着较低曲线，如果我们从 1.75 移动一个无穷小的距离，我们仍然会得到一个高的 EI 分数。也就是说，接近给出最高采集分数的点也会给出高的采集分数。
+- en: If we were to simply pick out the points with the highest acquisition scores,
+    our queries would cluster around a single region in the search space, essentially
+    putting all our eggs in one basket. This is illustrated in figure 7.4, where the
+    queries giving the highest EI scores cluster around 1.75\. This clustering effect
+    is undesirable because we are wasting our valuable resources evaluating the objective
+    function at essentially a single input location. These clustered points are less
+    useful than points that are more spread out.
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们简单地挑选出获得分数最高的点，我们的查询将聚集在搜索空间的一个区域，实质上是把所有的鸡蛋放在一个篮子里。这在图 7.4 中有所说明，那些给出最高
+    EI 分数的查询聚集在 1.75 附近。这种聚集效应是不可取的，因为我们在本质上浪费了宝贵的资源，评估了目标函数在基本上是一个输入位置的值。这些聚集点比分散的点不那么有用。
+- en: '![](../../OEBPS/Images/07-04.png)'
+  id: totrans-38
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-04.png)'
+- en: Figure 7.4 Queries made in the batch setting if we were to simply pick out the
+    points with the highest acquisition scores, denoted by the vertical ticks on the
+    lower curve. These queries are close to each other and are less useful than if
+    they were more spread out.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.4 如果我们仅仅选择具有最高获得分数的点，并通过水平刻度线在下方图表上标识出来，那么在批量设置中所进行的查询会很接近，并且不如更分散排布的情况有用。
+- en: Choosing all of our queries to be points clustered around one location prevents
+    us from benefiting from the parallelism inherent in the batch setting. Our discussion
+    so far shows that designing a batch of queries is not as simple as choosing the
+    top points giving the highest acquisition scores of a BayesOpt policy. In the
+    remainder of this chapter, we discuss BayesOpt policies that are specifically
+    designed for the batch setting. Conveniently for us, these policies are extensions
+    of the BayesOpt policies we have learned in chapters 4 through 6, so we only need
+    to learn about extending the optimization heuristics we have learned to the batch
+    setting.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 选择所有查询的点都聚集在一个位置附近会阻碍我们从批量设置中固有的并行性中受益。到目前为止，我们的讨论表明，设计一批查询并不像选择具有最高贝叶斯优化策略获得分数的顶点那样简单。在本章的剩余部分中，我们将讨论专门为批量设置设计的贝叶斯优化策略。方便的是，对我们来说，这些策略是对我们在第4章到第6章中所学习的贝叶斯优化策略的扩展，因此我们只需要学习如何将我们所学到的优化启发式扩展到批量设置中。
+- en: 7.2 Computing the improvement and upper confidence bound of a batch of points
+  id: totrans-41
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.2 计算一批点的改进和上限置信度
+- en: The first policies we will extend to the batch setting are the improvement-based
+    policies, which are the topic of chapter 4, and the UCB policy, discussed in section
+    5.2\. The heuristics used by these policies allow for the policies to be modified
+    to work in the batch setting, as we see shortly.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将要扩展到批量设置的第一类策略是基于改进的策略，这是第4章的主题，以及在第5.2节讨论的UCB策略。这些策略使用的启发式方法可以被修改为在批量设置中工作，我们稍后会看到。
+- en: In the next section, we introduce the mathematical modification of those heuristics
+    and discuss how resulting batch policies work. Afterwards, we learn how to declare
+    and run these batch policies with BoTorch.
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在下一节中，我们介绍这些启发式的数学修改，并讨论生成的批量策略的工作原理。之后，我们将学习如何使用 BoTorch 声明和运行这些批量策略。
+- en: 7.2.1 Extending optimization heuristics to the batch setting
+  id: totrans-44
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.1 将优化启发式扩展到批量设置
+- en: The discussion in section 7.1.2 shows that choosing a batch of points to evaluate
+    the objective function with is not as simple as finding the top points that maximize
+    the acquisition score of a sequential policy. Instead, we need to redefine the
+    mathematical formulations of these sequential policies to repurpose them to the
+    batch setting.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第7.1.2节的讨论中，我们可以看出，选择一批点来评估目标函数并不像找到最大化顺序策略获得分数的顶点那样简单。相反，我们需要重新定义这些顺序策略的数学公式，以使它们适用于批量设置。
+- en: One strategy applies for three BayesOpt policies that we have learned, PoI,
+    EI, and UCB, which formulate their acquisition scores as averages over normal
+    distributions. That is, the score each of the three policies assigns to a given
+    point can be written as the average of a quantity of interest over a normal distribution
+    in the sequential setting. For PoI, this quantity is whether we will observe an
+    improvement; for EI, the quantity of interest is the magnitude of the improvement.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 适用于我们所学到的三种贝叶斯优化策略（PoI，EI和UCB）的策略有一种策略，它们将其获取得分公式定义为各个正态分布上的平均值。也就是说，这三种策略中，每种策略分配给给定点的分数都可以写为顺序设置中数量的平均值。对于
+    PoI，这个数量是我们是否能观察到改进；对于 EI，这个数量是改进的大小。
+- en: '![](../../OEBPS/Images/07-05.png)'
+  id: totrans-47
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-05.png)'
+- en: Figure 7.5 Extending the mathematical formulation of a BayesOpt policy to the
+    batch setting. In both cases, we use the average of a quantity of interest. In
+    the batch setting, we take the maximum value across the points in a batch before
+    taking the average to represent the utility of the whole batch.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.5 将贝叶斯优化策略的数学表达扩展到批量设置中。在两种情况下，我们使用的是感兴趣数量的平均值。在批量设置中，我们会在对整个批次的效用进行平均之前先选取批次中点的最大值来表示整个批次的效用。
+- en: As shown in the top portion of figure 7.5, a sequential BayesOpt policy scores
+    a candidate query *x* using the average of some quantity *G*(*f*(*x*)) over the
+    normal distribution that is our belief about the value of the objective function
+    *f*(*x*). This quantity *G* depends on the heuristic that the BayesOpt policy
+    uses to balance between exploration and exploitation. With a batch of queries
+    *x*[1], *x*[2], ..., *x[k]*, we instead compute the average of the maximum value
+    of the quantity *G* across the points in the batch, as shown in the bottom portion
+    of figure 7.5\. This average is computed across the multivariate Gaussian distribution
+    corresponding to the objective values *f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*).
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如图7.5 顶部所示，顺序 BayesOpt 策略使用某个数量 *G*(*f*(*x*)) 在我们对目标函数 *f*(*x*) 的值的信念的正态分布上的平均值来对候选查询
+    *x* 进行评分。这个数量 *G* 取决于 BayesOpt 策略用于平衡探索和利用的启发式方法。对于查询批次 *x*[1]，*x*[2]，...，*x[k]*，我们相反地计算批次中点的数量
+    *G* 的最大值的平均值，如图7.5 底部所示。这个平均值是在对应于目标值 *f*(*x*[1])，*f*(*x*[2])，...，*f*(*x[k]*)
+    的多元高斯分布上计算的。
+- en: The balance between exploration and exploitation
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 探索与利用的平衡
+- en: All BayesOpt policies need to address the tradeoff between zeroing in on a high-performing
+    region in the search space (exploitation) and inspecting unexplored regions (exploration).
+    Refer to section 4.1.2 for a more thorough discussion of this tradeoff.
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有的 BayesOpt 策略都需要解决在搜索空间中找到高性能区域（利用）和检查未探索区域（探索）之间的折衷。更深入地讨论此折衷，请参阅第4.1.2 节。
+- en: 'This strategy of using the maximum of the quantity of interest *G* to represent
+    the utility of the whole batch makes intuitive sense in the context of optimization,
+    which is our goal. The higher the maximum *G*, the more valuable the whole batch
+    of queries. With a way to quantify the value of any given batch of queries, we
+    can now proceed to find the batch maximizing that quantity. The heuristic we use
+    is similar to what we do in sports competitions like the Olympics: each country
+    might train many athletes throughout the year, but when the time comes, only the
+    best individuals are chosen to take part in the competition. Figure 7.6 visualizes
+    this process.'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种使用兴趣量 *G* 的最大值来表示整个批次效用的策略在优化的背景下是直观的。*G* 的最大值越高，整个查询批次的价值就越高。有了一种方法来量化任何给定查询批次的价值，我们现在可以继续寻找最大化该数量的批次。我们使用的启发式方法类似于奥运会等体育比赛中的做法：每个国家可能在整年中训练很多运动员，但当时机成熟时，只选择最优秀的个人参加比赛。图7.6
+    可视化了这个过程。
+- en: '![](../../OEBPS/Images/07-06.png)'
+  id: totrans-53
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-06.png)'
+- en: Figure 7.6 The batch BayesOpt heuristic picks out the best element with the
+    highest *G* value to represent the whole batch (bottom). This strategy is similar
+    to team selection in the Olympics, where only the best athletes are selected to
+    represent a country.
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.6 批量 BayesOpt 启发式选择具有最高 *G* 值的最佳元素来表示整个批次（底部）。这种策略类似于奥运会中的团队选拔，只选择最优秀的运动员代表一个国家。
+- en: 'How is this strategy realized with the three aforementioned policies? Let’s
+    first discuss the first two: improvement-based policies. Remember from chapter
+    4 that PoI uses the probability that the next query will improve from the best-seen
+    point (the incumbent) as the acquisition score. The more likely that a point will
+    yield a better result than the incumbent, the higher the score that PoI assigns
+    to that point. The EI policy, on the other hand, takes into account the magnitude
+    of the improvement, assigning a high acquisition score to points that are likely
+    to both improve from the incumbent and improve by a large amount.'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如何利用上述三种政策实现这种策略？让我们首先讨论前两种：基于改进的策略。请记住，在第4章中，PoI 使用下一个查询将从最佳点（现任者）改进的概率作为获取分数。一个点更有可能比现任者产生更好的结果，PoI
+    给予该点的分数就越高。另一方面，EI 政策考虑改进的幅度，给出的获取分数较高，表明这些点很可能从现任者那里改进，而且改进幅度较大。
+- en: The difference between these two policies is visualized in figure 7.7, where
+    different outcomes lie on the *x*-axis, and the *y*-axis shows the objective value
+    that is to be optimized. PoI treats all points on the *x*-axis that yield higher
+    values than the incumbent equally, while EI considers how much each point improves.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这两种策略的区别在图7.7 中得到了可视化，其中不同的结果位于 *x* 轴上，*y* 轴显示了要优化的目标值。PoI 将所有在 *x* 轴上产生比现任者更高值的点视为平等，而
+    EI 则考虑每个点的改进程度。
+- en: '![](../../OEBPS/Images/07-07.png)'
+  id: totrans-57
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-07.png)'
+- en: Figure 7.7 The difference between PoI (left) and EI (right). The former only
+    considers whether we improve from the incumbent or not, while the latter considers
+    how much improvement is made.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.7 PoI（左）和 EI（右）之间的区别。前者仅考虑我们是否从现有值中提高，而后者考虑了提高多少。
+- en: In the batch setting, we can reason about the improvement we observe after the
+    current iteration of the BayesOpt loop in a similar manner. Instead of reasoning
+    about the multiple points within a batch of queries, we can single out the maximum
+    value among the function evaluations at these points. That is, if our batch of
+    queries to the objective function were at *x*[1], *x*[2], ..., *x[k]*, we wouldn’t
+    need to use all function evaluations *f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)
+    to reason about the improvement we observe. We’d need just the maximum value max
+    {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} since this maximum value defines
+    the improvement we observe.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在批次设置中，我们可以类似地推理出在 BayesOpt 循环的当前迭代后观察到的提高。与针对一批查询中的多个点推理不同，我们可以在这些点的函数评估中单独找出最大值。也就是说，如果我们的查询批次分别为
+    *x*[1]，*x*[2]，...，*x[k]*，我们不需要使用所有函数评估 *f*(*x*[1])，*f*(*x*[2])，...，*f*(*x[k]*)
+    来推理我们观察到的提高。我们只需使用最大值 `max {*f*(*x*[1]), *f*(*x*[2]), ... ,*f*(*x[k]*)}`，因为这个最大值定义了我们观察到的提高。
+- en: 'Following the example in figure 7.7, assume our incumbent has an objective
+    value of 20, and consider the following scenarios visualized in the right panel
+    of figure 7.8:'
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按照图 7.7 中的例子，假设我们的现有值具有 20 的目标值，并考虑图 7.8 中右侧可视化的以下情景：
+- en: If our batch of queries, with the batch size of 3, returned values that are
+    all lower than 20 (corresponding to *X*[1] in the right panel), then we would
+    observe no improvement. The highest function evaluation in *X*[1] is 3, meaning
+    no function evaluation from this batch improved from the incumbent.
+  id: totrans-61
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果我们的查询批次大小为 3，且返回的值全都低于 20（右板块中的 *X*[1]），那么我们将不会观察到提高。在 *X*[1] 中的最高函数评估是3，意味着本批次中的函数评估都没有从现有值中提高。
+- en: If all returned values exceeded the incumbent (corresponding to *X*[2]), then
+    we would observe an improvement from the incumbent. In particular, the maximum
+    of this batch *X*[2] is 30, leading to an improvement of 10.
+  id: totrans-62
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果所有返回值都超过了现有值（对应于 *X*[2]），那么我们将会观察到一个从现有值中提高的情况。特别地，这个批次中的最大值 *X*[2] 等于30，导致了一个
+    10 的提高。
+- en: More importantly, if only some but not all returned function evaluations were
+    better than the incumbent (*X*[3], as an example), then we would still observe
+    an improvement. The maximum of *X*[3] is 22, which is, indeed, an improvement
+    from the incumbent 20.
+  id: totrans-63
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 更重要的是，即使只有一些而不是所有返回的函数评估优于现有值（例如 *X*[3]），我们仍然会观察到一个提高。*X*[3] 的最大值是22，这是从现有值
+    20 中的确有所提高的。
+- en: By focusing on the maximum evaluated value returned from a batch of queries,
+    we can determine right away whether this batch has resulted in an improvement
+    from the incumbent. Figure 7.8 shows this improvement-based reasoning of PoI,
+    where batches *X*[2] and *X*[3] are treated equally, as they (or, more specifically,
+    their maximum values) both lead to an improvement. We now have a way to extend
+    the idea of computing the probability of improvement from the sequential to the
+    batch setting.
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过关注从一批次查询中返回的最大评估值，我们可以立即确定这个批次是否从现有值中提高。图 7.8 显示了 PoI 的这种基于提高的推理，其中批次 *X*[2]
+    和 *X*[3] 被平等地处理，因为它们（或更具体地说，它们的最大值）都导致了提高。现在，我们有了一种方法，将计算提高的概率从顺序扩展到批量设置。
+- en: '![](../../OEBPS/Images/07-08.png)'
+  id: totrans-65
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-08.png)'
+- en: Figure 7.8 Whether a query (left) or a batch of queries (right) leads to an
+    improvement from the incumbent. In the batch setting on the right, we only consider
+    the maximum value within each batch to determine whether there is an improvement.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.8 查询（左）还是一批查询（右）是否会从现有值中提高。在右侧的批量设置中，我们仅考虑每个批次中的最大值，以确定是否存在提高。
+- en: Definition The *acquisition score* PoI assigns to a given batch of candidate
+    queries is equal to the probability that the maximum among the returned function
+    evaluations will exceed the incumbent.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '**收购分数（acquisition score）** 是指给定候选查询批次的概率，即返回的函数评估中最大值是否会超过现有值。'
+- en: Mathematically, we go from computing the probability that the function evaluation
+    *f*(*x*) will exceed the incumbent *f**, denoted as *Pr*(*f*(*x*) > *f**), in
+    the sequential setting, to computing the probability that the maximum function
+    evaluation will exceed the incumbent, *Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ...,
+    *f*(*x[k]*)} > *f**). This probability *Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ...,
+    *f*(*x[k]*)} > *f**) is then used as the PoI acquisition score for the batch of
+    queries *x*[1], *x*[2], ..., *x[k]*.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从计算函数评估 *f*(*x*) 将超出现有值 *f** 的概率，记为 *Pr*(*f*(*x*) > *f**)，在顺序设置下，我们推导出计算最大函数评估将超出现有值
+    *f** 的概率，*Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} > *f**)。然后，我们将使用该概率
+    *Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} > *f**) 作为批处理查询 *x*[1]、*x*[2]、...、*x[k]*
+    的 PoI 采集分数。
+- en: As mentioned earlier in this section, these probabilities, *Pr*(*f*(*x*) > *f**)
+    and *Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} > *f**), can be viewed
+    as averages of quantities that are important to our optimization progress over
+    Gaussian distributions. Specifically, the probabilities are averages of the binary
+    random variable indicating whether *f*(*x*) > *f** and max {*f*(*x*[1]), *f*(*x*[2]),
+    ..., *f*(*x[k]*)} > *f** are true, respectively. This comparison is visualized
+    in figure 7.9.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如本节前面提到的，这些概率 *Pr*(*f*(*x*) > *f**) 和 *Pr*(max {*f*(*x*[1]), *f*(*x*[2]), ...,
+    *f*(*x[k]*)} > *f**) 可以被视为高斯分布下对我们的优化进展重要性的量的平均值。具体而言，这些概率分别是二进制随机变量的平均值，指示 *f*(*x*)
+    > *f** 和 max {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} > *f** 是否为真。该比较在图 7.9
+    中可视化。
+- en: '![](../../OEBPS/Images/07-09.png)'
+  id: totrans-70
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-09.png)'
+- en: Figure 7.9 Extending the POI policy to the batch setting. In the sequential
+    case (top), we consider whether the next query improves from the incumbent. In
+    the batch setting (bottom), we reason about whether the maximum value across the
+    points in a batch improves from the incumbent.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.9 将 POI 政策扩展到批处理设置中。在顺序情况下（上），我们考虑下一个查询相比现有值是否有改进。在批处理设置下（下），我们考虑批处理中所有点的最大值相比现有值是否有改进。
+- en: To complete the batch BayesOpt loop with this PoI policy, we then find the batch
+    *x*[1], *x*[2], ..., *x[k]* that maximizes the acquisition score *Pr*(max {*f*(*x*[1]),
+    *f*(*x*[2]), ..., *f*(*x[k]*)} > *f**). As we learned in section 4.1.1, we can
+    use the helper function `optimize_acqf()` from BoTorch’s `optim.optimize` module
+    to facilitate this search for the batch *x*[1], *x*[2], ..., *x[k]* that optimizes
+    the acquisition score, as we will see in section 7.2.2.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要完成具有这种 PoI 政策的批处理 BayesOpt 循环，我们需要找到批处理 *x*[1]、*x*[2]、...、*x[k]* 来最大化采集分数 *Pr*(max
+    {*f*(*x*[1]), *f*(*x*[2]), ..., *f*(*x[k]*)} > *f**)。正如我们在 4.1.1 节中所学到的，我们可以使用
+    BoTorch 的 `optim.optimize` 模块中的辅助函数 `optimize_acqf()` 来促进批处理 *x*[1]、*x*[2]、...、*x[k]*
+    的搜索，以优化采集分数，我们将在 7.2.2 节中看到。
+- en: We now move on to the EI policy, which computes the expected value of the improvement
+    from the incumbent we will observe from querying a particular point. Since we
+    already have a way to reason about improvement from the incumbent upon observing
+    a batch of function evaluations, the batch extension of EI presents itself. That
+    is, we only compute the expected value of the improvement from the incumbent that
+    results from the maximum function evaluation within the returned batch, max {*f*(*x*[1]),
+    *f*(*x*[2]), ..., *f*(*x[k]*)}. Just as PoI computes the probability that this
+    maximum value exceeds the incumbent, EI considers how much the maximum exceeds
+    the improvement. The difference between EI and its batch variant is visualized
+    in figure 7.10.
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在进入 EI 政策，它计算从查询特定点得出的相对于现有值的改进的预期值。由于我们已经有了一种方式来推理出在观察到一批函数评估后相对于现有值的改进，因此我们可以扩展
+    EI。即，我们只计算从返回批处理中的最大函数评估所得到的相对于现有值的改进的预期值，即 max {*f*(*x*[1]), *f*(*x*[2]), ...,
+    *f*(*x[k]*)}。与 PoI 计算最大值是否超出现有值的概率不同，EI则考虑最大值超出改进的程度。EI 和其批处理变体之间的差异在图 7.10 中可视化。
+- en: '![](../../OEBPS/Images/07-10.png)'
+  id: totrans-74
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-10.png)'
+- en: Figure 7.10 Extending the EI policy to the batch setting. In the sequential
+    case (top), we use the average of how much the next query improves from the incumbent.
+    In the batch setting (bottom), we take the average of how much the maximum value
+    across the points in a batch improves from the incumbent.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.10 将 EI 政策扩展到批处理设置中。在顺序情况下（上），我们使用下一个查询相比现有值的平均提升量。在批处理设置下（下），我们计算批处理中所有点的最大值相比现有值的平均提升量。
+- en: 'To illustrate this reasoning, figure 7.11 shows the distinction in how EI scores
+    different outcomes in the sequential (left panel) and the batch setting (right
+    panel). The following is true in the right panel:'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了说明这种推理，图7.11显示了顺序（左侧面板）和批处理设置（右侧面板）中EI评分不同结果的区别。右侧面板中以下内容为真：
+- en: A batch that doesn’t possess any point that improves from the incumbent at 20
+    (*X*[1], as an example) will constitute zero improvement.
+  id: totrans-77
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 不具有任何点能从20的现有值改进的批次（以*X*[1]为例）将构成零改进。
+- en: The maximum value from batch *X*[2] is 22, so we observe an improvement of 2,
+    even though there are values in this batch that fall below the incumbent.
+  id: totrans-78
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 批次*X*[2]中的最大值为22，所以即使这批次中的某些值低于现有值，我们也观察到了2的改进。
+- en: Although the values in batch *X*[3] are all higher than the incumbent, the improvement
+    we observe is once again completely determined by the maximum value 30.
+  id: totrans-79
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 尽管批次*X*[3]中的值都高于现有值，但我们观察到的改进完全是由最大值30决定的。
+- en: Finally, even if most of batch *X*[4] is lower than the incumbent 20, the maximum
+    value of *X*[4] is 50, making this batch a very good outcome.
+  id: totrans-80
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 最后，即使大多数批次*X*[4]低于现有值20，*X*[4]的最大值为50，使得这个批次成为一个非常好的结果。
+- en: '![](../../OEBPS/Images/07-11.png)'
+  id: totrans-81
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-11.png)'
+- en: Figure 7.11 Whether a query (left) or a batch of queries (right) leads to an
+    improvement from the incumbent. In the batch setting on the right, we only consider
+    the maximum value within each batch to determine whether there is an improvement.
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.11 查询（左）或一批查询（右）是否导致从现有值的改进。在右侧的批处理设置中，我们只考虑每个批次中的最大值，以确定是否有改进。
+- en: To proceed with batch EI, we compute the expected value of how much higher the
+    maximum value within a batch is than the incumbent. This expected value of the
+    improvement or expected improvement is the acquisition score batch that EI uses
+    to rank how valuable a given batch *x*[1], *x*[2], ..., *x[k]* is. The helper
+    function `optimize_acqf()` can once again be used to find the batch that gives
+    the highest expected improvement.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要继续进行批量EI，我们计算批次内最大值比现有值高多少的期望值。这种改进的期望值或预期改进是EI用于评估给定批次*x*[1]、*x*[2]、...、*x[k]*的价值的收购分数批次。辅助函数`optimize_acqf()`可以再次用于找到提供最高预期改进的批次。
+- en: The discussions so far help us extend the two improvement-based policies, PoI
+    and EI, to the batch setting. We are now left with the UCB policy. Fortunately,
+    the strategy of picking out the maximum value from a batch of queries to compute
+    the improvement also applies to UCB. To apply the same strategy of picking out
+    the maximum value (with respect to a function *G* of interest) from a batch of
+    queries to UCB, we need to reframe the UCB acquisition score as an average across
+    a normal distribution.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止的讨论帮助我们将基于改进的两个政策，PoI和EI，扩展到批处理设置。我们现在剩下的是UCB政策。幸运的是，选择从一批查询中挑选出最大值的策略也适用于UCB。为了将与兴趣函数*G*有关的批次的最大值挑选出来以计算改进的相同策略应用到UCB上，我们需要将UCB收购得分重新构建为正态分布的平均值。
+- en: The mathematical details of the UCB policy
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: UCB政策的数学细节
+- en: In section 5.2.2, we discussed that the UCB acquisition score is *μ* + *βσ*.
+    Here, the terms *μ* and *σ* are the predictive mean and standard deviations of
+    *f*(*x*), and β is an adjustable parameter that trades off exploration and exploitation.
+    We now need to rewrite *μ* + *βσ* as an average of some quantity over the normal
+    distribution *N*(*μ*, σ²) to extend UCB to the batch setting. While this reformulation
+    can be done, we don’t go into the math here. The interested reader can refer to
+    appendix A of this paper ([https://arxiv.org/pdf/1712.00424.pdf](https://arxiv.org/pdf/1712.00424.pdf)),
+    which lays out the mathematical details.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在5.2.2节中，我们讨论了UCB收购分数为*μ* + *βσ*。在这里，术语*μ*和*σ*是*f*(*x*)的预测均值和标准差，β是一个可调参数，用于权衡勘探和开发。我们现在需要将*μ*
+    + *βσ* 重写为正态分布*N*(*μ*, σ²)上某个数量的平均值，以扩展UCB到批处理设置。虽然可以进行这种重塑，但我们不在此处讨论数学。感兴趣的读者可以参考本文附录A([https://arxiv.org/pdf/1712.00424.pdf](https://arxiv.org/pdf/1712.00424.pdf))，其中详细介绍了数学细节。
+- en: 'The rest of extending UCB to the batch setting follows the same procedure:'
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 将UCB扩展到批处理设置的其余部分遵循相同的流程：
+- en: We take the average of the maximum of the quantity that is the rewritten *μ*
+    + *βσ* across the whole batch and use it as the batch UCB acquisition score.
+  id: totrans-88
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们取被重写的数量*μ* + *βσ* 在整个批次中的最大值的平均值，并将其用作批次UCB收购得分。
+- en: We then use the helper function `optimize_acqf()` to find the batch that give
+    us the highest score.
+  id: totrans-89
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 然后，我们使用辅助函数 `optimize_acqf()` 找到给出最高分数的批次。
+- en: That’s all we need to know about extending these three BayesOpt policies to
+    the batch setting. We learn how to implement these policies in BoTorch in the
+    next section.
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就是我们需要了解如何将这三种 BayesOpt 策略扩展到批量设置的全部内容。我们将在下一节中学习如何在 BoTorch 中实现这些策略。
+- en: 7.2.2 Implementing batch improvement and UCB policies
+  id: totrans-91
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.2 实施批量改进和 UCB 策略
+- en: Similar to what we saw in chapters 4 through 6, BoTorch makes it straightforward
+    to implement and use BayesOpt policies in Python, and the batch variants of the
+    three policies discussed in the previous section, PoI, EI, and UCB, are no exceptions.
+    While it’s important for us to learn about the mathematical formulations of these
+    three policies, we will see that with BoTorch, we can simply replace a single
+    line of code in our Python program to run these policies. The code we use in this
+    section can be found in the Jupyter notebook named CH07/01 - Batch BayesOpt loop.ipynb.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与我们在第 4 至 6 章中看到的情况类似，BoTorch 使得在 Python 中实现和使用 BayesOpt 策略变得简单，并且前一节讨论的三种策略（PoI、EI
+    和 UCB）的批量变体也不例外。虽然我们需要了解这三种策略的数学公式，但我们将看到，使用 BoTorch，我们只需在我们的 Python 程序中替换一行代码就可以运行这些策略。本节中使用的代码可以在名为
+    CH07/01 - Batch BayesOpt loop.ipynb 的 Jupyter 笔记本中找到。
+- en: You might think that as we are now working under a new setting where queries
+    to the objective function are done in batches, we need to modify the code that
+    implements the BayesOpt loop (obtaining multiple function evaluations at the same
+    time, appending multiple points to the training set, training the GP model). Amazingly,
+    however, the necessary modifications are minimal, thanks to BoTorch’s ability
+    to seamlessly support batch mode. In particular, when using the helper function
+    `optimize_acqf()` to find the next queries maximizing the acquisition score, we
+    only need to specify the parameter `q` `=` `k` to be the batch size (that is,
+    the number of function evaluations that can be run in parallel).
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在新的设置下，我们现在将查询目标函数的操作批量执行，您可能会认为我们需要修改实现BayesOpt循环的代码（同时获取多个函数评估值，将多个点附加到训练集，训练GP模型）。然而，由于
+    BoTorch 能够无缝支持批处理模式，所需的修改很小。特别是，在使用辅助函数 `optimize_acqf()` 来找到最大化获取分数的下一个查询时，我们只需要指定参数
+    `q` `=` `k` 为批量大小（即可以并行运行的函数评估的数量）。
+- en: '![](../../OEBPS/Images/07-12.png)'
+  id: totrans-94
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-12.png)'
+- en: Figure 7.12 Steps in the batch BayesOpt loop and the corresponding code. Compared
+    to the sequential setting, we need minimum modifications to our code when moving
+    to the batch setting.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.12 显示了批量 BayesOpt 循环的步骤及相应的代码。与顺序设置相比，当转移到批处理设置时，我们的代码需要最少的修改。
+- en: 'The entire batch BayesOpt loop is summarized in figure 7.12, which closely
+    resembles figure 4.4\. The few changes are annotated:'
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 整个批量 BayesOpt 循环总结在图 7.12 中，它与图 4.4 非常相似。对少量更改进行了注释：
+- en: We specify `q` `=` `k` to be the batch size *k* when using the helper function
+    `optimize _acqf()`.
+  id: totrans-97
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 当使用辅助函数 `optimize_acqf()` 时，我们指定 `q` `=` `k` 为批量大小 *k*。
+- en: This helper function returns `next_x`, which contains *k* points. The variable
+    `next_x` is a *k*-by-*d* PyTorch tensor, where *d* is the number of dimensions
+    in our search space (that is, the number of features in our data set).
+  id: totrans-98
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 此辅助函数返回包含 *k* 个点的 `next_x`。变量 `next_x` 是一个 *k*-by-*d* PyTorch 张量，其中 *d* 是我们搜索空间中的维数（即数据集中的特征数）。
+- en: We then query the objective function at the locations specified in `next_x`
+    and obtain `next_y`, which contains the function evaluations. Unlike the sequential
+    setting, where `next_y` is a scalar or a one-element tensor, `next_y` here is
+    a tensor that contains *k* elements, corresponding to the function evaluations
+    of `next_x`.
+  id: totrans-99
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 然后，我们在 `next_x` 指定的位置查询目标函数，并获得包含函数评估值的 `next_y`。与顺序设置不同，这里的 `next_y` 是一个包含
+    *k* 个元素的张量，对应于 `next_x` 的函数评估。
+- en: Note For step 1 in figure 7.12, we still need a class implementation of a GP
+    model and the helper function `fit_gp_model()` that trains the GP on the training
+    data. Fortunately, the same code we use in the sequential setting can be reused
+    without any modification. Refer to section 4.1.1 for the complete discussion of
+    this code.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：在图 7.12 的第 1 步中，我们仍然需要一个 GP 模型的类实现和辅助函数 `fit_gp_model()`，该函数对训练数据进行训练。幸运的是，在顺序设置中使用的相同代码可以在不做任何修改的情况下重用。有关此代码的完整讨论，请参阅第
+    4.1.1 节。
+- en: 'To facilitate our code demonstration, we use the two-dimensional synthetic
+    objective function that simulates the model accuracy of a hyperparameter tuning
+    application. This function is first introduced in chapter 3’s exercise and is
+    implemented as follows, where we specify that the function domain, our search
+    space, is between 0 and 2 in each of the two dimensions:'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了方便我们的代码演示，我们使用了一个二维合成目标函数来模拟超参数调整应用程序的模型准确性。该函数首次出现在第三章的练习中，并且被实现如下，我们指定函数域，即我们的搜索空间，在两个维度的每一个上都在
+    0 和 2 之间：
+- en: '[PRE0]'
+  id: totrans-102
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ Function definition
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 函数定义。
+- en: ❷ Function domain, which is between 0 and 2 in each dimension
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 函数域，每个维度在 0 和 2 之间。
+- en: This objective function is visualized in figure 7.13, where we see the global
+    optimum is achieved near the top right corner of the space, giving an accuracy
+    of 90%.
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此目标函数在图 7.13 中可视化，我们可以看到全局最优点位于空间的右上角附近，给出的准确性为 90%。
+- en: '![](../../OEBPS/Images/07-13.png)'
+  id: totrans-106
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-13.png)'
+- en: Figure 7.13 Accuracy of an SVM model on a test data set, as a function of the
+    penalty parameter *C* and the RBF kernel parameter *γ*. This is the objective
+    function we aim to optimize in this chapter.
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.13 SVM 模型在测试数据集上的准确性，作为惩罚参数 *C* 和 RBF 核参数 *γ* 的函数。这是我们在本章中要优化的目标函数。
+- en: 'To set up our batch optimization problem, we assume we can train the model
+    in four different processes at the same time. In other words, our batch size is
+    4\. Further, we can only retrain the model five times, so the number of iterations
+    of our batch BayesOpt loop is 5, and the total number of queries we can make is
+    4 × 5 = 20:'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要设置我们的批量优化问题，我们假设我们可以同时在四个不同的进程中训练模型。换句话说，我们的批次大小是 4。此外，我们只能重新训练模型五次，因此我们批处理
+    BayesOpt 循环的迭代次数为 5，我们可以进行的总查询次数为 4 × 5 = 20：
+- en: '[PRE1]'
+  id: totrans-109
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: ❶ This variable equals 5.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 此变量等于 5。
+- en: 'Now, all that’s left to do is run a batch BayesOpt policy. We do this with
+    the following code that first randomly picks out a point in the search space as
+    the training set:'
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，唯一要做的就是运行批处理 BayesOpt 策略。我们使用以下代码来完成此操作，首先在搜索空间中随机选择一个点作为训练集：
+- en: '[PRE2]'
+  id: totrans-112
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ Randomly picks a point in the search space
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 在搜索空间中随机选择一个点。
+- en: ❷ Evaluates the objective function at the randomly picked point
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 在随机选择的点处评估目标函数。
+- en: 'We then do the following for each of the five iterations:'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们对五个迭代中的每一个执行以下操作：
+- en: Keep track of the best accuracy seen so far
+  id: totrans-116
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 记录迄今为止见过的最佳准确性。
+- en: Retrain the GP model with the current training set
+  id: totrans-117
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用当前训练集重新训练 GP 模型。
+- en: Initialize a batch BayesOpt policy
+  id: totrans-118
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 初始化一个批处理 BayesOpt 策略。
+- en: Use the helper function `optimize_acqf()` to find the best batch of queries
+  id: totrans-119
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用辅助函数 `optimize_acqf()` 找到最佳的查询批次。
+- en: Evaluate the objective function at the locations specified by the batch of queries
+  id: totrans-120
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在由查询批次指定的位置评估目标函数。
+- en: 'Append the new observations to the training set and repeat:'
+  id: totrans-121
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将新的观察结果附加到训练集并重复：
+- en: '[PRE3]'
+  id: totrans-122
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: ❶ Keeps track of optimization progress
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 跟踪优化进展。
+- en: ❷ Trains a GP on the current training set
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 对当前训练集进行 GP 训练。
+- en: ❸ Initializes a batch BayesOpt policy, to be discussed shortly
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 初始化一个即将讨论的批处理 BayesOpt 策略。
+- en: ❹ Finds the next batch to query
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 找到下一个要查询的批次。
+- en: ❺ Sets argument q to the batch size
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 将参数 q 设置为批处理大小。
+- en: ❻ Evaluates the objective function at the selected batch
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❻ 在所选批次上评估目标函数。
+- en: ❼ Updates the training data
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❼ 更新训练数据。
+- en: Again, this code is almost identical to the code we use in section 4.1.1 of
+    chapter 4 that implements the sequential setting of BayesOpt. All we need to be
+    careful of is setting argument `q` of the helper function `optimize_acqf()` to
+    the correct batch size.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，此代码几乎与我们在第四章的第 4.1.1 节中使用的代码相同，该代码实现了 BayesOpt 的顺序设置。我们需要注意的是将辅助函数 `optimize_acqf()`
+    的参数 `q` 设置为正确的批量大小。
+- en: To run a batch BayesOpt policy, we then initialize it using BoTorch’s class
+    implementation of the policy. For the PoI policy, we use
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要运行批处理 BayesOpt 策略，我们使用 BoTorch 的类实现该策略进行初始化。对于 PoI 策略，我们使用
+- en: '[PRE4]'
+  id: totrans-132
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: Similarly, for the EI policy, we use
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 同样地，对于 EI 策略，我们使用
+- en: '[PRE5]'
+  id: totrans-134
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: Note the `q` in front of the class names, which indicates these classes implement
+    batch BayesOpt policies. Similar to argument `best_f` that sequential PoI and
+    EI take in, this argument `best_f` here specifies the current incumbent value,
+    which we set at `train_y.max()`.
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意类名前面的 `q`，它表示这些类实现了批处理 BayesOpt 策略。类似于顺序 PoI 和 EI 所采用的参数 `best_f`，这里的参数 `best_f`
+    指定了当前的现任值，我们将其设置为 `train_y.max()`。
+- en: 'For UCB, we use an equivalent API, where the argument `beta` sets the tradeoff
+    parameter *β* in the acquisition score *μ* + *βσ*, where *μ* and σ are the mean
+    and standard deviation of our prediction at a given point:'
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于 UCB，我们使用等效的 API，其中参数 `beta` 设置收获分数 *μ* + *βσ* 中的权衡参数 *β*，其中 *μ* 和 σ 是给定点处预测的均值和标准差：
+- en: '[PRE6]'
+  id: totrans-137
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: Arguments BayesOpt policies take
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 参数 BayesOpt 策略所需
+- en: We learn about the implementation of sequential POI, EI, and UCB in sections
+    4.2.2, 4.3, and 5.2.3, respectively. The arguments each of these policies take
+    in are identical to their batch counterparts, which makes transitioning to the
+    batch setting in BoTorch straightforward.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在相应的章节 4.2.2、4.3 和 5.2.3 中了解了顺序 POI、EI 和 UCB 的实现。这些策略的每个参数在其批次对应策略中是相同的，这使得在
+    BoTorch 中过渡到批次设置变得简单。
+- en: Since we can now run the batch version of PoI, EI, and UCB, let’s take a moment
+    to inspect the behavior of these policies. In particular, assume our current BayesOpt
+    progress is the same as in figure 7.3 with the one-dimensional objective function.
+    This figure also shows the acquisition scores computed by EI for a single point
+    in the bottom panel. We’re interested in seeing what EI’s acquisition scores look
+    like for a batch of two points—that is, the expected improvement from the incumbent
+    of a given pair of queries.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们现在可以运行 PoI、EI 和 UCB 的批次版本，让我们花一点时间来检查这些策略的行为。特别是，假设我们当前的 BayesOpt 进展与图 7.3
+    中的一维目标函数相同。该图还显示了底部面板中 EI 计算的单点收获分数。我们感兴趣的是看看 EI 对两个点的批次的收获分数是什么样的——也就是说，对给定一对查询的现任者的预期改进。
+- en: 'We show these acquisition scores with a heatmap in figure 7.14, where the brightness
+    of each location on the square denotes the expected improvement of a given pair
+    of queries, and the locations that give the highest acquisition scores are denoted
+    as stars. (The top and right panels show the observed data and the current GP
+    belief about the objective function along the axes of the heatmap.) We observe
+    a few interesting trends:'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在图 7.14 中用热图展示这些收获分数，其中方格上每个位置的亮度表示给定一对查询的预期改进，给出最高收获分数的位置标有星号。（热图的横纵坐标显示了观察到的数据和热图轴上目标函数的当前
+    GP 信念。）我们观察到一些有趣的趋势：
+- en: There are two straight bands on the heatmap denoting high acquisition scores.
+    These bands are close to the data point *x* = 2, meaning any batch of queries
+    (of size 2) that has a member close to *x* = 2 will give a high score. This makes
+    sense because around *x* = 2 is where the posterior mean of the GP is maximized.
+  id: totrans-142
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 热图上有两条直线带，表示高收获分数。这些带接近数据点 *x* = 2，意味着任何一个接近 *x* = 2 的查询批次（大小为 2）都会获得高分。这是有道理的，因为在
+    *x* = 2 附近是 GP 的后验均值最大化的地方。
+- en: 'The diagonal of the heatmap is dark, meaning that querying a batch *x*[1] and
+    *x*[2], where *x*[1] is roughly equal to *x*[2], is likely to yield a low improvement.
+    This observation verifies what we said in section 7.1.2: choosing the queries
+    in a batch to cluster around each other is a bad strategy that essentially puts
+    all our eggs in one basket.'
+  id: totrans-143
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 热图的对角线很暗，意味着查询批次 *x*[1] 和 *x*[2]，其中 *x*[1] 大致等于 *x*[2]，很可能会产生低改进。这一观察验证了我们在第
+    7.1.2 节中所说的内容：选择在一起聚集的查询批次是一种不好的策略，本质上是把所有的蛋都放在一个篮子里。
+- en: Finally, the two optimal batches of queries, denoted by the stars, are the same
+    batch, since the locations are symmetric to each other. This batch contains 1.68
+    and 2.12, which are still in the neighborhood of *x* = 2, where the GP tells us
+    the objective function yields high values. Further, the two selected queries 1.68
+    and 2.12 are far away from each other and, thus, help us escape the trap of clustering
+    our queries around each other.
+  id: totrans-144
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 最后，由星号标出的两个最佳查询批次是相同的批次，因为位置相对于彼此对称。该批次包含 1.68 和 2.12，仍在 *x* = 2 的邻域内，GP 告诉我们目标函数在这里产生高值。此外，所选的两个查询
+    1.68 和 2.12 相距甚远，因此帮助我们摆脱了将查询聚集在一起的陷阱。
+- en: '![](../../OEBPS/Images/07-14.png)'
+  id: totrans-145
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-14.png)'
+- en: Figure 7.14 A heatmap showing the acquisition scores of the batch EI policy
+    for batches of size 2 with a one-dimensional objective function. The top and right
+    panels show the observed data and the current GP belief about the objective function
+    along the axes of the heatmap. The two optimal pairs of queries, denoted as the
+    two stars, contain 1.68 and 2.12, which are relatively far away from each other.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.14显示了一个热图，显示了一维目标函数的批处理EI策略的收获分数，批处理大小为2。顶部和右侧面板显示了热图的轴上观察到的数据以及目标函数的当前GP信念。两个最优查询对，表示为两个星星，包含1.68和2.12，它们彼此之间相对较远。
+- en: Figure 7.14 shows that the batch version of EI evaluates a given batch of queries
+    in a reasonable manner, prioritizing batches that are both likely to yield high
+    objective values and sufficiently spread out.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.14显示，批处理EI的批次版本以合理的方式评估给定的一批查询，优先考虑那些可能产生高目标值且足够分散的批次。
+- en: Batch versus sequential EI
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 批处理与顺序EI
+- en: Interestingly, the two points selected by batch EI, 1.68 and 2.12, are different
+    from the point maximizing the sequential EI’s acquisition score, 1.75\. This difference
+    between sequential EI and batch EI demonstrates that the optimal decision in the
+    sequential setting isn’t necessarily the optimal decision in the batch setting.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有趣的是，批处理EI选择的两个点，1.68和2.12，与最大化顺序EI收获分数的点1.75不同。顺序设置中的最佳决策与批处理设置中的最佳决策不一定相同，这种差异展示了。
+- en: Returning to our hyperparameter tuning example, we are ready to use these initializations
+    to run the batch policies. After saving the running incumbent values each policy
+    achieves and plotting them against each other, we can generate figure 7.15, which
+    shows the optimization progress each policy makes in our example. We first observe
+    that this progress is being plotted in batches of four, which makes sense, since
+    4 is the batch size we use. In terms of performance, we see that EI and UCB are
+    able to progress faster than PoI in the beginning, but all three converge to roughly
+    the same accuracy at the end.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回到我们的超参数调整示例，我们准备使用这些初始化来运行批处理策略。在保存每个策略实现的运行现任值并将它们相互绘制后，我们可以生成图7.15，该图显示了我们示例中每个策略所做的优化进展。首先我们观察到，这个进展是以四个一批进行绘制的，这是有道理的，因为我们使用的批处理大小为4。在性能方面，我们看到EI和UCB能够在开始时比PoI更快地取得进展，但三者最终收敛到大致相同的准确性。
+- en: '![](../../OEBPS/Images/07-15.png)'
+  id: totrans-151
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-15.png)'
+- en: Figure 7.15 Progress made by various batch BayesOpt policies in the hyperparameter
+    tuning example. Progress is made in batches of four, which is the batch size used.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.15显示了在超参数调整示例中各种批处理BayesOpt策略所取得的进展。进展以四个一批进行，这是使用的批处理大小。
+- en: Repeated experiments in BayesOpt
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 贝叶斯优化中的重复实验
+- en: To accurately compare the performance of these policies in this hyperparameter
+    tuning application, we need to repeat this experiment using different initial
+    training sets that are randomly generated. Refer to step 9 of exercise 2 from
+    chapter 4 to see how we can run repeated experiments in BayesOpt.
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要准确比较这些策略在超参数调整应用程序中的性能，我们需要使用随机生成的不同初始训练集重复此实验。请参阅第4章练习2的第9步，了解如何在BayesOpt中运行重复实验。
+- en: We have now learned how to implement the batch versions of PoI, EI, and UCB
+    in BoTorch and have seen that the transition from the sequential to the batch
+    setting requires minimum modifications to our code. Let’s now move on to the remaining
+    BayesOpt policies, TS and MES, which require different strategies to be extended
+    to the batch setting.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在已经学会了如何在BoTorch中实现PoI、EI和UCB的批处理版本，并且已经看到从顺序到批处理设置的过渡需要对我们的代码进行最少的修改。现在让我们转向剩下的BayesOpt策略，TS和MES，它们需要不同的策略才能扩展到批处理设置。
+- en: '7.3 Exercise 1: Extending TS to the batch setting via resampling'
+  id: totrans-156
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.3 练习1：通过重新抽样将TS扩展到批处理设置
+- en: Unlike the other BayesOpt policies, Thompson sampling (TS) can be easily extended
+    to the batch setting, thanks to its sampling strategy. We explore how this extension
+    is done in this exercise. Remember that TS in the sequential setting, which, as
+    we learned in section 5.3, draws one sample from the current GP belief about the
+    objective function and queries the data point that maximizes that sample.
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与其他贝叶斯优化策略不同，汤普森抽样（TS）由于其抽样策略的原因，可以很容易地扩展到批处理设置中。我们将在这个练习中探讨这个扩展是如何实现的。请记住，在顺序设置中，TS会从当前高斯过程（GP）对目标函数的信念中抽取一个样本，并查询最大化该样本的数据点，正如我们在第5.3节中所学的那样。
+- en: In the batch setting, we simply repeat this process of sampling from the GP
+    and maximizing the sample multiple times to assemble a batch of queries of the
+    desired size. For example, if the batch size of our batch BayesOpt problem is
+    3, then we draw three samples from the GP, and the batch of queries we end up
+    with contains the maximizers of the three samples (one maximizer for each sample).
+    This logic is illustrated in figure 7.16, where we keep sampling from the GP and
+    adding the point that maximizes the latest sample to the running batch until the
+    batch is full—that is, until we have reached the appropriate batch size.
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在批量设置中，我们只需重复从 GP 中抽样并多次最大化样本，以组装出所需大小的一批查询。例如，如果我们的批量 BayesOpt 问题的批量大小为 3，则我们从
+    GP 中抽取三个样本，并且我们最终得到的查询批包含了这三个样本的极大值（每个样本一个极大值）。这一逻辑在图 7.16 中有所说明，在该图中我们不断从 GP
+    中抽样并将最新样本的极大点添加到运行批次中，直到批次满为止——也就是说，直到达到适当的批量大小。
+- en: '![](../../OEBPS/Images/07-16.png)'
+  id: totrans-159
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-16.png)'
+- en: Figure 7.16 A flowchart of the implementation of the batch version of TS. We
+    keep sampling from the GP and adding the point that maximizes the latest sample
+    to the running batch until the batch is full.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.16 批量 TS 实现的流程图。我们不断从 GP 中抽样并将最新样本的极大点添加到运行批次中，直到批次满为止。
+- en: 'Every time we draw a sample from the GP, we obtain a different realization
+    of what the objective function could be. By optimizing the multiple samples drawn
+    from the GP, we have an easy way of selecting multiple points that could guide
+    us to the global optimum of the objective function. To implement and run this
+    policy on the hyperparameter tuning example, we take the following steps, as implemented
+    in the CH07/02 - Exercise 1.ipynb notebook:'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每次我们从 GP 中抽样，我们都得到目标函数可能的不同实现。通过优化从 GP 中抽取的多个样本，我们有一种简单的方法来选择多个可能引导我们到达目标函数全局最优解的点。为了在超参数调整示例中实现和运行此策略，我们采取如下步骤，这些步骤在
+    CH07/02 - 练习 1.ipynb 笔记本中实现：
+- en: Recreate the batch BayesOpt loop in CH07/01 - Batch BayesOpt loop.ipynb.
+  id: totrans-162
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 重新在 CH07/01 - 批量 BayesOpt 循环.ipynb 中重现批量 BayesOpt 循环。
+- en: 'Implement TS with a Sobol sampler, as described in section 5.3:'
+  id: totrans-163
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 按照第 5.3 节中的描述，实现带有 Sobol 抽样器的 TS：
+- en: Use 2,000 candidates for the Sobol sampler.
+  id: totrans-164
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用 2,000 个候选点进行 Sobol 抽样。
+- en: 'When calling the TS object, specify that the number of samples is equal to
+    the batch size:'
+  id: totrans-165
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在调用 TS 对象时，请指定样本数等于批量大小：
+- en: '[PRE7]'
+  id: totrans-166
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: Run this TS policy on the hyperparameter tuning objective function, and observe
+    its performance.
+  id: totrans-167
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在超参数调整目标函数上运行此 TS 策略，并观察其性能。
+- en: Sobol sequences
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sobol 序列
+- en: A Sobol sampler generates a Sobol sequence, which can cover a space better than
+    a uniformly sampled sequence. More discussion on Sobol sequences can be found
+    in section 5.3.2.
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sobol 抽样器生成 Sobol 序列，该序列可以比均匀抽样序列更好地覆盖空间。关于 Sobol 序列的更多讨论可以在第 5.3.2 节中找到。
+- en: 7.4 Computing the value of a batch of points using information theory
+  id: totrans-170
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.4 使用信息论计算一批点的值
+- en: We now learn how to extend the final BayesOpt policy in our toolkit, Max-value
+    Entropy Search (MES), to the batch setting. Unlike the improvement-based and bandit
+    policies, MES requires more careful consideration to run efficiently in the batch
+    setting. We discuss the batch version of MES and the problems we run into when
+    extending it to the batch setting in the next section and, finally, how to implement
+    the policy in BoTorch afterwards.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们学习如何将我们工具包中的最终 BayesOpt 策略扩展到批量设置中，即最大值熵搜索（MES）。与基于改进和老虎机的策略不同，MES 在批量设置中需要更加谨慎的考虑才能有效运行。我们将在下一节中讨论
+    MES 的批量版本以及在将其扩展到批量设置时遇到的问题，最后讨论如何在 BoTorch 中实现该策略。
+- en: Note MES is the topic of chapter 6, where we learn about the basics of information
+    theory and how to implement the MES policy with BoTorch.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 MES 是第 6 章的主题，在该章中我们学习有关信息论的基础知识以及如何使用 BoTorch 实现 MES 策略。
+- en: 7.4.1 Finding the most informative batch of points with cyclic refinement
+  id: totrans-173
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.1 使用循环精化找到最具信息量的一批点
+- en: In the sequential setting, MES scores each candidate query according to how
+    much information about the objective function’s maximum value *f** we will gain
+    after querying that candidate point. The more information about the maximum value
+    a candidate point offers, the more likely it is that the point will guide us toward
+    the objective function’s global optimum *x**.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在顺序设置中，MES 根据我们在查询候选点后将获得的关于目标函数最大值 *f* 的信息量来评估每个候选查询的分数。候选点提供的关于最大值的信息量越多，该点引导我们朝向目标函数的全局最优解
+    *x* 的可能性就越大。
+- en: We’d like to use the same strategy for the batch setting. That is, we want to
+    compute how much information about the maximum objective value *f** we will gain
+    after querying a batch of candidate points. This information-theoretic value of
+    a batch of points is a well-defined mathematical quantity, and we can theoretically
+    compute and use it as the acquisition score in the batch setting. However, computing
+    this information-theoretic quantity is quite expensive to do in practice.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们希望在批处理设置中使用相同的策略。也就是说，我们想要计算在查询候选点批处理之后我们将获得多少关于最大目标值*f*的信息。一批点的信息论价值是一个明确定义的数学数量，我们可以在理论上计算和使用它作为批处理设置中的采集得分。但是，在实践中计算这个信息理论数量是非常昂贵的。
+- en: The main bottleneck comes from the fact that we have to consider all possible
+    function evaluations in the batch to know how much information about *f** we will
+    gain. Although these function evaluations follow a multivariate Gaussian distribution,
+    which offers many mathematical conveniences, computing the information gain about
+    *f** is one of the tasks that aren’t simplified by Gaussianity. This computational
+    cost means that although we can compute the acquisition score for a batch of points,
+    this computation is expensive to do and not amenable to optimization. That is,
+    finding the batch of points that maximizes information about *f** is very hard
+    to do.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 主要的瓶颈在于我们必须考虑批处理中所有可能的函数评估，以知道我们将获得有关*f*的信息量有多少。尽管这些函数评估遵循多元高斯分布，这提供了许多数学上的便利，但计算*
+    f *的信息增益是高斯性无法简化的任务之一。这种计算成本意味着，尽管我们可以计算一批点的采集分数，但这种计算成本昂贵而且不易优化。也就是说，找到最大化*f*信息的批次点是非常困难的。
+- en: Note The search for the query maximizing the acquisition score is done by L-BFGS,
+    a quasi-Newton optimization method that generally works better than gradient descent,
+    in the helper function `optimize_acqf()`. However, due to the way the batch version
+    of the information-theoretic acquisition score is computed, neither L-BFGS nor
+    gradient descent can effectively optimize the score.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 查找最大化采集得分的查询是通过L-BFGS完成的， L-BFGS是一种拟牛顿优化方法，通常比梯度下降更好，在辅助函数`optimize_acqf()`中完成。但是，由于信息理论采集分数的批处理版本计算方式，既不是L-BFGS也不是梯度下降能够有效地优化该得分。
+- en: Acquisition scores in BayesOpt
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BayesOpt中的采集得分
+- en: Remember that the acquisition score quantifies the value of a query or a batch
+    of queries in helping us locate the global optimum of the objective function,
+    so at every iteration of the BayesOpt loop, we need to identify the query or the
+    batch of queries that maximizes the acquisition score. See section 4.1 for a discussion
+    on maximizing the acquisition score.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，采集得分量化了查询或一批查询的价值，以帮助我们找到目标函数的全局最优解，因此在BayesOpt循环的每次迭代中，我们需要识别最大化采集得分的查询或查询批次。请查看第4.1节以讨论最大化采集得分。
+- en: '![](../../OEBPS/Images/07-16-unnumb.png)'
+  id: totrans-180
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-16-unnumb.png)'
+- en: 'If the method we usually use to find the next optimal query in terms of information
+    theory, L-BFGS, only works in the sequential setting for one candidate point,
+    how can we still use it in the batch setting? Our strategy here is to use the
+    method to find individual members of the batch, one member at a time, in a cyclic
+    manner, until convergence. Specifically, we do the following:'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们通常用来根据信息理论找到下一个最佳查询的方法L-BFGS，在顺序设置中仅适用于一个候选点，那么我们如何在批设置中仍然使用它？我们的策略是以循环方式，一次一个成员地使用该方法找到批次的各个成员，直到收敛。具体而言，我们执行以下操作：
+- en: We start out with a starting batch *x*[1], *x*[2], ..., *x[k]*. This batch can
+    be randomly selected from the search space.
+  id: totrans-182
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们从起始批次*x*[1]，*x*[2]，...，*x[k]*开始。这个批次可以从搜索空间随机选择。
+- en: Since L-BFGS cannot run on all members of *x*[1], *x*[2], ..., *x[k]* simultaneously,
+    we only run it on *x*[1] while keeping the other members of the batch *x*[2],
+    *x*[3], ..., *x[k]* fixed. L-BFGS can, indeed, optimize *x*[1] individually, since
+    this task is similar to maximizing the acquisition score in the sequential setting.
+  id: totrans-183
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 由于L-BFGS无法同时运行*x*[1]，*x*[2]，...，*x[k]*的所有成员，因此我们仅在固定批处理的其他成员*x*[2]，*x*[3]，...，*x[k]*时在*x*[1]上运行它。
+    L-BFGS确实可以单独优化*x*[1]，因为这个任务类似于在顺序设置中最大化采集得分。
+- en: Once L-BFGS returns a value for *x*[1], we run L-BFGS on *x*[2] while keeping
+    *x*[1] and the other members, *x*[3], *x*[4], ..., *x[k]*, fixed.
+  id: totrans-184
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 一旦L-BFGS返回*x*[1]的值，我们在固定*x*[1]和其他成员*x*[3]，*x*[4]，...，*x[k]*的情况下运行L-BFGS在*x*[2]上。
+- en: We repeat these individual routines until we have finished processing the last
+    member of the batch *x[k]*, at which point we return to *x*[1] and repeat the
+    entire procedure.
+  id: totrans-185
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们重复这些单独的例程，直到我们完成处理批处理的最后一个成员*x[k]*，此时我们返回到*x*[1]并重复整个过程。
+- en: We run these cycles of optimization until convergence—that is, until the acquisition
+    score we obtain doesn’t increase anymore. These steps are summarized in figure
+    7.17.
+  id: totrans-186
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们运行这些优化循环直到收敛，即，直到我们获得的收获分数不再增加为止。这些步骤总结在图7.17中。
+- en: '![](../../OEBPS/Images/07-17.png)'
+  id: totrans-187
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-17.png)'
+- en: Figure 7.17 Flowchart of cyclic optimization used in finding the batch that
+    maximizes information about the maximum objective value in batch MES. The procedure
+    is cyclic in that we sequentially refine each member of the batch in a cycle until
+    we converge on a good acquisition score.
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.17 循环优化流程图，用于找到最大化批处理MES中最大目标值信息的批处理。该过程是循环的，因为我们按顺序在循环中逐步完善批处理的每个成员，直到收敛于良好的收获分数。
+- en: Definition The entire procedure is called *cyclic optimization* as we sequentially
+    refine each member of the batch in a cycle until we converge on a good acquisition
+    score.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 整个过程称为*cyclic optimization*，因为我们按顺序在循环中逐步完善批处理的每个成员，直到收敛于良好的收获分数。
+- en: The cyclic optimization strategy allows us to bypass the challenge of running
+    L-BFGS on a batch of multiple points, as we, instead, only run L-BFGS on individual
+    points, making individual refinements to the acquisition score. With this optimization
+    strategy, we can realize the MES policy in the batch setting.
+  id: totrans-190
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 循环优化策略使我们能够避开在多个点的批处理上运行L-BFGS的挑战，相反，我们只在单个点上运行L-BFGS，对收获分数进行个别的完善。借助此优化策略，我们可以在批处理设置中实现MES策略。
+- en: Note We can draw an analogy between cyclic optimization and how an artist might
+    draw a painting. The artist might work on individual portions of the painting
+    separately and switch around as they make progress. They might work on the foreground,
+    move to the background for a bit, and then back to the foreground, each time making
+    small refinements to each section.
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 我们可以将循环优化与艺术家绘画的方式进行类比。艺术家可能会分别处理绘画的各个部分，并随着进展而切换。他们可能会先处理前景，然后暂时转向背景，然后再回到前景，每次对每个部分进行小幅改进。
+- en: 7.4.2 Implementing batch entropy search with BoTorch
+  id: totrans-192
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.2 使用BoTorch实现批量熵搜索
+- en: We now learn to declare the batch MES policy in BoTorch and hook it into our
+    batch BayesOpt loop. Luckily, the details of cyclic optimization discussed in
+    the previous section are abstracted away by BoTorch, and we can initialize batch
+    MES in a straightforward manner. The following code is included in the CH07/03
+    - Max-value Entropy Search.ipynb notebook.
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们学习如何在BoTorch中声明批量MES策略，并将其连接到我们的批处理BayesOpt循环中。幸运的是，前一节讨论的循环优化细节被BoTorch抽象化了，我们可以以直观的方式初始化批量MES。以下代码包含在CH07/03
+    - Max-value Entropy Search.ipynb笔记本中。
+- en: 'We still use the hyperparameter tuning example. First, we need to make a minor
+    modification to our GP model. Specifically, to reason about the entropy of the
+    posterior GP (that is, to “fantasize” about future observations), the class implementation
+    of our GP model needs to inherit from the `FantasizeMixin` class from the `botorch.models.model`
+    module:'
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们仍然使用超参数调整示例。首先，我们需要对我们的GP模型进行一些微小修改。具体来说，为了推理后验GP的熵（即“幻想”未来观察结果），我们的GP模型的类实现需要从`botorch.models.model`模块中继承`FantasizeMixin`类：
+- en: '[PRE8]'
+  id: totrans-195
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: ❶ Inheriting from FantasizeMixin allows us to reason about the posterior GP
+    more effectively.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 从FantasizeMixin继承使我们能够更有效地推理后验GP。
+- en: ❷ The remaining code remains unchanged.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 其余代码保持不变。
+- en: 'The rest of the code for this class implementation remains unchanged. Now,
+    inside the `for` loop that implements the iteration of BayesOpt, we declare MES
+    in the same way as we do in the sequential setting:'
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此类实现的其余代码保持不变。现在，在实现BayesOpt的`for`循环内部，我们以与顺序设置相同的方式声明MES：
+- en: We draw samples from a Sobol sequence and use them as candidates for the MES
+    policy. These samples are initially drawn within the unit cube and then resized
+    to span our search space.
+  id: totrans-199
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们从Sobol序列中抽取样本，并将它们用作MES策略的候选集。这些样本最初在单位立方体内抽取，然后调整大小以跨越我们的搜索空间。
+- en: 'The MES policy is initialized with the GP model and the previously generated
+    candidate set:'
+  id: totrans-200
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: MES策略使用GP模型和先前生成的候选集初始化：
+- en: '[PRE9]'
+  id: totrans-201
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: ❶ Our search space is two-dimensional.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们的搜索空间是二维的。
+- en: ❷ Resizes the candidates to span the search space
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 调整候选集的大小以跨越搜索空间
+- en: Sobol sequences
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sobol序列
+- en: The Sobol sequence is first discussed in section 5.3.2 for the TS policy. The
+    implementation of the MES policy also requires the Sobol sequence, which we learned
+    about in section 6.2.2.
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Sobol 序列首次在第 5.3.2 节中讨论了 TS 策略。 MES 策略的实现还需要 Sobol 序列，我们在第 6.2.2 节中了解到了它。
+- en: While the initialization of the batch MES policy is exactly the same as what
+    we do in the sequential setting, we need a helper function other than `optimize_acqf()`
+    for the cyclic optimization procedure described in the previous section to identify
+    the batch that maximizes posterior information about *f**.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然批量 MES 策略的初始化与我们在顺序设置中所做的完全相同，但我们需要一个辅助函数来替代`optimize_acqf()`，以便进行前一节中描述的循环优化过程，以识别最大化关于*f*的后验信息的批次。
+- en: 'Specifically, we use the helper function `optimize_acqf_cyclic()`, which can
+    be accessed from the same BoTorch module `botorch.optim`. Here, we only switch
+    out `optimize_acqf()` for `optimize_acqf_cyclic()`; the rest of the arguments,
+    such as the bounds and the batch size, remain the same:'
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具体来说，我们使用辅助函数`optimize_acqf_cyclic()`，可以从相同的 BoTorch 模块`botorch.optim`中访问。在这里，我们只需将`optimize_acqf()`替换为`optimize_acqf_cyclic()`；其余的参数，例如边界和批量大小，保持不变：
+- en: '[PRE10]'
+  id: totrans-208
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: BoTorch dimension warning
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BoTorch 维度警告
+- en: 'While running the code for batch MES, you might encounter a warning:'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在运行批量 MES 的代码时，您可能会遇到警告：
+- en: '[PRE11]'
+  id: totrans-211
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: This warning indicates that we are not formatting the tensor containing the
+    observed values `train_y` according to BoTorch’s convention. However, this is
+    not a code-breaking error, so to be able to keep using the same GP implementation
+    as with other policies, we simply ignore this warning using the `warnings` module.
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此警告表示，我们没有根据 BoTorch 的约定格式化包含观察值 `train_y` 的张量。但是，这不是一个导致代码错误的错误，因此为了能够继续使用与其他策略相同的
+    GP 实现，我们简单地使用`warnings`模块忽略此警告。
+- en: Note Due to its algorithmic complexity, the batch MES policy can take quite
+    some time to run. Feel free to skip the portion of the code that runs the optimization
+    loop and proceed with the chapter.
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于其算法复杂性，批量 MES 策略可能需要相当长的时间来运行。可以跳过运行优化循环的代码部分并继续进行章节。
+- en: And with that, we are now ready to run batch MES on our hyperparameter tuning
+    example. Using the same initial training data, batch MES’s progress is visualized
+    in figure 7.18, which shows that the policy is comparable with the other policies
+    in this run.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这些，我们现在准备在我们的超参数调整示例中运行批量 MES。使用相同的初始训练数据，批量 MES 的进展在图 7.18 中可视化，该图显示该策略与本次运行中的其他策略相当。
+- en: '![](../../OEBPS/Images/07-18.png)'
+  id: totrans-215
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-18.png)'
+- en: Figure 7.18 Progress made by various batch BayesOpt policies in the hyperparameter
+    tuning example, including MES
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.18：超参数调整示例中各种批量 BayesOpt 策略的进展，包括 MES
+- en: We have now learned how to convert BayesOpt policies to the batch setting, where
+    multiple queries are made in parallel. Depending on the policy, this conversion
+    requires various levels of consideration. With the improvement-based policies
+    and UCB, we use the heuristic that the best-performing member should represent
+    the entire batch. In exercise 1, we see that TS can be extended to the batch setting
+    by simply repeating the sampling process to assemble a batch of the desired size.
+    MES, on the other hand, needs a modified routine that uses cyclic optimization
+    to search for the batch that maximizes its acquisition score. In the next chapter,
+    we learn about another specialized BayesOpt setting, in which constraints need
+    to be taken into account when the objective function is being optimized.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在已经学会了将 BayesOpt 策略转换为批量设置，在该设置中，可以并行进行多个查询。根据策略的不同，此转换需要考虑各种不同的级别。对于基于改进的策略和
+    UCB，我们使用这样一个启发式方法：表现最好的成员应该代表整个批次。在练习 1 中，我们看到 TS 可以通过简单地重复抽样过程来扩展到批量设置，以组装所需大小的批次。另一方面，MES
+    需要一个修改后的例程，该例程使用循环优化来搜索最大化其收购得分的批次。在下一章中，我们将学习另一种专门的 BayesOpt 设置，在该设置中，在优化目标函数时需要考虑约束。
+- en: '7.5 Exercise 2: Optimizing airplane designs'
+  id: totrans-218
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.5 练习 2：优化飞机设计
+- en: In this exercise, we run the batch BayesOpt policies explored in this chapter
+    on a simulated optimization problem in physics. This problem is the highest-dimensional
+    problem we have encountered and will offer us an opportunity to see how BayesOpt
+    tackles a generic black box optimization problem in high dimensions. More specific
+    to this chapter, we will see how various batch BayesOpt policies perform on a
+    real-world optimization problem.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个练习中，我们在物理学中的一个模拟优化问题上运行了本章中探讨的批处理贝叶斯优化策略。这个问题是我们遇到的维度最高的问题，将为我们提供一个机会观察贝叶斯优化如何处理一个高维度的通用黑盒优化问题。更具体地说，我们将看到各种批处理贝叶斯优化策略在一个真实世界优化问题上的表现。
+- en: We are interested in an aerostructural optimization problem that airplane engineers
+    commonly deal with. In such an optimization problem, we have various tunable parameters
+    (each making up a dimension in our search space) that control how an airplane
+    works. These parameters could be the length and width of the plane, the shape
+    and the angle of the wings with respect to the body of the plane, or the angle
+    of the turbine blades and how fast they rotate. It’s the job of an optimization
+    engineer to tune the values of these parameters to get the plane to work or to
+    optimize some performance metric, such as speed or energy efficiency.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们对飞机工程师常常处理的一种气动结构优化问题感兴趣。在这种优化问题中，我们有各种可调参数（每个参数都构成了我们搜索空间中的一个维度），这些参数控制着飞机的工作方式。这些参数可能是飞机的长度和宽度，翼与机身的形状和角度，或者涡轮叶片的角度和旋转速度。优化工程师的工作是调整这些参数的值，使飞机正常运行或优化某些性能指标，如速度或能源效率。
+- en: While engineers might have a good idea about how some of these variables affect
+    the performance of an airplane, a good way to test out an experimental plane design
+    is to run various computer simulations and observe the simulated behavior of the
+    airplane. From these simulations, we score the proposed plane design on how well
+    it does on various performance metrics. With the simulation program in hand, we
+    can treat this tuning process as a black box optimization problem. That is, we
+    don’t know how each tunable parameter affects the final performance of the simulated
+    airplane, but we’d like to optimize these parameters to achieve the best result.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管工程师们可能对某些变量如何影响飞机性能有一定了解，但测试一个实验飞机设计的好方法是运行各种计算机模拟并观察飞机的模拟行为。通过这些模拟，我们根据飞机在各种性能指标上的表现来评分。有了模拟程序，我们可以将这个调整过程视为一个黑盒优化问题。也就是说，我们不知道每个可调参数如何影响模拟飞机的最终性能，但我们希望优化这些参数以获得最佳结果。
+- en: 'This exercise provides an objective function that simulates this process of
+    benchmarking the performance of an airplane design. The code is provided in the
+    CH07/04 - Exercise 2.ipynb notebook. There are multiple steps:'
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个练习提供了一个模拟飞机设计性能基准测试过程的目标函数。代码在CH07/04 - Exercise 2.ipynb笔记本中提供。有多个步骤：
+- en: 'Implement the objective function that simulates performance benchmarking. This
+    is a four-parameter function with the following code, which computes a score quantifying
+    the utility of the airplane specified by the four input parameters. Since we treat
+    this function as a black box, we assume that we don’t know what goes on inside
+    the function and how the output is produced:'
+  id: totrans-223
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 实现模拟性能基准测试的目标函数。这是一个四参数函数，其代码如下，用于计算以四个输入参数指定的飞机的效用的分数。由于我们将这个函数视为黑盒，我们假设我们不知道函数内部的运行方式和输出是如何产生的：
+- en: '[PRE12]'
+  id: totrans-224
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: 'The four parameters are the various settings of the plane, scaled to be between
+    0 and 1\. That is, our search space is the four-dimensional unit hypercube. Though
+    not essential to our black box optimization approach, the names of these parameters
+    are as follows:'
+  id: totrans-225
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 四个参数是飞机的各种设置，缩放到0和1之间。也就是说，我们的搜索空间是四维单位超立方体。虽然这对我们的黑盒优化方法并不重要，但这些参数的名称如下：
+- en: '[PRE13]'
+  id: totrans-226
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: While it’s not easy to visualize an entire four-dimensional function, we can
+    show how the function behaves in two-dimensional spaces. Figure 7.19 visualizes
+    our objective function for various pairs of parameters we can tune, showing a
+    complex nonlinear trend across these two-dimensional spaces.
+  id: totrans-227
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 虽然很难可视化一个完整的四维函数，但我们可以展示这个函数在二维空间中的行为。图7.19展示了我们的目标函数在我们可以调整的各种参数对中的行为，显示了这些二维空间中的复杂非线性趋势。
+- en: '![](../../OEBPS/Images/07-19.png)'
+  id: totrans-228
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/07-19.png)'
+- en: Figure 7.19 The objective function of the simulated airplane design optimization
+    problem in various two-dimensional subspaces, corresponding to pairs of tunable
+    parameters, shown as axis labels. Bright spots indicate high objective values,
+    which are our optimization goals; dark spots indicate low objective values.
+  id: totrans-229
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 图7.19 在不同的二维子空间中，虚拟飞机设计优化问题的目标函数对应于可调参数对，显示为轴标签。明亮的点表示高目标值，即我们的优化目标；黑暗的点表示低目标值。
+- en: Again, our goal is to find the maximum value of this function using BayesOpt.
+  id: totrans-230
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 再次强调，我们的目标是使用BayesOpt找到该函数的最大值。
+- en: 'Implement a GP model with a constant mean function and a Matérn 2.5 kernel
+    with an output scale implemented as a `gpytorch.kernels.ScaleKernel` object:'
+  id: totrans-231
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用一个具有恒定均值函数和Matérn 2.5核函数的GP模型，输出尺度为一个 `gpytorch.kernels.ScaleKernel` 对象：
+- en: We need to specify the `ard_num_dims` `=` `4` argument when initializing the
+    kernel to account for the fact that our objective function is four-dimensional.
+  id: totrans-232
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在初始化核函数时，我们需要指定参数 `ard_num_dims` `=` `4` ，以考虑到我们的目标函数是四维的。
+- en: Note We learn how to work with Matérn kernels in section 3.4.2 as well as in
+    the exercise in chapter 3.
+  id: totrans-233
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 注意：在第3.4.2节以及第3章练习中，我们学习了如何使用Matérn核函数。
+- en: Implement a helper function that trains the GP on a given training dataset.
+    This function should take in a training set, train a GP using gradient descent
+    to minimize the negative log likelihood, and return that GP and its likelihood
+    function. See section 4.1.1 for a refresher on how to implement this helper function.
+  id: totrans-234
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 实现一个辅助函数，该函数在给定的训练数据集上训练GP。该函数应该接收一个训练集，在使用梯度下降最小化负对数似然的同时训练GP，并返回该GP及其似然函数。有关如何实现这个辅助函数的刷新，请参见第4.1.1节。
+- en: 'Define the settings of our optimization problem:'
+  id: totrans-235
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 定义我们优化问题的设置：
+- en: 'The search space is the four-dimensional unit hypercube, so we should have
+    a variable named `bounds` that stores the following tensor:'
+  id: totrans-236
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 搜索空间是四维单位超立方体，因此我们应该有一个名为 `bounds` 的变量，其中存储以下张量：
+- en: '[PRE14]'
+  id: totrans-237
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: We pass these bounds to the BayesOpt policies we run later in the exercise.
+  id: totrans-238
+  prefs:
+  - PREF_IND
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 我们将这些边界传递给我们在本练习后面运行的BayesOpt策略。
+- en: In each run, a BayesOpt policy can make in total 100 queries to the objective
+    function (that is, 100 function evaluations) in batches of 5\. We also repeat
+    our experiments for each policy five times.
+  id: totrans-239
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在每次运行中，BayesOpt策略可以在总共100次查询目标函数（即100次函数评估）中进行，每次批量为5次。我们还对每个策略重复实验五次。
+- en: 'Run each batch BayesOpt policy we learn in this chapter on the objective function
+    just implemented:'
+  id: totrans-240
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在刚刚实现的目标函数上运行本章学习到的每个批次的BayesOpt策略：
+- en: Each experiment should start with a randomly selected function evaluation as
+    the training set.
+  id: totrans-241
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 每个实验应该以一个随机选择的函数评估作为训练集开始。
+- en: Record the best values found throughout the search.
+  id: totrans-242
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 记录在搜索中找到的最佳值。
+- en: Use a 5,000-point Sobol sequence for TS and MES.
+  id: totrans-243
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用一个5,000点的Sobol序列进行TS和MES。
+- en: Running MES in a high-dimensional problem is computationally expensive. A common
+    strategy to relieve this burden is to limit the number of cycles for cyclic optimization.
+    For example, to terminate the optimization of the MES acquisition score after
+    five cycles, we can pass `cyclic_options={"maxiter":` `5}` to the helper function
+    `optimize_acqf_cyclic()`. Run this more lightweight version of MES in the experiments.
+  id: totrans-244
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在高维问题中运行MES计算代价很高。缓解这一负担的常见策略是限制循环优化的次数。例如，要在五个周期后终止MES采集分数的优化，我们可以将 `cyclic_options={"maxiter":`
+    `5}` 传递给辅助函数 `optimize_acqf_cyclic()` 。在实验中运行这个更轻量化的MES版本。
+- en: Plot the optimization progress of the BayesOpt policies we have run, and observe
+    their performance. Each policy should have a curve showing the average best-seen
+    point as a function of the number of queries used and the standard errors. See
+    the last step of chapter 4’s exercise 2 for more details on how to make this visualization.
+  id: totrans-245
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 绘制我们运行过的BayesOpt策略的优化进程，并观察它们的性能。每个策略应该有一条曲线，显示作为查询次数的函数的平均最佳观测点及其标准误差。有关如何进行这种可视化的更多详细信息，请参见第4章练习2的最后一步。
+- en: Summary
+  id: totrans-246
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 总结
+- en: Many black box optimization settings in the real world allow multiple experiments
+    (function evaluations) to be carried out at the same time in parallel. By taking
+    advantage of this parallelism, we can conduct more experiments in BayesOpt and
+    potentially achieve better performance.
+  id: totrans-247
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在现实世界中，许多黑盒优化设置允许多个实验（函数评估）同时并行进行。通过利用这种并行性，我们可以在BayesOpt中进行更多的实验，并可能获得更好的性能。
+- en: At each iteration of the batch BayesOpt setting, a batch of queries is selected,
+    and the objective function is evaluated at these queries. This setting requires
+    the BayesOpt policy used to be able to score a batch of queries in accordance
+    with the utility of the queries in helping us locate the global optimum.
+  id: totrans-248
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在批处理BayesOpt设置的每次迭代中，会选择一批查询，并在这些查询上评估目标函数。这种设置要求所使用的BayesOpt策略能够根据查询在帮助我们定位全局最优解方面的效用来评分一批查询。
+- en: Extending BayesOpt policies to the batch setting isn’t as simple as choosing
+    the top data points that score the highest acquisition value in the sequential
+    setting. Doing so leads to the selected queries being extremely close to one another,
+    defeating the purpose of parallelism.
+  id: totrans-249
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将BayesOpt策略扩展到批处理设置并不像在顺序设置中选择得分最高的顶部数据点那样简单。这样做会导致所选查询之间的距离非常接近，从而违背了并行性的目的。
+- en: Three BayesOpt policies—PoI, EI, and UCB—can be extended to the batch setting
+    using the same strategy. This strategy uses the maximum value within a batch of
+    queries to quantify the value of the whole batch. Mathematically, the strategy
+    of using the maximum value to represent an entire batch requires rewriting the
+    acquisition score as an average of some quantity of interest.
+  id: totrans-250
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 三种BayesOpt策略——PoI、EI和UCB——可以使用相同的策略扩展到批处理设置。该策略使用批次查询中的最大值来量化整个批次的价值。从数学上讲，使用最大值来代表整个批次的策略需要将收益分数重写为某种感兴趣数量的平均值。
+- en: Due to its random nature, the TS policy can be easily extended to the batch
+    setting. Instead of sampling from the GP and maximizing the sample only once,
+    batch TS repeats this sampling and maximizing process until we reach the targeted
+    batch size.
+  id: totrans-251
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 由于其随机性质，TS策略可以很容易地扩展到批处理设置中。批处理TS不是仅从GP中抽样并仅最大化一次样本，而是重复这个抽样和最大化过程，直到达到目标批次大小。
+- en: Computing the information-theoretic value of multiple points is computationally
+    challenging. This difficulty prevents the algorithm L-BFGS, used by the helper
+    function `optimize_acqf()` to find the point or the batch of points that maximizes
+    the acquisition score of a given policy, from being used with the MES policy in
+    the batch setting.
+  id: totrans-252
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 计算多个点的信息论价值在计算上是具有挑战性的。这一困难阻碍了助手函数`optimize_acqf()`所使用的算法L-BFGS在批处理设置中与MES策略一起找到最大化给定策略的收益分数的点或批次的使用。
+- en: To circumvent the computational challenge of using L-BFGS with batch MES, we
+    use cyclic optimization. This strategy involves refining individual members of
+    our current batch of queries in a cyclic manner until the acquisition score converges.
+    Cyclic optimization can be used in BoTorch with the helper function `optimize_acqf_cyclic()`.
+  id: totrans-253
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为了避免使用L-BFGS与批处理MES的计算挑战，我们使用循环优化。这种策略涉及以循环方式优化我们当前查询批次中的各个成员，直到收益分数收敛。在BoTorch中，可以使用助手函数`optimize_acqf_cyclic()`来使用循环优化。
+- en: To maximize our optimization throughput, it’s important to specify the correct
+    batch size when using the helper functions `optimize_acqf()` and `optimize_ acqf_cyclic()`
+    when searching for the batch that maximizes the acquisition score of a given policy.
+    We do this by setting the argument `q` to the desired batch size.
+  id: totrans-254
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为了最大化我们的优化吞吐量，在使用助手函数`optimize_acqf()`和`optimize_acqf_cyclic()`搜索最大化给定策略的收益分数的批次时，设置正确的批次大小非常重要。我们通过将参数`q`设置为所需的批次大小来做到这一点。
+- en: The BoTorch implementation of most BayesOpt policies follows the same interface
+    as the implementation in the sequential setting. This consistency allows the programmer
+    to transition to the batch setting without having to significantly modify their
+    code.
+  id: totrans-255
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 大多数BayesOpt策略的BoTorch实现都遵循与顺序设置中的实现相同的接口。这种一致性使程序员可以在不需要显着修改其代码的情况下转换到批处理设置。

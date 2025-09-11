@@ -1,0 +1,2010 @@
+- en: 12 Scaling Gaussian processes to large datasets
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 12 将高斯过程扩展到大型数据集
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章介绍：
+- en: Training a GP on a large dataset
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 训练大型数据集上的 GP
+- en: Using mini-batch gradient descent when training a GP
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在训练 GP 时使用小批量梯度下降。
+- en: Using an advanced gradient descent technique to train a GP faster
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 采用高级梯度下降技术来更快地训练 GP。
+- en: 'So far, we have seen that GPs offer great modeling flexibility. In chapter
+    3, we learned that we can model high-level trends using the GP’s mean function
+    as well as variability using the covariance function. A GP also provides calibrated
+    uncertainty quantification. That is, the predictions for datapoints near observations
+    in the training dataset have lower uncertainty than those for points far away.
+    This flexibility sets the GP apart from other ML models that produce only point
+    estimates, such as neural networks. However, it comes at a cost: speed.'
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，我们已经看到 GP 提供了极高的建模灵活性。在第三章中，我们学习了如何使用 GP 的均值函数来模拟高级别趋势，并使用协方差函数来模拟变异性。GP
+    还提供了校准的不确定性量化。也就是说，训练数据集中接近观测值的数据点的预测比远离观测值的点的预测具有更低的不确定性。这种灵活性使 GP 与其他只产生点估计（如神经网络）的
+    ML 模型区别开来。然而，它也导致了速度问题。
+- en: 'Training and making predictions with a GP (specifically, computing the inverse
+    of the covariance matrix) scales cubically with respect to the size of the training
+    data. That is, if our dataset doubles in size, a GP will take eight times as long
+    to train and predict. If the dataset increases tenfold, it will take a GP 1,000
+    times longer. This poses a challenge to scaling GPs to large datasets, which are
+    common in many applications:'
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 训练和预测 GP（具体来说，计算协方差矩阵的逆）与训练数据的规模呈立方级扩展关系。也就是说，如果我们的数据集大小翻倍，GP 将需要花费八倍的时间进行训练和预测。如果数据集增加十倍，GP
+    将需要花费 1,000 倍的时间。这给将 GP 扩展到大型数据集的应用带来了挑战。
+- en: If we aim to model housing prices across an entire country, such as the United
+    States, where each data point represents the price of a single house at a given
+    time, the size of our dataset would contain hundreds of millions of points. As
+    an illustration, the online database Statista keeps track of the number of housing
+    units in the United States from 1975 to 2021; this report can be accessed at [https://www.statista.com/statistics/240267/number-of-housing-units-in-the-united-states/](https://www.statista.com/statistics/240267/number-of-housing-units-in-the-united-states/).
+    We see that this number has been steadily rising since 1975, exceeding 100 million
+    in 1990, and is now at more than 140 million.
+  id: totrans-7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果我们的目标是对整个国家（例如美国）的房价进行建模，其中每个数据点表示给定时间的单个住宅的价格，则我们的数据集大小将包含数亿个点。例如，在线数据库 Statista
+    记录了自 1975 年至 2021 年美国住房单位数量的变化；该报告可在 [https://www.statista.com/statistics/240267/number-of-housing-units-in-the-united-states/](https://www.statista.com/statistics/240267/number-of-housing-units-in-the-united-states/)
+    上访问。我们可以看到，自 1975 年以来，这个数字一直在稳步增长，1990 年超过了 1 亿，现在已经超过 1.4 亿。
+- en: In the drug discovery applications we discussed in section 1.1.3, a database
+    of possible molecules that could potentially be synthesized into drugs could have
+    billions of entries.
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在我们在第 1.1.3 节中讨论的药物发现应用程序中，一个可能被合成为药物的可能分子的数据库可能会拥有数十亿个条目。
+- en: In weather forecasting, low-cost monitoring devices make it easy to collect
+    weather data on a large scale. A dataset could contain by-minute measurements
+    across multiple years.
+  id: totrans-9
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在天气预报中，低成本的监测设备使得大规模收集天气数据变得容易。数据集可以包含跨多年的每分钟测量结果。
+- en: Given the cubic running time of the normal GP model, it’s infeasible to train
+    it on datasets of this scale. In this chapter, we learn how we can use a class
+    of GP models called *variational Gaussian process* (VGPs) to tackle this problem
+    of learning from big data.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑到正常 GP 模型的立方运行时间，将其应用于这种规模的数据集是不可行的。在本章中，我们将学习如何利用一类称为“变分高斯过程”（VGPs）的 GP 模型来解决从大型数据中学习的问题。
+- en: Definition A variational Gaussian process picks out a small subset of the data
+    that represents the entire set well. It does this by seeking to minimize the difference
+    between itself and the regular GP that is trained on the full data. The term *variational*
+    refers to the subfield of mathematics that studies the optimization of functionals.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义变分高斯过程选择一小部分数据，很好地表示整个集合。它通过寻求最小化它本身和完整数据集上训练的普通 GP 之间的差异来实现这一点。术语“变分”是指研究函数式优化的数学子领域。
+- en: This idea of choosing to train on only a small subset of these representative
+    points is quite natural and intuitive. Figure 12.1 shows a VGP in action, where
+    by learning from a few selective data points, the model produces almost identical
+    predictions to those produced by a regular GP.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 选择仅对这些代表性点的小型子集进行训练的想法是相当自然和直观的。图 12.1 展示了 VGP 的运行情况，通过从少数精选数据点中学习，该模型产生了几乎与普通
+    GP 产生的预测相同的预测。
+- en: '![](../../OEBPS/Images/12-01.png)'
+  id: totrans-13
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-01.png)'
+- en: Figure 12.1 Predictions made by a regular GP and those by a VGP. The VGP produces
+    almost identical predictions as the GP, while taking significantly less time to
+    train.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.1 显示了普通 GP 和 VGP 的预测。VGP 产生了几乎与 GP 相同的预测，同时训练时间显著缩短。
+- en: We cover how to implement this model and observe its computational benefits
+    in this chapter. Further, when working with a VGP, we can use a more advanced
+    version of gradient descent, which, as we saw in section 3.3.2, is used to optimize
+    the hyperparameters of a GP. We learn to use this version of the algorithm to
+    train faster and more effectively and, ultimately, scale our GPs to large datasets.
+    The code accompanying this chapter can be found in the CH11/01 - Approximate Gaussian
+    process inference.ipynb notebook.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章介绍如何实现这个模型，并观察其在计算上的优势。此外，当使用 VGP 时，我们可以使用更高级的梯度下降版本，正如我们在第 3.3.2 节中看到的，它用于优化
+    GP 的超参数。我们学会使用这个算法的版本来更快、更有效地训练，并最终将我们的 GPs 扩展到大型数据集。本章附带的代码可以在 CH11/01 - 近似高斯过程推理.ipynb
+    笔记本中找到。
+- en: 12.1 Training a GP on a large dataset
+  id: totrans-16
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 12.1 在大型数据集上训练高斯过程模型
+- en: 'In this section, to see firsthand how training a GP on a large dataset poses
+    a difficult challenge, we attempt to apply the GP model that we used in chapters
+    2 and 3 to a medium-sized dataset of 1,000 points. This task will make clear that
+    using a regular GP is infeasible and motivate what we learn in the next section:
+    variational GPs.'
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，为了直观地看到在大型数据集上训练高斯过程模型面临的困难挑战，我们试图将我们在第 2 章和第 3 章中使用的 GP 模型应用于一个包含 1,000
+    个点的中型数据集。这个任务将清楚地表明使用普通 GP 是不可行的，并激发我们在下一节学习的内容：变分 GPs。
+- en: 12.1.1 Setting up the learning task
+  id: totrans-18
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.1.1 设置学习任务
+- en: 'We first create our dataset in this subsection. We reuse the one-dimensional
+    objective function we saw in chapters 2 and 3, the Forrester function. Again,
+    we implement it as follows:'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个小节中，我们首先创建我们的数据集。我们重新使用了在第 2 章和第 3 章中看到的一维目标函数，即 Forrester 函数。我们再次按照以下方式实现它：
+- en: '[PRE0]'
+  id: totrans-20
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'Similar to what we did in section 3.3, we will also have a helper function
+    that takes in a GP model and visualizes its predictions across the domain. The
+    function has the following header and takes in three parameters—the GP model,
+    the corresponding likelihood function, and a Boolean flag denoting whether the
+    model is a VGP:'
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 类似于我们在第 3.3 节中所做的，我们还将拥有一个辅助函数，该函数接收一个 GP 模型，并在整个域上可视化其预测。该函数具有以下头部，并接受三个参数——GP
+    模型、相应的似然函数和一个布尔标志，表示模型是否为 VGP：
+- en: '![](../../OEBPS/Images/12-01-unnumb-1.png)'
+  id: totrans-22
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-01-unnumb-1.png)'
+- en: 'The logic of this helper function is sketched out in figure 12.2, which consists
+    of four main steps: computing the predictions, plotting the ground truth and the
+    training data, plotting the predictions, and, finally, plotting the inducing points
+    if the model is a VGP.'
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此辅助函数的逻辑概述在图 12.2 中草绘出来，它包括四个主要步骤：计算预测、绘制真实函数和训练数据、绘制预测，最后，如果模型是 VGP，则绘制诱导点。
+- en: '![](../../OEBPS/Images/12-02.png)'
+  id: totrans-24
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-02.png)'
+- en: Figure 12.2 Flowchart of the helper function that visualizes the predictions
+    of a GP. The function also shows the inducing points of a VGP if that is the model
+    passed in.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.2 是可视化 GP 预测的辅助函数的流程图。该函数还显示了 VGP 的诱导点（如果传入的是该模型）。
+- en: Definition The inducing points are the small subset chosen by the VGP model
+    to represent the entire dataset to train on. As the name suggests, these points
+    aim to *induce* knowledge about all of the data.
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义：诱导点是 VGP 模型选择的表示整个数据集的小型子集，用于训练。顾名思义，这些点旨在“诱导”关于所有数据的知识。
+- en: 'We now go through the steps in greater detail. In the first step, we compute
+    the mean and CI predictions with the GP:'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们更详细地介绍这些步骤。在第一步中，我们使用 GP 计算均值和 CI 预测：
+- en: '[PRE1]'
+  id: totrans-28
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'In the second step, we make the Matplotlib plot and show the true function
+    stored in `xs` and `ys` (which we generate shortly) and our training data `train_x`
+    and `train_y`:'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第二步中，我们制作 Matplotlib 图并显示存储在 `xs` 和 `ys` 中的真实函数（我们稍后生成）以及我们的训练数据 `train_x`
+    和 `train_y`：
+- en: '[PRE2]'
+  id: totrans-30
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ Plots the true objective function
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 绘制真实目标函数
+- en: ❷ Makes a scatter plot for the training data
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 为训练数据制作散点图
+- en: Here, if the model is a VGP (if `variational` is set to `True`), then we plot
+    the training data with lower opacity (by setting `alpha` `=` `0.1`), making them
+    look more transparent. This is so we can plot the representative points learned
+    by the VGP more clearly later.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，如果模型是一个 VGP（如果 `variational` 设置为 `True`），那么我们会用较低的不透明度绘制训练数据（通过设置 `alpha`
+    `=` `0.1`），使它们看起来更透明。这样我们可以更清楚地绘制后面学习到的 VGP 的代表性点。
+- en: 'The predictions made by the GP are then shown with the solid mean line and
+    the shaded 95% CI region in the third step:'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: GP 所做的预测随后在第三步中以实线均值线和阴影 95% CI 区域的形式显示：
+- en: '[PRE3]'
+  id: totrans-35
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: 'Finally, we plot the representative points selected by the VGP by extracting
+    out `model.variational_strategy.inducing_points`:'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们通过提取 `model.variational_strategy.inducing_points` 来绘制 VGP 选择的代表性点：
+- en: '[PRE4]'
+  id: totrans-37
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Scatters the inducing points
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 散布感应点
+- en: 'Now, to generate our training and dataset, we randomly select 1,000 points
+    between –5 and 5 and compute the function values at these points:'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，为了生成我们的训练和数据集，我们在-5 和 5 之间随机选择了 1,000 个点，并计算了这些点的函数值：
+- en: '[PRE5]'
+  id: totrans-40
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: 'To make our test set, we compute a dense grid between –7.5 and 7.5 using the
+    `torch.linspace()` function. This test set includes –7.5, 7.4, –7.3, and so on
+    to 7.5:'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了生成我们的测试集，我们使用 `torch.linspace()` 函数在-7.5 和 7.5 之间计算了一个密集的网格。该测试集包括-7.5、7.4、-7.3
+    等，直到 7.5：
+- en: '[PRE6]'
+  id: totrans-42
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'To visualize what our training set looks like, we can once again make a scatter
+    plot with the following:'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要可视化我们的训练集的样子，我们可以再次制作一个散点图如下：
+- en: '[PRE7]'
+  id: totrans-44
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: This code produces figure 12.3, where the black dots denote the individual data
+    points in our training set.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这段代码产生了图 12.3，其中黑点表示我们训练集中的个别数据点。
+- en: '![](../../OEBPS/Images/12-03.png)'
+  id: totrans-46
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-03.png)'
+- en: Figure 12.3 The training dataset for our learning task, containing 1,000 data
+    points. It takes considerable time to train a regular GP on this set.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.3 我们学习任务的训练数据集，包含 1,000 个数据点。在这个集合上训练一个常规的 GP 需要相当长的时间。
+- en: 12.1.2 Training a regular GP
+  id: totrans-48
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.1.2 训练常规 GP
+- en: 'We are now ready to implement and train a GP model on this dataset. First,
+    we implement the GP model class, which has a constant function (an instance of
+    `gpytorch.means` `.ConstantMean`) as its mean function and the RBF kernel with
+    an output scale (implemented with `gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())`)
+    as its covariance function:'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在准备在这个数据集上实现并训练一个 GP 模型。首先，我们实现 GP 模型类，其具有常数函数（`gpytorch.means` `.ConstantMean`
+    的一个实例）作为其均值函数，以及具有输出尺度的 RBF 核函数（使用 `gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())`
+    实现）作为其协方差函数：
+- en: '[PRE8]'
+  id: totrans-50
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: ❶ A constant mean function
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 常数均值函数
+- en: ❷ An RBF kernel with an output scale
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 具有输出尺度的 RBF 核函数
+- en: ❸ Creates an MVN distribution as predictions
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 创建 MVN 分布作为预测
+- en: 'Now, we initialize this GP model with our training data and a `GaussianLikelihood`
+    object:'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，我们使用我们的训练数据和一个 `GaussianLikelihood` 对象初始化了这个 GP 模型：
+- en: '[PRE9]'
+  id: totrans-55
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: 'Finally, we train our GP by running gradient descent to minimize the loss function
+    defined by the likelihood of the data. At the end of training, we obtain the hyperparameters
+    of the model (e.g., the mean constant, length scale, and output scale) that give
+    a low loss value. Gradient descent is implemented with the optimizer Adam (`torch
+    .optim.Adam`), which is one of the most commonly used gradient descent algorithms:'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们通过运行梯度下降来训练我们的 GP，以最小化由数据的可能性定义的损失函数。在训练结束时，我们得到了模型的超参数（例如，均值常数、长度尺度和输出尺度），这些超参数给出了一个较低的损失值。梯度下降是使用
+    Adam 优化器（`torch .optim.Adam`）实现的，这是最常用的梯度下降算法之一：
+- en: '[PRE10]'
+  id: totrans-57
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: ❶ The gradient descent algorithm Adam
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 梯度下降算法 Adam
+- en: ❷ The loss function, which computes the likelihood of the data from the hyperparameters
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 损失函数，计算由超参数确定的数据的可能性
+- en: ❸ Enables training mode
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 启用训练模式
+- en: ❹ Runs 500 iterations of gradient descent
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 运行 500 次梯度下降迭代
+- en: ❺ Enables prediction mode
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 启用预测模式
+- en: Note As a reminder, when training a GP, we need to enable training mode for
+    both the model and the likelihood (using `model.train()` and `likelihood .train()`).
+    After training and before making predictions, we need to enable prediction mode
+    (with `model.eval()` and `likelihood.eval()`).
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：作为提醒，当训练 GP 时，我们需要为模型和可能性都启用训练模式（使用 `model.train()` 和 `likelihood .train()`）。在训练后和进行预测之前，我们需要启用预测模式（使用
+    `model.eval()` 和 `likelihood.eval()`）。
+- en: Using GPUs to train GPs
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用 GPU 训练 GPs
+- en: A method of scaling up GPs to large datasets that is not the focus of this chapter
+    is to use graphics processing units (GPUs). GPUs are often used to parallelize
+    matrix multiplications and speed up training neural networks.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个将 GP 扩展到大型数据集的方法，本章不重点讨论，是使用图形处理单元（GPU）。GPU 通常用于并行化矩阵乘法并加速训练神经网络。
+- en: The same principle applies here, and GPyTorch keeps training GPs on GPUs simple
+    by following PyTorch’s syntax of transferring objects to the GPU (by calling the
+    `cuda()` method on the objects). In particular, we call `train_x` `=` `train_x.cuda()`
+    and `train_y` `=` `train_y.cuda()` to put our data onto the GPU, and `model` `=`
+    `model .cuda()` and `likelihood` `=` `likelihood.cuda()` to put the GP model and
+    its likelihood onto the GPU.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 同样的原则也适用于此处，而 GPyTorch 通过遵循 PyTorch 的语法将 GP 训练简化到了 GPU 上（通过在对象上调用 `cuda()` 方法）。具体来说，我们调用
+    `train_x` `=` `train_x.cuda()` 和 `train_y` `=` `train_y.cuda()` 将我们的数据放到 GPU 上，然后调用
+    `model` `=` `model.cuda()` 和 `likelihood` `=` `likelihood.cuda()` 将 GP 模型和其似然放到
+    GPU 上。
+- en: You can find more details on this topic in GPyTorch’s documentation at [http://mng.bz/lW8B](http://mng.bz/lW8B).
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您可以在 GPyTorch 的文档中找到有关此主题的更多详细信息，链接地址为 [http://mng.bz/lW8B](http://mng.bz/lW8B)。
+- en: 'We also ran gradient descent for 500 iterations, but as our current dataset
+    is significantly larger, this loop might take a while to complete (so grab a coffee
+    while you wait!). Once training is done, we call the `visualize_gp_belief()` helper
+    function we wrote earlier to show the predictions made by our trained GP, which
+    produces figure 12.4:'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还对梯度下降进行了 500 次迭代，但由于我们当前的数据集明显更大，这个循环可能需要一段时间才能完成（所以在等待时来杯咖啡吧！）。训练完成后，我们调用了之前编写的
+    `visualize_gp_belief()` 辅助函数来显示我们训练好的 GP 所做的预测，生成了图 12.4：
+- en: '[PRE11]'
+  id: totrans-69
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: '![](../../OEBPS/Images/12-04.png)'
+  id: totrans-70
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-04.png)'
+- en: Figure 12.4 Predictions made by a regular GP. The predictions match the training
+    data well, but training takes a long time.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.4 由普通 GP 进行的预测。预测很好地匹配了训练数据，但训练时间很长。
+- en: We see that our GP’s predictions match the training data points well—an encouraging
+    sign that our model successfully learned from the data. However, there are several
+    problems with this procedure.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到我们的 GP 的预测很好地匹配了训练数据点——这是一个鼓舞人心的迹象，表明我们的模型成功地从数据中学习了。然而，这个过程中存在一些问题。
+- en: 12.1.3 Problems with training a regular GP
+  id: totrans-73
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.1.3 普通 GP 训练中的问题
+- en: In this subsection, we discuss some of the challenges of training a GP on a
+    large dataset. The first challenge, as we’ve mentioned, is that training takes
+    quite a long time. On my MacBook, the 500 iterations of gradient descent could
+    take up to 45 seconds, which is significantly longer than what we observed in
+    chapters 2 and 3\. This is a direct result of the GP’s cubic running time that
+    we mentioned earlier, and this long training time only becomes more prohibitive
+    as our dataset gets larger and larger, as indicated by table 12.1.
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这一小节中，我们讨论了在大型数据集上训练 GP 面临的一些挑战。首先，正如我们之前提到的，训练需要相当长的时间。在我的 MacBook 上，500 次梯度下降可能需要长达
+    45 秒的时间，这明显比我们在第 2 章和第 3 章观察到的情况要长。这直接是我们之前提到的 GP 的立方运行时间的结果，随着数据集的不断增大，这种长时间的训练只会变得更加禁锢，正如表
+    12.1 所示。
+- en: Table 12.1 Estimated training time of a GP given the size of the training dataset.
+    Training quickly becomes prohibitive.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '表 12.1 给定训练数据集大小的 GP 预计训练时间。训练很快变得困难。 '
+- en: '| Size of the training set | Training time |'
+  id: totrans-76
+  prefs: []
+  type: TYPE_TB
+  zh: '| 训练集大小 | 训练时间 |'
+- en: '| --- | --- |'
+  id: totrans-77
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- |'
+- en: '| 500 points | 45 seconds |'
+  id: totrans-78
+  prefs: []
+  type: TYPE_TB
+  zh: '| 500 个点 | 45 秒 |'
+- en: '| 2,000 points | 48 minutes |'
+  id: totrans-79
+  prefs: []
+  type: TYPE_TB
+  zh: '| 2,000 个点 | 48 分钟 |'
+- en: '| 3,000 points | 2.7 hours |'
+  id: totrans-80
+  prefs: []
+  type: TYPE_TB
+  zh: '| 3,000 个点 | 2.7 小时 |'
+- en: '| 5,000 points | 12.5 hours |'
+  id: totrans-81
+  prefs: []
+  type: TYPE_TB
+  zh: '| 5,000 个点 | 12.5 小时 |'
+- en: '| 10,000 points | 4 days |'
+  id: totrans-82
+  prefs: []
+  type: TYPE_TB
+  zh: '| 10,000 个点 | 4 天 |'
+- en: 'The second, and perhaps more concerning, problem stems from the fact that computing
+    the loss function (the marginal log likelihood of the training data) used in gradient
+    descent becomes more and more difficult as the size of the training data increases.
+    This is indicated by the warning messages GPyTorch prints out during training:'
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个，也许更令人担忧的问题源于这样一个事实，即随着训练数据的规模增加，计算损失函数（用于梯度下降的训练数据的边际对数似然）变得越来越困难。这可以通过
+    GPyTorch 在训练过程中打印的警告信息来看出：
+- en: '[PRE12]'
+  id: totrans-84
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: These messages tell us that we are encountering numerical instability in the
+    computation of the loss.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些信息告诉我们，在计算损失时遇到了数值不稳定性。
+- en: Note Computing the loss across many data points is a computationally unstable
+    operation.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，计算许多数据点之间的损失是一个计算上不稳定的操作。
+- en: Numerical instability prevents us from correctly calculating the loss and, therefore,
+    effectively minimizing that loss. This is illustrated by how this loss changes
+    across the 500 iterations of gradient descent, shown in figure 12.5.
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 数值不稳定性阻止我们正确计算损失，因此无法有效地最小化该损失。这在梯度下降的 500 次迭代中损失的变化中得到了说明，如图 12.5 所示。
+- en: '![](../../OEBPS/Images/12-05.png)'
+  id: totrans-88
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-05.png)'
+- en: Figure 12.5 Progressive loss of a regular GP during gradient descent. Due to
+    numerical instability, the loss curve is jagged and not effectively minimized.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.5 在梯度下降过程中普通高斯过程的逐渐损失。由于数值不稳定性，损失曲线崎岖不平，无法有效地最小化。
+- en: 'Unlike what we saw in chapters 2 and 3, our loss here jumps up and down erratically,
+    indicating that gradient descent is not doing a good job of minimizing that loss.
+    In fact, as we go through more iterations, our loss actually increases, which
+    means we have arrived at a suboptimal model! This phenomenon is understandable:
+    if we are miscalculating the loss of our model, then by using that miscalculated
+    term to guide learning in gradient descent, we likely obtain a suboptimal solution.'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与第 2 章和第 3 章中所见不同，我们这里的损失上下波动，表明梯度下降未能很好地最小化该损失。事实上，随着我们进行更多的迭代，我们的损失实际上增加了，这意味着我们得到了一个次优模型！这种现象是可以理解的：如果我们误计算了模型的损失，那么通过使用该误计算项来指导梯度下降中的学习，我们可能得到一个次优解。
+- en: You might be familiar with the analogy of gradient descent as climbing down
+    a mountain. Say you are at the top of a mountain and want to come down. At every
+    step along the way, you find a direction to walk along that will allow you to
+    get to a lower place (that is, descend). Eventually, after taking enough steps,
+    you arrive at the bottom of the mountain. Similarly, in gradient descent, we start
+    out with a relatively high loss, and by adjusting the hyperparameters of our model
+    at each iteration, we iteratively decrease the loss. With enough iterations, we
+    arrive at the optimal model.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能对梯度下降类比为下山的比喻很熟悉。假设你在山顶，想下山。沿途的每一步，你找到一个朝向能让你到达更低处的方向（即下降）。最终，经过足够的步骤，你抵达山脚。类似地，在梯度下降中，我们从一个相对较高的损失开始，并在每次迭代中调整我们模型的超参数，逐步降低损失。经过足够的迭代，我们到达最佳模型。
+- en: Note An excellent discussion on gradient descent and how it is analogous to
+    descending a mountain is included in Luis Serrano’s *Grokking Machine Learning*.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注 涵盖了对梯度下降以及它如何类比为下山的出色讨论，可参考路易斯·塞拉诺的《深入理解机器学习》。
+- en: This process works well only if we can compute the loss accurately—that is,
+    if we can see exactly which direction will get us to a lower place on the mountain.
+    If, however, this computation is prone to errors, we naturally won’t be able to
+    effectively minimize the loss of our model. This is similar to trying to descend
+    the mountain with a blindfold on! As we see in figure 12.5, we actually ended
+    up at a higher place on the mountain (our loss is higher than its value before
+    gradient descent).
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 只有在我们能够准确计算损失时，这个过程才能正常运行，也就是说，我们可以清楚地看到哪个方向会让我们到达山上的更低处。然而，如果这个计算容易出错，我们自然无法有效地最小化模型的损失。这就好比戴着眼罩下山一样！正如我们在图
+    12.5 中看到的，我们实际上停留在山上的更高处（我们的损失高于梯度下降之前的值）。
+- en: '![](../../OEBPS/Images/12-06.png)'
+  id: totrans-94
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-06.png)'
+- en: Figure 12.6 Running gradient descent with a numerically unstable loss computation
+    is similar to descending a mountain with a blindfold on.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.6 使用数值不稳定的损失计算运行梯度下降类似于戴着眼罩下山。
+- en: Overall, training a regular GP on a large dataset is not a good approach. Not
+    only does training scale cubically with the size of the training data, but the
+    computation of the loss value to be optimized is also unstable. In the remainder
+    of this chapter, we learn about variational GPs, or VGPs, as the solution to this
+    problem.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总的来说，在大型数据集上训练常规高斯过程并不是一个好的方法。训练不仅随着训练数据规模的立方级增长，而且损失值的计算也不稳定。在本章的其余部分，我们将了解到变分高斯过程或
+    VGPs 是解决这个问题的方案。
+- en: 12.2 Automatically choosing representative points from a large dataset
+  id: totrans-97
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 12.2 从大型数据集中自动选择代表性点
+- en: The idea behind VGPs is to select a set of points that are representative of
+    the whole dataset and train a GP on this smaller subset. We have learned to train
+    a GP on a small dataset well. The hope is that this smaller subset captures the
+    general trend of the entire dataset, so minimal information is lost when a GP
+    is trained on the subset.
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: VGPs的思想是选择一组代表整个数据集的点，并在这个较小的子集上训练GP。我们已经学会了如何在小数据集上训练GP。希望这个较小的子集能捕捉到整个数据集的一般趋势，这样当在子集上训练GP时，仅有最少的信息会丢失。
+- en: This approach is quite natural. It’s common for a large dataset to contain redundant
+    information, so if we can learn only from the most informative data points, we
+    can avoid having to process these redundancies. We have noted in section 2.2 that
+    a GP, like any ML model, works under the assumption that similar data points produce
+    similar labels. When a large dataset contains many similar data points, a GP needs
+    only to focus on one of them to learn about their trend. For example, even though
+    by-minute weather data is available, a weather forecasting model can effectively
+    learn from just hourly measurements. In this section, we learn how to do this
+    automatically by making sure that learning from the small subset leads to minimal
+    information loss compared with when we learn from the large set, as well as how
+    to implement this model with GPyTorch.
+  id: totrans-99
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个方法非常自然。大数据集通常包含冗余信息，如果我们只从最信息丰富的数据点中学习，就可以避免处理这些冗余性。我们在2.2节中指出，像任何ML模型一样，GP工作的假设是相似的数据点会产生相似的标签。当大数据集包含许多相似的数据点时，GP只需要关注其中一个数据点来学习其趋势。例如，即使有按分钟的天气数据可用，天气预报模型也可以从仅有的小时测量中有效地进行学习。在这个小节中，我们将学习如何通过确保从小子集中学习相对于从大集合中学习时信息损失最小的方式来自动实现这一点，以及如何使用GPyTorch实现这个模型。
+- en: 12.2.1 Minimizing the difference between two GPs
+  id: totrans-100
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.2.1 最小化两个GP之间的差异
+- en: How can we best select this smaller subset so that the final GP model can gain
+    the most information from the original dataset? In this subsection, we discuss
+    the high-level idea of how this is done by a VGP. The process equates to finding
+    the subset of inducing points that, when a GP is trained on this subset, will
+    induce a posterior GP that is as close as possible to the posterior GP trained
+    on the entire dataset.
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们如何选择这个小子集，使得最终的GP模型能够从原始数据集中获得最多的信息。在这个小节中，我们讨论了如何通过VGP来实现这一高级想法。这个过程等同于找到诱导点的子集，当在这个子集上训练GP时，诱导出的后验GP应该尽可能接近在整个数据集上训练的后验GP。
+- en: Diving into some mathematical details, when training a VGP, we aim to minimize
+    the difference between the posterior GP conditioned on the inducing points and
+    the posterior GP conditioned on the entire dataset. This requires a way to measure
+    the difference between two distributions (the two GPs), and the measure chosen
+    for this is the Kullback–Leibler divergence, or the KL divergence.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当训练VGP时，深入一些数学细节，我们的目标是最小化在诱导点上条件化的后验GP和在整个数据集上条件化的后验GP之间的差异。这需要一种方法来衡量两个分布（两个GP）之间的差异，而为此选择的衡量标准是Kullback-Leibler（KL）散度。
+- en: Definition The *Kullback–Leibler (KL) divergence* is a statistical distance
+    that measures the distance between two distributions. In other words, the KL divergence
+    computes how different a probability distribution is from another distribution.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义*Kullback-Leibler（KL）散度*是一种统计距离，用于衡量两个分布之间的距离，也就是KL散度计算概率分布与另一个分布之间的不同程度。
+- en: Supplementary material for the KL divergence
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: KL散度的补充材料
+- en: An intuitive explanation of the KL divergence can be found in Will Kurt’s excellent
+    “Kullback-Leibler Divergence Explained” blog post ([https://www.countbayesie.com/blog/2017/5/9/kullback-leibler-divergence-explained](https://www.countbayesie.com/blog/2017/5/9/kullback-leibler-divergence-explained)).
+    The mathematically inclined reader may refer to chapter 2 of David MacKay’s *Information
+    Theory, Inference, and Learning Algorithms* (Cambridge University Press, 2003).
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Will Kurt的博客文章“Kullback-Leibler Divergence Explained”中提供了KL散度的直观解释（[https://www.countbayesie.com/blog/2017/5/9/kullback-leibler-divergence-explained](https://www.countbayesie.com/blog/2017/5/9/kullback-leibler-divergence-explained)）。有数学背景的读者可以参考David
+    MacKay的《信息论、推理和学习算法》第2章（剑桥大学出版社，2003年）。
+- en: Just as the Euclidean distance between point A and point B (that is, the length
+    of the segment connecting the two points) measures how far apart those two points
+    are in Euclidean space, the KL divergence measures how far apart two given distributions
+    are in the space of probability distributions—that is, how different they are
+    from each other. This is illustrated in figure 12.7.
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如欧几里得空间中点A和点B之间的欧几里得距离（即连接两点的线段的长度）衡量了这两点在欧几里得空间中的距离一样，KL散度衡量了概率分布空间中两个给定分布之间的距离，即它们彼此之间的差异有多大。这在图12.7中有所说明。
+- en: '![](../../OEBPS/Images/12-07.png)'
+  id: totrans-107
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-07.png)'
+- en: Figure 12.7 Euclidean distance measures the distance between two points on a
+    plane, while the KL divergence measures the distance between two probability distributions.
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.7 欧几里得距离衡量了平面上两点之间的距离，而KL散度衡量了两个概率分布之间的距离。
+- en: Note As a mathematically valid distance measure, the KL divergence is nonnegative.
+    In other words, the distance between any two distributions is at least zero, and
+    when it is equal to zero, the two distributions exactly match up.
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注 作为一个数学上有效的距离度量，KL散度是非负的。换句话说，任意两个分布之间的距离至少为零，当距离等于零时，两个分布完全匹配。
+- en: So, if we could easily compute the KL divergence between the posterior GP trained
+    on the inducing points and the posterior GP trained on the entire dataset, we
+    should choose the inducing points that make the KL divergence zero. Unfortunately,
+    in a similar manner to how computing the marginal log likelihood is computationally
+    unstable, computing the KL divergence is not easy either. However, due to its
+    mathematical properties, we can rewrite the KL divergence as the difference between
+    two quantities, as illustrated in figure 12.8.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，如果我们能够轻松计算在诱导点上训练的后验GP与整个数据集上训练的后验GP之间的KL散度，我们应该选择使得KL散度为零的诱导点。不幸的是，类似于计算边际对数似然的计算不稳定性，计算KL散度也不容易。然而，由于其数学特性，我们可以将KL散度重写为两个量之间的差异，如图12.8所示。
+- en: '![](../../OEBPS/Images/12-08.png)'
+  id: totrans-111
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-08.png)'
+- en: Figure 12.8 The KL divergence is decomposed into the difference between the
+    marginal log likelihood and the evidence lower bound (ELBO). The ELBO is easy
+    to compute and, therefore, chosen as the metric to be optimized.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.8 KL散度被分解为边际对数似然和证据下界（ELBO）之间的差异。ELBO易于计算，因此被选择为要优化的度量。
+- en: The third term in this equation, the evidence lower bound, or ELBO for short,
+    is exactly the difference between the marginal log likelihood and the KL divergence.
+    Even though these two terms, the marginal log likelihood and the KL divergence,
+    are hard to compute, the ELBO has a simple form and can be computed easily. For
+    this reason, instead of minimizing the KL divergence so that the posterior GP
+    trained on the inducing points is as close as possible to the posterior GP trained
+    on the complete dataset, we can maximize the ELBO as a way to indirectly maximize
+    the marginal log likelihood.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个方程中的第三项，也就是证据下界（ELBO），是边际对数似然和KL散度之间的精确差异。尽管边际对数似然和KL散度这两项很难计算，但ELBO具有简单的形式并且可以轻松计算。因此，我们可以最大化ELBO来间接最大化边际对数似然，而不是最小化KL散度，使得在诱导点上训练的后验GP尽可能接近在完整数据集上训练的后验GP。
+- en: '![](../../OEBPS/Images/12-08-unnumb-2.png)'
+  id: totrans-114
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-08-unnumb-2.png)'
+- en: 'To summarize, to find the set of inducing points that will give us a posterior
+    GP that is the most similar to the GP we would obtain if we were able to train
+    on the large dataset, we aim to minimize the KL divergence between the two GPs.
+    However, this KL divergence is difficult to compute, so we choose to optimize
+    a proxy of the KL divergence, the ELBO of the model, which is easier to compute.
+    As we see in the next subsection, GPyTorch provides a convenient loss function
+    that computes this ELBO term for us. Before we cover implementation, there’s one
+    more thing for us to discuss: how to account for all data points in a large training
+    set when maximizing the ELBO term.'
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 综上所述，为了找到一组诱导点，使得后验GP尽可能与我们能够在大数据集上训练时获得的GP相似，我们的目标是最小化两个GP之间的KL散度。然而，这个KL散度很难计算，所以我们选择优化KL散度的代理，即模型的ELBO，这样更容易计算。正如我们在下一小节中看到的，GPyTorch提供了一个方便的损失函数，用于计算这个ELBO项。在我们讨论实现之前，还有一件事情需要讨论：在最大化ELBO项时如何考虑大型训练集中的所有数据点。
+- en: 12.2.2 Training the model in small batches
+  id: totrans-116
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.2.2 在小批量中训练模型
+- en: As we aim to find the set of inducing points that best represents the entire
+    training dataset, we still need to include all points in the training set in the
+    computation of the ELBO. But we said earlier that computing the marginal log likelihood
+    across many data points is numerically unstable, so gradient descent becomes ineffective.
+    Do we face the same problem here? In this subsection, we see that when training
+    a VGP by optimizing the ELBO term, we can avoid this numerical instability problem
+    by using a modified version of gradient descent that is more amenable to large
+    datasets.
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于我们的目标是找到最能代表整个训练数据集的一组感兴趣的点，我们仍然需要在计算 ELBO 时包含训练集中的所有点。但是我们之前说过，跨多个数据点计算边际对数似然是数值不稳定的，因此梯度下降变得无效。我们在这里面对相同的问题吗？在本小节中，我们看到当通过优化
+    ELBO 项来训练 VGP 时，我们可以通过使用更适合大型数据集的梯度下降的修改版本来避免这个数值不稳定性问题。
+- en: 'The task of computing the loss function of an ML model across many data points
+    is not unique to GPs. For example, neural networks usually train on thousands
+    and millions of data points, and computing the loss function of the network for
+    all data points is not feasible either. The solution to this problem, for both
+    neural networks and VGPs, is to *approximate* the true loss value across all data
+    points using the loss value across a random subset of points. For example, the
+    following code snippet is from the official PyTorch documentation, and it shows
+    how to train a neural network on an image dataset ([http://mng.bz/8rBB](http://mng.bz/8rBB)).
+    Here, the inner loop iterates over small subsets of the training data and runs
+    gradient descent on the loss values computed on these subsets:'
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在许多数据点上计算 ML 模型的损失函数的任务并不是 GP 独有的。例如，神经网络通常在数千和数百万的数据点上进行训练，计算网络的损失函数对于所有数据点也是不可行的。对于这个问题的解决方法，对于神经网络和
+    VGP 都是*近似*通过对随机点的损失值计算跨所有数据点的真实损失值。例如，以下代码片段来自官方 PyTorch 文档，并显示了如何在图像数据集上训练神经网络（[http://mng.bz/8rBB](http://mng.bz/8rBB)）。在这里，内部循环迭代训练数据的小子集，并在这些子集上计算的损失值上运行梯度下降：
+- en: '[PRE13]'
+  id: totrans-119
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ Loops over the dataset multiple times
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 对数据集进行多次循环
+- en: ❷ Gets the inputs; data is a list of [inputs, labels]
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 获取输入；数据是一个 [输入，标签] 的列表
+- en: ❸ Zeros the parameter gradients
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 归零参数梯度
+- en: ❹ Forward + backward + optimize
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 前向 + 反向 + 优化
+- en: When we calculate the loss of our model on a small number of points, the computation
+    can be done in a stable and efficient manner. Further, by repeating this approximation
+    many times, we can approximate the true loss well. Finally, we run gradient descent
+    on this approximated loss, which hopefully also minimizes the true loss across
+    all data points.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们在少量点上计算模型的损失时，计算可以稳定有效地进行。此外，通过多次重复这个近似，我们可以很好地近似真实损失。最后，我们在这个近似损失上运行梯度下降，希望也最小化所有数据点上的真实损失。
+- en: Definition The technique of running gradient descent on the loss computed with
+    a random subset of the data is sometimes called *mini-batch gradient descent*.
+    In practice, instead of randomly choosing a subset in each iteration of gradient
+    descent, we often split the training set into small subsets and iteratively compute
+    the approximate loss using each of these small subsets.
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 在使用数据的随机子集计算的损失上运行梯度下降的技术有时被称为*小批量梯度下降*。在实践中，我们通常不会在梯度下降的每次迭代中随机选择一个子集，而是将训练集分成小的子集，并通过每个这些小的子集迭代计算近似损失。
+- en: For example, if our training set contains 1,000 points, we can split it into
+    10 small subsets of 100 points. Then, we compute the loss with each subset of
+    100 for gradient descent and iteratively repeat for all 10 subsets. (This is exactly
+    what we do in our code example later.) Again, while this approximate loss, computed
+    from a subset of the data, is not exactly equal to the true loss, in gradient
+    descent, we repeat this approximation many times, which, in aggregation, points
+    us in the correct descent direction.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，如果我们的训练集包含 1,000 个点，我们可以将其分成 10 个小子集，每个子集包含 100 个点。然后，我们对每个包含 100 个点的子集计算梯度下降的损失，并迭代重复所有
+    10 个子集。（这恰好是我们后面代码示例中所做的。）同样，虽然从数据子集计算的这种近似损失并不完全等于真实损失，但在梯度下降中，我们重复这个近似很多次，这在聚合中指引我们朝着正确的下降方向。
+- en: The difference between gradient descent minimizing the true loss and mini-batch
+    gradient descent minimizing the approximate loss is illustrated by the example
+    in figure 12.9\. Compared to gradient descent (which, again, isn’t possible to
+    run with large data), the mini-batch version might not point to the most effective
+    descent direction, but by repeating the approximation multiple times, we are still
+    able to reach the goal.
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.9 中说明了梯度下降最小化真实损失和小批量梯度下降最小化近似损失之间的区别。与梯度下降相比（再次强调，无法在大数据上运行），小批量版本可能不会指向最有效的下降方向，但通过多次重复近似，我们仍然能够达到目标。
+- en: '![](../../OEBPS/Images/12-09.png)'
+  id: totrans-128
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-09.png)'
+- en: Figure 12.9 An illustration of gradient descent and mini-batch gradient descent
+    within a loss “valley,” where the center of the valley gives the lowest loss.
+    Gradient descent, if feasible to compute, leads straight to the target. Mini-batch
+    gradient descent goes in directions that are not optimal but still reaches the
+    target in the end.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.9 梯度下降和小批量梯度下降在损失“谷底”中的示意图，其中谷底的中心给出最低的损失。梯度下降，如果可以计算，直接导向目标。小批量梯度下降朝着不是最优的方向前进，但最终仍然到达目标。
+- en: If we were thinking in terms of the climbing-down-the-mountain-while-blindfolded
+    analogy, mini-batch gradient descent would be similar to being blindfolded with
+    a thin cloth that can be partially seen through. It’s not always guaranteed that
+    with every step we take, we arrive at a lower location, but given enough time,
+    we will be able to descend successfully.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们用盲目下山的比喻来思考，小批量梯度下降类似于戴着一块可以部分看穿的薄布的盲目。并不能保证我们每迈出一步就到达一个更低的位置，但是给定足够的时间，我们将能够成功下降。
+- en: Note Not all loss functions can be approximated by the loss on a subset of the
+    data. In other words, not all loss functions can be minimized using mini-batch
+    gradient descent. The negative marginal log likelihood of a GP is an example;
+    otherwise, we could have run mini-batch gradient descent on this function. Fortunately,
+    mini-batch gradient descent is applicable to the ELBO of a VGP.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意并非所有的损失函数都可以通过对数据子集的损失来近似。换句话说，并非所有的损失函数都可以通过小批量梯度下降来最小化。GP 的负边际对数似然就是一个例子；否则，我们可以在这个函数上运行小批量梯度下降。幸运的是，小批量梯度下降适用于
+    VGP 的 ELBO。
+- en: 'To recap, training a VGP follows a roughly similar procedure as training a
+    regular GP, in which we use a version of gradient descent to minimize the appropriate
+    loss of the model. Table 12.2 summarizes the key differences between the two model
+    classes: a regular GP should be trained on small datasets by running gradient
+    descent to minimize the exact negative marginal log likelihood, while a VGP can
+    be trained on large datasets by running mini-batch gradient descent to optimize
+    the ELBO, which is an approximation of the true log likelihood.'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总之，训练一个 VGP 遵循大致相似的程序，就像训练一个常规的 GP 一样，我们使用梯度下降的一个版本来最小化模型的适当损失。表 12.2 总结了两个模型类之间的关键差异：常规
+    GP 应该通过运行梯度下降来最小化精确的负边际对数似然在小数据集上训练，而 VGP 可以通过运行小批量梯度下降来优化 ELBO，在大数据集上训练，这是真实对数似然的一个近似。
+- en: Table 12.2 Training a GP vs. training a VGP. The high-level procedure is similar;
+    only the specific components and settings are replaced.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 表 12.2 训练一个 GP 与训练一个 VGP。高层次的过程是相似的；只有具体的组件和设置被替换。
+- en: '| Training procedure | GP | VGP |'
+  id: totrans-134
+  prefs: []
+  type: TYPE_TB
+  zh: '| 训练过程 | GP | VGP |'
+- en: '| --- | --- | --- |'
+  id: totrans-135
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- |'
+- en: '| Training data size | Small | Medium to large |'
+  id: totrans-136
+  prefs: []
+  type: TYPE_TB
+  zh: '| 训练数据大小 | 小 | 中等到大 |'
+- en: '| Training type | Exact training | Approximate training |'
+  id: totrans-137
+  prefs: []
+  type: TYPE_TB
+  zh: '| 训练类型 | 精确训练 | 近似训练 |'
+- en: '| Loss function | Negative marginal log likelihood | ELBO |'
+  id: totrans-138
+  prefs: []
+  type: TYPE_TB
+  zh: '| 损失函数 | 负边际对数似然 | ELBO |'
+- en: '| Optimization | Gradient descent | Mini-batch gradient descent |'
+  id: totrans-139
+  prefs: []
+  type: TYPE_TB
+  zh: '| 优化 | 梯度下降 | 小批量梯度下降 |'
+- en: 12.2.3 Implementing the approximate model
+  id: totrans-140
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 12.2.3 实现近似模型
+- en: 'We are now ready to implement a VGP in GPyTorch. Our plan is to write a VGP
+    model class, which is similar to the GP model classes we have worked with, and
+    minimize its ELBO using mini-batch gradient descent. The differences in our workflow
+    described in table 12.2 are reflected in our code in this subsection. Table 12.3
+    shows the components required when implementing a GP versus a VGP in GPyTorch.
+    In addition to a mean and covariance module, a VGP requires two other components:'
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*我们现在准备在 GPyTorch 中实现一个 VGP。我们的计划是编写一个 VGP 模型类，这类似于我们已经使用的 GP 模型类，并使用小批量梯度下降最小化其
+    ELBO。我们在表 12.2 中描述的工作流程的不同之处反映在了本小节中的代码中。表 12.3 显示了在 GPyTorch 中实现 GP 与 VGP 时所需的组件。除了均值和协方差模块外，VGP
+    还需要另外两个组件：*'
+- en: '*A variational distribution*—Defines the distribution over the inducing points
+    for the VGP. As we learned in the previous section, this distribution is to be
+    optimized so that the VGP resembles the GP trained on the full dataset.'
+  id: totrans-142
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*变分分布*—*定义了 VGP 中诱导点的分布。正如我们在上一节中学到的，此分布要进行优化，以使 VGP 类似于在完整数据集上训练的 GP。*'
+- en: '*A variational strategy*—Defines how predictions are produced from the inducing
+    points. In section 2.2, we saw that a multivariate normal distribution may be
+    updated in light of an observation. This variational strategy facilitates the
+    same update for the variational distribution.'
+  id: totrans-143
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*变分策略*—*定义了如何从诱导点产生预测。在第 2.2 节中，我们看到多元正态分布可以根据观测结果进行更新。这种变分策略促使对变分分布进行相同的更新。*'
+- en: Table 12.3 Necessary components when implementing a GP vs. a VGP in GPyTorch.
+    A VGP requires a mean and covariance module like a GP but additionally needs a
+    variational distribution and a variational strategy.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*表 12.3 在 GPyTorch 中实现 GP 与 VGP 时所需的组件。VGP 需要像 GP 一样的均值和协方差模块，但还需要变分分布和变分策略。*'
+- en: '| Components | GP | VGP |'
+  id: totrans-145
+  prefs: []
+  type: TYPE_TB
+  zh: '| 组件 | GP | VGP |'
+- en: '| --- | --- | --- |'
+  id: totrans-146
+  prefs: []
+  type: TYPE_TB
+  zh: '| --- | --- | --- |'
+- en: '| Mean module | Yes | Yes |'
+  id: totrans-147
+  prefs: []
+  type: TYPE_TB
+  zh: '| 均值模块 | 是 | 是 |'
+- en: '| Covariance module | Yes | Yes |'
+  id: totrans-148
+  prefs: []
+  type: TYPE_TB
+  zh: '| 协方差模块 | 是 | 是 |'
+- en: '| Variational distribution | No | Yes |'
+  id: totrans-149
+  prefs: []
+  type: TYPE_TB
+  zh: '| 变分分布 | 否 | 是 |'
+- en: '| Variational strategy | No | Yes |'
+  id: totrans-150
+  prefs: []
+  type: TYPE_TB
+  zh: '| 变分策略 | 否 | 是 |'
+- en: 'With these components in mind, we now implement the VGP model class, which
+    we name `ApproximateGPModel`. We don’t take in the training data and a likelihood
+    function in the `__init__()` method anymore. Instead, we take in a set of inducing
+    points that will be used to represent the entire dataset. The rest of the `__init__()`
+    method consists of declaring the learning pipeline that will be used to learn
+    which set of inducing points is best:'
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*考虑到这些组件，我们现在实现了 VGP 模型类，我们将其命名为* `ApproximateGPModel`。*我们不再在* `__init__()`
+    *方法中接受训练数据和似然函数。相反，我们接受一组诱导点，这些点将用于表示整个数据集。* `__init__()` *方法的其余部分包括声明将用于学习哪组诱导点最佳的学习流程：*'
+- en: '*The* `variational_distribution` *variable is an instance of the* `CholeskyVariationalDistribution`
+    *class, which takes in the number of inducing points during initialization.* The
+    variational distribution is the core of a VGP.'
+  id: totrans-152
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*变分分布* `variational_distribution` *变量是* `CholeskyVariationalDistribution` *类的一个实例，在初始化期间接受诱导点的数量。*
+    *变分分布是 VGP 的核心。*'
+- en: '*The* `variational_strategy` *variable is an instance of the* `VariationalStrategy`
+    *class.* It takes in the set of inducing points as well as the variational distribution.
+    We set `learn_inducing_locations` `=` `True` so that we can learn the best locations
+    for these inducing points during training. If this variable is set to `False`,
+    the points passed to `__init__()` (stored in `inducing`) will be used as the inducing
+    points:'
+  id: totrans-153
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*变分策略* `variational_strategy` *变量是* `VariationalStrategy` *类的一个实例。它接受一组诱导点以及变分分布。我们将*
+    `learn_inducing_locations` `=` `True` *以便在训练过程中学习这些诱导点的最佳位置。如果将此变量设置为* `False`，*则传递给*
+    `__init__()` *的点（存储在* `inducing` *中）将用作诱导点：*'
+- en: '[PRE14]'
+  id: totrans-154
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: ❶ Instead of an ExactGP object, our VGP is an approximate GP.
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ *我们的 VGP 不是一个 ExactGP 对象，而是一个近似 GP。*
+- en: ❷ Takes in a set of initial inducing points
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ *接受一组初始诱导点*
+- en: ❸ Sets up variational parameters necessary for training
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ *设置训练所需的变分参数*
+- en: ❹ To be continued
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ *待续*
+- en: 'As the last step in the `__init__()` method, we declare the mean and covariance
+    functions for the VGP. They should be whatever we’d like to use in a regular GP
+    if it were to be trained on the data. In our case, we use the constant mean and
+    the RBF kernel with an output scale:'
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*在* `__init__()` *方法的最后一步中，我们声明了 VGP 的均值和协方差函数。它们应该与在数据上训练的普通 GP 中要使用的函数相同。在我们的情况下，我们使用常数均值和具有输出比例的
+    RBF 核：*'
+- en: '[PRE15]'
+  id: totrans-160
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: 'We also declare the `forward()` method in the same way as in a regular GP,
+    which we do not show here. Let’s now initialize this model with the first 50 data
+    points in the training set as the inducing points:'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们还以与常规 GP 相同的方式声明 `forward()` 方法，这里不再展示。现在，让我们用训练集中的前 50 个数据点来初始化这个模型作为引入点：
+- en: '[PRE16]'
+  id: totrans-162
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: ❶ The sliced tensor train_x[:50, :] gives the first 50 data points in train_x.
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 切片张量 `train_x[:50, :]` 给出了 `train_x` 中的前 50 个数据点。
+- en: There is nothing special about these first 50 data points, and their values,
+    stored internally in the VGP model, will be modified during training. The most
+    important part of this initialization is that we are specifying that the model
+    should use 50 inducing points. If we’d like to use 100, we could pass `train_x[:100,`
+    `:]` to the initialization.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前 50 个数据点没有什么特别之处，它们的值，在 VGP 模型内部存储，将在训练过程中被修改。这种初始化最重要的部分是，我们指定模型应该使用 50 个引入点。如果我们想要使用
+    100 个，我们可以将 `train_x[:100, :]` 传递给初始化。
+- en: It’s hard to say exactly what number of inducing points is sufficient for a
+    VGP. The fewer points we use, the faster the model will train but the less effective
+    those inducing points will be at representing the whole set. As the number of
+    points increases, a VGP has more freedom in spreading out the inducing points
+    to cover the whole set, but training will become slower.
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 很难准确地说，多少个引入点足以用于 VGP。我们使用的点越少，模型训练就越快，但是这些引入点在表示整个集合时的效果就越不好。随着点数的增加，VGP 有更多的自由度来展开引入点以覆盖整个集合，但训练会变慢。
+- en: Note A general rule is not to go over 1,000 inducing points. As we discuss shortly,
+    50 points is enough for us to approximate the trained GP in the previous subsection
+    with high fidelity.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一般规则是不超过 1,000 个引入点。正如我们马上要讨论的，50 个点足以让我们以高保真度近似前一小节中训练的 GP。
+- en: 'To set up mini-batch gradient descent, we first need an optimizer. We, once
+    again, use the Adam optimizer:'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要设置小批量梯度下降，我们首先需要一个优化器。我们再次使用 Adam 优化器：
+- en: '[PRE17]'
+  id: totrans-168
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: ❶ Optimizes the parameters of the likelihood together with those of the GP
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 优化似然函数的参数以及 GP 的参数
+- en: Parameters to optimize
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要优化的参数
+- en: Previously, we only needed to pass `model.parameters()` to Adam. Here, the likelihood
+    is not coupled with the VGP model—a regular GP is initialized with a likelihood,
+    while a VGP isn’t. So, it’s necessary to pass `likelihood.parameters()` to Adam
+    in this case.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 之前，我们只需要将 `model.parameters()` 传递给 Adam。在这里，似然函数没有与 VGP 模型耦合——常规 GP 使用似然函数初始化，而
+    VGP 则没有。因此，在这种情况下，有必要将 `likelihood.parameters()` 传递给 Adam。
+- en: 'For the loss function, we use the `gpytorch.mlls.VariationalELBO` class, which
+    implements the ELBO quantity we aim to optimize with a VGP. During initialization,
+    an instance of this class takes in the likelihood function, the VGP model, and
+    the size of the full training set (which we can access with `train_y.size(0)`).
+    With that, we declare this object as follows:'
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于损失函数，我们使用 `gpytorch.mlls.VariationalELBO` 类，该类实现了我们希望通过 VGP 优化的 ELBO 量。在初始化期间，此类的一个实例接受似然函数、VGP
+    模型和完整训练集的大小（我们可以通过 `train_y.size(0)` 访问）。有了这些，我们声明这个对象如下：
+- en: '[PRE18]'
+  id: totrans-173
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: ❶ The size of the training data
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 训练数据的大小
+- en: 'With the model, the optimizer, and the loss function set up, we now need to
+    run mini-batch gradient descent. To do this, we split our training dataset into
+    batches, each containing 100 points, using PyTorch’s `TensorDataset` and `DataLoader`
+    classes:'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了模型、优化器和损失函数设置好了，我们现在需要运行小批量梯度下降。为此，我们将训练数据集分成批次，每个批次包含 100 个点，使用 PyTorch 的
+    `TensorDataset` 和 `DataLoader` 类：
+- en: '[PRE19]'
+  id: totrans-176
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: 'This `train_loader` object allows us to iterate through mini batches of size
+    100 of our dataset in a clean way when running gradient descent. The loss—that
+    is, the ELBO—is computed with the following syntax:'
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个 `train_loader` 对象允许我们以干净的方式迭代大小为 100 的数据集的小批量，当运行梯度下降时。损失—即 ELBO—通过以下语法计算：
+- en: '[PRE20]'
+  id: totrans-178
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: 'Here, `x_batch` and `y_batch` are a given batch (small subset) of the full
+    training set. Overall, gradient descent is implemented as follows:'
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里，`x_batch` 和 `y_batch` 是完整训练集的一个给定批次（小子集）。总的来说，梯度下降的实现如下：
+- en: '[PRE21]'
+  id: totrans-180
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: ❶ Enables training mode
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 启用训练模式
+- en: ❷ Iterates through the entire training dataset 50 times
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 迭代整个训练数据集 50 次
+- en: ❸ In each iteration, iterates through the mini batches in train_loader
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 在每次迭代中，迭代 `train_loader` 中的小批次
+- en: ❹ Mini-batch gradient descent, running gradient descent on the batches
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 小批量梯度下降，在批次上运行梯度下降
+- en: ❺ Enables prediction mode
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 启用预测模式
+- en: While running this mini-batch gradient descent loop, you will notice it is significantly
+    faster than the loop with the regular GP. (On the same MacBook, this process took
+    less than one second, a major improvement in speed!)
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在运行这个小批量梯度下降循环时，你会注意到它比使用普通GP的循环要快得多。（在同一台MacBook上，这个过程只需不到一秒钟，速度大幅提升！）
+- en: The speed of a VGP
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: VGP的速度
+- en: You might think that our comparison between the 500 iterations of gradient descent
+    with the regular GP and the 50 iterations of mini-batch gradient descent with
+    the VGP is not a fair one. But remember that in each iteration of the outer `for`
+    loop of mini-batch gradient descent, we also iterate over 10 mini batches in `train_loader`,
+    so in the end, we did take 500 gradient steps in total. Further, even if we did
+    run 500 iterations of mini-batch gradient descent, it would take less than 1 second
+    times 10, still a 4x speedup from 45 seconds.
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能认为我们在普通GP中进行的500次迭代与VGP中进行的50次小批量梯度下降的比较不公平。但是请记住，在小批量梯度下降的外部`for`循环的每次迭代中，我们还要在`train_loader`中迭代10个小批量，所以最终总共进行了500次梯度步骤。此外，即使我们运行了500次小批量梯度下降的迭代，也只需要不到1秒乘以10，仍然比45秒快4倍。
+- en: So with mini-batch gradient descent, our VGP model can be trained much more
+    efficiently. But what about the quality of the training? The left panel of figure
+    12.10 visualizes the progressive ELBO loss during our mini-batch gradient descent
+    run. Compared with figure 12.5, although the loss didn’t consistently decrease
+    at every step (there is a zigzag trend), the loss was effectively minimized throughout
+    the entire procedure.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，通过小批量梯度下降，我们的VGP模型可以更高效地训练。但是对于训练质量如何呢？图12.10的左侧面板可视化了我们小批量梯度下降运行期间的逐渐ELBO损失。与图12.5相比，尽管损失并没有在每一步时持续减小（存在锯齿趋势），但损失在整个过程中有效地最小化了。
+- en: '![](../../OEBPS/Images/12-10.png)'
+  id: totrans-190
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图12-10.png](../../OEBPS/Images/12-10.png)'
+- en: Figure 12.10 Progressive loss and the corresponding length scale and output
+    scale of a VGP during mini-batch gradient descent
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.10 VGP 在小批量梯度下降期间逐步损失服从的长度尺度和输出尺度的对应关系
+- en: This shows that every step during the optimization might not be the best direction
+    to take to minimize the loss, but the mini-batch gradient descent is, indeed,
+    effective at minimizing the loss. This is shown more clearly in figure 12.11.
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这表明，在优化过程中的每一步可能不是最小化损失的最佳方向，但小批量梯度下降确实是有效地减小了损失。这在图12.11中更清楚地显示出来。
+- en: '![](../../OEBPS/Images/12-11.png)'
+  id: totrans-193
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图12-11.png](../../OEBPS/Images/12-11.png)'
+- en: Figure 12.11 Progressive loss of a VGP during mini-batch gradient descent. Despite
+    some variability, the loss is effectively minimized.
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.11 过程中 VGP 的逐步损失在小批量梯度下降中逐渐减小。尽管存在一定的变异性，但损失有效地最小化了。
+- en: Now, let’s visualize the predictions made by this VGP model to see if it produces
+    reasonable results. Using the `visualize_gp_belief()` helper function, we obtain
+    figure 12.12, which shows that we have obtained a high-quality approximation of
+    the GP trained on the true loss at a small fraction of the time cost.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们可视化这个VGP模型产生的预测结果，看看它是否产生了合理的结果。使用`visualize_gp_belief()`助手函数，我们得到图12.12，显示我们以较小的时间成本获得了对真实损失进行训练的GP的高质量近似。
+- en: '![](../../OEBPS/Images/12-12.png)'
+  id: totrans-196
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图12-12.png](../../OEBPS/Images/12-12.png)'
+- en: Figure 12.12 Predictions made by a GP and a VGP. The predictions made by the
+    VGP roughly match those by the GP.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.12 由GP和VGP进行的预测。VGP进行的预测与GP的预测大致相同。
+- en: 'To end our discussion on VPGs, let’s visualize the locations of the inducing
+    points our VGP model has learned. We have said that these inducing points should
+    be representative of the whole dataset and capture its trend well. To plot the
+    inducing points, we can access their locations with `model.variational_strategy.inducing_
+    points.detach()` and plot them as scattered points along the mean prediction.
+    Our `visualize_gp_belief()` helper function already has this implemented, and
+    the only thing we need to do is to set `variational` `=` `True` when calling this
+    function:'
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 结束我们对VGP的讨论，让我们可视化VGP模型学到的诱导点的位置。我们已经说过这些诱导点应该代表整个数据集并很好地捕捉其趋势。要绘制诱导点，我们可以使用`model.variational_strategy.inducing_points.detach()`访问它们的位置，并将它们作为散点沿着均值预测进行绘制。当调用这个函数时，我们只需要将`variational`设置为`True`：
+- en: '[PRE22]'
+  id: totrans-199
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: This produces figure 12.13, in which we see a very interesting behavior in these
+    inducing points. They are not equally spread out across our training data; instead,
+    they cluster around different parts of the data. These parts are where the objective
+    function curves up or down or exhibits some nontrivial behavior. By allocating
+    the inducing points to these locations, the VGP is able to capture the most important
+    trends embedded in the large training dataset.
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这产生了图12.13，在其中我们看到这些感应点的非常有趣的行为。它们并不均匀分布在我们的训练数据之间；相反，它们聚集在数据的不同部分。这些部分是目标函数上升或下降或呈现某些非平凡行为的地方。通过将感应点分配到这些位置，VGP能够捕捉嵌入大型训练数据集中最重要的趋势。
+- en: '![](../../OEBPS/Images/12-13.png)'
+  id: totrans-201
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-13.png)'
+- en: Figure 12.13 The inducing points of a VGP. These points are positioned so that
+    they represent the entire data and capture the most important trends.
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.13 VGP的感应点。这些点被放置在整个数据中，捕捉最重要的趋势。
+- en: We have learned about how to train a VGP using mini-batch gradient descent and
+    have seen that this helps us approximate a regular GP, which is infeasible to
+    train, with high fidelity at a much lower cost. In the next section, we learn
+    about another gradient descent algorithm that can train a VGP even more effectively.
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经学习了如何使用小批量梯度下降来训练VGP，并且已经看到这有助于以更低的成本近似于不可训练的常规GP。在接下来的部分，我们将学习另一种梯度下降算法，可以更有效地训练VGP。
+- en: 12.3 Optimizing better by accounting for the geometry of the loss surface
+  id: totrans-204
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 12.3 通过考虑损失表面的几何特性来进行更好的优化
+- en: In this section, we learn about the algorithm called *natural gradient descent*,
+    which is another version of gradient descent that reasons more carefully about
+    the geometry of the loss function when computing the descent step. As we see shortly,
+    this careful reasoning allows us to quickly descend the loss function, ultimately
+    leading to more effective optimization with fewer iterations (that is, faster
+    convergence).
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将学习一种名为*自然梯度下降*的算法，这是梯度下降的另一种版本，在计算下降步骤时更仔细地推理损失函数的几何结构。正如我们很快会看到的那样，这种谨慎的推理使我们能够快速降低损失函数，最终导致更有效的优化，迭代次数更少（也就是更快的收敛）。
+- en: 'To understand the motivation for natural gradient descent and why it works
+    better than what we already have, we first distinguish between the two types of
+    parameters of a VGP:'
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要理解自然梯度下降的动机以及为什么它比我们已经拥有的更好，我们首先区分VGP的两种参数类型：
+- en: The first type is the regular parameters of a GP, such as the mean constant
+    and the length and output scales of the covariance function. These parameters
+    take on regular numerical values that exist in the Euclidean space.
+  id: totrans-207
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 第一种类型是GP的常规参数，例如均值常数和协方差函数的长度和输出比例。这些参数取得常规的数值，存在于欧几里得空间中。
+- en: The second type consists of the *variational* parameters that only a VGP has.
+    These have to do with the inducing points and the various components necessary
+    to facilitate the approximation with the variational distribution. In other words,
+    these parameters are associated with probability distributions and have values
+    that cannot be represented well within the Euclidean space.
+  id: totrans-208
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 第二种类型包括只有VGP才有的*变分*参数。这些与感应点和促使变分分布近似所需的各种组件有关。换句话说，这些参数与概率分布相关，并且具有无法在欧几里得空间内很好表示的值。
+- en: Note The difference between these two types of parameters is somewhat similar,
+    although not exactly analogous, to how the Euclidean distance can measure the
+    distance between two points in that space, but it can’t measure the difference
+    between two probability distributions.
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：这两种参数之间的差异有些相似，尽管不完全类似于欧几里得距离可以衡量该空间中两点之间的距离，但无法衡量两个概率分布之间的差异。
+- en: 'Although mini-batch gradient descent as we used it in the previous section
+    worked sufficiently well, the algorithm assumes that all parameters exist in Euclidean
+    space. For example, from the perspective of the algorithm, the difference between
+    a length scale of 1 and a length scale of 2 is the same as the difference between
+    an inducing point’s mean value of 1 and a mean value of 2\. However, this is not
+    true: going from a length scale of 1 to a length scale of 2 would affect the VGP
+    model very differently from going from an inducing point’s mean value of 1 to
+    a mean value of 2\. This is illustrated in the example of figure 12.14, where
+    the behavior of the loss with respect to the length scale is quite different than
+    that with respect to the inducing mean.'
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管我们在前一节中使用的小批量梯度下降效果已经足够好，但该算法假设所有参数存在于欧几里得空间中。例如，从算法的角度来看，长度尺度从1变到2的差异与诱导点的均值从1变到2的差异是相同的。然而，事实并非如此：从长度尺度从1变到2会对VGP模型产生非常不同的影响，而从诱导点的均值从1变到2的影响也不同。这在图12.14
+    的示例中有所体现，其中损失对长度尺度的行为与对诱导均值的行为非常不同。
+- en: '![](../../OEBPS/Images/12-14.png)'
+  id: totrans-211
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-14.png)'
+- en: Figure 12.14 An example of how the loss to be minimized might behave very differently
+    with respect to a regular parameter and a variational parameter. This gives rise
+    to the need to take into account the geometry of the loss.
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.14 一个示例，说明了要最小化的损失可能在正常参数和变分参数方面的行为非常不同。这就需要考虑损失的几何形状。
+- en: This difference in behavior exists because the geometry of the loss function
+    with respect to the regular parameters of a VGP is fundamentally different from
+    that with respect to the variational parameters. If mini-batch gradient descent
+    could account for this geometric difference when computing a descent direction
+    of the loss, the algorithm would be more effective at minimizing that loss. This
+    is where natural gradient descent comes in.
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正常参数和VGP的变分参数的损失函数的几何形状之间存在这种行为差异是因为。如果小批量梯度下降能够在计算损失的下降方向时考虑到这种几何差异，那么该算法在最小化损失时将更有效。这就是自然梯度下降的作用所在。
+- en: Definition *Natural gradient descent* uses information about the geometry of
+    the loss function with respect to the variational parameters to compute better
+    descent directions for these parameters.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*自然梯度下降* 的定义利用了关于损失函数对于变分参数的几何特性的信息，以计算这些参数更好的下降方向。'
+- en: By taking better descent directions, natural gradient descent can help us optimize
+    our VGP model more effectively and quickly. The end result is that we converge
+    to our final model in fewer steps. Continuing with our two-dimensional illustration
+    of the different gradient descent algorithms, figure 12.15 shows how this geometric
+    reasoning helps natural gradient descent reach the goal faster than mini-batch
+    gradient descent. That is, natural gradient descent tends to require fewer steps
+    during training to achieve the same loss as mini-batch gradient descent. In our
+    climbing-down-the-mountain analogy, with natural gradient descent, we are still
+    blindfolded by a thin cloth when trying to climb down the mountain, but we are
+    now wearing special hiking shoes that help us traverse the terrain more effectively.
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过采用更好的下降方向，自然梯度下降可以更有效地帮助我们优化VGP模型，而且更快。最终的结果是我们能够在更少的步骤中收敛到我们的最终模型。继续我们对不同梯度下降算法的二维图示，图12.15
+    展示了这种几何推理如何帮助自然梯度下降比小批量梯度下降更快地达到目标。也就是说，自然梯度下降在训练过程中往往需要更少的步骤来达到与小批量梯度下降相同的损失。在我们下山的类比中，使用自然梯度下降时，我们在试图下山时仍然被一块薄布蒙住了眼睛，但现在我们穿着特制的登山鞋，可以更有效地穿越地形。
+- en: '![](../../OEBPS/Images/12-15.png)'
+  id: totrans-216
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-15.png)'
+- en: Figure 12.15 An illustration of gradient descent, mini-batch gradient descent,
+    and natural gradient descent within a loss “valley,” where the center of the valley
+    gives the lowest loss. By accounting for the geometry of the loss function, natural
+    gradient descent reaches the loss minimum more quickly than mini-batch.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图12.15 展示了在损失“谷底”中进行梯度下降、小批量梯度下降和自然梯度下降的插图，在谷底的中心给出了最低的损失。通过考虑损失函数的几何特性，自然梯度下降比小批量梯度下降更快地达到了损失最小值。
+- en: Supplementary material for natural gradient descent
+  id: totrans-218
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 自然梯度下降的补充材料
+- en: 'For a more math-heavy explanation of natural gradient descent, I recommend
+    the excellent “Natural Gradient Descent” blog post by Agustinus Kristiadi: [http://mng.bz/EQAj](http://mng.bz/EQAj).'
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于更加数学化的自然梯度下降解释，我推荐阅读Agustinus Kristiadi的优秀博文“自然梯度下降”：[http://mng.bz/EQAj](http://mng.bz/EQAj)。
+- en: Note It is important to note that the natural gradient descent algorithm only
+    optimizes the variational parameters of a VGP. The regular parameters, such as
+    the length and output scales, could still be optimized by a regular mini-batch
+    gradient descent algorithm. We see this when we implement our new training procedure
+    next.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 需要注意的是，自然梯度下降算法仅优化VGP的变分参数。常规参数，例如长度和输出尺度，仍然可以通过常规小批量梯度下降算法优化。在接下来实现新的训练过程时，我们将看到这一点。
+- en: And with that, let’s use natural gradient descent to train our VGP model. With
+    the same one-dimensional objective function in previous sections, we implement
+    a VGP model that works with natural gradient descent. The model class in this
+    case is similar to `ApproximateGPModel`, which we implemented for mini-batch gradient
+    descent in the previous section, in that it
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因此，让我们使用自然梯度下降来训练我们的VGP模型。与之前部分的相同一维目标函数一样，我们实现了一个能够与自然梯度下降一起工作的VGP模型。这种情况下的模型类似于我们在上一节为小批量梯度下降实现的`ApproximateGPModel`，它
+- en: Still extends `gpytorch.models.ApproximateGP`
+  id: totrans-222
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 仍然扩展`gpytorch.models.ApproximateGP`
+- en: Needs a variational strategy to manage the learning process
+  id: totrans-223
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 需要一个变分策略来管理学习过程
+- en: Has a mean function, covariance function, and `forward()` method like a regular
+    GP model
+  id: totrans-224
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 具有类似常规GP模型的均值函数、协方差函数和`forward()`方法
+- en: 'The only difference here is that the variational distribution needs to be an
+    instance of `gpytorch.variational.NaturalVariationalDistribution` for us to use
+    natural gradient descent when training the model. The entire model class is implemented
+    as follows:'
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里唯一的区别是，当训练模型时，变分分布需要是`gpytorch.variational.NaturalVariationalDistribution`的一个实例，以便我们在使用自然梯度下降时进行训练。整个模型类实现如下：
+- en: '[PRE23]'
+  id: totrans-226
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: ❶ The variational distribution needs to be a natural one to work with natural
+    gradient descent.
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 变分分布需要是自然的才能与自然梯度下降一起工作。
+- en: ❷ Declaring the rest of the variational strategy is the same as before.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 声明剩余的变分策略与以前相同。
+- en: ❸ The forward() method is the same as before.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ `forward()`方法与以前相同。
+- en: 'We, once again, initialize this VGP model with 50 inducing points:'
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们再次使用50个引导点初始化此VGP模型：
+- en: '[PRE24]'
+  id: totrans-231
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: ❶ 50 inducing points
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 50个引导点
+- en: 'Now comes the important part, in which we declare the optimizers for our training.
+    Remember that we use the natural gradient descent algorithm to optimize the variational
+    parameters of our model. However, the other parameters, such as the length and
+    output scales, still must be optimized by the Adam optimizer. We, thus, use the
+    following code:'
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在是重要的部分，我们为训练声明优化器。请记住，我们使用自然梯度下降算法来优化模型的变分参数。然而，其他参数，例如长度和输出尺度，仍然必须由Adam优化器优化。因此，我们使用以下代码：
+- en: '[PRE25]'
+  id: totrans-234
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: ❶ Natural gradient descent takes in the VGP’s variational parameters, model.variational_parameters().
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 自然梯度下降接受VGP的变分参数，`model.variational_parameters()`。
+- en: ❷ Adam takes in the VGP’s other parameters, model.parameters() and likelihood.parameters().
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ Adam接受VGP的其他参数，`model.parameters()`和`likelihood.parameters()`。
+- en: Now, during training, we still compute the loss using
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，在训练期间，我们仍然使用以下方式计算损失
+- en: '[PRE26]'
+  id: totrans-238
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: 'While computing the loss, we loop through mini-batches (`x_batch` and `y_batch`)
+    of our training data. However, now that we have two optimizers running at the
+    same time, we need to manage them by calling `zero_grad()` (to clear out the gradients
+    from the previous step) and `step()` (to take a descent step) on each of them
+    at each iteration of training:'
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在计算损失时，我们循环遍历我们训练数据的小批量（`x_batch`和`y_batch`）。然而，现在我们有两个优化器同时运行，我们需要通过在每次训练迭代时调用`zero_grad()`（清除前一步的梯度）和`step()`（执行一步下降）来管理它们：
+- en: '[PRE27]'
+  id: totrans-240
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: ❶ Enables training mode
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 启用训练模式
+- en: ❷ Clears out the gradients from the previous step
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 清除前一步的梯度
+- en: ❸ Takes a descent step with each optimizer
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 使用每个优化器执行下降步骤
+- en: ❹ Enables prediction mode
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 启用预测模式
+- en: Note As always, we need to call `model.train()` and `likelihood.train()` prior
+    to gradient descent, and `model.eval()` and `likelihood.eval()` after training
+    has finished.
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 像往常一样，在梯度下降之前，我们需要调用`model.train()`和`likelihood.train()`，在训练完成后需要调用`model.eval()`和`likelihood.eval()`。
+- en: Notice that we call `zero_grad()` and `step()` on both the natural gradient
+    descent optimizer and Adam to optimize the respective parameters of a VGP model.
+    The training loop, once again, takes a very short time to finish, and the trained
+    VGP produces the predictions shown in figure 12.16\. We see very similar predictions
+    as those of a regular GP in figure 12.4 and those of a VGP trained with mini-batch
+    gradient descent in figure 12.13.
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，我们在自然梯度下降优化器和 Adam 上都调用了 `zero_grad()` 和 `step()`，以优化 VGP 模型的相应参数。训练循环再次只需很短的时间即可完成，并且训练得到的
+    VGP 产生的预测结果如图 12.16 所示。我们看到的预测结果与图 12.4 中的普通 GP 和使用小批量梯度下降训练的 VGP 在图 12.13 中的预测结果非常相似。
+- en: '![](../../OEBPS/Images/12-16.png)'
+  id: totrans-247
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-16.png)'
+- en: Figure 12.16 Predictions made by a VGP and the inducing points trained via natural
+    gradient descent. The quality of these predictions is excellent.
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.16 由 VGP 和通过自然梯度下降训练的感应点所做出的预测。这些预测的质量很高。
+- en: We can further inspect the progressive ELBO loss during training. Its progress
+    is visualized in the left panel of figure 12.17.
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以进一步检查训练过程中 ELBO 损失的逐步进展。其进展在图 12.17 的左侧面板中可视化。
+- en: '![](../../OEBPS/Images/12-17.png)'
+  id: totrans-250
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-17.png)'
+- en: Figure 12.17 Progressive loss of a VGP during natural gradient descent. The
+    loss was effectively minimized after a few number of iterations.
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 12.17 VGP 在自然梯度下降期间的逐步损失。经过少数迭代后，损失得到了有效最小化。
+- en: Remarkably, our ELBO loss dropped to a low value almost immediately during training,
+    indicating natural gradient descent was able to help us converge to a good model
+    quickly. This illustrates the benefits of this variant of the gradient descent
+    algorithm when training VGPs.
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 令人惊讶的是，在训练过程中，我们的 ELBO 损失几乎立即降至一个较低的值，这表明自然梯度下降能够帮助我们快速收敛到一个良好的模型。这说明了当训练 VGP
+    时，这种梯度下降算法的变体的好处。
+- en: We have now reached the end of chapter 12\. In this chapter, we learned to scale
+    GP models to large datasets by using inducing points, which are a set of representative
+    points that aim to capture the trends exhibited by a large training set. The resulting
+    model is called a VGP, which is amenable to mini-batch gradient descent and, therefore,
+    can be trained without the computation of the model loss across all data points.
+    We also examined natural gradient descent as a more effective version of the mini-batch
+    algorithm, allowing us to optimize more effectively. In chapter 13, we cover another
+    advanced usage of GPs, combining them with neural networks to model complex, structured
+    data.
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在已经到达第 12 章的结尾。在本章中，我们学习了如何通过使用感应点将 GP 模型扩展到大型数据集，感应点是一组代表性点，旨在捕获大型训练集所展现的趋势。由此产生的模型称为
+    VGP，它适用于小批量梯度下降，因此可以在不计算所有数据点的模型损失的情况下进行训练。我们还研究了自然梯度下降作为小批量算法的更有效版本，使我们能够更有效地优化。在第
+    13 章中，我们将涵盖 GP 的另一种高级用法，将其与神经网络结合以建模复杂的结构化数据。
+- en: 12.4 Exercise
+  id: totrans-254
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 12.4 练习
+- en: This exercise demonstrates the improvement in efficiency when going from a regular
+    GP model to a VGP one on a real-life dataset of housing prices in California.
+    Our goal is to observe the computational benefits of a VGP—this time, in a real-world
+    setting.
+  id: totrans-255
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此练习演示了在加利福尼亚房价的真实数据集上，从普通 GP 模型转换为 VGP 模型时效率的提高。我们的目标是观察 VGP 在实际环境中的计算优势。
+- en: 'Complete the following steps:'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 完成以下步骤：
+- en: Use the `read_csv()` function from the Pandas library to read in the dataset
+    stored in the spreadsheet named `data/housing.csv`, obtained from Kaggle’s California
+    Housing Prices dataset ([http://mng.bz/N2Q7](http://mng.bz/N2Q7)) under a Creative
+    Common Public Domain license. Once read in, the Pandas dataframe should look similar
+    to the output in figure 12.18.
+  id: totrans-257
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用 Pandas 库中的 `read_csv()` 函数读取存储在名为 `data/housing.csv` 的电子表格中的数据集，该数据集来自 Kaggle
+    的加利福尼亚房价数据集（[http://mng.bz/N2Q7](http://mng.bz/N2Q7)），使用的是创意共用公共领域许可证。一旦读取，Pandas
+    dataframe 应该看起来类似于图 12.18 中的输出。
+- en: '![](../../OEBPS/Images/12-18.png)'
+  id: totrans-258
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-18.png)'
+- en: Figure 12.18 The housing price dataset shown as a Pandas dataframe. This is
+    the training set for this exercise.
+  id: totrans-259
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 图 12.18 作为 Pandas dataframe 显示的房价数据集。这是本练习的训练集。
+- en: Visualize the `median_house_value` column, which is our prediction target, in
+    a scatter plot whose *x*- and *y*-axes correspond to the `longitude` and `latitude`
+    columns. The location of a dot corresponds to the location of a house, and the
+    color of the dot corresponds to the price. The visualization should look similar
+    to figure 12.19.
+  id: totrans-260
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在散点图中可视化`median_house_value`列，这是我们的预测目标，其*x*-和*y*-轴对应于`longitude`和`latitude`列。一个点的位置对应于一个房子的位置，点的颜色对应于价格。可视化效果应该类似于图12.19。
+- en: '![](../../OEBPS/Images/12-19.png)'
+  id: totrans-261
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/12-19.png)'
+- en: Figure 12.19 The housing price dataset shown as a scatter
+  id: totrans-262
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 图12.19 房价数据集的散点图表示
+- en: Extract all the columns, except the last (`median_house_value`), and store them
+    as a PyTorch tensor. This will be used as our training features, `train_x`.
+  id: totrans-263
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 提取除最后一列（`median_house_value`）以外的所有列，并将它们存储为PyTorch张量。这将用作我们的训练特征，`train_x`。
+- en: Extract the `median_house_value` column, and store its log transformation as
+    another PyTorch tensor. This is our training target, `train_y`.
+  id: totrans-264
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 提取`median_house_value`列，并将其对数变换存储为另一个PyTorch张量。这是我们的训练目标，`train_y`。
+- en: Normalize the training labels `train_y` by subtracting the mean and dividing
+    by the standard deviation. This will make training more stable.
+  id: totrans-265
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 通过减去均值并除以标准差来归一化训练标签`train_y`。这将使训练更加稳定。
+- en: Implement a regular GP model with a constant mean function and a Matérn 5/2
+    kernel with automatic relevance determination (ARD) with an output scale. For
+    a refresher on Matérn kernels and ARD, refer to sections 3.4.2 and 3.4.3, respectively.
+  id: totrans-266
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用具有恒定均值函数和具有自动相关性确定（ARD）的Matérn 5/2核实现常规GP模型。关于Matérn核和ARD的详细内容，请参阅第3.4.2和第3.4.3节。
+- en: 'Make a likelihood whose noise is constrained to be at least 0.1 using the following
+    code:'
+  id: totrans-267
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用以下代码创建一个噪声至少为0.1的似然性：
+- en: '[PRE28]'
+  id: totrans-268
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: ❶ The constraint forces the noise to be at least 0.1.
+  id: totrans-269
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❶该约束强制噪声至少为0.1。
+- en: This constraint helps us smooth out the training labels by raising the noise
+    tolerance.
+  id: totrans-270
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 此约束有助于通过提高噪声容限来平滑训练标签。
+- en: Initialize the previously implemented GP model and train it with the likelihood
+    using gradient descent for 10 iterations. Observe the total training time.
+  id: totrans-271
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 初始化之前实现的GP模型，并使用梯度下降对其进行10次迭代训练。观察总训练时间。
+- en: Implement a variational GP model with the same mean and covariance functions
+    as the GP. This model looks similar to the `ApproximateGPModel` class we implemented
+    in the chapter, except we now need the Matérn 5/2 kernel with ARD.
+  id: totrans-272
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 实现具有与GP相同的均值和协方差函数的变分GP模型。这个模型看起来类似于我们在本章中实现的`ApproximateGPModel`类，只是现在我们需要Matérn
+    5/2核和ARD。
+- en: Train this VGP with the similarly initialized likelihood and 100 inducing points,
+    using natural gradient descent for 10 iterations. For mini-batch gradient descent,
+    you could split the training set into batches of size 100.
+  id: totrans-273
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用类似初始化的似然性和100个诱导点对此VGP进行训练，使用自然梯度下降进行10次迭代。对于小批量梯度下降，您可以将训练集分成大小为100的批次。
+- en: Verify that training the VGP takes less time than training the GP. For timing
+    functionalities, you can use `time.time()` to record the start and end time of
+    training each model, or you can use the `tqdm` library to keep track of the duration
+    of training, like in the code we’ve been using.
+  id: totrans-274
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 验证训练VGP所需的时间是否少于训练GP的时间。对于计时功能，您可以使用`time.time()`来记录每个模型训练的开始和结束时间，或者您可以使用`tqdm`库来跟踪训练持续时间，就像我们一直在使用的代码一样。
+- en: The solution is included in the `CH11/02` `-` `Exercise.ipynb` notebook.
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 解决方案包含在`CH11/02` `-` `Exercise.ipynb`笔记本中。
+- en: Summary
+  id: totrans-276
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 摘要
+- en: The computation cost of a GP scales cubically with the size of the training
+    dataset. Therefore, training the model becomes prohibitive as the size of the
+    dataset grows.
+  id: totrans-277
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: GP的计算成本与训练数据集的大小呈立方比例。因此，随着数据集的大小增长，训练模型变得不可行。
+- en: Computing the loss of an ML model across a large number of data points is numerically
+    unstable. A loss computed in an unstable way may mislead optimization during gradient
+    descent, leading to poor predictive performance.
+  id: totrans-278
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在大量数据点上计算ML模型的损失在数值上是不稳定的。以不稳定的方式计算损失可能会误导梯度下降过程中的优化，导致预测性能不佳。
+- en: A VGP scales to a large dataset by only training on a small set of inducing
+    points. These inducing points need to be representative of the dataset, so the
+    trained model can be as similar as possible to the GP trained on the whole dataset.
+  id: totrans-279
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: VGP通过仅对一小组诱导点进行训练来扩展到大型数据集。这些诱导点需要代表数据集，以便训练的模型尽可能地与在整个数据集上训练的GP相似。
+- en: To produce an approximate model that is as close as possible to the model trained
+    on all of the training data, the Kullback–Leibler divergence, which measures the
+    difference between two probability distributions, is used in the formulation of
+    a VGP.
+  id: totrans-280
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为了产生一个尽可能接近在所有训练数据上训练的模型的近似模型，Kullback-Leibler 散度，它度量两个概率分布之间的差异，被用于 VGP 的制定中。
+- en: The evidence lower bound (ELBO) acts as a proxy for the true loss when training
+    a VGP. More specifically, the ELBO lower-bounds the marginal log likelihood of
+    the model, which is what we aim to optimize. By optimizing the ELBO, we indirectly
+    optimize the marginal log likelihood.
+  id: totrans-281
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 当训练一个 VGP 时，证据下界（ELBO）充当真实损失的代理。更具体地说，ELBO 限制了模型的边际对数似然，这是我们的优化目标。通过优化 ELBO，我们间接优化了边际对数似然。
+- en: Training a VGP may be done in small batches, allowing for a more stable computation
+    of the loss. The gradient descent algorithm used in this procedure is mini-batch
+    gradient descent.
+  id: totrans-282
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 训练一个 VGP 可以通过小批量进行，从而实现更稳定的损失计算。在该过程中使用的梯度下降算法是小批量梯度下降。
+- en: Although each step of mini-batch gradient descent is not guaranteed to completely
+    minimize loss, the algorithm, when a large number of iterations are run, can effectively
+    reduce the loss. This is because many steps of mini-batch gradient descent, in
+    aggregation, can point toward the right direction to minimize the loss.
+  id: totrans-283
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 尽管小批量梯度下降的每一步都不能保证完全最小化损失，但是当运行大量迭代时，该算法可以有效降低损失。这是因为许多小批量梯度下降的步骤在聚合时可以指向最小化损失的正确方向。
+- en: Natural gradient descent accounts for the geometry of the loss function with
+    respect to the variational parameters of a VGP. This geometric reasoning allows
+    the algorithm to update the variational parameters of the trained model and minimize
+    the loss more effectively, leading to faster convergence.
+  id: totrans-284
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 自然梯度下降考虑了相对于 VGP 的变分参数的损失函数的几何性质。这种几何推理使得算法能够更新训练模型的变分参数并更有效地最小化损失，从而实现更快的收敛。
+- en: Natural gradient descent optimizes the variational parameters of a VGP. Regular
+    parameters such as the length and output scales are optimized by mini-batch gradient
+    descent.
+  id: totrans-285
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 自然梯度下降优化了 VGP 的变分参数。诸如长度和输出比例等常规参数由小批量梯度下降进行优化。

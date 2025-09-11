@@ -1,0 +1,2189 @@
+- en: 4 Refining the best result with improvement-based policies
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 4通过基于改进的政策优化最佳结果
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章包括
+- en: The BayesOpt loop
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: BayesOpt循环
+- en: The tradeoff between exploitation and exploration in a BayesOpt policy
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在BayesOpt政策中开发开发和探索之间的权衡
+- en: Improvement as a criterion for finding new data points
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 以改进为标准来寻找新数据点。
+- en: BayesOpt policies that use improvement
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用改进的BayesOpt政策
+- en: 'In this chapter, we first remind ourselves of the iterative nature of BayesOpt:
+    we alternate between training a Gaussian process (GP) on the collected data and
+    finding the next data point to label using a BayesOpt policy. This forms a virtuous
+    cycle in which our past data inform future decisions. We then talk about what
+    we look for in a BayesOpt policy: a decision-making algorithm that decides which
+    data point to label. A good BayesOpt policy needs to balance sufficiently exploring
+    the search space and zeroing in on the high-performing regions.'
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们首先提醒自己BayesOpt的迭代性质：我们在已收集的数据上交替训练高斯过程（GP）并使用BayesOpt政策找到下一个要标记的数据点。这形成了一个良性循环，在这个循环中，我们的过去数据指导未来的决策。然后我们谈论我们在BayesOpt政策中寻找什么：一个决策算法，它决定标记哪个数据点。一个好的BayesOpt政策需要平衡足够探索搜索空间并集中在高性能区域。
+- en: 'Finally, we learn about two policies that seek to improve upon the best-seen
+    data point in the BayesOpt loop so far: Probability of Improvement, and one of
+    the most commonly used BayesOpt policies, Expected Improvement. For example, if
+    we have a hyperparameter tuning application where we want to identify the neural
+    network that gives the highest validation accuracy on a dataset, and the highest
+    accuracy we have seen so far is at 90%, we will likely want to improve upon this
+    90% threshold. The policies we learn in this chapter attempt to create this improvement.
+    In the material discovery task we saw in table 1.2, where we’d like to search
+    for metal alloys that mix at a low temperature (corresponding to high stability)
+    and 187.24 is the lowest temperature we have found, the two aforementioned policies
+    will seek to find values lower than this 187.24 benchmark.'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们了解了两种政策，这两种政策旨在改进到目前为止BayesOpt循环中见过的最佳数据点：改进概率和最常用的BayesOpt政策之一，即期望改进。例如，如果我们有一个超参数调整应用程序，我们想要识别在数据集上提供最高验证准确性的神经网络，并且到目前为止我们见过的最高准确性为90％，那么我们很可能想要改进这个90％的阈值。本章中学到的策略试图创建这种改进。在我们在表1.2中看到的材料发现任务中，我们想要搜索混合温度低（对应高稳定性）的金属合金，而我们找到的最低温度为187.24，上述两种政策将寻求找到低于这个187.24基准的值。
+- en: Amazingly, thanks to the Gaussianity of our belief about the objective function,
+    how much we can expect to improve from the best-seen point may be computed in
+    closed form. This is to say that while we don’t know what the objective function
+    looks like at unseen locations, computing improvement-based quantities can still
+    be done easily under a GP. By the end of the chapter, we gain a thorough understanding
+    of what a BayesOpt policy needs to do and how this is done with the two improvement-based
+    policies. We also learn how to integrate BoTorch, the BayesOpt library in Python
+    ([https://botorch.org/docs/introduction](https://botorch.org/docs/introduction))
+    that we use from this chapter through the end of the book, to implement BayesOpt
+    policies.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 令人惊讶的是，由于我们对目标函数的信念的高斯性质，我们可以期望从最佳观察点的改进程度可以通过封闭形式计算。也就是说，虽然我们不知道未见位置的目标函数的样子，但是在GP下，仍然可以轻松地计算基于改进的数量。到本章结束时，我们深入了解了BayesOpt政策需要做什么以及如何使用这两个基于改进的政策来完成此操作。我们还学习了如何集成BoTorch，即我们从本章到本书结束时使用的Python中的BayesOpt库（[https://botorch.org/docs/introduction](https://botorch.org/docs/introduction)），以实现BayesOpt政策。
+- en: 4.1 Navigating the search space in BayesOpt
+  id: totrans-9
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 4.1在BayesOpt中导航搜索空间
+- en: How can we make sure we are using our past data to inform future decisions correctly?
+    What are we looking for in a BayesOpt policy as an automated decision-making procedure?
+    This section answers these questions and gives us a clear idea of how BayesOpt
+    works when using a GP.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们如何确保我们正确利用过去的数据来指导未来的决策？我们在BayesOpt政策中寻找什么作为自动决策程序？本节回答了这些问题，并为我们清楚地说明了在使用GP时BayesOpt的工作原理。
+- en: 'Specifically, in the following subsection, we reinspect the BayesOpt loop that
+    was briefly introduced in section 1.2.2 to see how decision-making via BayesOpt
+    policies is done in tandem with training a GP. Then, we discuss the main challenge
+    BayesOpt policies need to address: the balance between exploring regions with
+    high uncertainty and exploiting good regions in the search space.'
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具体来说，在下一小节中，我们将重新检查在第 1.2.2 节中简要介绍的贝叶斯优化循环，以了解如何通过贝叶斯优化策略与高斯过程的训练同时进行决策。然后，我们将讨论贝叶斯优化策略需要解决的主要挑战：在具有高不确定性的区域和在搜索空间中利用良好区域之间的平衡。
+- en: 'Take, as an example, figure 4.1, which shows a GP trained on two data points
+    at 1 and 2\. Here, a BayesOpt policy needs to decide at which point between –5
+    and 5 we should evaluate the objective function next. The exploration–exploitation
+    tradeoff is clear: we need to decide whether to inspect the objective function
+    at the left and right extremes of our search space (around –5 and 5), where there’s
+    considerable uncertainty in our predictions, or stay within the region around
+    0, where the mean prediction is at the highest. The exploration–exploitation tradeoff
+    will set the stage for the different BayesOpt policies that we discuss in this
+    and following chapters.'
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以图 4.1 为例，该图显示了在 1 和 2 处训练的两个数据点的高斯过程。在这里，贝叶斯优化策略需要决定我们应该在 -5 和 5 之间的哪个点评估下一个目标函数。探索和利用的权衡是明显的：我们需要决定是否在搜索空间的左右极端（大约在
+    -5 和 5 附近）检查目标函数，在这些位置，我们的预测存在相当大的不确定性，或者留在平均预测值最高的区域周围。探索和利用的权衡将为我们讨论的不同贝叶斯优化策略奠定基础，这些策略分布在本章和后续章节中。
+- en: '![](../../OEBPS/Images/04-01.png)'
+  id: totrans-13
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-01.png)'
+- en: Figure 4.1 The exploration–exploitation tradeoff in BayesOpt. Each policy needs
+    to decide whether to query regions with high uncertainty (exploration) or to query
+    regions with a high predicted mean (exploitation).
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.1 贝叶斯优化中的探索和利用的权衡。每个策略都需要决定是否查询具有高不确定性的区域（探索），还是查询具有高预测平均值的区域（利用）。
+- en: 4.1.1 The BayesOpt loop and policies
+  id: totrans-15
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.1.1 贝叶斯优化循环和策略
+- en: First, let’s remind ourselves of what the BayesOpt loop looks like and the role
+    BayesOpt policies play in this process. In this chapter, we also implement a scaffold
+    of this loop, which we use to inspect BayesOpt policies in future chapters. Review
+    figure 4.2, which is a repeat of figure 1.6 and shows how BayesOpt works on a
+    high level.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，让我们回顾一下贝叶斯优化循环的外观以及贝叶斯优化策略在此过程中的作用。在本章中，我们还实现了这个循环的框架，我们将在以后的章节中用来检查贝叶斯优化策略。回顾图
+    4.2，它是图 1.6 的重复，显示了贝叶斯优化在高层次上的工作方式。
+- en: '![](../../OEBPS/Images/04-02.png)'
+  id: totrans-17
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-02.png)'
+- en: Figure 4.2 The BayesOpt loop, which combines a GP for modeling and a policy
+    for decision making. This complete workflow may now be used to optimize black
+    box functions.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.2 贝叶斯优化循环，结合了模拟高斯过程和决策制定策略。此完整工作流现在可以用于优化黑盒函数。
+- en: 'Specifically, BayesOpt is done via a loop that alternates between the following:'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具体来说，贝叶斯优化是通过一个循环完成的，该循环在以下几个方面交替进行：
+- en: Training a GP on the current training set. We have thoroughly covered how to
+    do this in previous chapters.
+  id: totrans-20
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对当前训练集进行高斯过程（GP）训练。我们已经在以前的章节中彻底讨论了如何做到这一点。
+- en: Using the trained GP to score data points in the search space by how valuable
+    they are at helping us identify the optimum of the objective function (step 2
+    in figure 4.2). The point that maximizes this score is selected to be labeled
+    and added to the training data (step 3 in figure 4.2). How this scoring is done
+    is determined by the BayesOpt policy used. We learn more about different policies
+    in this chapter and chapters 5 and 6.
+  id: totrans-21
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用训练有素的高斯过程（GP）对搜索空间中的数据点进行评分，评估它们在帮助我们确定目标函数最优值时的价值（图 4.2 中的步骤 2）。选择最大化此分数的点进行标记，并添加到训练数据中（图
+    4.2 中的步骤 3）。如何进行此评分由使用的贝叶斯优化策略决定。我们在本章和第 5 和第 6 章中了解更多有关不同策略的信息。
+- en: We repeat this loop until we reach a termination condition, most often once
+    we have evaluated the objective function for a target number of loop iterations.
+    This procedure is end to end, as we don’t just use a GP to make predictions for
+    the sake of making predictions—these predictions inform the decisions we make
+    about which data points to collect next, which, in turn, drive how future predictions
+    are generated.
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们重复此循环，直到达到终止条件，通常是一旦我们已经评估了目标函数达到目标循环迭代次数。这个过程是端到端的，因为我们不仅仅是使用高斯过程进行预测，而是利用这些预测来决定下一步收集哪些数据点，进而推动未来预测的生成。
+- en: DEFINITION The BayesOpt loop is a virtuous cycle of model training (the GP)
+    and data collection (the policy), each of which helps and benefits from the other,
+    with the goal of locating the optimum of the objective function. The virtuous
+    cycle of BayesOpt is a feedback loop that iterates toward an equilibrium with
+    desired properties; its components act in concert to achieve the desired result,
+    rather than aggravating one another in a vicious cycle that results in an undesirable
+    outcome.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 BayesOpt 循环是模型训练（GP）和数据收集（策略）的良性循环，彼此互相帮助和受益，目标是找到目标函数的最优解。BayesOpt 的良性循环是一个反馈循环，向着具有期望性质的平衡状态迭代；其组件协同作用以实现期望的结果，而不是在导致不良结果的恶性循环中相互恶化。
+- en: The rule that dictates how data points are scored according to their value in
+    helping us achieve this goal is decided by a BayesOpt policy and is, therefore,
+    essential to optimization performance. A good policy that assigns high scores
+    to data points that are truly valuable to optimization will point us toward the
+    optimum of the objective function more quickly and efficiently, while a badly
+    designed policy might misguide our experiments and waste valuable resources.
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 决定数据点如何根据其在帮助我们实现这一目标的价值方面得分的规则由 BayesOpt 策略决定，因此对于优化性能至关重要。一个好的策略会将高分分配给对优化真正有价值的数据点，从而更快、更高效地指引我们走向目标函数的最优点，而一个设计不良的策略可能会误导我们的实验，并浪费宝贵的资源。
+- en: Definition A *BayesOpt policy* scores each potential query according to its
+    value and thus decides where we should query the objective function next (where
+    the score is maximized). This score computed by the policy is called the *acquisition
+    score* as we are using it as a method of data acquisition.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 *BayesOpt 策略* 根据其价值对每个潜在的查询进行评分，从而决定我们应该在下一步查询目标函数的位置（评分最高的地方）。由策略计算的此评分被称为*获取分*，因为我们将其用作数据获取的方法。
+- en: Connection to reinforcement learning policies
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 连接到强化学习策略
+- en: If you have had experience with reinforcement learning (RL), you might notice
+    a connection between a BayesOpt policy and an RL policy. In both techniques, the
+    policy tells us which action to take in a decision-making problem. While in RL,
+    a policy might assign a score to each action and we, in turn, pick the one with
+    the highest score, or the policy might simply output the action we should take.
+    In BayesOpt, it’s always the former, where the policy outputs a score quantifying
+    the value of each possible query, so it’s our job to identify the query maximizing
+    this score.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你有强化学习（RL）的经验，你可能会注意到 BayesOpt 策略和 RL 策略之间的联系。在这两种技术中，策略告诉我们在决策问题中应该采取哪些行动。而在
+    RL 中，策略可能为每个动作分配一个分数，然后我们选择分数最高的动作，或者策略可能只是输出我们应该采取的动作。在 BayesOpt 中，它始终是前者，策略输出一个量化每个可能查询价值的分数，因此我们的工作是确定最大化此分数的查询。
+- en: Unfortunately, there’s no perfect solution to the problem of designing a good
+    BayesOpt policy. That is, there’s no single BayesOpt policy that consistently
+    excels across all objective functions. Different policies, as we see in this and
+    following chapters, use different focuses and heuristics. While some heuristics
+    work well on one type of objective function, others might prove effective on different
+    types of functions. This means we need to expose ourselves to a wide range of
+    BayesOpt policies and understand what they aim to do to be able to apply them
+    to appropriate situations—which is exactly what we will be doing in chapters 4
+    to 6.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不幸的是，设计一个好的 BayesOpt 策略的问题没有完美的解决方案。也就是说，并没有一种单一的 BayesOpt 策略能够在所有目标函数上始终表现出色。正如我们在本章和后续章节中所见，不同的策略使用不同的焦点和启发式方法。虽然某些启发式方法在某种类型的目标函数上效果良好，但其他启发式方法可能在不同类型的函数上有效。这意味着我们需要接触广泛的
+    BayesOpt 策略，并了解它们的目的，以便将它们应用于适当的情况——这正是我们将在第 4 至 6 章中所做的。
+- en: What is a policy?
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 什么是策略？
+- en: Each BayesOpt policy is a decision rule that scores data points in terms of
+    usefulness in optimization according to a given criterion or heuristic. Different
+    criteria and heuristics give rise to different policies, and there is no predetermined
+    set of BayesOpt policies. In fact, BayesOpt researchers still publish papers proposing
+    new policies. In this book, we only discuss the most popular and commonly used
+    policies in practice.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个 BayesOpt 策略都是一个决策规则，根据给定的标准或启发式评分数据点，以确定其在优化中的有用性。不同的标准和启发式导致不同的策略，而没有预先确定的一组
+    BayesOpt 策略。事实上，BayesOpt 研究人员仍然发布提出新策略的论文。在本书中，我们只讨论实践中最流行和常用的策略。
+- en: 'Let us now take a moment to implement a placeholder BayesOpt loop, which we
+    will be using from now on to inspect various BayesOpt policies. This code is implemented
+    in CH04/01 - BayesOpt loop.ipynb. The first component we need is an objective
+    function that we’d like to optimize using BayesOpt. Here, we use the familiar
+    one-dimensional Forrester function, which is defined to be between –5 and 5, as
+    the objective function to be maximized. We also compute the value of the Forrester
+    function inside its domain [–5, 5], with `xs` and `ys` as the ground truth:'
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在让我们花点时间来实现一个占位的贝叶斯优化循环，从现在开始我们将使用它来检查各种贝叶斯优化策略。这段代码在 CH04/01 - BayesOpt loop.ipynb
+    中实现。我们需要的第一个组件是一个我们想要使用贝叶斯优化来优化的目标函数。在这里，我们使用熟悉的一维 Forrester 函数作为要最大化的目标函数，它被定义在
+    -5 到 5 之间。我们还使用 `xs` 和 `ys` 作为基本事实，在其定义域 [–5, 5] 内计算 Forrester 函数的值：
+- en: '[PRE0]'
+  id: totrans-32
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ Form of the objective function, assumed to be unknown
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 目标函数的形式，假设未知
+- en: ❷ Test data computed over a grid between –5 and 5
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 在 -5 到 5 之间的网格上计算的测试数据
+- en: Another thing we need to do is modify how GP models are implemented so that
+    they can be used with BayesOpt policies in BoTorch. Implementing the GP makes
+    up the first step of our BayesOpt loop.
+  id: totrans-35
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要做的另一件事是修改 GP 模型的实现方式，以便它们可以与 BoTorch 中的贝叶斯优化策略一起使用。实现 GP 构成了我们的贝叶斯优化循环的第一步。
+- en: 'Since BoTorch is built right on top of GPyTorch, only minimal modifications
+    are required. Specifically, we use the following GP implementation, in which we
+    inherit from the `botorch.models.gpytorch.GPyTorchModel` class in addition to
+    our usual `gpytorch.models.ExactGP` class. Further, we declare the class-specific
+    attribute `num_outputs` and set it to 1\. These are the minimal modifications
+    we need to make to use our GPyTorch model with BoTorch, which implements the BayesOpt
+    policies we use later in this chapter:'
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于 BoTorch 就建立在 GPyTorch 之上，因此只需要进行最小的修改。具体来说，我们使用以下 GP 实现，其中除了我们通常的 `gpytorch.models.ExactGP`
+    类之外，我们还继承了 `botorch.models.gpytorch.GPyTorchModel` 类。此外，我们声明了类特定属性 `num_outputs`
+    并将其设置为 1。这些是我们需要进行的最小修改，以便将我们的 GPyTorch 模型与 BoTorch 一起使用，后者实现了本章后面我们使用的贝叶斯优化策略：
+- en: '[PRE1]'
+  id: totrans-37
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: ❶ Modifications for BoTorch integration
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 用于 BoTorch 集成的修改
+- en: 'Aside from these, everything else in our GP implementation remains the same.
+    We now write a helper function that trains the GP on our training data:'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除此之外，我们 GP 实现中的其他一切都保持不变。现在我们编写一个帮助函数，用于在我们的训练数据上训练 GP：
+- en: '[PRE2]'
+  id: totrans-40
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ Trains the GP using gradient descent
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 使用梯度下降训练 GP
+- en: ❷ Declares the GP
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 声明 GP
+- en: ❸ Trains the GP using gradient descent
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 使用梯度下降训练 GP
+- en: Note We have used all the preceding code in previous chapters. If you are having
+    trouble understanding a piece of code, refer to section 3.3.2 for more details.
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 我们在前几章中使用了所有先前的代码。如果您对某段代码有困难理解，请参考第 3.3.2 节以获取更多细节。
+- en: This covers step 1 of figure 4.2\. For now, we are skipping step 2, in which
+    we implement BayesOpt policies, and saving it for the next section and future
+    chapters. The next component to be implemented is the visualization of the data
+    that has been collected so far, the current GP belief, and how a BayesOpt policy
+    scores the rest of the data points. The target of this visualization is shown
+    in figure 4.3, which we saw in chapter 1\. Specifically, the top panel of the
+    plot shows the predictions made by a GP model against the true objective function,
+    while the bottom panel shows the acquisition scores as computed by a BayesOpt
+    policy.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这涵盖了图 4.2 的第 1 步。现在，我们跳过第 2 步，即实现贝叶斯优化策略，并将其留待下一节和未来章节。要实现的下一个组件是可视化到目前为止收集的数据，当前
+    GP 信念以及一个贝叶斯优化策略如何评分其余数据点。该可视化的目标显示在图 4.3 中，我们在第 1 章中见过。具体来说，图的顶部面板显示了 GP 模型对真实目标函数的预测，而底部面板显示了由贝叶斯优化策略计算的收购分数。
+- en: '![](../../OEBPS/Images/04-03.png)'
+  id: totrans-46
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-03.png)'
+- en: Figure 4.3 A typical visualization of progress in BayesOpt. The top panel shows
+    the GP predictions and the ground truth objective function, while the bottom panel
+    shows the acquisition scores made by a BayesOpt policy named Expected Improvement,
+    which we learn about in section 4.3.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.3 贝叶斯优化进展的典型可视化。顶部面板显示了 GP 预测和真实的目标函数，而底部面板显示了一个名为期望改进（Expected Improvement）的贝叶斯优化策略所做的收购分数，我们将在第
+    4.3 节中学习到。
+- en: 'We are already familiar with how to generate the top panel, and generating
+    the bottom panel is just as simple. This will be done using a helper function
+    similar to the one we used in section 3.3\. The function takes in a GP model and
+    its likelihood function as well as two optional inputs:'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经熟悉如何生成顶部面板，生成底部面板同样简单。这将使用类似于我们在第3.3节中使用的辅助函数来完成。该函数接受一个GP模型及其似然函数以及两个可选输入：
+- en: '`policy` refers to a BayesOpt policy object, which can be called in a way similar
+    to any PyTorch module. Here, we are calling it on the grid `xs` that represents
+    our search space to obtain the acquisition scores across the space. We discuss
+    how to implement these policy objects with BoTorch in the next section, but we
+    don’t need to know more about these objects right now.'
+  id: totrans-49
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`policy` 指的是BayesOpt策略对象，可以像调用任何PyTorch模块一样调用。在这里，我们将它调用在代表我们搜索空间的网格 `xs` 上，以获取整个空间的获取分数。我们将在下一节中讨论如何使用BoTorch实现这些策略对象，但我们现在不需要更多了解这些对象。'
+- en: '`next_x` is the location of the data point that maximizes the acquisition score,
+    which is to be added to the running training data:'
+  id: totrans-50
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`next_x` 是使获取分数最大化的数据点的位置，将其添加到正在运行的训练数据中：'
+- en: '[PRE3]'
+  id: totrans-51
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: ❶ GP predictions
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ GP预测
+- en: ❷ Acquisition score
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 获取分数
+- en: ❸ Omitted
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 省略
+- en: 'Here, we are generating the predictions from the GP and the acquisition scores
+    on the test data `xs`. Note that we don’t compute the acquisition scores if `policy`
+    is not passed in, in which case we also visualize the GP predictions in the way
+    we’re already familiar with—scattered points to indicate the training data, a
+    solid line for the mean predictions, and shaded regions for the 95% CIs:'
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我们从GP和测试数据 `xs` 中生成预测。请注意，如果未传入 `policy`，我们不会计算获取分数，在这种情况下，我们也以我们已经熟悉的方式可视化GP预测-散点表示训练数据，平均预测的实线，95%
+    CI的阴影区域：
+- en: '[PRE4]'
+  id: totrans-56
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Ground truth
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 真实值
+- en: ❷ Training data
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 训练数据
+- en: ❸ Mean predictions and 95% CIs
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 平均预测和95% CI
+- en: Note Refer to section 2.4.4 for a refresher on this visualization.
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请参考第2.4.4节以了解这个可视化的基础知识。
+- en: 'If, on the other hand, a policy object is passed in, we create another subplot
+    to show the acquisition scores across the search space:'
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，如果传入了策略对象，我们将创建另一个子图以显示搜索空间中的获取分数：
+- en: '[PRE5]'
+  id: totrans-62
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: ❶ GP predictions (the same as before)
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ GP预测（与以前相同）
+- en: ❷ The point maximizing the acquisition score, visualized using a dotted vertical
+    line
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 最大化获取分数的点，使用虚线垂直线进行可视化
+- en: ❸ Acquisition scores
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 获取分数
+- en: This function, when `policy` and `next_x` are passed in, will create a lower
+    panel showing the acquisition score according to the BayesOpt policy. Finally,
+    we need to implement step 3 of the BayesOpt loop in figure 4.2, which (1) finds
+    the point with the highest acquisition score and (2) adds it to the training data
+    and updates the GP. For the first task of identifying the point giving the highest
+    acquisition score, while it’s possible in our Forrester example to scan over a
+    one-dimensional search space, an exhaustive search becomes more and more expensive
+    as the number of dimensions of the objective function increases.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当传入 `policy` 和 `next_x` 时，此函数将创建一个显示根据BayesOpt策略的获取分数的较低面板。最后，我们需要实现图4.2中BayesOpt循环的第3步，即(1)找到具有最高获取分数的点，并(2)将其添加到训练数据并更新GP。对于识别给出最高获取分数的点的第一个任务，虽然在我们的Forrester示例中可能在一维搜索空间上进行扫描，但随着目标函数维数的增加，穷举搜索变得越来越昂贵。
+- en: Note We can use BoTorch’s helper function `botorch.optim.optimize` `.optimize_acqf()`,
+    which finds the point that maximizes the score of any BayesOpt policy. The helper
+    function uses L-BFGS, a quasi-Newton optimization method that generally works
+    better than gradient descent.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，我们可以使用BoTorch的辅助函数 `botorch.optim.optimize` `.optimize_acqf()`，该函数找到最大化任何BayesOpt策略得分的点。辅助函数使用L-BFGS，一种准牛顿优化方法，通常比梯度下降方法更有效。
+- en: 'We do this as follows:'
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们这样做：
+- en: '`policy` is the BayesOpt policy object, which we learn about shortly.'
+  id: totrans-69
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`policy` 是BayesOpt策略对象，我们很快就会了解更多。'
+- en: '`bounds` stores the boundary of our search space, which is –5 and 5 in this
+    case.'
+  id: totrans-70
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`bounds` 存储了我们搜索空间的边界，在本例中为-5和5。'
+- en: '`q` `=` `1` specifies the number of points we’d like the helper function to
+    return, which is one. (In chapter 7, we learn about the setting where we are allowed
+    to make multiple queries to the objective functions at the same time.)'
+  id: totrans-71
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`q` `=` `1` 指定我们希望辅助函数返回的点数，这是一个。 (在第7章中，我们学习了允许同时对目标函数进行多次查询的设置。)'
+- en: '`num_restarts` and `raw_samples` denote the number of repeats and initial data
+    points L-BFGS uses when searching for the optimal candidate that gives the highest
+    acquisition score. Generally, I recommend using 20 times and 50 times the number
+    of dimensions for these parameters, respectively.'
+  id: totrans-72
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '`num_restarts` 和 `raw_samples` 分别表示在搜索给出最高获取分数的最佳候选项时 L-BFGS 使用的重复次数和初始数据点数。一般来说，我建议分别使用这些参数的维数的
+    20 倍和 50 倍。'
+- en: 'The returned values, `next_x` and `acq_val`, are the location of the point
+    giving the highest acquisition score and the corresponding maximized acquisition
+    score, respectively:'
+  id: totrans-73
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 返回的值，`next_x` 和 `acq_val`，分别是给出最高获取分数的点的位置和相应的最大化获取分数：
+- en: '[PRE6]'
+  id: totrans-74
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: Setting the number of restarts and raw samples
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 设置重新启动和原始样本的数量
+- en: The higher the values of `num_restarts` and `raw_samples` are, the more exhaustive
+    L-BFGS will be when searching for the optimal candidate maximizing the acquisition
+    score. This also means the L-BFGS algorithm will take longer to run. You can increase
+    these two numbers if you see that L-BFGS is failing at maximizing the acquisition
+    score or decrease them if the algorithm is taking too long to run.
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`num_restarts` 和 `raw_samples` 的值越高，当搜索最大化获取分数的最佳候选项时，L-BFGS 的穷举程度就越高。这也意味着
+    L-BFGS 算法运行的时间将更长。如果发现 L-BFGS 在最大化获取分数时失败，或者算法运行时间太长，可以增加这两个数字；反之，可以减少它们。'
+- en: 'As the last step, we put together what we have implemented so far in a BayesOpt
+    loop. We do the following at each iteration of this loop:'
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为最后一步，我们在贝叶斯优化循环中汇总了我们到目前为止实现的内容。在该循环的每次迭代中，我们执行以下操作：
+- en: We first print out the best value we have seen so far (`train_y.max()`), which
+    shows how optimization is progressing.
+  id: totrans-78
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们首先打印出迄今为止我们看到的最佳值（`train_y.max()`），这显示了优化的进展情况。
+- en: Then, we retrain the GP on the current training data and redeclare the BayesOpt
+    policy.
+  id: totrans-79
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 然后，我们重新在当前训练数据上训练 GP，并重新声明贝叶斯优化策略。
+- en: Using the helper function `botorch.optim.optimize_acqf()` from BoTorch, we identify
+    the point in the search space that maximizes the acquisition score.
+  id: totrans-80
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用 BoTorch 中的辅助函数 `botorch.optim.optimize_acqf()`，我们确定在搜索空间中最大化获取分数的点。
+- en: We call the helper function `visualize_gp_belief_and_policy()`, which visualizes
+    our current GP belief and optimization progress.
+  id: totrans-81
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们调用辅助函数 `visualize_gp_belief_and_policy()`，该函数可视化我们当前的 GP 信念和优化进展。
+- en: Finally, we query the function value at the identified point (`next_x`) and
+    update our observed data.
+  id: totrans-82
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 最后，我们在确定的点（`next_x`）查询函数值并更新我们观察到的数据。
+- en: This entire procedure is summarized in figure 4.4, which shows the steps in
+    the BayesOpt loop and the corresponding code that implements them. Each step is
+    implemented by modular code from our helper functions or BoTorch, making the entire
+    procedure easy to follow.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 整个过程总结在图 4.4 中，该图显示了贝叶斯优化循环中的步骤及实现这些步骤的相应代码。每个步骤都由我们的辅助函数或 BoTorch 的模块化代码实现，使得整个过程易于跟踪。
+- en: '![](../../OEBPS/Images/04-04.png)'
+  id: totrans-84
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-04.png)'
+- en: Figure 4.4 Steps in the BayesOpt loop and the corresponding code. The code for
+    each step is modular, which makes the entire loop easy to follow.
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.4 贝叶斯优化循环中的步骤及相应的代码。每个步骤的代码是模块化的，这使得整个循环易于跟踪。
+- en: 'The actual code implementation is as follows:'
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实际的代码实现如下：
+- en: '[PRE7]'
+  id: totrans-87
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ The number of evaluations of the objective function that can be made
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 可以进行的目标函数评估次数
+- en: ❷ Updates the model on the current data
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 更新当前数据上的模型
+- en: ❸ Initializes the BayesOpt policy, to be discussed later
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 初始化贝叶斯优化策略，稍后讨论
+- en: ❹ Finds the point that gives the highest acquisition score
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 找到给出最高获取分数的点
+- en: ❺ Visualizes the current GP model and acquisition scores
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 可视化当前 GP 模型和获取分数
+- en: ❻ Makes an observation at the identified point and updates the training data
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❻ 在确定的点观察并更新训练数据
+- en: With that, we have implemented a skeleton of a BayesOpt loop. All that’s left
+    to do is fill in the initialization of `policy` with an actual BayesOpt policy
+    we would like to use, and the notebook will be able to run BayesOpt on the Forrester
+    function. Note that while calling `visualize_gp_belief_and_policy()` isn’t necessary
+    (that is, the previous BayesOpt loop will still be able to run without that line
+    of code), the function is useful in helping us observe the behavior and characteristics
+    of BayesOpt policies as well as diagnosing any potential problems, as we discuss
+    later in this chapter.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了这一点，我们已经实现了一个 BayesOpt 循环的框架。现在唯一要做的就是用我们想要使用的实际 BayesOpt 策略来填充`policy`的初始化，然后笔记本就能在
+    Forrester 函数上运行 BayesOpt 了。请注意，虽然调用`visualize_gp_belief_and_policy()`不是必需的（也就是说，之前的
+    BayesOpt 循环仍然能够运行而不需要那一行代码），但是这个函数对我们观察 BayesOpt 策略的行为和特性以及诊断任何潜在问题是有用的，正如我们后面在本章中讨论的那样。
+- en: One of the most important characteristics of a BayesOpt policy is the balance
+    between exploration and exploitation, a classical tradeoff in many AI and ML problems.
+    Here, the possibility of discovering a high-performance region we currently don’t
+    know about (exploration) is traded off against the chance of zeroing in on a known
+    good region (exploitation). We discuss this tradeoff in greater detail in the
+    next subsection.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BayesOpt 策略最重要的特征之一是探索和利用之间的平衡，这是许多人工智能和机器学习问题中的一个经典权衡。在这里，发现我们目前不知道的高性能区域（探索）的可能性与集中在已知的良好区域（利用）的机会之间进行权衡。我们将在下一小节中更详细地讨论这种权衡。
+- en: 4.1.2 Balancing exploration and exploitation
+  id: totrans-96
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.1.2 平衡探索和利用
+- en: 'In this subsection, we discuss one of the problems inherent in any decision-making
+    procedure, including BayesOpt: the balance between sufficient exploration of the
+    entire search space and timely exploitation of regions that yield good results.
+    This discussion will help us form an idea of what a good BayesOpt policy should
+    do and make us aware of how each of the policies we learn about addresses this
+    tradeoff.'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这一小节中，我们讨论了决策过程中固有的一个问题，包括 BayesOpt 在内：在充分探索整个搜索空间和及时利用产生良好结果的区域之间的平衡。这一讨论将帮助我们形成对什么是一个好的
+    BayesOpt 策略的理解，并让我们意识到我们所学到的每个策略如何解决这种权衡。
+- en: To illustrate the exploration–exploitation tradeoff, imagine you are dining
+    at a restaurant you have only been to a few times before (see figure 4.5). You
+    know that this restaurant has great burgers, but you’re not sure if their fish
+    and steaks are any good. Here, you are faced with a exploration–exploitation problem,
+    where you need to choose between ordering something new that might be an excellent
+    dish (exploration) and ordering your usual but reliable meal (exploitation).
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了说明探索和利用的权衡，想象一下你正在一家你之前只去过几次的餐厅用餐（见图 4.5）。你知道这家餐厅的汉堡很棒，但你不确定他们的鱼和牛排是否好吃。在这里，你面临着一个探索与利用的问题，你需要在尝试点可能是一道很好的菜肴（探索）和点你经常吃但可靠的餐点（利用）之间做出选择。
+- en: '![](../../OEBPS/Images/04-05.png)'
+  id: totrans-99
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-05.png)'
+- en: Figure 4.5 Ordering from a menu at a restaurant has an inherent exploration
+    (trying something new) vs. exploitation (ordering the usual) tradeoff.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.5 在餐厅点菜具有固有的探索（尝试新事物）与利用（点常吃的）的权衡。
+- en: Excessive exploration might cause you to order something you don’t like, while
+    constant exploitation runs the risk of causing you to miss out on a dish you will
+    really like. Therefore, a reasonable balance between the two is crucial.
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 过度的探索可能会导致你点到你不喜欢的东西，而持续的利用则可能会导致你错过你真正喜欢的一道菜。因此，两者之间的合理平衡至关重要。
+- en: 'This ubiquitous problem is found not only in ordering food but in common problems
+    in AI, such as reinforcement learning, product recommendation, and scientific
+    discovery. In BayesOpt, we face the same tradeoff: we need to sufficiently explore
+    the search space so we don’t miss out on a good region, but we should also focus
+    on regions with high objective values to ensure we are making progress in terms
+    of optimization.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个无处不在的问题不仅存在于点餐中，也存在于人工智能的常见问题中，比如强化学习、产品推荐和科学发现。在 BayesOpt 中，我们面临着同样的权衡：我们需要充分探索搜索空间，以便不错过一个好的区域，但我们也应该专注于具有高客观价值的区域，以确保我们在优化方面取得进展。
+- en: Note By “regions with high objective values,” we mean the regions that comprise
+    inputs *x* that yield high values of outputs *f*(*x*), which are the target of
+    our optimization (specifically maximization) task.
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：“具有高目标值的区域”指的是由输入 *x* 产生高输出 *f*(*x*) 值的区域，这是我们优化（特别是最大化）任务的目标。
+- en: 'Let’s return to our code example and assume that when we first start out, our
+    training dataset contains two observations from the Forrester objective function,
+    at *x* = 1 and at *x* = 2:'
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们回到我们的代码示例，并假设当我们刚开始时，我们的训练数据集包含 Forrester 目标函数的两个观察值，分别为 *x* = 1 和 *x* =
+    2：
+- en: '[PRE8]'
+  id: totrans-105
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: This gives the output
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这给出了输出
+- en: '[PRE9]'
+  id: totrans-107
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: 'This indicates that the point at 1 evaluates at roughly 1.6, while the point
+    at 2 evaluates at 1.5\. Visualizing the predictions made by the trained GP, we
+    obtain the familiar-looking plot in figure 4.6\. This figure shows the exploration–exploitation
+    tradeoff we face: Should we evaluate the objective function where uncertainty
+    is high, or should we stay within the region where the mean prediction is high?'
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这表明点 1 处的评估大约为 1.6，而点 2 处的评估为 1.5。通过可视化训练好的 GP 所做出的预测，我们获得了图 4.6 中熟悉的样式。该图显示了我们面临的探索与利用之间的权衡：我们应该在不确定性较高的地方评估目标函数，还是应该留在平均预测较高的区域？
+- en: '![](../../OEBPS/Images/04-06.png)'
+  id: totrans-109
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-06.png)'
+- en: Figure 4.6 Predictions by a GP trained on two data points from the Forrester
+    function
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.6：由 GP 训练的两个数据点的预测来自 Forrester 函数
+- en: Each BayesOpt policy has a different way of addressing the tradeoff and, therefore,
+    offers different advice on how to best explore the search space. In figure 4.6,
+    some policies might lead us to further explore unknown regions, while others might
+    suggest zeroing in on what we know to give high values. Again, there’s usually
+    no one-size-fits-all approach (that is, no policy that always works well).
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个 BayesOpt 策略都有一种不同的方式来处理这种权衡，因此，在如何最好地探索搜索空间方面提供了不同的建议。在图 4.6 中，一些策略可能会导致我们进一步探索未知区域，而另一些策略可能会建议我们聚焦于已知的高价值区域。同样，通常没有一种一刀切的方法（即，没有一种策略始终表现良好）。
+- en: 4.2 Finding improvement in BayesOpt
+  id: totrans-112
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 4.2 寻找 BayesOpt 中的改进
+- en: We have almost everything ready to run BayesOpt on a given objective function.
+    We now need a policy with a scoring rule about how valuable each data point we
+    could potentially label is in our search for the optimum of the objective. Again,
+    each policy we will see gives a different scoring rule, motivated by different
+    heuristics for optimization.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们几乎已经准备好在给定目标函数上运行 BayesOpt 了。现在我们需要一个具有关于我们搜索目标中每个潜在标记数据点的价值的评分规则的策略。同样，我们将看到的每个策略都提供了一个不同的评分规则，这些规则是受到不同的优化启发式的驱使的。
+- en: 'In this section, we learn about one such heuristic that makes intuitive sense
+    when the goal is optimization. It comes in the form of seeking to improve from
+    the best point we have seen so far throughout optimization. In the upcoming subsection,
+    we learn that GPs are amenable to facilitating the computation of this measure
+    of improvement. Then, we cover how different ways to define improvement give rise
+    to two of the most common BayesOpt policies: Probability of Improvement and Expected
+    Improvement.'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这一部分，我们学习了一种在优化目标时具有直观意义的启发式方法。当我们寻求优化时，这种方法的形式是寻求从迄今为止所见过的最佳点开始改进。在即将到来的小节中，我们将了解到
+    GPs 有助于促进这一改进度量的计算。然后，我们将介绍不同定义改进的方式如何导致两种最常见的 BayesOpt 策略：提高概率和期望改进。
+- en: 4.2.1 Measuring improvement with a GP
+  id: totrans-115
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.2.1 用 GP 测量改进
+- en: In this subsection, we examine how improvement in BayesOpt is defined, how it
+    constitutes a good measure of utility, and that working with improvement-related
+    quantities is straightforward with normal distributions. As our final goal in
+    BayesOpt is to identify the global optimum of the objective function—the point
+    that gives the highest objective value—the higher the values are that we observe
+    while making evaluations of the objective function, the higher our utility should
+    be. Suppose that as we make an evaluation of the objective function at some point
+    *x*[1], we observe the value 2\. In another situation in which we evaluate another
+    point *x*[2], we observe the value 10\. Intuitively, we should value the second
+    point more, as it gives us a higher function value.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本小节中，我们将讨论改进 BayesOpt 的定义、它如何构成一个良好的效用度量，并且使用正态分布处理与改进相关的量是直接的。因为我们在 BayesOpt
+    中的最终目标是确定目标函数的全局最优值——给出最高目标值的点——所以我们在评估目标函数时所观察到的值越高，我们的效用就应该越高。假设当我们在某个点*x*[1]处评估目标函数时，我们观察到值为2。在另一种情况下，当我们评估另一个点*x*[2]时，我们观察到值为10。直观地说，我们应该更重视第二个点，因为它给了我们一个更高的函数值。
+- en: However, what if before observing *x*[1] and *x*[2], we have already seen a
+    point *x*[0] that yields a value of 20? In this case, it’s natural to think that
+    even though *x*[2] is better than *x*[1], neither point results in any additional
+    utility, as we already have a much better observation in *x*[0]. On the other
+    hand, if we were to have a point *x*[3] that yields a value of 21, then we would
+    be happier, as we would have found a better value than that of *x*[0]. This is
+    illustrated in figure 4.7.
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，如果在观察到*x*[1]和*x*[2]之前，我们已经看到一个*x*[0]的点，它的值为20呢？在这种情况下，自然会认为即使*x*[2]比*x*[1]好，但两个点都不会带来任何额外的效用，因为我们在*x*[0]上已经有了一个更好的观察结果。另一方面，如果我们有一个*x*[3]的点，它的值为21，那么我们会更高兴，因为我们已经找到了比*x*[0]更好的值。这在图4.7中有所说明。
+- en: '![](../../OEBPS/Images/04-07.png)'
+  id: totrans-118
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-07.png)'
+- en: Figure 4.7 Seeking improvement from the best-seen point. Although point *x*[2]
+    is better than point *x*[1], both are “bad” in the sense that they don’t improve
+    on point *x*[0].
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.7 寻求从观察到的最佳点改进。虽然点*x*[2]优于点*x*[1]，但两者都“不好”意味着它们没有改进点*x*[0]。
+- en: These comparisons point to the idea that in BayesOpt, we care about not only
+    the raw values of our observations but also whether the newly found observations
+    are better than our observations. In this case, since *x*[0] sets a very high
+    bar in terms of function values, neither *x*[1] nor *x*[2] constitute improvement—at
+    least the kind of improvement we care about in optimization. In other words, a
+    reasonable goal in optimization is to seek to *improve* from the best point that
+    we have seen so far because as long as we improve from the best-seen point, we
+    are making progress.
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些比较指出了在 BayesOpt 中，我们关心的不仅仅是我们观察到的观察值的原始值，还有新发现的观察是否比我们的观察更好。在这种情况下，由于*x*[0]在函数值方面设定了一个非常高的标准，无论*x*[1]还是*x*[2]都不构成改进——至少不是我们在优化中关心的那种改进。换句话说，在优化中一个合理的目标是寻求从迄今为止我们见过的最佳点改进，因为只要我们从观察到的最佳点改进，我们就在取得进步。
+- en: Definition The best-seen point, or the point that yields the highest function
+    value we have found so far, is often called *the incumbent*. This term denotes
+    the fact that this point currently holds the highest value among all points queried
+    during our search.
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 观察到的最佳点，或者产生了迄今为止我们找到的最高函数值的点，通常被称为*现任*。这个术语表示，这个点目前在我们搜索期间查询的所有点中持有最高值。
+- en: Given that we have a GP belief about the objective function, inspecting how
+    much we can expect to improve from the best-seen point may be easily accomplished.
+    Let’s start from our running example of the Forrester function, where our current
+    GP is shown in figure 4.6.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设我们对目标函数有一个 GP 的信念，那么检查我们可以期望从观察到的最佳点改进多少可能会很容易。让我们从我们正在运行的 Forrester 函数的示例开始，我们的当前
+    GP 如图 4.6 所示。
+- en: Out of the two data points in our training set, (*x* = 1, *y* = 1.6) is the
+    better one, as it has a higher function value. This is our current incumbent.
+    Again, we are focusing on improving from this 1.6 threshold; that is, we’d like
+    to find data points that will yield function values higher than 1.6.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的训练集中的两个数据点中，(*x* = 1，*y* = 1.6) 是更好的一个，因为它有一个更高的函数值。这是我们当前的现任。同样，我们正在专注于从这个1.6的阈值改进；也就是说，我们希望找到的数据点会产生高于1.6的函数值。
+- en: Visually, we can imagine this improvement-based idea as cutting off the GP horizontally
+    at the incumbent, as shown in figure 4.8\. The portion highlighted in the darker
+    color corresponds to “improving from the incumbent” (at 1.6). Anything below this
+    line does not constitute improvement and, therefore, won’t give us any additional
+    optimization utility. Whether a point—for instance, *x* = 0—will yield a higher
+    function value is unknown, but we can still try to reason about the probability
+    that it is true using what we know from the GP model.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从视觉上来看，我们可以将这个基于改进的方法想象为将高斯过程水平切断在现有解处，如图4.8所示。较暗颜色突出显示的部分对应于“改进现有解”（在1.6处）。任何低于这条线的点都不能构成改进，因此不会给我们带来额外的优化效益。虽然我们不知道某个点-比如*x*=0-是否会产生更高的函数值，但我们仍然可以尝试通过从高斯过程模型中得知的信息来推理它的可能性。
+- en: '![](../../OEBPS/Images/04-08.png)'
+  id: totrans-125
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-08.png)'
+- en: Figure 4.8 Improvement from the incumbent from the perspective of a GP. The
+    portion of the GP’s predictions that corresponds to improvement from the incumbent
+    is highlighted in a darker shade.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.8 从高斯过程的角度看改进自现有解。高斯过程预测对应的改进自现有解的部分在较深的颜色中突出显示。
+- en: Reasoning about the probability that *x* = 0 will yield a higher function value
+    is easy to do, as by querying point *x* = 0, the improvement from the incumbent
+    that we may observe exactly corresponds to a *normal distribution* that is partially
+    truncated, as shown in figure 4.9.
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 推理 *x* = 0 的概率将产生更高的函数值很容易做到，因为通过查询点 *x* = 0，我们观察到的改进自现有解正好对应于一个被部分截断的*正态分布*，如图4.9所示。
+- en: The left panel of figure 4.9 contains the same GP in figure 4.8 that is cut
+    off at the incumbent, with an addition showing the CI of the normal distribution
+    prediction at *x* = 0\. Slicing the GP vertically at this point 0, we obtain the
+    right panel of figure 4.9, where the CIs in the two panels are the same. We see
+    that only the highlighted portion of the normal distribution in the right panel
+    represents the improvement we may observe from the incumbent, which is what we
+    care about. This highlighted portion is part of a normal distribution, which,
+    as we cover in the upcoming subsections, leads to many mathematical conveniences.
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.9的左面板包含与图4.8相同的高斯过程，该过程在现有解处被切断，并额外显示了在*x*=0处的正态分布预测的CI。在此点0处垂直切割高斯过程，我们获得了图4.9的右面板，两个面板中的CI相同。我们看到，在右面板中正态分布的只有突出显示的部分代表我们可以从现有解中观察到的改进，这是我们关心的。这突出显示的部分是正态分布的一部分，正如我们在接下来的小节中所介绍的那样，这导致了许多数学的便利。
+- en: '![](../../OEBPS/Images/04-09.png)'
+  id: totrans-129
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-09.png)'
+- en: Figure 4.9 Improvement from the incumbent at 0, highlighted in a darker shade.
+    The left panel shows the entire GP, while the right panel only shows the normal
+    distribution corresponding to the prediction at 0 (the error bars are the same
+    across the two panels). Here, improvement from the incumbent follows a truncated
+    normal distribution.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.9 在0处对现有解的改进，以较深的颜色突出显示。左面板显示整个高斯过程，而右面板仅显示与0处的预测相对应的正态分布（误差栏在两个面板上相同）。在这里，对现有解的改进遵循一个被截断的正态分布。
+- en: These conveniences don’t only apply to *x* = 0\. Since the prediction made by
+    the GP at any given point is a normal distribution, the improvement at any point
+    also follows a normal distribution that is cut off, as shown in figure 4.10.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些便利不仅适用于 *x* = 0 。由于高斯过程在任何给定点处的预测是正态分布，因此在任何点处的改进也遵循被截断的正态分布，如图4.10所示。
+- en: '![](../../OEBPS/Images/04-10.png)'
+  id: totrans-132
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-10.png)'
+- en: Figure 4.10 Improvement from the incumbent at –2 and 3, highlighted in a darker
+    shade. The left panel shows the entire GP, the center panel shows the prediction
+    at –2, and the right panel shows the prediction at 3\. The highlighted portions
+    show possible improvements, which depend on the normal distribution at a given
+    point.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.10 在–2和3处对现有解的改进，以较深的颜色突出显示。左面板显示整个高斯过程，中心面板显示-2处的预测，右面板显示3处的预测。突出显示的部分显示可能的改进，这取决于给定点上的正态分布。
+- en: 'We see that compared with figure 4.9, where a large portion of the normal distribution
+    at 0 is highlighted as possible improvements, the following is true:'
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到与图4.9相比，在0处突出显示了大部分正态分布为可能的改进，以下是正确的：
+- en: The prediction at –2 (center panel) is worse in the sense that only half of
+    it shows possible improvements. This is because the mean prediction at –2 is roughly
+    equal to the incumbent, so there’s a 50–50 chance that the function value at –2
+    will improve from 1.6.
+  id: totrans-135
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: -2 处的预测（中心面板）更糟，因为它只有一半被突出显示为可能改进。这是因为 -2 处的平均预测值大致等于现有值，因此，在 -2 处的函数值改进为 1.6
+    的可能性是 50-50。
+- en: As another example, the right panel shows the prediction at 3, where it is almost
+    impossible (according to our GP belief about the objective) to improve from the
+    incumbent, as almost the entire normal distribution at 3 lies below the incumbent
+    threshold.
+  id: totrans-136
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 作为另一个例子，右侧面板显示了在 3 处的预测，根据我们关于客观情况的高斯过程的信念，几乎不可能从现有情况改进，因为几乎整个正态分布在 3 处都低于现有门槛。
+- en: This shows that different points will lead to different possible improvements,
+    depending on the GP’s predictions.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这表明不同的点将导致不同的可能改进，这取决于高斯过程的预测。
+- en: 4.2.2 Computing the Probability of Improvement
+  id: totrans-138
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.2.2 计算改进的概率
+- en: Having isolated what we aim to achieve in BayesOpt—namely, improving from the
+    current incumbent—we are now ready to finally begin discussing the BayesOpt policies
+    that seek to achieve this goal. In this subsection, we learn about *Probability
+    of Improvement* (PoI), which is a policy that measures how likely a candidate
+    point is to be able to improve.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 BayesOpt 中，我们的目标特别明确，即从当前的现有情况中提高。现在，我们终于准备开始讨论旨在实现这一目标的 BayesOpt 策略。在本小节中，我们了解*改进概率*（PoI），这是一种衡量候选点可能改进的策略。
+- en: 'The idea of measuring how likely it is that a candidate point improves from
+    the incumbent corresponds to the probability that a point is a “good” one, according
+    to figure 4.7\. This was also hinted at in section 4.2.1 with the GP, where we
+    said the following:'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 衡量候选点从现有情况改进的可能性的想法对应于图 4.7 中一个点是“好”的概率的概念。这在第 4.2.1 节中与高斯过程中也有所提及，我们说：
+- en: The point at 0 (figure 4.9) has a large portion of its normal distribution highlighted
+    as possible improvements. In other words, it has a high probability of improving.
+  id: totrans-141
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 0 处的点（图 4.9）的正态分布的大部分被突出显示为可能改进。换句话说，它有很高的改进可能性。
+- en: The point at –2 (the center panel of figure 4.10) has a 0.5 probability of improving,
+    as only half of its normal distribution exceeds the incumbent.
+  id: totrans-142
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: -2 处的点（图 4.10 的中心面板）有 0.5 的改进概率，因为其正态分布的一半超过了现有状态。
+- en: The point at 3 (the right panel of figure 4.10) has most of its normal distribution
+    below the threshold, so it has a very low probability of improving.
+  id: totrans-143
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 3 处的点（图 4.10 的右侧面板）的正态分布大部分在门槛以下，因此它几乎不可能改进。
+- en: We can make this computation more concrete by noticing that the probability
+    that a point improves from the incumbent is equal to the area of the highlighted
+    portion in figures 4.9 and 4.10.
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过注意到从现有情况改进的概率等于图 4.9 和 4.10 中突出显示部分的面积，我们可以使这一计算更具体。
+- en: Definition The entire area under any normal curve is 1, so the area of the highlighted
+    portion in figures 4.9 and 4.10 exactly measures how likely it is that the normal
+    random variable in question (the function value at a given point) exceeds the
+    incumbent.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 任何正态曲线下的整个面积都为 1，因此图 4.9 和 4.10 中突出显示部分的面积恰好衡量了该正态随机变量（给定点的函数值）超过现有情况的可能性。
+- en: The quantity corresponding to the area of the highlighted region is related
+    to the *cumulative density function* (CDF), which is defined as the probability
+    that a random variable will take a value less than or equal to a target. In other
+    words, the CDF measures the area of the region *not* highlighted, which is 1 minus
+    the area of the highlighted region.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与突出显示的区域的面积对应的量与*累积密度函数*（CDF）有关，它被定义为一个随机变量取得小于或等于目标值的概率。换句话说，CDF 衡量了*未*突出显示的区域的面积，即突出显示的区域的面积为
+    1 减去突出显示的区域的面积。
+- en: 'Thanks to how mathematically convenient normal distributions and GPs are, we
+    can easily compute the area of this highlighted region using the CDF, which requires
+    the mean and the standard deviation of the normal distribution in question. Computationally,
+    we can make use of PyTorch’s `torch.distributions.Normal` class, which implements
+    normal distributions and offers the useful `cdf()` method. Specifically, suppose
+    we are interested in calculating how likely the point at 0 is to be able to improve
+    from the incumbent. We will follow the procedure describe in figure 4.11:'
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 多亏了数学上的便利性，正态分布和高斯过程，我们可以轻松地使用累积分布函数计算此突出区域的面积，这需要相关正态分布的均值和标准差。在计算上，我们可以利用PyTorch的`torch.distributions.Normal`类，该类实现了正态分布并提供了有用的`cdf()`方法。具体来说，假设我们有兴趣计算0点的点能够改进现有情况的可能性。我们将按照图4.11中描述的过程进行操作：
+- en: First, we use the GP to compute the mean and standard deviation predictions
+    at the point at 0.
+  id: totrans-148
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 首先，我们使用高斯过程来计算0点的均值和标准差预测。
+- en: We then compute the area under the normal curve defined by the previous mean
+    and standard deviation, with the incumbent being the cutoff. We use the CDF for
+    this computation.
+  id: totrans-149
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 接着，我们计算以先前的均值和标准差定义的正态曲线下的面积，以现有值为截止点。我们使用累积分布函数进行此计算。
+- en: Finally, we subtract the CDF value from 1 to obtain the PoI for the candidate
+    point.
+  id: totrans-150
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 最后，我们从1中减去CDF值，以获得候选点的PoI。
+- en: '![](../../OEBPS/Images/04-11.png)'
+  id: totrans-151
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图4.11](../../OEBPS/Images/04-11.png)'
+- en: Figure 4.11 Flowchart of how the PoI score is computed. By following this procedure,
+    we can compute how likely any candidate point is to be able to improve from the
+    incumbent.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.11 PoI分数计算的流程图。通过按照此过程，我们可以计算任何候选点能够从现有情况中改进的可能性。
+- en: Note Technically, the CDF computes the area of the portion of a normal distribution
+    to the left of a threshold, so we need to subtract from 1 the output of the CDF
+    to get the area of the portion to the right of the threshold, which corresponds
+    to possible improvements.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注释 技术上，累积分布函数计算正态分布左侧的部分的面积，因此我们需要从1中减去CDF的输出，以获取阈值右侧的部分的面积，这对应于可能的改进。
+- en: 'We first generate the GP’s prediction at this point:'
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们首先生成该点处高斯过程的预测：
+- en: '[PRE10]'
+  id: totrans-155
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: ❶ The predictive mean at 0
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 0点处的预测均值
+- en: ❷ The predictive standard deviation at 0
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 0点处的预测标准差
+- en: 'Then, we initialize a one-dimensional normal distribution with the corresponding
+    mean and standard deviation:'
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们使用相应的均值和标准差初始化一个一维正态分布：
+- en: '[PRE11]'
+  id: totrans-159
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: 'This normal distribution is the one visualized in the right panel of figure
+    4.9\. Finally, to compute the area of the highlighted portion, we call the `cdf()`
+    method with the incumbent as its input (which is `train_y.max()`, the maximum
+    value of our training data) and subtract the result from 1:'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此正态分布是图4.9右侧面板中可视化的正态分布。最后，为了计算突出显示部分的面积，我们调用带有现有值的`cdf()`方法（即`train_y.max()`，我们的训练数据的最大值），并从1中减去结果：
+- en: '[PRE12]'
+  id: totrans-161
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: Here, our code shows that at point 0, we have a greater than 80% chance of improving
+    from the incumbent, which agrees with the fact that a large portion of the normal
+    distribution in figure 4.9 is highlighted. Using the same computation, we can
+    find out that there is a 0.4948 PoI at –2 and 0.0036 at 3\. Looking at figure
+    4.10, we see that these numbers make sense. Beyond these three points (0, –2,
+    and 3), we can also compute how likely a given point is to be able to improve—that
+    is, the PoI of a given point—across our search space, using the same formula.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我们的代码显示，在0点处，我们有超过80%的机会从现有情况中改进，这与图4.9中突出显示的正态分布的大部分一致。使用相同的计算，我们可以发现-2点的PoI为0.4948，3点的PoI为0.0036。通过观察图4.10，我们可以看到这些数字是合理的。除了这三个点（0、-2和3）之外，我们还可以使用相同的公式计算给定点能够改进的可能性，即给定点的PoI，跨越我们的搜索空间。
+- en: Definition The procedure in figure 4.11 gives us the scoring rule for the PoI
+    policy, where the score of each point in the search space is equal to how likely
+    it is that the point can improve from the incumbent. Again, this score is also
+    called the *acquisition score*, as we are using it as a method of data acquisition.
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 图4.11中的过程给出了PoI策略的评分规则，其中搜索空间中每个点的得分等于该点能够改进现有情况的可能性。同样，这个分数也称为*收集分数*，因为我们将其用作数据收集的方法。
+- en: We can see that this PoI policy uses the `cdf()` method, but it’s cleaner to
+    use *BoTorch*, the Python library that implements BayesOpt policies, for this
+    task. BoTorch is built on top of and works seamlessly with PyTorch and GPyTorch.
+    As we saw earlier, we only needed to change two lines of code in our GP class
+    to make the model compatible with BoTorch. Further, BoTorch implements its policies
+    as *modules*, allowing us to swap different policies in and out of a BayesOpt
+    loop in a modular manner.
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以看到，此PoI策略使用了`cdf()`方法，但使用*BoTorch*更干净，这是一个实现BayesOpt策略的Python库。BoTorch建立在PyTorch和GPyTorch之上，并与其无缝合作。正如我们之前所看到的，我们只需更改GP类中的两行代码，即可使模型与BoTorch兼容。此外，BoTorch将其策略实现为*模块*，使我们能够以模块化的方式在BayesOpt循环中交换不同的策略。
+- en: The modularity of BoTorch’s policies
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BoTorch策略的模块化
+- en: By *modular*, we mean that we can replace the policy currently in use with another
+    policy in a BayesOpt loop by only changing the initialization of the policy. The
+    rest of the BayesOpt loop (training the GP model, visualizing optimization progress,
+    and updating the training data) doesn’t have to change. We have seen a similar
+    modularity with GPyTorch’s mean functions and kernels in sections 3.3 and 3.4.2.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过*模块化*，我们指的是我们可以在BayesOpt循环中用另一个策略替换当前正在使用的策略，只需更改策略的初始化。BayesOpt循环的其余部分（训练GP模型、可视化优化进度和更新训练数据）不必更改。我们在3.3和3.4.2节中也观察到了与GPyTorch的均值函数和核函数类似的模块化。
+- en: 'To implement the PoI policy with BoTorch, we do the following:'
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要使用BoTorch实现PoI策略，我们执行以下操作：
+- en: '[PRE13]'
+  id: totrans-168
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ Declares the PoI policy
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 声明PoI策略
+- en: ❷ Computes the score
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 计算分数
+- en: The BoTorch class `ProbabilityOfImprovement` implements the PoI as a PyTorch
+    module, taking in a GP as the first argument and the incumbent value as the second.
+    The variable `scores` now stores the PoI scores of the points in `xs`, which is
+    a dense grid between –5 and 5.
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BoTorch类`ProbabilityOfImprovement`将PoI实现为PyTorch模块，将GP作为第一个参数，现有结果值作为第二个参数。变量`scores`现在存储`xs`中点的PoI分数，`xs`是-5到5之间的密集网格。
+- en: Again, the acquisition score of each point equals the probability that the point
+    will improve from the incumbent, according to our GP belief. Figure 4.12 shows
+    this score across our search space, together with our GP.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 再次，每个点的获取分数等于该点从现有结果改善的概率，根据我们的高斯过程信念。图4.12显示了我们的搜索空间中的这个分数，以及我们的高斯过程。
+- en: '![](../../OEBPS/Images/04-12.png)'
+  id: totrans-173
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-12.png)'
+- en: Figure 4.12 GP predictions (top) and PoI (bottom), where the dotted line indicates
+    the point that maximizes the PoI score. This point is where we query the objective
+    function at the next iteration of optimization.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.12高斯过程预测（顶部）和PoI（底部），虚线表示最大化PoI分数的点。这一点是我们在优化的下一次迭代中查询目标函数的地方。
+- en: 'We observe some interesting behavior in the PoI scores:'
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们观察到一些有趣的PoI分数行为：
+- en: The region to the left of the incumbent (from 0 to 1) has relatively high PoI
+    scores. This corresponds to the high mean predictions in this area.
+  id: totrans-176
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在现有结果的左侧区域（从0到1）的PoI分数相对较高。这对应于此区域的高均值预测。
+- en: The region on the left of the plot has slightly lower scores. This is because
+    the mean predictions are not as high, but there is enough uncertainty in this
+    region that there’s still a considerable probability of improving.
+  id: totrans-177
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 绘图左侧区域的得分稍低。这是因为均值预测不那么高，但在这个区域存在足够的不确定性，仍然有相当大的改善概率。
+- en: The region around 2 has a PoI close to 0\. As we saw, the predictive normal
+    distributions of the points here mostly lie below the incumbent threshold.
+  id: totrans-178
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 2周围的区域的PoI接近0。正如我们所见，此处的点的预测正态分布大多位于现有结果阈值下方。
+- en: 'Now, all that’s left for us to do is identify the point between –5 and 5 that
+    has the highest PoI score—that is, the point that maximizes the probability of
+    improving from the incumbent. As mentioned, we take advantage of BoTorch’s helper
+    function `botorch.optim.optimize.optimize_acqf()`, which finds the point that
+    maximizes the score of any BayesOpt policy. We do this using the following code,
+    which is a part of the code that implements the BayesOpt loop:'
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，我们要做的就是确定在-5到5之间具有最高PoI分数的点，即最大化从现有结果改善的概率的点。如前所述，我们利用BoTorch的辅助函数`botorch.optim.optimize.optimize_acqf()`，该函数找到最大化任何BayesOpt策略得分的点。我们使用以下代码执行此操作，该代码是实现BayesOpt循环的代码的一部分：
+- en: '[PRE14]'
+  id: totrans-180
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: 'The returned values are the location of the point giving the highest acquisition
+    score that L-BFGS finds and the corresponding maximized acquisition score. Upon
+    inspection, we have the following:'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 返回的值是 L-BFGS 找到的给出最高获取分数的点的位置以及相应的最大化获取分数。经过检查，我们有以下结果：
+- en: '[PRE15]'
+  id: totrans-182
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: This output indicates that the candidate point maximizing the PoI score at 0.91
+    PoI is at roughly 0.6, which corresponds to the dotted vertical line in figure
+    4.12\. This point is where we will query the objective function (that is, evaluate
+    the function) to collect the next data point in BayesOpt.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此输出表明，最大化 PoI 分数的候选点在 0.91 PoI 处大约在 0.6 附近，这对应于图 4.12 中的点线。这个点就是我们将查询目标函数（即评估函数）以收集
+    BayesOpt 中的下一个数据点的地方。
+- en: The candidate with the highest predictive mean
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 具有最高预测均值的候选点
+- en: Interestingly, the point we select to query (roughly at 0.6) is *not* the point
+    with the highest predictive mean (which is around –0.5). The latter has a slightly
+    lower PoI because our uncertainty at this point is high, so it is, in fact, less
+    likely to be able to improve from the incumbent, despite the high predictive mean.
+  id: totrans-185
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有趣的是，我们选择查询的点（大约在 0.6 附近）*并不是*具有最高预测均值的点（大约在 -0.5 左右）。后者的 PoI 稍低一些，因为此点的不确定性很高，因此事实上，与现有点相比，它不太可能得到改善，尽管其预测均值很高。
+- en: And that’s all there is to deciding which point to query using the PoI policy
+    at a single iteration of BayesOpt. But remember the BayesOpt loop in figure 4.2,
+    where we alternate between finding the next data point to query using a policy
+    (step 2) and updating our GP with that new data (steps 1 and 3). We will do this
+    in section 4.2.3.
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就是在 BayesOpt 的单次迭代中决定使用 PoI 策略查询哪个点的全部内容。但是请记住图 4.2 中的 BayesOpt 循环，在该循环中我们在寻找下一个要查询的数据点（步骤
+    2）和使用新数据更新我们的 GP（步骤 1 和 3）之间交替。我们将在第 4.2.3 节中执行此操作。
+- en: 4.2.3 Running the PoI policy
+  id: totrans-187
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 运行 PoI 策略
+- en: In this subsection, we finally run the PoI policy and analyze its behavior.
+    Once again, we repeat the entire process—training the model, declaring the PoI
+    policy, and using `optimize_acqf()` to find the best point—multiple times until
+    we reach a termination condition. As we saw, this loop is implemented in the CH04/01
+    - BayesOpt loop.ipynb notebook. Now, we need to initialize the PoI policy within
+    the appropriate `for` loop.
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本小节中，我们最终运行 PoI 策略并分析其行为。我们再次重复整个过程——训练模型、声明 PoI 策略，并使用 `optimize_acqf()` 多次找到最佳点，直到达到终止条件为止。正如我们所见，这个循环在
+    CH04/01 - BayesOpt loop.ipynb 笔记本中实现。现在，我们需要在适当的 `for` 循环中初始化 PoI 策略。
+- en: 'This code produces a series of plots generated by the helper function `visualize_gp_
+    belief_and_policy()`, each showing the current state of our BayesOpt loop throughout
+    the 10 queries we make. These plots look similar to figure 4.12, with the addition
+    of the objective function for our reference:'
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此代码生成了一系列由辅助函数 `visualize_gp_belief_and_policy()` 生成的图，每个图显示了我们 BayesOpt 循环在我们进行的
+    10 次查询中的当前状态。这些图看起来类似于图 4.12，但增加了我们参考的目标函数：
+- en: '[PRE16]'
+  id: totrans-190
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: ❶ Our PoI policy
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 我们的 PoI 策略
+- en: ❷ Omitted
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 已省略
+- en: The number of function evaluations in BayesOpt
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BayesOpt 中的函数评估次数
+- en: The number of queries we use in BayesOpt entirely depends on how many function
+    evaluations we can afford to make. Section 1.1 defines the problem of expensive
+    black box optimization, which assumes that the number of queries we can make is
+    relatively low due to the cost of function evaluation.
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在 BayesOpt 中使用的查询次数完全取决于我们能够承担的函数评估次数。第 1.1 节定义了昂贵的黑盒优化问题，这假设我们可以进行的查询次数相对较低，因为函数评估的成本很高。
+- en: There are other criteria that could be used to determine when to terminate the
+    BayesOpt loop. For example, we can stop when we have achieved a targeted objective
+    value or when there hasn’t been significant improvement among the last 5 or 10
+    queries. Throughout the book, we stick with the assumption that we have a predetermined
+    number of function evaluations that can be made.
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 还有其他标准可以用来确定何时终止 BayesOpt 循环。例如，当我们达到目标值或最近的 5 或 10 次查询中没有显著改进时，我们可以停止。在整本书中，我们坚持假设我们有一定数量的函数评估是可以进行的。
+- en: We use 10 queries as the default to run the BayesOpt policies for the one-dimensional
+    Forrester function and inspect the behavior of the policies. Exercise 2 of this
+    chapter deals with a two-dimensional function and uses 20 queries.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们使用 10 次查询作为默认值来运行一维 Forrester 函数的 BayesOpt 策略，并检查策略的行为。本章的练习 2 处理二维函数并使用 20
+    次查询。
+- en: Figure 4.13 shows these plots at the first, fifth, and final iterations. We
+    see that the PoI policy stays inside the region between 0 and 2, and at the 10th
+    and final iteration, we have converged at a local optimum. This means we are failing
+    to adequately explore the search space and, therefore, missing out on the global
+    optimum of the objective function in the right area, around 4.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.13显示了第一、第五和最后一次迭代的绘图。我们发现PoI策略始终保持在0和2之间的区域内，在第10次和最后一次迭代中，我们已经收敛到局部最优点。这意味着我们未能充分探索搜索空间，因此错过了右侧区域中目标函数的全局最优点，即约为4。
+- en: '![](../../OEBPS/Images/04-13.png)'
+  id: totrans-198
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-13.png)'
+- en: Figure 4.13 Progress made by the PoI policy. As the policy seeks to pursue improvement
+    of any magnitude, progress gets stuck at the local optimum near 2, and we fail
+    to explore other regions of the search space.
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图4.13是PoI策略的进展情况。由于该策略旨在追求任何数量的改进，进展停滞在接近2的局部最优点，我们未能探索其他搜索空间区域。
+- en: The BoTorch warning when using the helper function optimize_acqf()
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当使用优化辅助函数optimize_acqf()时，BoTorch会发出警告。
+- en: 'When running the code for the BayesOpt with the PoI on the previous page, you
+    might receive the following warning from BoTorch:'
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当在上一页中运行BayesOpt与PoI的代码时，您可能会收到BoTorch发出的以下警告：
+- en: '[PRE17]'
+  id: totrans-202
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: This warning is displayed when the helper function `optimize_acqf()` (specifically,
+    the line search subroutine) fails to successfully optimize the acquisition score
+    (the PoI score, in this case). This failure often happens when the acquisition
+    score function is highly non-smooth (e.g., in the last panel of figure 4.13, where
+    there’s a sharp peak around *x* = 1.5), making numerical optimization unstable.
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当帮助函数optimize_acqf()（具体来说是线搜索子程序）未能成功优化收集得分（在这种情况下为PoI得分）时，会显示此警告。当收集得分函数高度不平滑时（例如，在图4.13的最后一个面板中，*x*=1.5周围出现了一个尖峰），数值优化不稳定，这种故障经常发生。
+- en: Without going into the details of the optimization routine, we can resort to
+    increasing the number of restarts (the `num_restarts` argument) and the number
+    of raw samples (the `raw_samples` argument) when using `optimize_acqf()`, which
+    increases our chance of finding the data point with the highest acquisition score.
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不用详细了解优化例行程序，我们可以在使用optimize_acqf()时增加重启次数(num_restarts参数)和原始样本数(raw_samples参数)，这样可以增加发现拥有最高收集得分的数据点的机会。
+- en: 'For ease of exposition, from this point onward, we turn off this warning when
+    running the helper function `optimize_acqf()` in our code, using a context manager
+    with the `warnings` module as follows:'
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了便于讲解，从现在开始，在我们的代码中运行帮助函数optimize_acqf()时，我们关闭此警告，使用警告模块中的上下文管理器：
+- en: '[PRE18]'
+  id: totrans-206
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: Note Although the performance of the PoI in figure 4.13 might be disappointing
+    (after all, we have spent a lot of time building up to this PoI policy that seems
+    overly exploitative), analyzing what is happening will give us insights into how
+    to refine and *improve* (no pun intended) our performance.
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 尽管图4.13中的PoI表现可能令人失望（毕竟，我们已经花了很多时间构建这个看起来过度利用的PoI策略），但分析发生的情况将为我们提供改进性能的见解。
+- en: We note that although the PoI gets stuck at the local optimum, it is doing what
+    it’s supposed to do. Specifically, since the PoI seeks to improve from the current
+    incumbent, the policy finds that slowly moving to the right of 1 will achieve
+    that with high probability. Although the PoI constantly finds more and more improvement
+    by slowly moving to the right, we view this behavior as overly exploitative, as
+    the policy is not exploring other regions thoroughly enough.
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们注意到，虽然PoI停留在局部最优点，但它正在实现其所需的功能。具体来说，由于PoI旨在改善当前的incumbent，因此策略发现缓慢向右移动将以较高的概率实现这一目标。虽然PoI通过缓慢移动不断发现更多的改进，但我们将这种行为视为过度利用，因为该策略没有充分探索其他区域。
+- en: Important In other words, even though what the PoI is doing is consistent with
+    what we initially wanted to achieve—namely, improving from the incumbent—the resulting
+    behavior isn’t what we want. This means that simply pursuing improvement of any
+    kind from the incumbent shouldn’t be what we care about.
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重要 换句话说，即使PoI正在做的事情符合我们最初想要实现的目标——即从在职者中进行改进，但结果的行为并不是我们想要的。这意味着，单纯追求从在职者处的任何改进都不是我们所关心的。
+- en: There are two ways to fix this overly exploitative behavior. The first is to
+    restrict what we mean by *improvement*. Our experiment with the PoI shows that
+    at each iteration, the policy only finds marginal improvement from the incumbent
+    by slowly moving in the direction that the GP believes the function moves upward
+    in.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 修复这种过度利用行为有两种方法。第一种是限制我们所说的 *改进* 的含义。我们对 PoI 的实验表明，在每次迭代中，策略只会通过缓慢朝着 GP 认为函数向上移动的方向移动，从现有状况中找到微小的改进。
+- en: If we were to redefine what we mean by *improvement* by saying that an improvement
+    from the incumbent is only valid if it is at least *ε* greater than the current
+    incumbent value and modifying the PoI accordingly, then the policy will be more
+    likely to explore the search space more effectively. This is because the GP will
+    know that staying at a local optimum won’t lead to significant improvement from
+    the incumbent. Figure 4.14 illustrates this idea.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们重新定义所谓的 *改进*，即只有当改进比当前现有状况值至少大 *ε* 时才有效，并相应修改 PoI，那么策略将更有可能更有效地探索搜索空间。这是因为
+    GP 将知道停留在局部最优点不会导致与现有状况的显著改进。图 4.14 说明了这个想法。
+- en: '![](../../OEBPS/Images/04-14.png)'
+  id: totrans-212
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 4.14](../../OEBPS/Images/04-14.png)'
+- en: Figure 4.14 Defining a stricter definition of *improvement* by requiring an
+    improvement of at least *ε* = 0 (left) and *ε* = 2 (right). The larger the requirement,
+    the more explorative the PoI policy becomes. See exercise 1 for more details.
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.14 通过要求改进至少为 *ε* = 0（左）和 *ε* = 2（右）来定义对 *改进* 更严格的定义。要求越大，PoI 策略就越具有探索性。更多细节请参见练习
+    1。
+- en: We won’t go into more detail here, but exercise 1 explores this approach. Interestingly,
+    we will observe that the more improvement we require the PoI to observe, the more
+    explorative the policy becomes.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们不会在这里深入讨论，但练习 1 探讨了这种方法。有趣的是，我们会观察到要求 PoI 观察到的改进越多，策略就越具有探索性。
+- en: 4.3 Optimizing the expected value of improvement
+  id: totrans-215
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 4.3 优化改进的预期值
+- en: 'As we saw in the previous section, naïvely seeking to improve from the incumbent
+    leads to over-exploitation from the PoI. This is because simply moving away from
+    the incumbent by a small amount in the appropriate direction can achieve a high
+    PoI. Therefore, optimizing this PoI is *not* what we want to do. In this section,
+    we learn to further account for the *magnitude* of the possible improvements we
+    may observe. In other words, we also care about how much improvement we can make
+    from the incumbent. This leads us to one of the most popular BayesOpt policies:
+    *Expected Improvement* (EI).'
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如前一节所示，天真地试图从现有状况中寻求改进会导致来自 PoI 的过度利用。这是因为简单地沿着适当方向微移离开现有状况就能获得高的 PoI。因此，优化这个
+    PoI *并不* 是我们想要做的。在本节中，我们将学习进一步考虑我们可能观察到的改进的 *幅度*。换句话说，我们也关心我们能从现有状况中获得多少改进。这将引导我们进入最流行的贝叶斯优化策略之一：*期望改进*（EI）。
+- en: The motivation for seeking to account for the magnitude of the improvement is
+    clear. Consider the example in figure 4.15.
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 寻求考虑改进幅度的动机是明确的。考虑图 4.15 中的例子。
+- en: '![](../../OEBPS/Images/04-15.png)'
+  id: totrans-218
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 4.15](../../OEBPS/Images/04-15.png)'
+- en: Figure 4.15 The difference between PoI (left) and EI (right). The former only
+    cares whether we improve from the incumbent, while the latter considers how much
+    improvement is made.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.15 PoI（左）和 EI（右）之间的差异。前者只关心我们是否从现有状况改进，而后者考虑了改进的幅度。
+- en: The left panel shows the computation made by the PoI policy, which considers
+    only whether each candidate data point improves from the incumbent. Therefore,
+    a point that improves by a small amount and one that significantly improves from
+    the incumbent are treated equally.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 左侧面板显示了 PoI 策略的计算，它只考虑每个候选数据点是否从现有状况改进。因此，稍微改进和显着从现有状况改进的点被平等地对待。
+- en: On the other hand, the right panel shows what happens if we also consider the
+    magnitude of the possible improvements. Here, although points *x*[1] and *x*[2]
+    are still treated as undesirable (since they don’t improve from the incumbent
+    *x*[0]), *x*[4] is considered better than *x*[3], as the former offers a larger
+    improvement. Similarly, *x*[5] is considered the best out of the five candidate
+    points.
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 另一方面，右侧面板展示了如果我们还考虑可能改进的幅度会发生什么。在这里，虽然点 *x*[1] 和 *x*[2] 仍然被视为不理想（因为它们并未从现有状况
+    *x*[0] 改进），但 *x*[4] 被认为比 *x*[3] 更好，因为前者提供了更大的改进。同样，*x*[5] 被认为是五个候选点中最好的。
+- en: Of course, this doesn’t mean we can now simply design the policy that picks
+    out the data point that offers the largest improvement from the incumbent. We
+    still need to know how much (if any) improvement we will observe, which we only
+    discover once we actually query the objective function.
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当然，这并不意味着我们现在可以简单地设计选择从现有指标获得最大改进的策略。我们仍然需要知道我们将观察到多少（如果有的话）改进，这只有当我们实际查询目标函数时才能发现。
+- en: Note Despite not knowing the exact value of the improvement we will observe,
+    we can reason about the magnitude of the improvement of each candidate point in
+    a probabilistic manner.
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 尽管我们不知道我们将观察到的改进的确切值，但我们可以以概率的方式推断每个候选点的改进量的大小。
+- en: Recall that in figures 4.9 and 4.10, we have a truncated normal distribution
+    representing the improvement we will observe at a given point. By computing the
+    area of the highlighted region, we obtain the probability that a point will improve
+    from the incumbent, giving us the PoI policy. However, we can perform other computations
+    as well.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回想一下，在图 4.9 和 4.10 中，我们有一个表示在给定点观察到的改进的截断正态分布。通过计算突出显示区域的面积，我们获得了一个点将从现有指标改进的概率，从而得到了
+    PoI 策略。然而，我们也可以执行其他计算。
+- en: Definition In addition to the PoI, we may compute the *expected value* of the
+    random variable corresponding to the highlighted region. The fact that we are
+    dealing with truncated normal distributions enables us to compute this expected
+    value in closed form. The BayesOpt policy that scores data points using this measure
+    is called *Expected Improvement* (EI).
+  id: totrans-225
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 定义 除了 PoI 之外，我们还可以计算与突出显示区域对应的随机变量的*期望值*。我们处理截断正态分布的事实使我们能够以封闭形式计算这个期望值。使用这个度量来评分数据点的
+    BayesOpt 策略被称为*期望改进*（EI）。
+- en: While the closed-form formula for the EI score isn’t as simple as the CDF like
+    for PoI, EI’s scoring formula is still just as easy to calculate. Intuitively,
+    using the expected value of improvement may allow us to better balance exploration
+    and exploitation than PoI. After all, points around the current incumbent may
+    improve with high probability, but their improvements are likely to be minimal
+    (which is what we empirically observed in our experiment).
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然 EI 得分的闭式公式不像 PoI 那样简单，但 EI 的评分公式仍然很容易计算。直观地说，使用改进的期望值可能比 PoI 更好地平衡探索和利用。毕竟，周围的点可能以很高的概率改进，但它们的改进可能很小（这是我们在实验中经验性地观察到的）。
+- en: A point that is far away, which we don’t know much about, might give a lower
+    improvement probability, but because there’s a chance that this point will give
+    a large improvement, EI might assign a higher score to it. In other words, while
+    PoI might be considered a *risk-averse* BayesOpt policy that cares about improving
+    from the incumbent, however small the improvement is, EI balances between the
+    risk and reward to find the point that best balances the tradeoff. This is illustrated
+    in figure 4.16, which compares PoI and EI using the same dataset and trained GP.
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个远离我们不太了解的点可能会给出较低的改进概率，但因为有机会这个点会有较大的改进，EI 可能会给它分配较高的分数。换句话说，虽然 PoI 可能被认为是一种风险规避的
+    BayesOpt 策略，它关心的是从现有指标改进，无论改进有多小，但 EI 在风险和回报之间平衡，找到最好平衡权衡的点。图 4.16 对比了使用相同数据集和训练的
+    GP 的 PoI 和 EI。
+- en: '![](../../OEBPS/Images/04-16.png)'
+  id: totrans-228
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图片](../../OEBPS/Images/04-16.png)'
+- en: Figure 4.16 The difference between PoI (left) and EI (right). EI balances exploration
+    and exploitation better.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.16 显示了 PoI（左）和 EI（右）之间的区别。EI 更好地平衡了探索和利用。
+- en: We see that the candidate data point chosen by PoI (around 0.6) is different
+    from one chosen by EI (around –0.7). The former is close to the current incumbent,
+    so it’s likely that querying it will help us improve. However, EI sees that there’s
+    more uncertainty in other regions far away from the incumbent, which may lead
+    to greater improvement. Thanks to this reasoning, EI favors data points that provide
+    a better balance between exploration and exploitation.
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到 PoI 选择的候选数据点（大约在 0.6 附近）与 EI 选择的数据点（大约在 –0.7 附近）不同。前者接近当前的指标，因此查询它有助于我们改进的可能性较大。然而，EI
+    看到远离现有指标的其他区域存在更大的不确定性，这可能导致更大的改进。由于这种推理，EI 更倾向于提供更好的探索和利用平衡的数据点。
+- en: 'Another nice property of EI that showcases this balance is the way it assigns
+    the acquisition scores to data points with the same predictive mean or standard
+    deviation. Specifically, it does this in the following ways:'
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 'EI 的另一个好的特性是它如何给具有相同预测均值或标准差的数据点分配获取分数。具体而言，它通过以下方式来实现:'
+- en: If two data points have the same predictive mean but different predictive standard
+    deviations, then the one with the higher uncertainty will have a higher score.
+    The policy, therefore, rewards exploration.
+  id: totrans-232
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果两个数据点具有相同的预测均值但不同的预测标准差，那么具有更高不确定性的数据点将获得更高的分数。因此，该策略奖励探索。
+- en: If two data points have the same predictive standard deviations but different
+    predictive means, then the one with the higher mean will have a higher score.
+    The policy, therefore, rewards exploitation.
+  id: totrans-233
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果两个数据点具有相同的预测标准差但不同的预测均值，那么具有更高均值的数据点将获得更高的分数。因此，该策略奖励开发。
+- en: This is a desideratum of a BayesOpt policy, as it expresses our preference for
+    exploration when all else is equal (that is, when the predictive means are equal)
+    but also for exploitation when all else is equal (that is, when uncertainties
+    are equal). We see this property again in chapter 5 with another BayesOpt policy
+    called *upper confidence bound*.
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是 BayesOpt 策略的一个期望，因为它表达了我们在一切相等时对探索的偏好（即当预测均值相等时）但也表达了我们在一切相等时对开发的偏好（即不确定性相等时）。我们在第五章中再次可以看到这一特性，另一种
+    BayesOpt 策略称为*置信上界*。
+- en: 'Computationally, we can initialize EI as a BayesOpt policy object using code
+    that is almost identical to the code for PoI:'
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '从计算上讲，我们可以使用几乎与 PoI 代码相同的代码将 EI 初始化为 BayesOpt 策略对象:'
+- en: '[PRE19]'
+  id: totrans-236
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: Now, let’s rerun our entire BayesOpt loop with the EI policy, making sure we
+    are starting with the same initial dataset. This generates figure 4.17, which
+    is to be compared to figure 4.13 of PoI.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们使用 EI 策略重新运行整个 BayesOpt 循环，确保我们从相同的初始数据集开始。这产生了图 4.17，与 PoI 的图 4.13 进行比较。
+- en: '![](../../OEBPS/Images/04-17.png)'
+  id: totrans-238
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-17.png)'
+- en: Figure 4.17 Progress made by the EI policy. The policy balances exploration
+    and exploitation better than PoI and finds the global optimum at the end.
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 4.17 显示了 EI 策略的进展。与 PoI 相比，该策略在探索和开发之间取得了更好的平衡，并在最后找到了全局最优解。
+- en: Here, we see that while EI still focuses on the local optimal region around
+    2 initially, the policy quickly explores other regions in the search space to
+    look for larger improvements from the incumbent. At the fifth iteration, we see
+    that we are now inspecting the region on the left. Finally, after spending all
+    10 queries, EI has successfully identified the global optimum of the objective
+    function, outperforming PoI in the previous section.
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我们可以看到，尽管 EI 最初仍然集中在 2 附近的局部最优区域，但策略很快探索了搜索空间中的其他区域，以寻找对现有情况的更大改进。在第五次迭代中，我们可以看到我们现在正在检查左侧的区域。最后，在使用了所有的
+    10 个查询之后，EI 成功地确定了目标函数的全局最优解，优于上一节的 PoI。
+- en: Note Due to its simplicity and natural balance between exploration and exploitation,
+    EI is one of the most, if not the most, commonly used policies in BayesOpt. The
+    policy is a good default option if there’s no reason to prefer other policies.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：由于其简单性和在探索和开发之间的自然平衡，EI 是 BayesOpt 中最常用的策略之一，如果没有其他原因可以优先选择其他策略，该策略是一个很好的默认选择。
+- en: 4.4 Exercises
+  id: totrans-242
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 4.4 练习
+- en: 'There are two exercises in this chapter:'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '本章中有两个练习:'
+- en: The first covers using PoI for exploration by changing our definition of improvement.
+  id: totrans-244
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 第一个练习涵盖了使用 PoI 进行探索，通过改变我们对改进的定义。
+- en: The second covers hyperparameter tuning using BayesOpt in an objective function
+    that simulates the accuracy surface of an SVM model.
+  id: totrans-245
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 第二个示例涵盖了使用 BayesOpt 进行超参数调整，目标函数模拟了 SVM 模型的精度曲面。
+- en: '4.4.1 Exercise 1: Encouraging exploration with PoI'
+  id: totrans-246
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.4.1 练习 1：通过 PoI 促进探索
+- en: One way to address the PoI’s tendency to over-exploit is to set a higher bar
+    for what constitutes *improvement*. Specifically, we saw that naïvely finding
+    points that maximize the probability of improving from the incumbent prevents
+    us from escaping local optima.
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 解决 PoI 过度开发的一个方法是设定更高的标准来确定什么是*改进*。具体来说，我们发现单纯地找到最大化从现状改进的可能性的点会阻止我们摆脱局部最优解。
+- en: 'As a solution to this, we can modify the policy to specify that we only accept
+    improvements by at least *ε*. This would guide the PoI to look for improvement
+    in other regions in the search space once a local region has been sufficiently
+    covered. This exercise, implemented in CH04/02 - Exercise 1.ipynb, walks us through
+    this modification and showcases the positive effect it has on the PoI. Its steps
+    are as follows:'
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为解决方案，我们可以修改策略以指定我们仅接受至少 *ε* 的改进。这将指导 PoI 在局部区域已经足够覆盖后，在搜索空间中寻找改进的其他区域。在 CH04/02
+    - Exercise 1.ipynb 中实现此练习，并演示其对 PoI 的积极影响。其步骤如下：
+- en: Recreate the BayesOpt loop in CH04/01 - BayesOpt loop.ipynb, which uses the
+    one-dimensional Forrester function as the optimization objective.
+  id: totrans-249
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 重新创建 CH04/01 - BayesOpt loop.ipynb 中的 BayesOpt 循环，其中将一维的 Forrester 函数作为优化目标。
+- en: Before the `for` loop that implements BayesOpt, declare a variable named `epsilon`.
+    This variable will act as the minimum improvement threshold to encourage exploration.
+    Set this variable to 0.1 for now.
+  id: totrans-250
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在实现 BayesOpt 的 `for` 循环之前，声明一个名为 `epsilon` 的变量。此变量将作为鼓励探索的最小改进阈值。暂时将此变量设置为 0.1。
+- en: Inside the `for` loop, initialize the PoI policy as before, but this time, specify
+    that the incumbent threshold, set by the `best_f` argument, is the incumbent value
+    *plus* the value stored in `epsilon`.
+  id: totrans-251
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在 `for` 循环内，像以前一样初始化 PoI 策略，但这次指定由 `best_f` 参数设置的现任阈值为现任值 *加上* 存储在 `epsilon`
+    中的值。
+- en: Rerun the notebook, and observe whether this modification leads to better optimization
+    performance than the original PoI policy by encouraging more exploration.
+  id: totrans-252
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 重新运行笔记本，并观察此修改是否比原始 PoI 策略更好地促进了更多的探索。
+- en: How much more explorative PoI becomes heavily depends on the minimum improvement
+    threshold stored in `epsilon`. Set this variable to 0.001 to observe that an improvement
+    threshold that is not sufficiently large may not necessarily encourage exploration
+    successfully. What happens when this value is set to 0.5?
+  id: totrans-253
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: PoI 变得更具探索性的程度在很大程度上取决于存储在 `epsilon` 中的最小改进阈值。将此变量设置为 0.001，观察当改进阈值不够大时是否能成功促进探索。当此值设置为
+    0.5 时会发生什么？
+- en: In the previous step, we saw that setting the improvement threshold to an appropriate
+    value is crucial for PoI. However, it’s not obvious how to do this across multiple
+    applications and objective functions. A reasonable heuristic is to dynamically
+    set it to some α percentage of the incumbent value, specifying that we would like
+    to see 1 + α increase in the incumbent value. Implement this in the code with
+    a 110% improvement requirement.
+  id: totrans-254
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在上一步中，我们看到将改进阈值设置为适当的值对 PoI 非常关键。然而，如何在多个应用和目标函数中进行这样的设置并不明显。一个合理的启发式方法是将其动态设置为现任值的某个
+    α 百分比，指定我们希望看到现任值增加 1 + α。在代码中实现这一点，并设置 110% 的改进要求。
+- en: '4.4.2 Exercise 2: BayesOpt for hyperparameter tuning'
+  id: totrans-255
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 4.4.2 练习 2：用于超参数调整的 BayesOpt
+- en: 'This exercise, implemented in CH04/03 - Exercise 2.ipynb, applies BayesOpt
+    to an objective function that simulates the accuracy surface of an SVM model in
+    a hyperparameter tuning task. The *x*-axis denotes the value of the penalty parameter
+    *C*, while the *y*-axis denotes the value for the RBF kernel parameter *γ*. See
+    the exercise in chapter 3 for more detail. The steps are as follows:'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此练习，在 CH04/03 - Exercise 2.ipynb 中实现，将 BayesOpt 应用于模拟 SVM 模型超参数调整任务的准确度表面的目标函数。*x*-轴表示惩罚参数
+    *C* 的值，而 *y*-轴表示 RBF 核参数 *γ* 的值。有关更多详细信息，请参阅第 3 章中的练习。步骤如下：
+- en: 'Recreate the BayesOpt (BayesOpt) loop in CH04/01 - BayesOpt loop.ipynb:'
+  id: totrans-257
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 重新创建 CH04/01 - BayesOpt loop.ipynb 中的 BayesOpt 循环：
+- en: We don’t need the Forrester function anymore; instead, copy the code for the
+    two-dimensional function described in the exercise in chapter 3, and use it as
+    the objective function.
+  id: totrans-258
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 我们不再需要 Forrester 函数；相反，复制第 3 章中练习描述的二维函数的代码，并将其用作目标函数。
+- en: Note that the domain for this function is [0, 2]².
+  id: totrans-259
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 请注意，此函数的定义域为 [0, 2]²。
+- en: Declare the corresponding test data with `xs` for a two-dimensional grid representing
+    the domain and `ys` for the function values of `xs`.
+  id: totrans-260
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用 `xs` 声明相应的测试数据，表示域的二维网格，`ys` 表示 `xs` 的函数值。
+- en: 'Modify the helper function that visualizes optimization progress. For one-dimensional
+    objective functions, it’s easy to visualize the GP predictions along with the
+    acquisition scores. For this two-dimensional objective, the helper function should
+    generate a plot of two panels: one showing the ground truth and the other showing
+    the acquisition scores. Both panels should also show the labeled data. The plot
+    should look similar to figure 4.18.'
+  id: totrans-261
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 修改可视化优化进展的辅助函数。对于一维目标函数，很容易可视化 GP 预测以及收购积分。对于这个二维目标，该辅助函数应生成两个面板的绘图：一个显示基本事实，另一个显示获得分数。两个面板也应显示标记数据。绘图应类似于图4.18。
+- en: '![](../../OEBPS/Images/04-18.png)'
+  id: totrans-262
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/04-18.png)'
+- en: Figure 4.18 A reference showing what the helper function that visualizes BayesOpt
+    progress should look like. The left panel shows the true objective function, while
+    the right panel shows the acquisition scores.
+  id: totrans-263
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 图4.18 一个参考，显示可视化 BayesOpt 进展的辅助函数应该是什么样子。左面板显示真实的目标函数，而右面板显示收购分数。
+- en: Copy the GP class from the exercise in chapter 3, which implements a Matérn
+    2.5 kernel with ARD. Further modify this class to make it integratable with BoTorch.
+  id: totrans-264
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 从第 3 章的练习中复制 GP 类，该类使用 ARD 实现 Matérn 2.5 核。进一步修改此类，使其与 BoTorch 集成。
+- en: 'Reuse the helper function `fit_gp_model()` and the `for` loop that implements
+    BayesOpt:'
+  id: totrans-265
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 复用辅助函数 `fit_gp_model()` 和实现 BayesOpt 的 `for` 循环：
+- en: 'The initial training dataset should contain the point in the middle of the
+    domain: (1, 1).'
+  id: totrans-266
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 初始培训数据集应包含域中心的点：(1, 1)。
+- en: As our search space is two-dimensional, make the search for the point maximizing
+    the acquisition score more exhaustive by setting `num_restarts` `=` `40` and `raw_samples`
+    `=` `100` in `botorch.optim.optimize_acqf()`.
+  id: totrans-267
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 由于我们的搜索空间是二维的，请在 `botorch.optim.optimize_acqf()` 中设置 `num_restarts=40` 和 `raw_samples=100`，以更详尽地搜索最大化收购分数的点。
+- en: Set the number of queries we can make (the number of times we can evaluate the
+    objective function) to 20.
+  id: totrans-268
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将我们可以查询的数量设置为 20（我们可以评估目标函数的次数）。
+- en: Run the PoI policy on this objective function. Observe that the policy, once
+    again, gets stuck at a local optimum.
+  id: totrans-269
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 对这个目标函数运行 PoI 策略。注意到该策略再次陷入了局部最优。
+- en: 'Run the modified version of PoI, where the minimum improvement threshold is
+    set at 0.1:'
+  id: totrans-270
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 运行修改后的 PoI，其中最小改进阈值设置为 0.1：
+- en: See Exercise 1 for more detail about setting the minimum improvement threshold
+    for PoI.
+  id: totrans-271
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 参见练习 1，了解有关为 PoI 设置最小改进阈值的更多详细信息。
+- en: Observe that this modification, again, leads to better optimization performance.
+  id: totrans-272
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 注意到此修改再次导致更好的优化性能。
+- en: What is the first iteration where we reach an accuracy of at least 90%? What
+    are the model’s parameters achieving this accuracy?
+  id: totrans-273
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在哪一轮迭代中达到了至少 90% 准确度？实现此准确度的模型参数是什么？
+- en: 'Run the EI policy on this objective function:'
+  id: totrans-274
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 对这个目标函数运行 EI 策略：
+- en: Observe that the policy outperforms PoI.
+  id: totrans-275
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 注意到这种策略优于 PoI。
+- en: What is the first iteration where we reach an accuracy of at least 90%? What
+    are the model’s parameters achieving this accuracy?
+  id: totrans-276
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在达到至少 90% 的准确度的第一轮迭代是什么？实现此准确度的模型参数是什么？
+- en: 'Inspecting the performance of a policy based on a single run of BayesOpt can
+    be misleading. It’s better for a BayesOpt experiment to be repeated multiple times
+    with different starting data:'
+  id: totrans-277
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 检查基于单次 BayesOpt 运行的策略的性能可能会引导错误结论。更好地进行多次 BayesOpt 实验，使用不同的起始数据重复实验：
+- en: Implement this idea of repeated experiments, and visualize the average incumbent
+    values and error bars across 10 experiments.
+  id: totrans-278
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 实现重复实验的想法，并可视化 10 个实验中的平均入职价值和误差线。
+- en: Each experiment should start with a single data point uniformly sampled from
+    the search space.
+  id: totrans-279
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 每个实验都应从搜索空间中均匀抽样的单个数据点开始。
+- en: Run the policies we have listed, and compare their performance.
+  id: totrans-280
+  prefs:
+  - PREF_IND
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 运行我们列出的策略，比较它们的性能。
+- en: This marks the end of our chapter on improvement-based BayesOpt policies. It’s
+    important to keep the code that implements the BayesOpt loop for the Forrester
+    function we used here in mind, as we use it again to benchmark other policies
+    in future chapters. Specifically, in chapter 5, we learn about BayesOpt policies
+    inspired by the multi-armed bandit problem.
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这标志着我们关于改进的基于 BayesOpt 策略的章节的结束。重要的是要记住在这里使用 Forrester 函数实现 BayesOpt 循环的代码，因为我们将在未来的章节中再次使用它来基准测试其他策略。具体来说，在第五章中，我们将了解受多臂老虎机问题启发的
+    BayesOpt 策略。
+- en: Summary
+  id: totrans-282
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 总结
+- en: A BayesOpt policy uses the trained GP to score how valuable each data point
+    is in our quest to find the optimum of the objective function. The score computed
+    by the policy is called the acquisition score.
+  id: totrans-283
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 贝叶斯优化策略使用训练后的高斯过程来评分每个数据点在我们寻找目标函数最优解的过程中的价值。策略计算的得分被称为获取得分。
+- en: In each iteration of a BayesOpt loop, a GP is trained on the observed data,
+    a policy suggests a new data point to query, and the label of this point is added
+    to the training set. This repeats until we cannot make any more function evaluations.
+  id: totrans-284
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在贝叶斯优化循环的每次迭代中，基于观察到的数据来训练高斯过程，策略建议一个新的数据点来查询，并且将此点的标签添加到训练集中。这个过程重复进行，直到我们不能再进行任何函数评估为止。
+- en: A GPyTorch model only needs minimal modifications to be integrated into BoTorch,
+    which implements BayesOpt policies.
+  id: totrans-285
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: GPyTorch模型只需要进行最小的修改就可以集成到实现贝叶斯优化策略的BoTorch中。
+- en: BoTorch provides a helper function named `optimize_acqf()` from the `optim .optimize`
+    module that takes in a policy object and returns the datapoint that maximizes
+    the acquisition score.
+  id: totrans-286
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: BoTorch提供了一个名为`optimize_acqf()`的帮助函数，该函数来自优化模块`optim .optimize`，它接受一个策略对象，并返回最大化获取得分的数据点。
+- en: A good BayesOpt policy needs to balance exploration (learning about regions
+    with high uncertainty) and exploitation (narrowing down high-performing regions).
+  id: totrans-287
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 一个好的贝叶斯优化策略需要平衡探索（学习高度不确定的区域）和利用（缩小高绩效区域）。
+- en: Different BayesOpt policies address the exploration–exploitation tradeoff differently.
+    It is important to inspect optimization progress to analyze and adjust the performance
+    of the policy in use.
+  id: totrans-288
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 不同的贝叶斯优化策略以不同的方式处理探索-利用的权衡。检查优化进度以分析和调整所使用策略的性能是很重要的。
+- en: One heuristic that could be used in BayesOpt is to find points that improve
+    upon the best-seen value.
+  id: totrans-289
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在贝叶斯优化中可能使用的一种启发式方法是找到比最佳值更好的点。
+- en: Finding the point that gives the best chance of improving from the best-seen
+    value results in the PoI policy.
+  id: totrans-290
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 寻找能够最有可能从最佳值改进的点得到了PoI策略。
+- en: Finding the point that gives the highest expected improvement from the best-seen
+    value results in the EI policy.
+  id: totrans-291
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 寻找从最佳值改进的期望提高最高的点得到了EI策略。
+- en: PoI may be considered an overly exploitative and risk-averse policy as the policy
+    only aims to improve from the best-seen value, however small the improvement is.
+    Without any further modification, EI tends to balance exploration and exploitation
+    better than PoI.
+  id: totrans-292
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: PoI可以被认为是一种过度的利用和风险规避的策略，因为该策略仅仅旨在从最佳值改进，无论改进多小。没有任何进一步的修改，EI往往比PoI更好地平衡探索和利用。
+- en: Thanks to the Gaussian belief about the function values, computing scores by
+    PoI and EI may be done in closed form. We, therefore, can compute and optimize
+    the scores defined by these policies easily.
+  id: totrans-293
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 由于对函数值的高斯信念，通过PoI和EI计算分数可以在闭合形式下完成。因此，我们可以轻松地计算和优化这些策略定义的分数。

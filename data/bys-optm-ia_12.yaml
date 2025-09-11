@@ -1,0 +1,2307 @@
+- en: 9 Balancing utility and cost with multifidelity optimization
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 9 在多信度优化中平衡效用和成本
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖了
+- en: The problem of multifidelity optimization with variable cost
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 变成本的多信度优化问题
+- en: Training a GP on data from multiple sources
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对来自多个来源的数据进行高斯过程训练
+- en: Implementing a cost-aware multifidelity BayesOpt policy
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 实施一个考虑成本的多信度贝叶斯优化策略
+- en: 'Consider the following questions:'
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑以下问题：
+- en: Should you trust the online reviews saying that the newest season of your favorite
+    TV show isn’t as good as the previous ones and you should quit watching the show,
+    or should you spend your next few weekends watching it to find out for yourself
+    whether you will like the new season?
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 你是否应该相信在线评论，说你最喜欢的电视剧的最新季度不如以前的好，你应该停止观看这部剧，还是应该花费下个周末的时间观看，以便自己找出你是否会喜欢这个新季度？
+- en: After seeing that their neural network model doesn’t perform well after being
+    trained for a few epochs, should an ML engineer cut their losses and switch to
+    a different model, or should they keep training for more epochs in the hope of
+    achieving better performance?
+  id: totrans-7
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在看到他们的神经网络模型经过几个时期的训练后表现不佳之后，机器学习工程师是否应该放弃，转而使用其他模型，还是应该继续训练更多时期，希望能够获得更好的性能？
+- en: When a physicist wants to understand a physical phenomenon, can they use a computer
+    simulation to gain insights, or are real, physical experiments necessary to study
+    the phenomenon?
+  id: totrans-8
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 当物理学家想要理解一个物理现象时，他们能否使用计算机模拟来获得见解，或者真实的物理实验对于研究这一现象是必要的？
+- en: 'These questions are similar in that they demand that the person in question
+    choose between two possible actions that can help them answer a question they’re
+    interested in. On one hand, the person can take an action with a relatively low
+    cost, but the answer generated from the action might be corrupted by noise and,
+    therefore, not necessarily true. On the other hand, the person can opt for the
+    action with a higher cost, which will help them arrive at a more definite conclusion:'
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些问题相似，因为它们要求被问及的人在两种可能的行动之间选择，这些行动可以帮助他们回答他们感兴趣的问题。一方面，这个人可以采取一个相对低成本的行动，但从这个行动中产生的答案可能会被噪声破坏，因此不一定是真实的。另一方面，这个人可以选择成本更高的行动，这将帮助他们得出更确定的结论：
+- en: Reading the online reviews about the newest season of your TV shows would only
+    take a few minutes, but there’s a chance the reviewers don’t have the same taste
+    as you and you will still enjoy the show anyway. The only way to know for sure
+    is to watch it yourself, but it’s a huge time commitment to do so.
+  id: totrans-10
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 阅读有关你喜欢的电视剧的最新季度的在线评论只需几分钟，但评论者可能和你的口味不同，你仍然可能喜欢这部剧。确定的方法是亲自观看，但这需要巨大的时间投入。
+- en: The performance of a neural network after being trained for a few epochs may
+    be, but is not necessarily, indicative of its true performance. However, more
+    training means more time and resources spent on a potentially non-value-adding
+    task if the model ends up performing poorly in the end.
+  id: totrans-11
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 经过几个时期的训练后，神经网络的性能可能会表现出来，但不一定能反映出其真正的性能。然而，更多的训练意味着更多的时间和资源花费在一个可能没有价值的任务上，如果模型最终表现不佳的话。
+- en: A computer simulation can tell a physicist many things about a phenomenon but
+    cannot capture everything in the real world, so it’s possible the simulation cannot
+    offer the right insight. Performing physical experiments, on the other hand, will
+    certainly answer the physicist’s question but will cost a lot of money and effort.
+  id: totrans-12
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 计算机模拟可以告诉物理学家有关现象的许多信息，但不能捕捉到现实世界中的一切，因此模拟可能无法提供正确的见解。另一方面，进行物理实验肯定会回答物理学家的问题，但会耗费大量的金钱和精力。
+- en: These situations belong to a class of problems called *multifidelity* decision-making,
+    where we can decide to observe some phenomenon at various levels of granularity
+    and cost. Observing the phenomenon on a shallow level may be inexpensive and easy
+    to do, but it doesn’t give us as much information as possible. On the other hand,
+    inspecting the phenomenon closely might entail more effort. The term *fidelity*
+    here refers to how closely an observation reflects the truth about the phenomenon
+    in question. An inexpensive, low-fidelity observation is noisy and, thus, can
+    lead us to the wrong conclusion, while high-quality (or high-fidelity) observations
+    are expensive and, therefore, cannot be made liberally. Black box optimization
+    has its own multifidelity variant.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些情况属于一类称为*多保真度*决策的问题，我们可以决定以各种粒度和成本观察某些现象。以浅层次观察现象可能廉价且易于实现，但它并不能给我们尽可能多的信息。另一方面，仔细检查现象可能需要更多的努力。这里的*保真度*一词指的是一个观察如何与所讨论现象的真相密切相关。廉价的、低保真度的观察是嘈杂的，因此可能导致我们得出错误的结论，而高质量（或高保真度）的观察是昂贵的，因此不能随意进行。黑盒优化有自己的多保真度变体。
+- en: Definition *Multifidelity optimization* is an optimization problem where in
+    addition to the true objective function to be maximized, we can observe approximations
+    that do not exactly match but still offer information about the objective function.
+    These low-fidelity approximations can be evaluated at lower costs than the true
+    objective function.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*多保真度优化*的定义是一个优化问题，除了要最大化的真实目标函数之外，我们还可以观察到并不完全匹配但仍然提供关于目标函数的信息的近似值。这些低保真度的近似值可以以比真实目标函数更低的成本进行评估。'
+- en: In a multifidelity optimization, we need to use these multiple sources of data
+    simultaneously to gain the most information about what we’re interested in, which
+    is the optimum of the objective function. In this chapter, we go into more detail
+    about the problem of multifidelity optimization and how to approach it from the
+    angle of BayesOpt. We learn about a strategy that balances learning about the
+    objective function and cost, which results in a cost-aware BayesOpt policy for
+    the multifidelity setting. We then see how to implement this optimization problem
+    and the cost-aware policy in Python. By the end of this chapter, we learn how
+    to perform multifidelity BayesOpt and see that our cost-aware strategy is more
+    efficient at optimization than algorithms that only use the ground-truth function.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在多保真度优化中，我们需要同时使用这些多源数据来获取关于我们感兴趣的内容（即目标函数的最优值）的最多信息。在本章中，我们将更详细地探讨多保真度优化问题以及如何从贝叶斯优化的角度来解决它。我们将了解一种平衡对目标函数和成本学习的策略，这导致了多保真度设置下的成本感知贝叶斯优化策略。然后我们看看如何在Python中实现这个优化问题和成本感知策略。通过本章的学习，我们将学会如何进行多保真度贝叶斯优化，并看到我们的成本感知策略比仅使用基本真相函数的算法更有效。
+- en: 9.1 Using low-fidelity approximations to study expensive phenomena
+  id: totrans-16
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.1 使用低保真度近似值研究昂贵现象
+- en: We first discuss the motivation of a multifidelity BayesOpt problem, its setup,
+    and real-world examples of the problem. This discussion will help clarify what
+    we look for in a decision-making policy for this setting.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们首先讨论了多保真度贝叶斯优化问题的动机、设置以及问题的实际示例。这个讨论将有助于澄清我们在这种情况下寻找决策策略的目标。
+- en: In the simplest setting of BayesOpt, we evaluate the objective function at each
+    search iteration, each time carefully reasoning about where to make this evaluation
+    to make the most optimization progress. The need for this careful reasoning stems
+    from the high cost of making function evaluations, as is typical in an expensive
+    black box optimization problem. This cost can refer to the amount of time we spend
+    waiting for a large neural network to finish training while searching for the
+    best network architecture or, in a drug discovery procedure, the money and effort
+    needed to synthesize an experimental drug and conduct experiments to test its
+    effectiveness.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在贝叶斯优化的最简单设置中，我们在每个搜索迭代中评估目标函数，每次都仔细考虑在哪里进行这个评估，以取得最大的优化进展。这种仔细的推理的需要源于进行函数评估的高成本，这在昂贵的黑盒优化问题中是典型的。这个成本可以指的是我们花费在等待一个大型神经网络完成训练时所花费的时间，同时在寻找最佳网络架构，或者在药物发现过程中，合成实验药物和进行测试其有效性所需的金钱和精力。
+- en: 'But what if there are ways to gauge the result of a function evaluation without
+    actually evaluating the objective function, denoted as *f*(*x*)? That is, in addition
+    to the objective function, we can query an inexpensive surrogate *f̄*(*x*). This
+    surrogate *f̄*(*x*) is an inexact approximation to the objective function, so
+    evaluating it won’t tell us everything about the true objective function *f*(*x*).
+    However, since *f̄*(*x*) is an approximation of *f*(*x*), knowledge about the
+    former still offers us insight into the latter. The question we need to ask ourselves
+    is this: How should we balance using the true objective function *f*(*x*), which
+    is expensive to query but offers exact information, and using the surrogate *f̄*(*x*),
+    which is inaccurate but inexpensive to query? This balance is illustrated in figure
+    9.1, where the ground truth *f*(*x*) is the high-fidelity data source and the
+    surrogate *f̄* *(x)* is the low-fidelity approximation.'
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，如果有办法在不实际评估目标函数的情况下评估函数评估结果，表示为*f*(*x*)？也就是说，除了目标函数外，我们可以查询一个廉价的替代 *f̄*(*x*)。这个替代
+    *f̄*(*x*) 是目标函数的一个不精确的近似，因此评估它并不能告诉我们关于真实目标函数*f*(*x*)的一切。然而，由于 *f̄*(*x*) 是 *f*(*x*)
+    的近似，对前者的了解仍然为我们提供了对后者的洞察。我们需要问自己的问题是：我们应该如何平衡使用昂贵但提供精确信息的真实目标函数 *f*(*x*) 和使用不精确但查询成本低的替代
+    *f̄*(*x*)？这种平衡在图9.1中有所体现，其中地面真实数据源 *f*(*x*) 是高保真度，而替代 *f̄* *(x)* 是低保真度的近似。
+- en: '![](../../OEBPS/Images/09-01.png)'
+  id: totrans-20
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-01.png)'
+- en: Figure 9.1 Model of a multifidelity decision-making problem, where the agent
+    needs to balance querying the true objective function *f*(*x*) for accurate information
+    and querying the inexpensive surrogate *f̄*(*x*)
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.1 多保真度决策问题模型，在该模型中，代理需要在查询真实目标函数 *f*(*x*) 获取准确信息和查询廉价替代 *f̄*(*x*) 之间进行平衡。
+- en: 'As noted in the introduction, using a low-fidelity approximation is common
+    in the real world, as in the following examples:'
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如在引言中所指出的，在现实世界中使用低保真度近似是很常见的，如以下示例所示：
+- en: '*Training a neural network only for a small number of epochs to gauge its performance
+    on some dataset.* The performance of the neural network over, for example, 5 epochs
+    is a low-fidelity approximation of its optimized performance that can be achieved
+    after 50 epochs.'
+  id: totrans-23
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*只对神经网络进行少数次数的训练，以评估其在某个数据集上的性能。* 例如，在 5 个时期内神经网络的性能是其在 50 个时期后可以实现的性能的低保真逼近。'
+- en: '*Running a computer simulation in lieu of a real experiment to study some scientific
+    phenomenon.* This computer simulation imitates the physical processes happening
+    in the real world and approximates the phenomenon the physicist wants to study.
+    However, this approximation is low fidelity because the computer cannot accurately
+    mirror the real world.'
+  id: totrans-24
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*以计算机模拟代替真实实验来研究某些科学现象。* 这种计算机模拟模仿了真实世界中发生的物理过程，并近似了物理学家想要研究的现象。然而，这种近似是低保真度的，因为计算机不能准确地模拟真实世界。'
+- en: In a multifidelity optimization problem where we aim to optimize the objective
+    function *f*(*x*), we get to choose between querying the high-fidelity *f*(*x*)
+    or the low-fidelity *f̄*(*x*) to best learn about and optimize *f*(*x*). Of course,
+    querying *f*(*x*) will offer more information about *f*(*x*) itself, but the querying
+    cost prevents us from making such queries many times. Instead, we can choose to
+    take advantage of the low-fidelity approximation *f̄*(*x*) to learn as much as
+    possible about our target *f*(*x*) while minimizing our querying cost.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在多保真度优化问题中，我们旨在优化目标函数 *f*(*x*)，我们可以选择查询高保真度 *f*(*x*) 还是低保真度 *f̄*(*x*) 来最好地了解和优化
+    *f*(*x*)。当然，查询 *f*(*x*) 将提供更多关于 *f*(*x*) 本身的信息，但查询成本阻止我们多次进行这样的查询。相反，我们可以选择利用低保真度近似
+    *f̄*(*x*) 尽可能多地了解我们的目标 *f*(*x*)，同时最小化查询成本。
+- en: Having multiple low-fidelity approximations
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 拥有多个低保真逼近
+- en: To keep things simple, we only work with one low-fidelity approximation *f̄*(*x*)
+    in the examples in this chapter. However, many real-world settings offer multiple
+    low-fidelity approximations *f̄* [1](*x*), *f̄* [2](*x*), ..., *f̄[k]*(*x*) to
+    the objective function, each having its own querying cost and accuracy.
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了保持简单，我们在本章的示例中只使用一个低保真度近似 *f̄*(*x*)。然而，在许多实际场景中，我们提供多个低保真度近似 *f̄* [1](*x*)，*f̄*
+    [2](*x*)，...，*f̄[k]*(*x*) 给目标函数，每个近似都有自己的查询成本和准确性。
+- en: The Bayesian approach we learn in the next section doesn’t limit how many low-fidelity
+    approximations we have access to, and we solve a multifidelity optimization with
+    two low-fidelity approximations *f̄* [1](*x*) and *f̄* [2](*x*) in this chapter’s
+    exercise 2.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在下一节学习的贝叶斯方法不限制我们可以访问的低保真近似数量，并且我们在本章练习2中解决了一个具有两个低保真近似*f̄* [1](*x*)和*f̄*
+    [2](*x*)的多保真优化问题。
+- en: Having multiple low-fidelity approximations is applicable when, for example,
+    the computer simulation approximating the real experiment has a setting that controls
+    the quality of the approximation. If one were to set the simulation quality to
+    low, the computer program would run a coarse simulation of the real world and
+    return the result more quickly. On the other hand, if the simulation quality is
+    set to high, the program might need to run for a longer duration to better approximate
+    a real experiment. For now, we stick with one objective function and one low-fidelity
+    approximation.
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当例如近似实验的计算机模拟具有控制近似质量的设置时，拥有多个低保真近似是适用的。如果将模拟质量设置为低，计算机程序将运行对实际世界进行粗略模拟并更快返回结果。另一方面，如果模拟质量设置为高，程序可能需要运行更长时间才能更好地近似实验。目前，我们只使用一个目标函数和一个低保真近似。
+- en: Consider figure 9.2, where in addition to the Forrester function as an example
+    objective function in BayesOpt, denoted as the solid line, we also have a low-fidelity
+    approximation to the objective, denoted as the dotted line. Here, although the
+    low-fidelity approximation doesn’t exactly match the ground truth, the former
+    captures the general shape of the latter and can, therefore, be helpful in the
+    search for the objective’s optimum.
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 考虑图9.2，除了作为贝叶斯优化示例目标函数的弗雷斯特函数，表示为实线外，我们还有一个对目标的低保真近似，表示为虚线。在这里，虽然低保真近似不完全匹配实际情况，但它捕捉到了后者的大致形状，因此在搜索目标最优解时可能会有所帮助。
+- en: '![](../../OEBPS/Images/09-02.png)'
+  id: totrans-31
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-02.png)'
+- en: Figure 9.2 The Forrester function (solid line) and a low-fidelity approximation
+    to the function (dotted line). Although the low-fidelity approximation doesn’t
+    exactly match the ground truth, the former offers information about the latter,
+    as the two functions have roughly the same shape.
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.2 弗雷斯特函数（实线）和函数的低保真近似（虚线）。尽管低保真近似不完全匹配实际情况，但前者提供了关于后者的信息，因为这两个函数大致具有相同的形状。
+- en: For example, since the low-fidelity approximation is informative of the true
+    objective function, we could query the approximation many times to study its behavior
+    across the search space, only querying the ground truth when we want to “zero
+    in” on the objective’s optimum. Our goal in this chapter is to design a BayesOpt
+    policy that navigates this search for us and decides where and which function
+    to query to optimize our objective function as quickly and cheaply as possible.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，由于低保真近似对真实目标函数具有信息性，我们可以多次查询近似以研究其在搜索空间中的行为，只有在想要“缩小”目标最优解时才查询真实情况。本章的目标是设计一个贝叶斯优化策略，以便我们导航这个搜索，并决定在哪里以及查询哪个函数以尽快和尽可能廉价地优化我们的目标函数。
+- en: 'The multifidelity BayesOpt loop is summarized in figure 9.3 with the following
+    notable changes from the traditional BayesOpt loop in figure 1.6:'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 多保真贝叶斯优化循环在图9.3中总结，与图1.6中传统的贝叶斯优化循环相比，有以下显著变化：
+- en: 'In step 1, the GP is trained on data from *both* sources: the high-fidelity,
+    or ground truth, function and the low-fidelity approximation. That is, our data
+    is split into two sets: the set of data points evaluated on the ground truth *f*(*x*)
+    and the set of points evaluated on the approximation *f̄*(*x*). Training on both
+    datasets ensures the predictive model can reason about the objective function
+    in regions where there is low-fidelity data but no high-fidelity data.'
+  id: totrans-35
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在步骤1中，高保真或实际情况下的函数以及低保真近似的数据都用于训练高斯过程。也就是说，我们的数据分为两组：在实际情况下评估的数据点集*f*(*x*)和在近似情况下评估的点集*f̄*(*x*)。在两个数据集上进行训练可以确保预测模型能够推理出在低保真数据但没有高保真数据的区域的目标函数情况。
+- en: In step 2, the BayesOpt policy generates an acquisition score for each data
+    point in the search space to quantify the data point’s value in helping us identify
+    the objective’s optimum. However, it’s not just the data points that are scored
+    but the data point–fidelity pairs; that is, the policy quantifies the value of
+    querying a given data point on a particular function (either the high- or low-fidelity
+    function). This score needs to balance the optimization of the objective and the
+    querying cost.
+  id: totrans-36
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在第 2 步中，贝叶斯优化策略为搜索空间中的每个数据点生成一个获取分数，以量化数据点在帮助我们识别目标最优解方面的价值。然而，不仅仅对数据点进行评分，而是对数据点-保真度对进行评分；也就是说，策略量化查询给定数据点在特定函数（高保真或低保真函数）上的价值。此分数需要平衡目标的优化和查询成本。
+- en: In step 3, we query the data point on the fidelity corresponding to the pair
+    maximizing the acquisition score of the BayesOpt policy. We then update our training
+    datasets with the new observation and loop back to step 1 to continue our BayesOpt
+    procedure.
+  id: totrans-37
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在第 3 步中，我们查询与最大化贝叶斯优化策略获取分数相对应的保真度上的数据点。然后，我们使用新观察更新我们的训练数据集，并回到第 1 步继续我们的贝叶斯优化过程。
+- en: For the remainder of this chapter, we learn about the components of the multifidelity
+    BayesOpt loop and how to implement them in Python, starting with training a GP
+    on a dataset that includes both high- and low-fidelity observations.
+  id: totrans-38
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章的剩余部分，我们将学习多保真度贝叶斯优化循环的组成部分以及如何在 Python 中实现它们，从训练一个包含高保真和低保真观测的数据集的 GP 开始。
+- en: 9.2 Multifidelity modeling with GPs
+  id: totrans-39
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.2 使用 GP 进行多保真度建模
+- en: As noted in figure 9.3, our GP model is trained on a combined dataset that includes
+    observations from multiple fidelities. This combined training allows the GP to
+    make predictions about the objective function, even in regions where there are
+    only low-fidelity observations, which subsequently informs the BayesOpt policy
+    that makes optimization-related decisions. In the next section, we learn how to
+    represent a multifidelity dataset and train a special variant of the GP on the
+    dataset; the code we use is included in CH09/01 - Multifidelity modeling.ipynb.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如图 9.3 所示，我们的 GP 模型是在包含多个保真度观测的组合数据集上进行训练的。这种组合训练使得 GP 能够对目标函数做出预测，即使在只有低保真观测的区域也是如此，这随后会通知贝叶斯优化策略做出与优化相关的决策。在接下来的一节中，我们将学习如何表示多保真度数据集并在数据集上训练
+    GP 的特殊变体；我们使用的代码包含在 CH09/01 - Multifidelity modeling.ipynb 中。
+- en: '![](../../OEBPS/Images/09-03.png)'
+  id: totrans-41
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-03.png)'
+- en: Figure 9.3 The multifidelity BayesOpt loop. The GP trains on data from both
+    the high- and low-fidelity functions, and the BayesOpt policy decides where and
+    which function to query at each iteration of the loop.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 9.3 多保真度贝叶斯优化循环。GP 在高保真函数和低保真函数的数据上进行训练，并且贝叶斯优化策略决定循环的每次迭代在哪里以及查询哪个函数。
+- en: 9.2.1 Formatting a multifidelity dataset
+  id: totrans-43
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 9.2.1 格式化多保真数据集
+- en: 'To set up the multifidelity optimization problem, we use the following code
+    for our one-dimensional Forrester objective function and its low-fidelity approximation
+    in figure 9.2; our search space is between –5 and 5:'
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了建立多保真度优化问题，我们使用以下代码来描述我们的一维福瑞斯特目标函数及其在图 9.2 中的低保真近似；我们的搜索空间介于 -5 和 5 之间：
+- en: '[PRE0]'
+  id: totrans-45
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ The true objective function
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 真实的目标函数
+- en: ❷ The low-fidelity approximation to the objective function
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 目标函数的低保真近似
+- en: ❸ Bounds of the search space, to be used by optimization policies later on
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 搜索空间的边界，供后续优化策略使用
+- en: 'Of particular importance is a PyTorch tensor that stores the information about
+    the correlation between each fidelity function we have access to and the true
+    objective function, which we aim to maximize. We assume we know the values of
+    these correlations and declare this tensor `fidelities` as follows:'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 特别重要的是一个 PyTorch 张量，它存储我们可以访问的每个保真度函数与我们试图最大化的真实目标函数之间的相关信息。我们假设我们知道这些相关性的值，并声明此张量
+    `fidelities` 如下所示：
+- en: '[PRE1]'
+  id: totrans-50
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: 'This tensor has two elements corresponding to the two fidelities we have access
+    to: 0.5, which we use to indicate the correlation between the Forrester function
+    *f*(*x*) and its low-fidelity approximation *f̄*(*x*) (the solid and dotted lines
+    in figure 9.2), and exactly 1, which is the correlation between the Forrester
+    function and itself.'
+  id: totrans-51
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此张量有两个元素，对应于我们可以访问的两个保真度：0.5，我们用它来表示福瑞斯特函数 *f*(*x*) 与其低保真近似 *f̄*(*x*) 之间的相关性（图
+    9.2 中的实线和虚线），以及确切地是 1，这是福瑞斯特函数与其自身之间的相关性。
+- en: 'These correlation values are important because they inform how much the GP
+    we will train later should rely on data from a particular fidelity:'
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些相关性值很重要，因为它们告诉我们GP（高斯过程）在后续训练中应该对来自特定关联性的数据依赖多少：
+- en: If the correlation to the true objective function of a low-fidelity approximation
+    is high, then that approximation offers a lot of information about the objective.
+    An extreme example of this is the objective function itself, which offers perfect
+    information about what we’re interested in and, therefore, has a correlation value
+    of 1.
+  id: totrans-53
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果低保真度近似值与真实目标函数的相关性很高，则该近似值提供了关于目标的大量信息。一个极端的例子是目标函数本身，它提供了完美的关于我们感兴趣的内容的信息，因此具有相关性值等于1。
+- en: A low-fidelity approximation with a correlation value of 0.5, which we have
+    in our example, offers information about the objective that is inexact but still
+    valuable.
+  id: totrans-54
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们在示例中使用了一个相关性值为0.5的低保真度近似值，它提供了关于目标的不精确但仍然有价值的信息。
+- en: At the other end of the spectrum, an approximation with a correlation value
+    of 0 doesn’t tell us anything about the objective function; a perfectly horizontal
+    line is an example, since this “approximation” is constant across the domain.
+  id: totrans-55
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在相关性值为0的近似值的另一端，它对目标函数不提供任何信息；一个完全水平的线就是一个例子，因为这个“近似值”在整个定义域上都是常数。
+- en: 'Figure 9.4 illustrates this scale of correlation: the higher a correlation
+    is, the more information about the ground truth a low-fidelity approximation offers.'
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.4展示了相关性的尺度：相关性越高，低保真度近似值提供的关于真实情况的信息越多。
+- en: Setting the fidelities variable
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 设置关联性变量
+- en: In general, `fidelities` is a tensor with *k* elements, where *k* is the number
+    of functions we can query, including the objective. The elements are numbers between
+    0 and 1 denoting the correlation between the functions and the objective. It’s
+    more convenient for the subsequent learning and decision-making tasks to have
+    1, the correlation between the true objective and itself, at the end of the tensor.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常，`fidelities`是一个具有*k*个元素的张量，其中*k*是我们可以查询的函数数目，包括目标函数。这些元素是介于0和1之间的数字，表示函数与目标之间的相关性。对于后续的学习和决策任务来说，将真实目标与自身之间的相关性1放置在张量的末尾更加方便。
+- en: Unfortunately, there is no concrete rule on how to set these fidelity values;
+    the decision is left to the BayesOpt engineer. If these values are not known in
+    your own use case, you can make a rough estimate based on figure 9.4 by estimating
+    where your low-fidelity function lies between the high-fidelity function (the
+    ground truth) and an uninformative data source.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 不幸的是，关于如何设置这些关联性值并没有明确的规定；这个决定留给BayesOpt工程师决定。如果在您自己的用例中不知道这些值，您可以根据图9.4做出粗略估计，估计您的低保真度函数位于高保真度函数（真实情况）和无信息数据源之间的位置。
+- en: '![](../../OEBPS/Images/09-04.png)'
+  id: totrans-60
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-04.png)'
+- en: Figure 9.4 The scale of correlation from 0 to 1 between a low-fidelity approximation
+    and the ground truth. The higher the correlation, the more information about the
+    ground truth the low-fidelity approximation offers.
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.4展示了低保真度近似值与真实情况之间的0到1之间的相关性尺度。相关性越高，低保真度近似值提供的关于真实情况的信息越多。
+- en: 'With the functions and correlation values in hand, let’s now create an example
+    training dataset. We first randomly sample 10 locations inside the search space
+    and store them as a tensor in `train_x`:'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了函数和相关性值，现在让我们创建一个示例训练数据集。我们首先在搜索空间内随机选择10个位置，并将它们存储为张量`train_x`：
+- en: '[PRE2]'
+  id: totrans-63
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ The size of the training set
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 训练集的大小
+- en: ❷ Fixes the random seed for reproducibility
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 为了可重复性固定随机种子
+- en: ❸ Draws points uniformly at random from the space
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 从空间中均匀随机抽取点
+- en: The tensor `train_x` has 10 rows and 1 column since we have 10 data points within
+    a one-dimensional space. Each of these data points is associated with a fidelity
+    from which the observation comes (that is, each data point is either a high-fidelity
+    or a low-fidelity observation). We encode this information in our dataset by adding
+    in an extra column to `train_x` to indicate the fidelity of each data points,
+    as illustrated in figure 9.5.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 张量`train_x`有10行1列，因为我们在一维空间中有10个数据点。其中的每个数据点都与一个关联性相关，表明观测结果来自高保真度还是低保真度（也就是说，每个数据点是高保真度或低保真度观测）。我们通过在`train_x`中添加一列来表示每个数据点的关联性来将这些信息编码到我们的数据集中，如图9.5所示。
+- en: '![](../../OEBPS/Images/09-05.png)'
+  id: totrans-68
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-05.png)'
+- en: Figure 9.5 Formatting the features in a multifidelity dataset. Each data point
+    is associated with a fidelity; these fidelity values are stored in an extra column
+    in the training set.
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.5 是对多保真度数据集中的特征进行格式化说明。每个数据点都与正确度相关联；这些正确度的值存储在训练集的额外列中。
+- en: 'Note Remember that we aim to train a GP on data coming from both sources: the
+    ground truth and the low-fidelity function. To this end, we will randomly assign
+    each of the 10 data points we have to either fidelity.'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意要记住，我们的目标是对来自两个来源的数据进行高斯过程训练：地面真实信息和低保真度函数。为此，我们将为我们拥有的10个数据点随机分配每个数据点的正确度。
+- en: 'We use `torch.randint(2)` to randomly pick out an integer between 0 (inclusive)
+    and 2 (exclusive), effectively choosing between 0 and 1\. This number determines
+    from which function each data point comes: 0 means that the data point is evaluated
+    on the low-fidelity approximation *f̄*(*x*); 1 means the data point is evaluated
+    on the objective function *f*(*x*). We then extract the corresponding correlation
+    values in `fidelities` for each data point and concatenate this array of correlation
+    values to our training data:'
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们使用`torch.randint(2)`来随机选择介于0（包含）和2（不包含）之间的整数，有效地在0和1之间进行选择。这个数字确定每个数据点来自于哪个函数：0表示数据点在低保真度近似*f̄*(*x*)上进行评估；1表示数据点在目标函数*f*(*x*)上进行评估。然后，我们提取`fidelities`中每个数据点对应的相关值，并将这个相关值的数组连接到我们的训练数据中：
+- en: '[PRE3]'
+  id: totrans-72
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: ❶ Randomly selects the fidelity (and therefore the correlation value) of each
+    data point
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 随机选择每个数据点的正确度（因此也是相关值）
+- en: ❷ Adds the correlation values to the training data
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将相关值添加到训练数据中
+- en: Taking a look at the full training data `train_x_full`, we see the first two
+    data points are
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 查看完整的训练数据`train_x_full`，我们可以看到前两个数据点是
+- en: '[PRE4]'
+  id: totrans-76
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ The first data point is evaluated on f(x).
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 第一个数据点在f(x)上进行评估。
+- en: ❷ The second data point is evaluated on *f̄* (x).
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 第二个数据点在*f̄* (x)上进行评估。
+- en: The first column of `train_x_full` contains the locations of the data points
+    between –5 and 5, while the second column contains the correlation values. This
+    output means our first training point is at –0.0374, and it’s evaluated on *f*(*x*).
+    On the other hand, the second training point is at 2.6822, this time evaluated
+    on *f̄*(*x*).
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`train_x_full`的第一列包含数据点在-5到5之间的位置，而第二列包含相关值。这个输出意味着我们的第一个训练点在-0.0374处，并且在*f*(*x*)上进行评估。另一方面，第二个训练点在2.6822处，这次在*f̄*(*x*)上进行评估。'
+- en: 'Now, we need to generate the observations `train_y` appropriately so that the
+    observations are computed with the correct function: the first element of `train_y`
+    is equal to *f*(–0.0374), the second element is *f̄* (2.6822), and so on. To do
+    this, we write a helper function that takes in the full training set, where the
+    last column contains the correlation values, and call the appropriate function
+    to generate `train_y`. That is, if the correlation value is 1, we call `objective()`,
+    which is *f*(*x*), as previously defined; if the correlation value is 0.5, we
+    call `approx_objective()` for *f̄*(*x*):'
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，我们需要适当地生成观测值`train_y`，以便使用正确的函数计算观测值：`train_y`的第一个元素等于*f*(–0.0374)，第二个元素等于*f̄*
+    (2.6822)，依此类推。为了做到这一点，我们编写了一个辅助函数，该函数接受完整的训练集，其中最后一列包含相关值，并调用适当的函数来生成`train_y`。即，如果相关值为1，则调用`objective()`，即*f*(*x*)，如前所定义；如果相关值为0.5，则调用`approx_objective()`求解*f̄*(*x*)：
+- en: '[PRE5]'
+  id: totrans-81
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: ❶ Iterates through the data points
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 迭代遍历数据点
+- en: ❷ Queries f(x) if the correlation value is 1
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 如果相关值为1，则查询f(x)
+- en: ❸ Queries *f̄* (x) if the correlation value is 0.5
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 如果相关值为0.5，则查询*f̄* (x)
+- en: ❹ Reshapes the observation tensor to be of the correct shape
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 重新调整观测张量的形状以符合正确的形状要求
+- en: Calling `evaluate_all_functions()` on `train_x_full` gives us the observed value
+    `train_y`, evaluated on appropriate functions. Our training set is visualized
+    in figure 9.6, where there are three high-fidelity observations and seven low-fidelity
+    observations.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在`train_x_full`上调用`evaluate_all_functions()`会给我们提供通过适当的函数评估得到的观测值`train_y`。我们的训练集在图9.6中可视化，其中包含三个高保真观测结果和七个低保真度观测结果。
+- en: '![](../../OEBPS/Images/09-06.png)'
+  id: totrans-87
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-06.png)'
+- en: Figure 9.6 A randomly sampled, multifidelity training dataset from the Forrester
+    function and its low-fidelity approximation. This training set contains three
+    high-fidelity observations and seven low-fidelity observations.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.6 是一个从Forrester函数及其低保真度近似中随机抽样得到的训练数据集。此训练集包含三个高保真观测结果和七个低保真度观测结果。
+- en: That’s how we generate and format a training set in multifidelity BayesOpt.
+    Our next task is to train a GP on this dataset in a way that uses both the ground
+    truth and the low-fidelity approximation.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这就是我们在多精度贝叶斯优化中生成和格式化训练集的方法。我们的下一个任务是以一种同时使用基本事实和低精度近似的方式在这个数据集上训练GP。
+- en: 9.2.2 Training a multifidelity GP
+  id: totrans-90
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 9.2.2 训练多精度GP
+- en: Our goal in this section is to have a GP that takes in a set of multifidelity
+    observations and outputs probabilistic predictions about the target function—that
+    is, the objective function *f*(*x*) to be maximized.
+  id: totrans-91
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本节的目标是拥有一个接收一组多精度观测并输出关于目标函数的概率预测的GP——即要最大化的目标函数*f*(*x*)。
+- en: Remember from section 2.2 that a GP is an MVN distribution of infinitely many
+    variables. The GP models the covariance (and, therefore, correlation) between
+    any pair of variables using the covariance function. It’s with this correlation
+    between any two variables that the GP can make predictions about one variable
+    when the value of the other is observed.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请记住，在第2.2节中，GP是无限多个变量的MVN分布。GP使用协方差函数模拟任意一对变量之间的协方差（因此也是相关性）。正是通过任意两个变量之间的这种相关性，GP可以在观察到另一个变量的值时对一个变量进行预测。
+- en: A refresher on correlation and updated belief about a variable
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 关于变量的相关性和更新信念的提醒
+- en: Say there are three variables *A*, *B*, and *C*, jointly modeled with a tri-variate
+    Gaussian distribution, where the correlation between *A* and *B* is high, but
+    the correlation between *A* and *C* and between *B* and *C* are both low.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设有三个变量*A*、*B*和*C*，用三元高斯分布联合建模，其中*A*和*B*之间的相关性很高，但*A*和*C*以及*B*和*C*之间的相关性都很低。
+- en: Now, when we observe the value of *A*, the uncertainty in our updated belief
+    about *B* (represented as the posterior distribution of the value of *B*) significantly
+    reduces. This is because the correlation between *A* and *B* is high, so observing
+    the value *A* gives us a lot of information about the value of *B*. This is not
+    the case for *C*, however, since the correlation between *A* and *C* is low, so
+    the updated belief about *C* still has considerable uncertainty. See section 2.2.2
+    for a similar and detailed discussion about housing prices.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，当我们观察到*A*的值时，我们关于*B*的更新信念的不确定性（表示为*B*值的后验分布）显著减少。这是因为*A*和*B*之间的相关性很高，因此观察到*A*的值给了我们关于*B*值的很多信息。然而，对于*C*来说情况并非如此，因为*A*和*C*之间的相关性很低，所以对*C*的更新信念仍然存在相当大的不确定性。请参阅第2.2.2节，了解关于房价的类似且详细的讨论。
+- en: 'As we learned in section 2.2.2, as long as we have a way to model the correlation
+    between any pair of variables (that is, the function values at any two given locations),
+    we can update the GP accordingly to reflect our updated belief about the function
+    anywhere in the domain. This is still true in the multifidelity setting: as long
+    as we have a way to model the correlation between two observations, even if one
+    is from the high fidelity *f*(*x*) and the other is from the low fidelity *f̄*(*x*),
+    we can update the GP on the objective function *f*(*x*).'
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们在第2.2.2节中学到的，只要我们有一种方法来模拟任意一对变量之间的相关性（即任意两个给定位置的函数值），我们就可以相应地更新GP，以反映我们关于域中任何位置函数的更新信念。在多精度设置中，这仍然是正确的：只要我们有一种方法来模拟两个观察之间的相关性，即使其中一个来自高精度*f*(*x*)，另一个来自低精度*f̄*(*x*)，我们也可以更新GP上的目标函数*f*(*x*)。
+- en: 'What’s left for us to do is use a covariance function that can compute the
+    covariance between two given observations, which may or may not be from the same
+    fidelity. Fortunately for us, BoTorch offers a modified version of the Matérn
+    kernel that accounts for the fidelity correlation value associated with each data
+    point in our training set:'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们需要使用一个协方差函数，它可以计算两个给定观测之间的协方差，这些观测可能来自同一精度，也可能不是。幸运的是，对于我们来说，BoTorch提供了一个修改过的Matérn核函数，考虑了我们训练集中每个数据点关联的精度相关值：
+- en: If the correlation value of a data point is high, the kernel will produce a
+    high covariance between that observed data point and any nearby point, thus allowing
+    us to reduce the GP’s uncertainty with an informative observation.
+  id: totrans-98
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果数据点的相关值很高，核函数将在观察到的数据点和任何附近点之间产生高协方差，从而使我们能够通过一个信息丰富的观察来减少GP的不确定性。
+- en: If the correlation value is low, the kernel will output a low covariance, and
+    the posterior uncertainty will remain high.
+  id: totrans-99
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果相关值很低，核函数将输出低协方差，后验不确定性将保持较高。
+- en: Note We first learned about the Matérn kernel in section 3.4.2\. While we won’t
+    go into the details about the multifidelity Matérn kernel here, the interested
+    reader can find more information in BoTorch’s documentation ([http://mng.bz/81ZB](http://mng.bz/81ZB)).
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：我们首次在第 3.4.2 节了解到 Matérn 内核。虽然我们不会在这里详细介绍多保真度 Matérn 内核，但感兴趣的读者可以在 BoTorch
+    的文档中找到更多信息（[http://mng.bz/81ZB](http://mng.bz/81ZB)）。
+- en: 'Since the GP with the multifidelity kernel is implemented as a special GP class,
+    we can import it from BoTorch without having to write our own class implementation.
+    Specifically, this GP is an instance of the `SingleTaskMultiFidelityGP` class,
+    which takes in a multifidelity training set `train_x_full` and `train_y`. The
+    initialization also has a `data_fidelity` argument, which should be set to the
+    index of the column in `train_x_full` that contains the correlation values; this,
+    in our case, is `1`:'
+  id: totrans-101
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于具有多保真度内核的 GP 被实现为特殊的 GP 类，我们可以从 BoTorch 中导入它，而不必编写自己的类实现。具体来说，这个 GP 是`SingleTaskMultiFidelityGP`类的一个实例，它接受一个多保真度训练集`train_x_full`和`train_y`。初始化还有一个`data_fidelity`参数，应设置为包含相关值的`train_x_full`中的列的索引；在我们的情况下，这是`1`：
+- en: '[PRE6]'
+  id: totrans-102
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: ❶ Imports the GP class implementation
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 导入 GP 类实现
+- en: ❷ Initializes a multifidelity GP
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 初始化多保真度 GP
+- en: 'After initializing the model, we now need to train it by maximizing the likelihood
+    of the observed data. (Refer to section 3.3.2 for more on why we choose to maximize
+    the likelihood to train a GP.) Since the GP we have is an instance of a special
+    class from BoTorch, we can take advantage of BoTorch’s helper function `fit_gpytorch_mll()`,
+    which facilitates the training process behind the scenes. All we need to do is
+    initialize a (log) likelihood object as our training objective and pass it to
+    the helper function:'
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 初始化模型后，我们现在需要通过最大化观察数据的似然来训练它。（有关为什么选择最大化似然来训练 GP 的更多信息，请参见第 3.3.2 节。）由于我们拥有的
+    GP 是来自 BoTorch 的一个特殊类的实例，我们可以利用 BoTorch 的辅助函数`fit_gpytorch_mll()`，它在幕后促进了训练过程。我们需要做的就是初始化一个（对数）似然对象作为我们的训练目标，并将其传递给辅助函数：
+- en: '[PRE7]'
+  id: totrans-106
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ Imports the log likelihood objective and the helper function for training
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 导入对数似然目标和用于训练的辅助函数
+- en: ❷ Initializes the log likelihood objective
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 初始化对数似然目标
+- en: ❸ Trains the GP to maximize the log likelihood
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 训练 GP 以最大化对数似然
+- en: These surprisingly few lines of code are all we need to train a multifidelity
+    GP on a set of observations.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些令人惊讶的几行代码是我们需要训练一组观测的多保真度 GP 的全部内容。
+- en: BoTorch warnings about data type and scaling
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BoTorch 关于数据类型和缩放的警告
+- en: When running the previous code, newer versions of GPyTorch and BoTorch might
+    display two warnings, the first of which is
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当运行上述代码时，较新版本的 GPyTorch 和 BoTorch 可能会显示两个警告，第一个警告是
+- en: '[PRE8]'
+  id: totrans-113
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: 'This warning indicates that we should use a different data type for `train_x`
+    and `train_y` from the default `torch.float32` to improve numerical precision
+    and stability. To do this, we can add the following to our code (at the beginning
+    of the script):'
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此警告指示我们应该为`train_x`和`train_y`使用不同的数据类型，默认为`torch.float32`，以提高数值精度和稳定性。为此，我们可以在代码中添加以下内容（在脚本开头）：
+- en: '[PRE9]'
+  id: totrans-115
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: 'The second warning concerns scaling the input features `train_x` to be in the
+    unit cube (each feature value being between 0 and 1) and the response values `train_y`
+    to be standardized to have zero mean and unit variance:'
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二个警告涉及将输入特征`train_x`缩放到单位立方体（每个特征值介于 0 和 1 之间）以及将响应值`train_y`标准化为零均值和单位方差：
+- en: '[PRE10]'
+  id: totrans-117
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: Scaling `train_x` and `train_y` this way helps us fit the GP more easily and
+    in a more numerically stable way. To keep our code simple, we won’t implement
+    such scaling here and will be filtering out these warnings using the `warnings`
+    module. The interested reader can refer to chapter 2’s exercise for more details.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 缩放`train_x`和`train_y`有助于我们更容易地适应 GP，并且更加数值稳定。为了保持我们的代码简单，我们不会在这里实现这样的缩放，而是使用`warnings`模块过滤掉这些警告。感兴趣的读者可以参考第二章的练习以获取更多细节。
+- en: Now, to verify whether this trained GP is able to learn about the training set,
+    we visualize the GP’s predictions about *f*(*x*) between –5 and 5 with the mean
+    and the 95% CIs.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，为了验证这个训练过的 GP 能否学习关于训练集的信息，我们使用均值和 95% CI 可视化 GP 对 *f*(*x*) 在 -5 和 5 之间的预测。
+- en: 'Our test set `xs` is a dense grid (with over 200 elements) between –5 and 5:'
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的测试集`xs`是一个密集网格（超过 200 个元素），位于 -5 和 5 之间：
+- en: '[PRE11]'
+  id: totrans-121
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: 'Unlike what we’ve seen in previous chapters, we need to augment this test set
+    with an extra column denoting the fidelity on which we’d like to predict. In other
+    words, the test set `xs` needs to be in the same format as the training set `train_x_full`.
+    Since we’re interested in the GP’s predictions about *f*(*x*), we add in an extra
+    column full of ones (as 1 is the correlation value of *f*(*x*)):'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与我们在之前章节中看到的情况不同，我们需要用额外的一列来增强这个测试集，表示我们想要预测的保真度。换句话说，测试集`xs`需要与训练集`train_x_full`的格式相同。由于我们对
+    GP 对*f*(*x*)的预测感兴趣，所以我们添加了一列额外的全为1的列（因为1是*f*(*x*)的相关值）：
+- en: '[PRE12]'
+  id: totrans-123
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: ❶ Disables gradient tracking
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 禁用梯度跟踪
+- en: ❷ Augments the test set with the fidelity column and passes it to the model
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 用保真度列增强测试集并将其传递给模型
+- en: ❸ Computes the mean predictions
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 计算均值预测
+- en: ❹ Computes the 95% CIs
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 计算95%置信区间
+- en: 'These predictions are visualized in figure 9.7, which illustrates a number
+    of important features about our multifidelity GP:'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些预测在图9.7中进行了可视化，该图展示了关于我们的多保真度 GP 的一些重要特征：
+- en: The mean predictions about *f*(*x*) go through the high-fidelity observations
+    at roughly –3.6, 0, and 1.3\. This interpolation makes sense as these data points
+    were indeed evaluated on *f*(*x*).
+  id: totrans-129
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 关于*f*(*x*)的均值预测大致经过大约–3.6，0和1.3的高保真度观测点。这种插值是有意义的，因为这些数据点确实是在*f*(*x*)上评估的。
+- en: In regions where we have low-fidelity observations but not high-fidelity observations
+    (e.g., at –2 and around 2.7), our uncertainty about *f*(*x*) still decreased.
+    This is because the low-fidelity observations offer information about *f*(*x*),
+    even though they weren’t evaluated on *f*(*x*).
+  id: totrans-130
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在我们只有低保真度观测但没有高保真度观测的区域（例如，在–2和大约2.7附近），我们对*f*(*x*)的不确定性仍然减少了。这是因为低保真度观测提供了关于*f*(*x*)的信息，即使它们没有在*f*(*x*)上进行评估。
+- en: Among these low-fidelity observations, we see that the data point at 4 could
+    offer valuable information to an optimization policy since the data point captures
+    the upward trend of the objective function around that region. By exploiting this
+    information, an optimization policy could discover the global optimum nearby,
+    around 4.5.
+  id: totrans-131
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在这些低保真度观测中，我们发现在4处的数据点可能为优化策略提供有价值的信息，因为该数据点捕捉到了该区域目标函数的上升趋势。通过利用这些信息，优化策略可以在附近发现全局最优点，大约在4.5附近。
+- en: '![](../../OEBPS/Images/09-07.png)'
+  id: totrans-132
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-07.png)'
+- en: Figure 9.7 The multifidelity GP’s predictions about the objective function (ground
+    truth). The mean predictions appropriately go through the high-fidelity observations,
+    but uncertainty is still reduced around low-fidelity observations.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.7 多保真度 GP 对客观函数（地面真相）的预测。均值预测适当地经过高保真度观测，但在低保真度观测周围的不确定性仍然减少。
+- en: 'Figure 9.7 shows that the GP successfully learned from a multifidelity data
+    set. To push our ability to learn from low-fidelity observations and predict *f*(*x*)
+    to the extreme, we could modify the way we generate our training set so it only
+    contains low-fidelity observations. We do this by setting the correlation values
+    in the extra column in `train_x_full` to `0.5`:'
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.7显示，GP 成功地从多保真度数据集中学习。为了将我们从低保真度观测中学习和预测*f*(*x*)的能力推向极限，我们可以修改生成训练集的方式，使其只包含低保真度观测。我们通过将`train_x_full`中的额外列中的相关值设置为`0.5`来实现这一点：
+- en: '[PRE13]'
+  id: totrans-135
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ The correlation values are all 0.5.
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 所有相关值均为0.5。
+- en: ❷ Adds the correlation values to the training set
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将相关值添加到训练集
+- en: Rerunning the last of the code so far will generate the left panel of figure
+    9.8, where we see that all data points are, indeed, from the low-fidelity approximation
+    *f̄*(*x*). Compared to figure 9.7, we are more uncertain about our predictions
+    here, which is appropriate because having observed only low-fidelity observations,
+    the GP doesn’t learn as much about the objective function *f*(*x*).
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 重新运行迄今为止的代码将生成图9.8的左侧面板，在那里我们看到所有数据点确实来自低保真度逼近*f̄*(*x*)。与图9.7相比，我们在这里对我们的预测更不确定，这是适当的，因为仅观察到低保真度观测，GP
+    对客观函数*f*(*x*)的学习不如图9.7那样多。
+- en: '![](../../OEBPS/Images/09-08.png)'
+  id: totrans-139
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-08.png)'
+- en: Figure 9.8 The predictions about the objective function (ground truth) by a
+    GP trained on only low-fidelity observations. The left panel shows the result
+    when the correlation value is 0.5; the right shows the result when the correlation
+    value is 0.9, which exhibits less uncertainty.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.8 由只基于低保真度观测训练的 GP 对客观函数（地面真相）的预测。左侧显示相关值为0.5时的结果；右侧显示相关值为0.9时的结果，表现出较少的不确定性。
+- en: To further show the flexibility of our multifidelity GP, we can play around
+    with the correlation values stored in `fidelities` (while assuming we know how
+    to appropriately set these correlation values). As we learned in section 9.2.1,
+    the first element in this tensor denotes the correlation between *f*(*x*) and
+    *f̄*(*x*), which roughly translates to how much the GP should “trust” the low-fidelity
+    observations. By setting this first element to 0.9 (as opposed to 0.5, as we currently
+    do), we can assign more importance to the low-fidelity observations. That is,
+    we are telling the GP to learn more from the low-fidelity data, as it offers a
+    lot of information about *f*(*x*). The right panel of figure 9.8 shows the resulting
+    GP, where our uncertainty is, indeed, lower than in the left panel.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了进一步展示我们多适应性高斯过程的灵活性，我们可以玩弄存储在`fidelities`中的相关值（假设我们知道如何适当地设置这些相关值）。正如我们在第9.2.1节中所学到的，这个张量中的第一个元素表示*f*(*x*)和*f̄*(*x*)之间的相关性，大致对应于高斯过程应该“相信”低保真度观测的程度。通过将这个第一个元素设置为0.9（而不是我们当前的0.5），我们可以更重视低保真度的观测。也就是说，我们告诉高斯过程从低保真度数据中学到更多，因为它提供了关于*f*(*x*)的大量信息。图9.8的右侧显示了产生的高斯过程，其中我们的不确定性确实比左侧面板低。
+- en: 'Aside from the flexibility of the multifidelity GP model, figure 9.8 also shows
+    how important it is to have the correct correlation values in the `fidelities`
+    tensor. Comparing the two panels in figure 9.8, we see that 0.5 is a better value
+    for the correlation value between two fidelities than 0.9:'
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了多适应性高斯过程模型的灵活性之外，图9.8还展示了在`fidelities`张量中具有正确相关值的重要性。比较图9.8中的两个面板，我们发现0.5是两个保真度之间的相关值的较好值，而不是0.9：
+- en: In the right panel, our predictions miss the true objective *f*(*x*) in most
+    of the space due to our overreliance on and trust in the low-fidelity observations.
+  id: totrans-143
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在右面板中，由于我们过度依赖和信任低保真度的观测，我们的预测在大部分空间中错过了真实目标*f*(*x*)。
+- en: In the left panel, the 95% CIs are appropriately wider to reflect our uncertainty
+    about *f*(*x*).
+  id: totrans-144
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在左面板中，95%的置信区间适当地更宽以反映我们对*f*(*x*)的不确定性。
+- en: In other words, we don’t want to overestimate how informative the low-fidelity
+    approximation *f̄*(*x*) is about the objective *f*(*x*).
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，我们不希望过高估计低保真度近似*f̄*(*x*)对目标*f*(*x*)的信息量。
+- en: 'At this point, we have learned how to model a function with a multifidelity
+    GP. For the remainder of this chapter, we discuss the second part of the multifidelity
+    optimization problem: decision-making. More specifically, we learn how to design
+    a multifidelity optimization policy that selects at which location and which function
+    to query at each step of the BayesOpt loop.'
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，我们已经学会了如何用多适应性高斯过程建模一个函数。在本章的其余部分，我们讨论多适应性优化问题的第二部分：决策。更具体地说，我们学习如何设计一个多适应性优化策略，该策略在贝叶斯优化循环的每一步选择在哪个位置和查询哪个函数。
+- en: 9.3 Balancing information and cost in multifidelity optimization
+  id: totrans-147
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.3 在多适应性优化中平衡信息和成本
+- en: To be able to trade off between the informativeness of a query (low or high
+    fidelity) and the cost of running that query, we need to have a way to model and
+    reason about the querying cost. In the next section, we learn how to represent
+    the cost of querying a given fidelity with a linear model. Using this cost model,
+    we then implement a multifidelity BayesOpt policy that trades off cost and making
+    optimization progress. The code we use is stored in the CH09/02 - Multi-fidelity
+    optimization.ipynb notebook.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了能够在查询的信息性（低或高保真度）和运行该查询的成本之间进行权衡，我们需要一种方法来对查询成本进行建模和推理。在下一节中，我们学习如何用线性模型表示查询给定保真度的成本。使用这个成本模型，我们然后实现一个多适应性贝叶斯优化策略，平衡成本和进行优化进展。我们使用的代码存储在CH09/02
+    - Multi-fidelity optimization.ipynb笔记本中。
+- en: 9.3.1 Modeling the costs of querying different fidelities
+  id: totrans-149
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 9.3.1 建模不同保真度查询的成本
+- en: In the multifidelity optimization problem, we assume we know how much it costs
+    to query each of the functions we have access to, either the objective function
+    *f*(*x*) itself or the low-fidelity approximation *f̄*(*x*). To facilitate a modular
+    optimization workflow, we need to represent this information about the cost of
+    querying each function as a cost model. This model takes in a given data point
+    (with an extra feature containing the correlation value, as we saw in section
+    9.2.1) and returns the known cost of querying that data point on the specified
+    fidelity.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在多保真度优化问题中，我们假设我们知道查询每个我们可以访问的函数的成本，无论是目标函数*f*(*x*)本身还是低保真度近似*f̄*(*x*)。为了促进模块化的优化工作流程，我们需要将关于查询每个函数成本的信息表示为一个成本模型。该模型接受一个给定的数据点（其中包含一个额外的特征，包含相关值，正如我们在第9.2.1节中看到的那样），并返回在指定保真度上查询该数据点的已知成本。
+- en: Note Since the cost of querying a fidelity is known, there’s no prediction involved
+    in this cost model. We just need this model formulation to keep the optimization
+    procedure we learn about in the next section.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，由于已知在保真度上查询的成本，因此这个成本模型中没有涉及预测。我们只需要这个模型公式来保持我们在下一节学习的优化过程。
+- en: BoTorch provides the class implementation for a linear cost model named `AffineFidelityCostModel`
+    from the `botorch.models.cost` module. This linear cost model assumes the querying
+    costs obey the relationships shown in figure 9.9, where the cost of querying a
+    data point on a fidelity scales linearly with the correlation between that fidelity
+    and the ground truth *f*(*x*). The slope of this linear trend is the weight parameter
+    in figure 9.9, and there’s a fixed cost to making any query.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BoTorch提供了一个名为`AffineFidelityCostModel`的线性成本模型的类实现，来自于`botorch.models.cost`模块。这个线性成本模型假设查询成本遵循图9.9所示的关系，其中查询在保真度上的成本与该保真度和地面真实值*f*(*x*)之间的相关性呈线性关系。这个线性趋势的斜率是图9.9中的权重参数，而进行任何查询都有一个固定成本。
+- en: '![](../../OEBPS/Images/09-09.png)'
+  id: totrans-153
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-09.png)'
+- en: Figure 9.9 The linear cost model for multifidelity optimization. The cost of
+    querying a data point on a fidelity scales linearly with the correlation between
+    that fidelity and the ground truth *f*(*x*).
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.9 多保真度优化的线性成本模型。在保真度上查询数据点的成本与该保真度和地面真实值*f*(*x*)之间的相关性呈线性关系。
+- en: 'We initialize this linear cost model with the following code, where we set
+    the fixed cost at 0 and the weight at 1\. This means querying a low-fidelity data
+    point will cost us exactly the correlation value of the low-fidelity approximation,
+    which is 0.5 (units of cost). Similarly, querying a high-fidelity data point will
+    cost 1 (unit of cost). Here, the `fidelity_weights` argument takes in a dictionary
+    mapping the index of the column containing the correlation values in `train_x_full`
+    (`1` in our case) to the weight:'
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们使用以下代码初始化这个线性成本模型，其中我们将固定成本设为0，权重设为1。这意味着查询低保真度数据点将花费我们确切的低保真度近似的相关值，即0.5（成本单位）。类似地，查询高保真度数据点将花费1（成本单位）。在这里，`fidelity_weights`参数接受一个字典，将`train_x_full`中包含相关值的列的索引映射到权重（在我们的案例中为`1`）：
+- en: '[PRE14]'
+  id: totrans-156
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: ❶ The fixed querying cost
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 固定的查询成本
+- en: ❷ The linear weight to be multiplied with the correlation values
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 与相关值相乘的线性权重
+- en: Note The unit of cost being used depends on the specific application. This cost
+    comes down to the difference in “convenience” between querying the objective and
+    querying the low-fidelity approximation, which can be time (the unit would be
+    minutes, hours, or days), money (in dollars), or some measure of effort, and should
+    be set by the user.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，正在使用的成本单位取决于具体的应用。这个成本归结为查询目标和查询低保真度近似之间的“便利性”差异，这可以是时间（单位可以是分钟、小时或天）、金钱（以美元计算）或某种努力的度量，并应由用户设置。
+- en: 'The linear trend captures the relationship between the correlation value and
+    cost: a high-fidelity function with a high correlation value should have a high
+    querying cost, while a low-fidelity function should have a lower cost to query.
+    The two settable parameters—the fixed cost and weight—allow us to flexibly model
+    many types of querying costs. (We see how different types of querying costs can
+    lead to different decisions being made in the next section.) With this cost model
+    in hand, we are now ready to learn how to balance cost and progress in a multifidelity
+    optimization problem.'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 线性趋势捕捉了相关值与成本之间的关系：具有高相关值的高信度函数应具有较高的查询成本，而低信度函数的查询成本应较低。两个可设置的参数——固定成本和权重——允许我们灵活地建模许多类型的查询成本。（我们将看到不同类型的查询成本如何导致下一节做出不同的决策。）有了这个成本模型，我们现在准备好学习如何在多信度优化问题中平衡成本和进展了。
+- en: Modeling nonlinear querying costs
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 建模非线性查询成本
+- en: We only use the linear cost model in this chapter. If your use case demands
+    the querying costs to be modeled by a nonlinear trend (e.g., a quadratic or an
+    exponential trend), you can implement your own cost model.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章中我们只使用线性成本模型。如果您的用例要求将查询成本建模为非线性趋势（例如二次或指数趋势），您可以实现自己的成本模型。
+- en: 'This is done by extending the `AffineFidelityCostModel` class we are using
+    and rewriting its `forward()` method. The implementation of the `AffineFidelityCostModel`
+    class is shown in BoTorch’s official documentation ([https://botorch.org/api/_modules/botorch/models/cost.xhtml](https://botorch.org/api/_modules/botorch/models/cost.xhtml)),
+    where we see the `forward()` method implements the linear relationship between
+    querying cost and correlation value, as in figure 9.9:'
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这是通过扩展我们正在使用的`AffineFidelityCostModel`类并重写其`forward()`方法来完成的。`AffineFidelityCostModel`类的实现在
+    BoTorch 的官方文档中显示（[https://botorch.org/api/_modules/botorch/models/cost.xhtml](https://botorch.org/api/_modules/botorch/models/cost.xhtml)），在那里我们看到`forward()`方法实现了查询成本与相关值之间的线性关系，如图9.9所示：
+- en: '[PRE15]'
+  id: totrans-164
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: ❶ Multiplies the correlation values with the weight
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将相关值与权重相乘
+- en: ❷ Adds the fixed cost
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 添加了固定成本
+- en: In a new class for the custom cost model, you can then rewrite this `forward()`
+    method to implement the relationship between querying cost and correlation value
+    that you need. Even with a custom cost model, the rest of the code we use in this
+    chapter doesn’t need to be modified, which illustrates the benefit of BoTorch’s
+    modular design.
+  id: totrans-167
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在自定义成本模型的新类中，您可以重写此`forward()`方法来实现您需要的查询成本与相关值之间的关系。即使使用自定义成本模型，我们在本章中使用的其他代码也不需要修改，这说明了
+    BoTorch 的模块化设计的好处。
+- en: 9.3.2 Optimizing the amount of information per dollar to guide optimization
+  id: totrans-168
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 9.3.2 优化每美元的信息量以指导优化
+- en: 'We now return to the question posed at the beginning of this chapter: How should
+    we balance the amount of information we can gain by querying a function and the
+    cost of querying that function? In multifidelity optimization, a high-fidelity
+    function (the ground truth) offers us exact information about the objective *f*(*x*)
+    to optimize *f*(*x*), but the querying cost is high. On the other hand, a low-fidelity
+    approximation is inexpensive to evaluate but can only provide inexact information
+    about *f*(*x*). It is the job of a multifidelity BayesOpt policy to decide how
+    this balancing is done.'
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在回到本章开头提出的问题：我们应该如何平衡通过查询函数获得的信息量和查询该函数的成本？在多信度优化中，高信度函数（真实值）为我们提供了关于要优化的目标*f*(*x*)的精确信息，但查询成本很高。另一方面，低信度近似评估成本低廉，但只能提供关于*f*(*x*)的不精确信息。多信度贝叶斯优化策略的工作是决定如何平衡这一点。
+- en: '![](../../OEBPS/Images/09-09-unnumb.png)'
+  id: totrans-170
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-09-unnumb.png)'
+- en: We already have a model from section 9.3.1 that computes the cost of querying
+    any given data point. As for the other side of the scale, we need a method of
+    quantifying how much we will learn about the objective function from a given query
+    that can either be from the objective *f*(*x*) itself or from the low-fidelity
+    approximation *f̄*(*x*).
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经从第9.3.1节得到了一个模型，计算了查询任何给定数据点的成本。至于另一方面，我们需要一种方法来量化我们将从给定查询中学到的目标函数的信息量，这可以来自于目标*f*(*x*)本身，也可以来自于低信度近似*f̄*(*x*)。
+- en: Note How much information about *f*(*x*) or, more specifically, about the optimum
+    of *f*(*x*), we will gain from a query is exactly what the Max-value Entropy Search
+    (MES) policy, which we learned about in chapter 6, uses to rank its queries. MES
+    chooses the query that gives us the most information about the highest value of
+    *f*(*x*) in the single-fidelity setting, where we can only query the objective.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：关于 *f*(*x*) 或者更具体地说，关于 *f*(*x*) 最优解的信息量，正是我们在第 6 章学到的 Max-value Entropy Search（MES）策略用来对其查询进行排序的。MES
+    选择给出最多关于 *f*(*x*) 最高值的信息的查询，在单保真度设置中，我们只能查询目标。
+- en: As this information gain measure is a general information-theoretic concept,
+    it can be applied to the multifidelity setting as well. In other words, we use
+    MES as the base policy to compute how much information about the optimum of *f*(*x*)
+    we gain with each query during optimization. With both components, cost and information
+    gain, available to us, we now need to design a way to balance the two, which gives
+    us a *cost-aware* measure of utility of a query.
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于这个信息增益度量是一个通用的信息论概念，因此它也可以应用于多信度设置。换句话说，我们使用 MES 作为基本策略来计算在优化过程中每个查询中关于 *f*(*x*)
+    最优解的信息量。现在，有了成本和信息增益这两个组成部分，我们现在需要设计一种方法来平衡这两者，从而得到一个成本感知的查询效用度量。
+- en: The return on investment quantity
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 投资回报数量
+- en: To quantify the cost-aware utility of a query, we use a common metric in economics,
+    called the return on investment (ROI) measure, which is calculated by dividing
+    the profit from an investment by the investing cost. In the context of using MES
+    in multifidelity optimization, the profit is the amount of information gained
+    from querying a data point, and the cost is the querying cost.
+  id: totrans-175
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了量化查询的成本感知效用，我们使用经济学中的一个常见指标，称为投资回报（ROI）度量，该度量是通过将投资的利润除以投资成本来计算的。在多信度优化中使用
+    MES 时，利润是从查询数据点中获得的信息量，成本是查询成本。
+- en: Remember that the acquisition score of a BayesOpt policy is the score the policy
+    assigns to each data point within the search space to quantify the point’s value
+    in helping us optimize the objective function. With the ROI acquisition score
+    we use here, each data point is scored by the amount of information it provides
+    about the objective’s optimum for each unit of cost. This calculation is visualized
+    in figure 9.10.
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 记住，贝叶斯优化策略的收购分数是指策略为量化搜索空间内的每个数据点分配的分数，以量化该点在帮助我们优化目标函数方面的价值。在这里我们使用的 ROI 收购分数，是通过每个数据点提供关于目标最优解的信息量来评分，每个单位成本计算。这个计算在图
+    9.10 中可视化。
+- en: '![](../../OEBPS/Images/09-10.png)'
+  id: totrans-177
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-10.png)'
+- en: Figure 9.10 The formula of the ROI acquisition score for multifidelity optimization.
+    This score quantifies the amount of information a query provides about the objective’s
+    optimum for each unit of cost.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 9.10 多信度优化的 ROI 收购分数公式。该分数量化了每个单位成本中查询提供的关于目标最优解的信息量。
+- en: 'We see that this ROI score is an appropriate measure that weights the information
+    gained from a query by how inexpensive it is to make that query:'
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到，这个 ROI 分数是一个适当的度量，通过查询所获得的信息量与进行该查询的成本加权：
+- en: If two queries we can potentially make have the same cost but result in different
+    information gains, we should pick the one offering more information.
+  id: totrans-180
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果我们可以潜在地进行的两个查询具有相同的成本但产生不同的信息增益，我们应该选择提供更多信息的那一个。
+- en: If two queries provide the same amount of information about the objective’s
+    optimum, we should pick the one that’s less expensive to make.
+  id: totrans-181
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 如果两个查询提供了相同数量的关于目标最优解的信息，我们应该选择成本较低的那一个。
+- en: This tradeoff allows us to acquire information about the objective function
+    *f*(*x*) from inexpensive, low-fidelity approximations if these approximations
+    are, indeed, informative. On the other hand, if and when the low-fidelity queries
+    stop offering information about *f*(*x*), we will switch to high-fidelity data
+    points. Essentially, we always choose the optimal cost-aware decision that gives
+    “the most bang for our buck.”
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这种权衡允许我们从廉价的、低保真度的近似中获取关于目标函数 *f*(*x*) 的信息，如果这些近似确实是有信息的。另一方面，如果低保真度查询停止提供关于
+    *f*(*x*) 的信息，我们将转向高保真度数据点。基本上，我们始终选择最佳的成本感知决策，以确保“物有所值”。
+- en: 'To implement this cost-aware variant of MES, we can make use of BoTorch’s `qMultiFidelityMaxValueEntropy`
+    class implementation. This implementation requires a number of components, which
+    it takes in as arguments:'
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要实现这种成本感知的 MES 变体，我们可以利用 BoTorch 的 `qMultiFidelityMaxValueEntropy` 类实现。该实现需要一些组件作为参数传入：
+- en: '*A cost utility object that does the ROI computation in figure 9.10.* This
+    object is implemented with the `InverseCostWeightedUtility` class, which weights
+    the utility of a query by the inverse of its cost. The initialization takes in
+    the cost model we made earlier:'
+  id: totrans-184
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*在图 9.10 中进行 ROI 计算的成本效用对象*。该对象使用 `InverseCostWeightedUtility` 类实现，通过其成本的倒数对查询的效用进行加权。初始化时需要我们之前创建的成本模型：'
+- en: '[PRE16]'
+  id: totrans-185
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: '*A Sobol sequence that acts as the candidate set for the entropy computation
+    of MES.* We first learned about using Sobol sequences with MES in section 6.2.2,
+    and the procedure is the same here, where we draw a 1,000-element Sobol sequence
+    from the unit cube (it’s just the segment going from 0 to 1, in our one-dimensional
+    case) and scale it to our search space. One more thing we need to do in the multifidelity
+    setting is augment this candidate set with the extra column for the correlation
+    value of 1 (corresponding to the objective function *f*(*x*)) to denote that we
+    want to measure entropy in our target *f*(*x*):'
+  id: totrans-186
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*用作 MES 的熵计算候选集的 Sobol 序列。*我们首次了解到在第 6.2.2 节中使用 Sobol 序列与 MES，并且这里的过程与之前相同，我们从单位立方体中抽取一个
+    1,000 元素的 Sobol 序列（在我们的一维情况下，它只是从 0 到 1 的段），并将其缩放到我们的搜索空间。在多保真设置中，我们需要做的另一件事是用额外的列来增强此候选集，以表示我们想要在目标
+    *f*(*x*) 中测量熵的相关值为 1：'
+- en: '[PRE17]'
+  id: totrans-187
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: ❶ Fixes the random seed for reproducibility
+  id: totrans-188
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❶ 为了可重现性而固定随机种子
+- en: ❷ Draws 1,000 points from a Sobol sequence within the unit cube
+  id: totrans-189
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❷ 在单位立方体内从 Sobol 序列中抽取 1,000 个点
+- en: ❸ Scales the samples to our search space
+  id: totrans-190
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❸ 将样本缩放到我们的搜索空间
+- en: ❹ Augments the samples with the index of the ground truth
+  id: totrans-191
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❹ 用地面实况的指数增强样本
+- en: '*Finally, a helper function that projects a given data point from any fidelity
+    to the ground truth.* This projection is necessary in the computation of entropy
+    that our policy uses to calculate the acquisition scores. Here, BoTorch provides
+    that helper function `project_to_target_fidelity`, which doesn’t need any further
+    parameterization if the last column in our training set contains the correlation
+    values and the correlation value of the ground truth is 1, both of which are true
+    in our code.'
+  id: totrans-192
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*最后，将给定数据点从任何保真度投影到地面实况的辅助函数。*此投影在我们的策略用于计算采集分数的熵计算中是必要的。在这里，BoTorch 提供了该辅助函数
+    `project_to_target_fidelity`，如果我们的训练集中的最后一列包含相关值，并且地面实况的相关值为 1，那么它就不需要任何进一步的参数化，这两个条件在我们的代码中都成立。'
+- en: 'Using the preceding components, we implement our cost-aware, multifidelity
+    MES policy as follows:'
+  id: totrans-193
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用上述组件，我们实现我们的成本感知、多保真 MES 策略如下所示：
+- en: '[PRE18]'
+  id: totrans-194
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: ❶ The samples from the Sobol sequence
+  id: totrans-195
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 来自 Sobol 序列的样本
+- en: ❷ The cost utility object that weights utility by the inverse of the cost
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 通过成本的倒数对效用进行加权的成本效用对象
+- en: ❸ The projection helper function
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 投影辅助函数
+- en: At this point, we can use this policy object to score each data point from any
+    fidelity by its cost-adjusted value in helping us find the objective’s optimum.
+    The last piece of the puzzle is the helper function we use to optimize the acquisition
+    score of this policy to find the point with the highest ROI score at each iteration
+    of the search. In previous chapters, we use `optimize_acqf` from the `botorch.optim.optimize`
+    module to optimize the acquisition score in the single-fidelity setting, which
+    only works if our search space is continuous.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到此为止，我们可以使用此策略对象根据任何保真度对每个数据点进行评分，评估其在帮助我们找到目标最优解方面的成本调整值。拼图的最后一块是我们用来优化此策略的采集分数，以找到每次搜索迭代中
+    ROI 分数最高的点的辅助函数。在以前的章节中，我们使用 `botorch.optim.optimize` 模块中的 `optimize_acqf` 来优化单一保真度情况下的采集分数，这仅在我们的搜索空间是连续的情况下有效。
+- en: 'Note In our current multifidelity setting, the search space for the location
+    of the query is still continuous, but the choice for the function with which to
+    query is discrete. In other words, our search space is mixed. Fortunately, BoTorch
+    offers the analogous helper function for a mixed search space: `optimize_acqf_mixed`.'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：在我们当前的多保真设置中，用于查询位置的搜索空间仍然是连续的，但用于查询的函数选择是离散的。换句话说，我们的搜索空间是混合的。幸运的是，BoTorch
+    为混合搜索空间提供了类似的辅助函数：`optimize_acqf_mixed`。
+- en: In addition to the usual arguments that `optimize_acqf` takes, the new helper
+    function, `optimize_acqf_mixed`, also has a `fixed_features_list` argument, which
+    should be a list of dictionaries, each mapping the index of a discrete column
+    in `train_x_` `full` to the possible values the column contains. In our case,
+    we only have one discrete column, the last column containing the correlation values,
+    so we use `[{1:` `cost.item()}` `for` `cost` `in` `fidelities]` for the `fixed_features_list`
+    argument. Further, the `bounds` variable we usually pass to the helper function
+    now needs to contain the bounds for the correlation values as well. Overall, we
+    optimize our multifidelity MES acquisition score with
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了`optimize_acqf`通常接受的参数外，新的辅助函数`optimize_acqf_mixed`还有一个`fixed_features_list`参数，它应该是一个字典列表，每个字典将`train_x_`的一个离散列的索引映射到列包含的可能值。在我们的情况下，我们只有一个离散列，即包含相关值的最后一列，因此我们使用`[{1:`
+    `cost.item()}` `for` `cost` `in` `fidelities]`作为`fixed_features_list`参数。此外，我们通常传递给辅助函数的`bounds`变量现在也需要包含相关值的边界。总的来说，我们使用以下方式优化我们的多保真MES获取分数：
+- en: '[PRE19]'
+  id: totrans-201
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: ❶ Bounds for the search space, including those for the correlation values
+  id: totrans-202
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 搜索空间的边界，包括相关值的边界
+- en: ❷ The discrete values the correlation column could contain
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 相关列可能包含的离散值
+- en: This helper function completes the code we need to use the multifidelity MES
+    policy. The bottom panel of figure 9.11 visualizes the acquisition scores computed
+    by this policy with the multifidelity GP we trained in section 9.2.2\. In this
+    bottom panel, the boundary of the shaded region (denoting the scores of low-fidelity
+    queries) exceeds that of the hatch-pattern region (the scores of high-fidelity
+    queries), meaning low-fidelity queries are more cost-effective than high-fidelity
+    ones, given our current knowledge. Ultimately, the best query we make, denoted
+    as the star, is around 3.5 on the low-fidelity approximation *f̄*(*x*).
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个辅助函数完成了我们需要使用多保真MES策略的代码。图9.11的底部面板可视化了通过我们在第9.2.2节中训练的多保真GP计算的获取分数。在这个底部面板中，阴影区域的边界（表示低保真查询的分数）超过了斜纹图案区域的边界（高保真查询的分数），这意味着在当前知识条件下，低保真查询比高保真查询更具成本效益。最终，我们进行的最佳查询，表示为星号，约为低保真近似*f̄*(*x*)的3.5。
+- en: '![](../../OEBPS/Images/09-11.png)'
+  id: totrans-205
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-11.png)'
+- en: Figure 9.11 The current GP belief about the objective function (top) and the
+    acquisition scores computed by the multifidelity MES policy (bottom). In this
+    example, low-fidelity queries are preferred to high-fidelity ones thanks to their
+    low cost.
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.11 对于目标函数的当前GP信念（顶部）和通过多保真MES策略计算的获取分数（底部）。在这个例子中，由于其低成本，低保真查询优于高保真查询。
+- en: A low-fidelity query is the optimal kind to make in figure 9.11, as it offers
+    more information relative to its cost than any high-fidelity query. However, this
+    is not always the case. By modifying our data generation procedure from section
+    9.2.2 to generate an all-low-fidelity-observation training set and rerunning our
+    code, we obtain the left panel of figure 9.12, where this time, the optimal decision
+    is to query the high-fidelity function *f*(*x*). This is because according to
+    our GP belief, we have sufficiently learned from low-fidelity data, and it’s time
+    we inspected the ground truth *f*(*x*).
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图9.11中，低保真查询是最佳的类型，因为相对于任何高保真查询，它提供了更多的信息。然而，情况并非总是如此。通过修改我们从第9.2.2节中的数据生成过程以生成所有低保真观测训练集并重新运行我们的代码，我们得到了图9.12的左面板，这次，最优决策是查询高保真函数*f*(*x*)。这是因为根据我们的高斯过程信念，我们已经充分从低保真数据中学到了东西，现在是时候我们检查地面真相*f*(*x*)了。
+- en: '![](../../OEBPS/Images/09-12.png)'
+  id: totrans-208
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-12.png)'
+- en: Figure 9.12 Situations where high-fidelity queries are preferred to low-fidelity
+    ones. On the left, the training set contains only low-fidelity observations. On
+    the right, low-fidelity queries are almost as expensive as high-fidelity queries.
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图9.12 高保真查询优于低保真查询的情况。左侧，训练集仅包含低保真观测。右侧，低保真查询的成本几乎与高保真查询相同。
+- en: As a final analysis of the behavior of our policy, we can study the effect of
+    the querying costs on how decisions are made. To do this, we change our querying
+    costs, so a low-fidelity query won’t be much less expensive than a high-fidelity
+    one, specifically by increasing the fixed querying cost described in section 9.3.1
+    from 0 to 10\. This change means a low-fidelity query now costs 10.5 units of
+    cost, and a high-fidelity query now costs 11\. Compared to the costs of 0.5 and
+    1 from before, 10.5 and 11 are much closer to each other, making the denominators
+    in figure 9.10 for the two fidelities almost equal. This means the low-fidelity
+    approximation *f̄*(*x*) is almost as expensive to query as the objective function
+    *f*(*x*) itself. Given these querying costs, the right panel of figure 9.12 shows
+    how the MES policy scores potential queries. This time, because high-fidelity
+    queries aren’t much more expensive than low-fidelity ones, the former are preferred,
+    as they give us more knowledge about *f*(*x*).
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过研究查询成本对决策的影响来最终分析我们策略的行为。为此，我们改变了查询成本，使低保真度的查询比高保真度的查询便宜得不多，具体方法是将第9.3.1节中描述的固定查询成本从0增加到10。这种改变意味着低保真度的查询现在需要10.5个成本单位，而高保真度的查询现在需要11个。与之前的0.5和1的成本相比，10.5和11更接近，使得图9.10中的两个保真度的分母几乎相等。这意味着低保真度的近似值*f̄*(*x*)的查询成本几乎和目标函数*f*(*x*)本身一样高。鉴于这些查询成本，图9.12的右面板显示了MES策略如何对潜在查询打分。这一次，因为高保真度查询并不比低保真度查询昂贵得多，所以更倾向于前者，因为它们能够给我们更多关于*f*(*x*)的知识。
+- en: These examples show that MES can identify the optimal decision that balances
+    information and cost appropriately. That is, the policy assigns higher scores
+    to low-fidelity queries when they are inexpensive to make and can offer substantial
+    information about the objective function. If, on the other hand, high-fidelity
+    queries are either significantly more informative or not much more expensive,
+    these high-fidelity queries will be preferred by the policy.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这些示例表明，MES可以确定在信息和成本适当平衡的情况下的最优决策。也就是说，当低保真度查询成本低且能够提供关于目标函数的实质性信息时，策略会给低保真度查询分配更高的分数。另一方面，如果高保真度查询要么显著更具信息量，要么成本差不多，那么策略将更倾向于高保真度查询。
+- en: 9.4 Measuring performance in multifidelity optimization
+  id: totrans-212
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.4在多保真度优化中测量性能
+- en: Our previous discussion shows that the multifidelity MES policy is able to make
+    appropriate decisions when choosing between the two fidelities to query. But is
+    this policy better than regular BayesOpt policies that only query the ground truth
+    *f*(*x*), and if so, how much better is it? In this section, we learn how to benchmark
+    the performance of a BayesOpt policy within the multifidelity setting, which requires
+    additional considerations. The code we show can be found in the CH09/03 - Measuring
+    performance.ipynb notebook.
+  id: totrans-213
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们之前的讨论表明，多保真度MES策略能够在选择两个保真度进行查询时做出恰当的决策。但是这个策略比只查询地面真相*f*(*x*)的常规BayesOpt策略好吗？如果是这样，它究竟好多少呢？在本节中，我们学习如何在多保真度设置中对BayesOpt策略的性能进行基准测试，这需要额外的考虑。我们显示的代码可以在CH09/03-测量性能.ipynb笔记本中找到。
+- en: Note To measure optimization progress in previous chapters, we recorded the
+    highest objective values (aka the *incumbents*) we have collected in the training
+    set throughout the search. If the incumbent values collected by policy *A* exceed
+    those collected by policy *B*, we say that policy *A* is more effective at optimization
+    than policy *B*.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意在前面的章节中，为了衡量优化进展，我们记录了训练集中收集到的最高目标值（即“现有值”）。如果策略*A*收集的现有值超过了策略*B*收集的现有值，我们就说策略*A*在优化方面比策略*B*更有效。
+- en: 'Recording the incumbent values doesn’t work here in the multifidelity setting.
+    First, if we were to record the incumbent value in a training set, it would only
+    make sense to pick the high-fidelity data point with the highest-valued label.
+    However, this strategy ignores any contribution toward learning about the objective
+    *f*(*x*) that low-fidelity queries make. Take the two possible scenarios visualized
+    in figure 9.13, for example:'
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在多保真度的设置中，记录现有值是不起作用的。首先，如果我们要在训练集中记录现有值，只有选择最大标记值的高保真度数据点才有意义。然而，这个策略忽略了低保真度查询对于学习目标*f*(*x*)的任何贡献。例如，以图9.13中可视化的两种可能场景为例：
+- en: In the first scenario, on the left, we have made three high-fidelity observations,
+    and the highest observed value is roughly 0.8\. Objectively speaking, we have
+    made no optimization progress in this situation; we haven’t even explored the
+    region where *x* is greater than 0.
+  id: totrans-216
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在左边的第一种情况中，我们进行了三次高保真度的观察，而最高观察值大约为 0.8。客观地说，在这种情况下我们没有进行优化进展；我们甚至没有探索过 *x*
+    大于 0 的区域。
+- en: In the second scenario, on the right, we have only made low-fidelity observations,
+    so recording the high-fidelity incumbent value isn’t even applicable. However,
+    we see that we are very close to finding the objective function’s optimum here
+    as our queries have discovered the function’s peak around 4.5.
+  id: totrans-217
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在右边的第二种情况中，我们只进行了低保真度的观察，因此记录高保真度现任值甚至都不适用。然而，我们看到我们非常接近找到目标函数的最优解，因为我们的查询已经发现了函数在
+    4.5 左右的峰值。
+- en: '![](../../OEBPS/Images/09-13.png)'
+  id: totrans-218
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-13.png)'
+- en: Figure 9.13 Measuring performance with the high-fidelity incumbent is inappropriate
+    in multifidelity optimization. On the left, the high-fidelity incumbent is roughly
+    0.8, while we haven’t discovered the objective’s optimum. On the right, even though
+    we are close to locating the objective’s optimum, there’s no high-fidelity query
+    to record the incumbent value with.
+  id: totrans-219
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 9.13 在多保真度优化中使用高保真度现任者来衡量性能是不合适的。在左边，高保真度现任者大约为 0.8，而我们还没有发现目标的最优解。在右边，即使我们接近找到目标的最优解，也没有高保真度查询来记录现任值。
+- en: In other words, we should prefer the second scenario to the first, as one illustrates
+    near success at optimization, while the other shows little optimization progress.
+    However, using the high-fidelity incumbent as a measure of progress doesn’t help
+    us make this distinction between the two scenarios. Thus, we need another way
+    of measuring optimization progress.
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 换句话说，我们应该更喜欢第二种情况而不是第一种，因为第二种情况表明了接近优化成功，而第一种情况则几乎没有优化进展。然而，使用高保真度的现任者作为进展度量并不能帮助我们区分这两种情况。因此，我们需要另一种衡量优化进展的方法。
+- en: 'Note A common progress measure in the BayesOpt community is the objective function’s
+    value at the location that currently gives the highest posterior mean. This measure
+    corresponds to the answer to this question: If we were to stop running BayesOpt
+    and recommend a point as the solution to the optimization problem, which point
+    should we choose? Intuitively, we should choose the point that, in the most plausible
+    scenario (according to our GP belief), gives the highest value, which is the posterior
+    mean maximizer.'
+  id: totrans-221
+  prefs: []
+  type: TYPE_NORMAL
+  zh: BayesOpt 社区中常见的进展度量标准是当前给出最高后验均值的位置处的目标函数值。这个度量标准对应着以下问题的答案：如果我们停止运行 BayesOpt
+    并推荐一个点作为优化问题的解，我们应该选择哪个点？直觉上，我们应该选择在最合理的情况下（根据我们的 GP 信念），能够给出最高值的点，也就是后验均值最大化者。
+- en: We see that the posterior mean maximizer facilitates the comparison we made
+    in figure 9.13, where on the left, the posterior mean maximizer is at 0, which
+    still gives an objective value of 0.8 (the mean maximizer usually corresponds
+    to the incumbent in the single-fidelity case), while on the right, the mean maximizer
+    is around 4.5\. In other words, the posterior-mean-maximizer metric successfully
+    helps us distinguish between the two scenarios and shows that the one on the left
+    is less preferable than the one on the right.
+  id: totrans-222
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们看到后验均值最大化者促使我们在图 9.13 中进行的比较，左边的情况下，后验均值最大化者为 0，而目标值为 0.8（在单保真度情况下，均值最大化者通常对应于现任者），而右边的情况下，均值最大化者在
+    4.5 左右。换句话说，后验均值最大化者度量成功地帮助我们区分了这两种情况，并显示出左边的情况不如右边的情况。
+- en: 'To implement this metric, we make a helper policy that uses the posterior mean
+    as its acquisition score. Then, just as we optimize a regular policy’s acquisition
+    score in BayesOpt, we optimize the posterior mean using this helper policy. This
+    policy requires two components:'
+  id: totrans-223
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了实现这个度量标准，我们制作了一个辅助策略，该策略使用后验均值作为其收购分数。然后，就像我们在 BayesOpt 中优化常规策略的收购分数一样，我们使用这个辅助策略来优化后验均值。这个策略需要两个组件：
+- en: The class implementation of the BayesOpt policy that uses the posterior mean
+    as its acquisition score. This class is `PosteriorMean`, which can be imported
+    from `botorch.acquisition`.
+  id: totrans-224
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用后验均值作为其收购分数的 BayesOpt 策略的类实现。这个类是 `PosteriorMean`，可以从 `botorch.acquisition`
+    导入。
+- en: A *wrapper* policy that only optimizes high-fidelity metrics. This wrapper is
+    required because our GP model is a multifidelity one, and we always need to specify
+    which fidelity we’d like to work with when passing this model to an optimization
+    policy. This wrapper policy is implemented as an instance of `FixedFeatureAcquisitionFunction`
+    from `botorch.acquisition.fixed_feature`.
+  id: totrans-225
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 一个*包装*策略，仅优化高保真度指标。这个包装器是必需的，因为我们的GP模型是多保真度的，当将该模型传递给优化策略时，我们总是需要指定要使用哪个保真度。此包装器策略实现为来自`botorch.acquisition.fixed_feature`的`FixedFeatureAcquisitionFunction`的一个实例。
+- en: 'Overall, we make the posterior-mean-maximizer metric with the following helper
+    policy, where the wrapper policy takes in an instance of `PosteriorMean`, and
+    we specify the other arguments as the following:'
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 总的来说，我们用以下辅助策略制定后验均值最大化器度量标准，其中包装策略接受`PosteriorMean`的一个实例，并且我们将其他参数指定如下：
+- en: '*The dimension of the search space is* `d` `=` `2`—Our actual search space
+    is one-dimensional, and there’s an additional dimension for the correlation values
+    (that is, the fidelity to query).'
+  id: totrans-227
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*搜索空间的维度是* `d` `=` `2`—我们的实际搜索空间是一维的，并且还有一个附加维度用于相关值（即查询的保真度）。'
+- en: '*The index of the dimension to be fixed during optimization,* `columns` `=`
+    `[1]` *and its fixed value* `values` `=` `[1]`—Since we only want to find the
+    posterior mean maximizer corresponding to the objective function, the high-fidelity
+    function, we specify that the second column (index `1`) should always have the
+    value 1:'
+  id: totrans-228
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*要在优化期间固定的维度的索引,* `columns` `=` `[1]` *及其固定值* `values` `=` `[1]`—由于我们只想找到对应于目标函数、即高保真函数的后验均值最大化器，我们指定第二列（索引`1`）始终应为值1：'
+- en: '[PRE20]'
+  id: totrans-229
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: ❶ Optimizes the posterior mean
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 优化后验均值
+- en: ❷ The number of dimensions of the search space
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 搜索空间的维度数
+- en: ❸ The index of the fixed column
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 固定列的索引
+- en: ❹ The value of the fixed column
+  id: totrans-233
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 固定列的数值
+- en: 'We then use the familiar helper function `optimize_acqf` to find the point
+    that maximizes the acquisition score, which is the posterior mean of the objective
+    function (we first learned about this helper function in section 4.2.2):'
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 然后，我们使用熟悉的辅助函数`optimize_acqf`来找到最大化收获分数的点，即目标函数的后验均值（我们在4.2.2节首次了解到此辅助函数）：
+- en: '[PRE21]'
+  id: totrans-235
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: ❶ Optimize the posterior mean.
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 优化后验均值。
+- en: ❷ The other arguments are the same as when we optimize another policy.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 其他参数与我们优化另一个策略时相同。
+- en: 'This `final_x` variable is the location that maximizes the posterior mean of
+    the objective function. In our Jupyter notebook, we put this code in a helper
+    function that returns `final_x`, augmented with a correlation value of 1, indicating
+    the true objective function:'
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个`final_x`变量是最大化目标函数后验均值的位置。在我们的Jupyter笔记本中，我们将这段代码放在一个辅助函数中，该函数返回`final_x`，并增加了一个相关值为1，表示真实的目标函数：
+- en: '[PRE22]'
+  id: totrans-239
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: ❶ Makes the wrapper policy
+  id: totrans-240
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 制作包装策略
+- en: ❷ Optimizes the acquisition score
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 优化收获分数
+- en: ❸ Augments the final recommendation with a correlation value of 1
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 使用相关值为1增强最终推荐
+- en: 'Now, during the BayesOpt loop, instead of recording the incumbent value as
+    an indication of optimization progress, we call this `get_final_recommendation`
+    helper function. Further, instead of a maximum number of queries to be made in
+    each run, we now have a maximum budget, which can be spent on either low- or high-fidelity
+    queries. In other words, we keep running our optimization algorithm until the
+    cumulative cost exceeds our budget limit. The skeleton of our multifidelity BayesOpt
+    loop is as follows:'
+  id: totrans-243
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，在BayesOpt循环期间，我们不再记录incumbent值作为优化进度的指示，而是调用此`get_final_recommendation`辅助函数。此外，我们现在没有每次运行中要进行的最大查询次数，而是有一个最大预算，可以用于低保真度或高保真度查询。换句话说，我们会一直运行我们的优化算法，直到累计成本超过我们的预算限制。我们的多保真BayesOpt循环的框架如下：
+- en: '[PRE23]'
+  id: totrans-244
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: ❶ Maximum cost for each optimization run
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 每次优化运行的最大成本
+- en: ❷ To track the recommendation maximizing posterior mean throughout optimization
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 跟踪整个优化过程中最大化后验均值的推荐
+- en: ❸ To track the spent budget at each iteration
+  id: totrans-247
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 跟踪每次迭代中已花费的预算
+- en: ❹ Generates a random starting observation
+  id: totrans-248
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 生成一个随机的起始观察
+- en: ❺ Trains the GP on current data
+  id: totrans-249
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 对当前数据进行GP训练
+- en: ❻ Updates record with the newest recommendation
+  id: totrans-250
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❻ 使用最新推荐更新记录
+- en: ❼ Initializes the policy and optimizes its acquisition score
+  id: totrans-251
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❼ 初始化策略并优化其收获分数
+- en: ❽ Keeps track of the spent budget
+  id: totrans-252
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❽ 跟踪已花费的预算
+- en: ❾ Updates the training data
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❾ 更新训练数据
+- en: 'We are now ready to run multifidelity MES to optimize the Forrester objective
+    function. As a benchmark, we will also run the single-fidelity MES policy, which
+    only queries the ground truth *f*(*x*). The GP model we have is a multifidelity
+    one, so to run a single-fidelity BayesOpt policy with this model, we need a wrapper
+    policy of the `FixedFeatureAcquisitionFunction` class to restrict the fidelity
+    the policy can query:'
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们现在准备运行多保真度 MES 来优化 Forrester 目标函数。作为基准，我们还将运行单保真度 MES 策略，该策略仅查询地面实况 *f*(*x*)。我们拥有的
+    GP 模型是多保真度的，因此，要使用此模型运行单保真度的 BayesOpt 策略，我们需要 `FixedFeatureAcquisitionFunction`
+    类的包装策略来限制策略可以查询的保真度：
+- en: '[PRE24]'
+  id: totrans-255
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: ❶ The wrapped policy is the single-fidelity MES.
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 包装策略是单保真度 MES。
+- en: ❷ Fixes the correlation value in the second column (index 1) at 1
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将第二列（索引 1）中的相关值固定为 1
+- en: ❸ Optimizes the acquisition score using the helper function optimize_acqf
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 使用辅助函数 optimize_acqf 优化收购分数
+- en: Running the two policies generates the result in figure 9.14, where we observe
+    that multifidelity MES greatly outperforms the single-fidelity version. The cost-effectiveness
+    of multifidelity MES illustrates the benefit of balancing between information
+    and cost. However, we note that this is only the result of a single run; in exercise
+    1, we run this experiment multiple times with different initial datasets and observe
+    the average performance of these policies.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行这两种策略会生成图 9.14 中的结果，我们观察到多保真度 MES 明显优于单保真度版本。多保真度 MES 的成本效益性说明了在信息和成本之间取得平衡的好处。然而，我们注意到这只是一次运行的结果；在练习
+    1 中，我们多次以不同的初始数据集运行此实验，并观察这些策略的平均性能。
+- en: '![](../../OEBPS/Images/09-14.png)'
+  id: totrans-260
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-14.png)'
+- en: Figure 9.14 The objective value of the posterior mean maximizer as a function
+    of the budget spent by two BayesOpt policies. Here, multifidelity MES greatly
+    outperforms the single-fidelity version.
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 9.14 后验均值最大化器的目标值作为两种 BayesOpt 策略花费预算的函数。在这里，多保真度 MES 明显优于单保真度版本。
+- en: In this chapter, we have learned about the problem of multifidelity optimization,
+    in which we balance optimizing the objective function with the cost of gaining
+    knowledge about the objective. We learned how to implement a GP model that can
+    learn from multiple sources of data. This model then allowed us to reason about
+    the information-theoretic value of making a query in terms of locating the optimal
+    value of the objective. By combining this information-theoretic quantity with
+    the querying cost in a return-on-investment measure, we devised a cost-aware,
+    multifidelity variant of the MES policy that can trade off knowledge and cost
+    automatically.
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们学习了多保真度优化问题，即在优化目标函数与获取关于目标的知识成本之间取得平衡。我们学习了如何实现一个能够从多个数据源中学习的 GP 模型。然后，这个模型允许我们根据信息理论价值来推理查询的优化值。通过将这个信息理论量与查询成本结合在一起形成的投资回报率度量，我们设计了一个成本感知的多保真度
+    MES 策略的变体，可以自动权衡知识和成本。
+- en: '9.5 Exercise 1: Visualizing average performance in multifidelity optimization'
+  id: totrans-263
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.5 练习 1：可视化多保真度优化中的平均性能
+- en: To compare the performance of our policies, figure 9.14 visualizes the objective
+    value of the posterior mean maximizer throughout optimization against the amount
+    of budget spent. However, this is the result from just one optimization run, and
+    we’d like to show the average performance by each policy from multiple experiments.
+    (We first discussed the idea of repeated experiments in exercise 2 of chapter
+    4.) In this exercise, we run the optimization loop multiple times and learn how
+    to take the average performance to obtain a more holistic comparison. By the end
+    of the exercise, we will see that multifidelity MES balances well between information
+    and cost and optimizes the objective function more effectively than its single-fidelity
+    counterpart. The solution is stored in the CH09/04 - Exercise 1.ipynb notebook.
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了比较我们的策略的性能，图 9.14 可视化了在优化过程中后验均值最大化器的目标值与花费预算的关系。然而，这只是一次优化运行的结果，我们想要展示每个策略在多次实验中的平均性能。（我们在第
+    4 章的练习 2 中首次讨论了重复实验的想法。）在这个练习中，我们多次运行优化循环，并学习如何取得平均性能以获得更全面的比较。到练习结束时，我们将看到，多保真度
+    MES 在信息和成本之间取得了良好的平衡，并比其单保真度的对应物更有效地优化了目标函数。解决方案存储在 CH09/04 - Exercise 1.ipynb
+    笔记本中。
+- en: 'Take the following steps:'
+  id: totrans-265
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 按照以下步骤进行：
+- en: Copy the problem setup and the multifidelity optimization loop from the CH09/03
+    - Measuring performance.ipynb notebook, and add another variable denoting the
+    number of experiments we want to run (10, by default).
+  id: totrans-266
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 复制 CH09/03 - Measuring performance.ipynb 笔记本中的问题设置和多信度优化循环，并添加另一个变量表示我们要运行的实验次数（默认为
+    10）。
+- en: To facilitate repeated experiments, add an outer loop to the optimization loop
+    code. This should be a `for` loop with 10 iterations where a different random
+    observation is generated each time. (This random generation could be done by setting
+    PyTorch’s random seed to the iteration number, which ensures the random number
+    generator returns the same data across different runs with the same seed.)
+  id: totrans-267
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 为了方便重复实验，在优化循环代码中添加一个外部循环。这应该是一个有 10 次迭代的`for`循环，每次生成一个不同的随机观察结果。（这个随机生成可以通过将
+    PyTorch 的随机种子设置为迭代编号来完成，这样可以确保随机数生成器在具有相同种子的不同运行中返回相同的数据。）
+- en: The code in the CH09/03 - Measuring performance.ipynb notebook uses two lists,
+    `recommendations` and `spent_budget`, to keep track of optimization progress.
+    Make each of these variables a list of lists where each inner-list serves the
+    same purpose as the corresponding list in the CH09/03 - Measuring performance.ipynb
+    notebook. These lists of lists allow us to keep track of optimization progress
+    over the 10 experiments and compare different optimization policies in later steps.
+  id: totrans-268
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: CH09/03 - Measuring performance.ipynb 笔记本中的代码使用两个列表，`recommendations`和`spent_budget`，来跟踪优化进度。将这些变量中的每一个变量都变成一个列表的列表，其中每个内部列表都承担与
+    CH09/03 - Measuring performance.ipynb 笔记本中相应列表相同的目的。这些列表的列表允许我们跟踪 10 次实验的优化进度，并在后续步骤中比较不同的优化策略。
+- en: Run the multifidelity MES policy and its single-fidelity version on our optimization
+    problem.
+  id: totrans-269
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在我们的优化问题上运行多信度 MES 策略及其单信度版本。
+- en: Since the cost of querying the low-fidelity function is different from that
+    of querying the high-fidelity function, it’s likely that the lists in `spend_budget`
+    don’t exactly match with each other. In other words, the points in the curves
+    in figure 9.14 don’t have the same *x*-coordinates across the runs. This mismatch
+    prevents us from taking the average progress stored in `recommendations` across
+    the multiple runs.
+  id: totrans-270
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 由于查询低信度函数的成本与查询高信度函数的成本不同，`spend_budget`中的列表可能与彼此不完全匹配。换句话说，在图 9.14 中曲线中的点在不同运行中没有相同的*x*坐标。这种不匹配阻止我们在多个运行中获取存储在`recommendations`中的平均进度。
+- en: 'To address this problem, we use a linear interpolation for each progress curve,
+    which allows us to “fill in” the progress values on a regular grid. It is on this
+    regular grid that we will average out the performance of each policy across runs.
+    For the linear interpolation, use `np.interp` from NumPy, which takes in a regular
+    grid as its first argument; this grid can be an array of integers between 0 and
+    `budget_limit`: `np.arange(budget_limit)`. The second and third arguments are
+    the *x*- and *y*-coordinates of the points making up each progress curve—that
+    is, each inner-list in `spend_budget` and `recommendations`.'
+  id: totrans-271
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 为了解决这个问题，我们对每个进度曲线使用线性插值，这使我们能够在规则网格上“填充”进度值。就是在这个规则网格上，我们将对每个策略在运行中的表现进行平均。对于线性插值，使用
+    NumPy 中的`np.interp`，它以规则网格作为其第一个参数；这个网格可以是一个介于 0 和`budget_limit`之间的整数数组：`np.arange(budget_limit)`。第二个和第三个参数是组成每个进度曲线的点的*x*和*y*坐标，即`spend_budget`和`recommendations`中的每个内部列表。
+- en: Use the linearly interpolated values to plot the average performance and error
+    bars of the two policies we ran, and compare their performance.
+  id: totrans-272
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 使用线性插值的值来绘制我们运行的两种策略的平均性能和误差条，并比较它们的性能。
+- en: Due to the way we’re currently measuring optimization performance, it’s possible
+    that the list of recommendations we keep track of throughout each run is not monotonically
+    increasing. (That is, we might end up with a recommendation that performs worse
+    than the previous iteration’s recommendation.) To inspect this phenomenon, we
+    can plot the linearly interpolated curves representing individual runs' optimization
+    progress, along with the average performance and error bars. Implement this visualization
+    for the two policies we ran, and inspect the nonmonotonicity of the resulting
+    curves.
+  id: totrans-273
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 由于我们当前正在测量优化性能的方式，我们可能会发现我们在每次运行中跟踪的推荐列表不是单调递增的。（也就是说，我们可能会得到一个比上一次迭代的推荐性能更差的推荐。）为了检查这种现象，我们可以绘制代表各个运行的优化进度的线性插值曲线，以及平均性能和误差条。为我们运行的两种策略实现此可视化，并检查结果曲线的非单调性。
+- en: '9.6 Exercise 2: Multifidelity optimization with multiple low-fidelity approximations'
+  id: totrans-274
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 9.6 练习 2：使用多个低保真度近似进行多保真度优化
+- en: 'The approach we learned in this chapter can generalize to scenarios where there
+    is more than one low-fidelity approximation to the objective function that we
+    can query. Our strategy is the same: divide the amount of information we gain
+    from each query by its cost, and then pick the query that gives the highest return
+    on investment. This exercise shows us that our multifidelity MES policy can balance
+    between multiple low-fidelity functions. The solution is stored in the CH09/05
+    - Exercise 2.ipynb notebook.'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在本章中学到的方法可以推广到存在多个我们可以查询的目标函数的低保真度近似的场景中。我们的策略是相同的：将我们从每个查询中获得的信息量除以其成本，然后选择提供最高投资回报率的查询。这个练习向我们展示了我们的多保真度
+    MES 策略可以在多个低保真度函数之间取得平衡。解决方案存储在 CH09/05 - Exercise 2.ipynb 笔记本中。
+- en: 'Take the following steps:'
+  id: totrans-276
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来执行以下步骤：
+- en: 'For our objective function, we use the two-dimensional function named `Branin`,
+    which is a common test function for optimization, like the Forrester function.
+    BoTorch comes with a multifidelity version of Branin, so we import it to our code
+    with `from` `botorch.test_functions.multi_fidelity` `import` `AugmentedBranin`.
+    For convenience, we scale the domain and output of this function using the following
+    code, which makes `objective` the function to call when we evaluate a query:'
+  id: totrans-277
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 对于我们的目标函数，我们使用名为 `Branin` 的二维函数，它是优化的常见测试函数，就像 Forrester 函数一样。BoTorch 提供了 Branin
+    的多保真度版本，因此我们使用 `from` `botorch.test_functions.multi_fidelity` `import` `AugmentedBranin`
+    将其导入到我们的代码中。为了方便起见，我们使用以下代码对该函数的域和输出进行缩放，这使 `objective` 成为我们评估查询时要调用的函数：
+- en: '[PRE25]'
+  id: totrans-278
+  prefs:
+  - PREF_IND
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: ❶ Imports the Branin function from BoTorch
+  id: totrans-279
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❶ 从 BoTorch 中导入 Branin 函数
+- en: ❷ Processes the input and output of the function, mapping the values to a nice
+    range
+  id: totrans-280
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: ❷ 处理函数的输入和输出，将值映射到一个好的范围内
+- en: Define the bounds of our search space to be the unit square. That is, the two
+    lower bounds are 0, and the two upper bounds are 1.
+  id: totrans-281
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将我们的搜索空间的边界定义为单位正方形。也就是说，两个下界为 0，两个上界为 1。
+- en: Declare the `fidelities` variable that stores the correlation values of the
+    different functions we can query. Here, we have access to two low-fidelity approximations
+    with correlation values of 0.1 and 0.3, so `fidelities` should contain these two
+    numbers and 1 as the last element.
+  id: totrans-282
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 声明存储我们可以查询的不同函数的相关值的 `fidelities` 变量。在这里，我们可以访问两个相关值分别为 0.1 和 0.3 的低保真度近似，因此
+    `fidelities` 应包含这两个数字和最后一个元素为 1。
+- en: '![](../../OEBPS/Images/09-15.png)'
+  id: totrans-283
+  prefs:
+  - PREF_IND
+  type: TYPE_IMG
+  zh: '![](../../OEBPS/Images/09-15.png)'
+- en: Figure 9.15 The objective function Branin (right) and two low-fidelity approximations
+  id: totrans-284
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 图 9.15 目标函数 Branin（右侧）和两个低保真度近似
+- en: The three functions are visualized in figure 9.15, where bright pixels denote
+    high objective values. We see that both low-fidelity approximations follow the
+    general trend exhibited by the ground truth, and the resemblance to the ground
+    truth increases with the fidelity value. That is, the second approximation with
+    fidelity 0.3 (middle) is more similar to the true objective function (right) than
+    the first approximation with fidelity 0.1 (left).
+  id: totrans-285
+  prefs:
+  - PREF_IND
+  type: TYPE_NORMAL
+  zh: 这三个函数在图 9.15 中可视化，明亮的像素表示高目标值。我们可以看到，两个低保真度的近似都遵循地面真相展示的一般趋势，并且与真实情况的相似程度随着保真度值的增加而增加。也就是说，保真度为
+    0.3 的第二个近似（中间）与真实的目标函数（右侧）更相似，比保真度为 0.1 的第一个近似（左侧）更相似。
+- en: Set the fixed cost of the linear cost model to 0.2 and the weight to 1\. This
+    means the cost of querying the low-fidelity function on the left of figure 9.15
+    is 0.2 + 1 × 0.1 = 0.3\. Similarly, the cost of querying the middle function is
+    0.5, and that of querying the true objective function is 1.2\. Set the limit of
+    our budget in each experiment to 10 and the number of repeated experiments to
+    10 as well.
+  id: totrans-286
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 将线性成本模型的固定成本设置为 0.2，权重设置为 1。这意味着在图 9.15 左侧查询低保真度函数的成本为 0.2 + 1 × 0.1 = 0.3。类似地，中间函数的成本为
+    0.5，真实目标函数的成本为 1.2。将每个实验的预算限制设置为 10，并将重复实验的次数也设置为 10。
+- en: Set the number of candidates drawn from the Sobol sequence to 5,000, and use
+    100 restarts and 500 raw samples when using helper functions to optimize the acquisition
+    score of a given policy.
+  id: totrans-287
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 从 Sobol 序列中抽取的候选人数设置为 5,000，并且在使用辅助函数优化给定策略的获取分数时，使用 100 次重启和 500 个原始样本。
+- en: 'Redefine the helper function `get_final_recommendation` that finds the posterior
+    mean maximizer so that the arguments are appropriately set for our two-dimensional
+    objective function: `d` `=` `3` and `columns` `=` `[2]`.'
+  id: totrans-288
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 重新定义助手函数 `get_final_recommendation`，以便为我们的二维目标函数设置适当的参数：`d` `=` `3` 和 `columns`
+    `=` `[2]`。
+- en: Run the multifidelity Max-value Entropy Search policy and its single-fidelity
+    version on the optimization problem, and plot the average optimization progress
+    and error bars of each policy using the method described in exercise 1\. Note
+    that when creating the wrapper policy for the single-fidelity policy, the arguments
+    `d` and `columns` need to be set in the same way as in the previous step. Verify
+    that the multifidelity policy performs better than the single-fidelity one.
+  id: totrans-289
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 运行多保真度最大值熵搜索策略及其单保真度版本的优化问题，并使用练习1中描述的方法绘制每个策略的平均优化进展和误差线。注意，在为单保真度策略创建包装器策略时，参数
+    `d` 和 `columns` 需要与上一步骤中设置的方式相同。验证多保真度策略的表现优于单保真度策略。
+- en: Summary
+  id: totrans-290
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 摘要
+- en: Multifidelity optimization is an optimization setting in which we have access
+    to multiple sources of information, each with its own level of accuracy and cost.
+    In this setting, we need to balance the amount of information gained from taking
+    an action and the cost of taking that action.
+  id: totrans-291
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 多保真度优化是一种优化设置，我们可以访问多个信息源，每个信息源具有自己的准确度和成本水平。在这种情况下，我们需要平衡从行动中获得的信息量和采取该行动的成本。
+- en: In multifidelity optimization, a high-fidelity function offers exact information
+    but is costly to evaluate, while a low-fidelity function is inexpensive to query
+    but might give inexact information. At each iteration of the optimization loop,
+    we need to decide where and which function to query to find the objective function’s
+    optimum as quickly as possible.
+  id: totrans-292
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在多保真度优化中，高保真度函数提供确切的信息，但评估代价高，而低保真度函数查询成本低，但可能提供不准确的信息。在优化循环的每次迭代中，我们需要决定在哪里和哪个函数进行查询，以尽快找到目标函数的最优值。
+- en: The level of information each fidelity provides is quantified by the correlation
+    between itself and the ground truth, which is a number between 0 and 1\. The higher
+    the correlation, the more closely the fidelity matches the ground truth. In Python,
+    we store the correlation value of each data point as an extra column in the feature
+    matrix.
+  id: totrans-293
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 每个保真度提供的信息水平通过其与真实值之间的相关性来量化，该相关性是一个介于0和1之间的数字。相关性越高，保真度与真实值越接近。在Python中，我们将每个数据点的相关性值存储为特征矩阵中的额外列。
+- en: A GP with a kernel that can process the correlation values of the training data
+    points can be trained on a multifidelity dataset; we can use the multifidelity
+    variant of the Matérn kernel for this task. The uncertainty in the predictions
+    of the GP depends on which function each observation comes from and, if it comes
+    from a low-fidelity function, what the correlation value of that function is.
+  id: totrans-294
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 基于可以处理训练数据点的相关性值的内核，可以对多保真度数据集进行训练，我们可以使用多保真度变体的Matérn内核来完成此任务。GP对于预测的不确定性取决于每个观测点所来自的函数，以及如果它来自于低保真度函数，则该函数的相关性值如何。
+- en: We use a linear model to encode the querying cost of each fidelity we have access
+    to during optimization. By setting the parameters of this model—the fixed cost
+    and the weight—we can model the positively correlated relationship between querying
+    cost and the quality of the data. Nonlinear cost models can also be implemented
+    using BoTorch.
+  id: totrans-295
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们使用线性模型来编码优化过程中每个保真度的查询成本。通过设置此模型的参数-固定成本和权重，我们可以建模查询成本与数据质量之间的正相关关系。也可以使用BoTorch实现非线性成本模型。
+- en: To balance between informativeness and cost, we use a variant of the MES policy
+    that weights the amount of information resulting from each query by the inverse
+    of the querying cost. This measure is analogous to the return-on-investment concept
+    in economics and is implemented with the `InverseCostWeightedUtility` class from
+    BoTorch.
+  id: totrans-296
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为了在信息性和成本之间取得平衡，我们使用MES策略的变体，通过查询成本的倒数对每个查询的信息量进行加权。该度量类似于经济学中的投资回报概念，并使用BoTorch中的
+    `InverseCostWeightedUtility` 类进行实现。
+- en: Exact calculation of information gain for the objective function’s optimal value,
+    the core task of MES, is intractable due to the non-Gaussian distribution of the
+    optimal value. To approximate the information gain, we use a Sobol sequence to
+    represent the entire search space, alleviating the computational burden in the
+    calculation.
+  id: totrans-297
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于目标函数的最优值的信息增益的精确计算，即MES的核心任务，由于最优值的非高斯分布，因此是棘手的。为了近似计算信息增益，我们使用Sobol序列来表示整个搜索空间，减轻计算中的计算负担。
+- en: The multifidelity MES policy successfully balances information and cost and
+    prioritizes cost-effective queries.
+  id: totrans-298
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 多信度MES策略成功平衡了信息和成本，并优先考虑成本效益高的查询。
+- en: To optimize the acquisition score of a multifidelity policy, we use the `optimize_
+    acqf_mixed` helper function, which can work with a mixed search space whose dimensions
+    can be either continuous or discrete.
+  id: totrans-299
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 为了优化多信度策略的收购分数，我们使用`optimize_ acqf_mixed`辅助函数，该函数可以处理混合搜索空间，其维度可以是连续的或离散的。
+- en: To accurately measure performance in the multifidelity setting, we use the maximizer
+    of the posterior mean at each iteration as a final recommendation before termination.
+    This quantity captures what we know about the objective function better than the
+    high-fidelity incumbent value.
+  id: totrans-300
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在多信度设置中准确测量性能，我们使用每次迭代中后验均值的最大化者作为终止前的最终建议。这一数量比高保真现有值更好地捕捉了我们对目标函数的了解。
+- en: To optimize a single-fidelity acquisition score in a multifidelity setting,
+    we use a wrapper policy that is an instance of the `FixedFeatureAcquisitionFunction`
+    class. To initialize a wrapper policy, we declare which dimension in the search
+    space is fixed and at what value.
+  id: totrans-301
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在多信度设置中优化单信度收购分数，我们使用`FixedFeatureAcquisitionFunction`类的一个实例作为包装策略。为了初始化一个包装策略，我们声明搜索空间中的哪个维度是固定的，以及其值是多少。

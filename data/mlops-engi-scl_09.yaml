@@ -1,0 +1,1234 @@
+- en: 7 Serverless machine learning at scale
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: '7 无服务器机器学习的扩展性。 '
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章节涵盖以下几个方面
+- en: Using IterableDataset with AWS and other clouds
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '使用IterableDataset与AWS和其他云平台 '
+- en: Understanding GPUs for PyTorch programming
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 理解PyTorch编程中的GPU
+- en: Scaling up gradient descent with a GPU core
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用GPU核对梯度下降进行扩展
+- en: Benchmarking the DC taxi data set using linear regression
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 利用线性回归对DC出租车数据集进行基准测试。
+- en: In chapters 5 and 6, you learned about using PyTorch on a small scale, instantiating
+    tensors consisting of a few hundred data values and training machine learning
+    models with just a few parameters. The scale used in chapter 6 meant that to train
+    a machine learning model, you could perform gradient descent with an assumption
+    that the entire set of model parameters, along with the parameter gradients and
+    the entire training data set, could easily fit in memory of a single node and
+    thus be readily available to the gradient descent algorithm.
+  id: totrans-6
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '在第5和6章节中，您已经学会了如何在小规模上使用PyTorch，实例化由几百个数据值组成的张量并仅在几个参数中训练机器学习模型。第6章中使用的规模意味着，要训练机器学习模型，您可以对整个模型参数集、参数梯度和整个训练数据集进行梯度下降，假定它们可以轻松适应单个节点的内存，并因此随时可供梯度下降算法使用。 '
+- en: This chapter introduces the concepts that you need to significantly scale your
+    machine learning system. You will build on your existing knowledge of gradient
+    descent (for a refresher, refer to appendix A) to learn how to perform gradient
+    descent over data set batches. Next, you are going to use batches to help you
+    scale to data sets that do not fit in the memory of a single node of your machine
+    learning platform. You are also going to learn about scaling up on a single node,
+    or in other words, about taking advantage of multiple processors such as CPUs
+    and GPUs in a node. The concepts from this chapter are also re-used in chapter
+    8 to explain scaling out, in other words, ensuring that your machine learning
+    system can take advantage of an aggregation of the compute capabilities of a distributed
+    computing cluster consisting of multiple, inter-networked processing nodes.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章节介绍扩大机器学习系统所需的概念。建立在您对梯度下降的现有知识（有关刷新，请参见附录A）的基础上，学习如何对数据集批次执行梯度下降。接下来，使用批次来帮助您扩展到不适合单个节点的机器学习平台内存的数据集。您还将学习如何在单个节点上进行扩展，换句话说，利用多个处理器（如CPU和GPU）。本章节的概念还在第8章节中重用，以解释扩展出机器学习系统，换句话说，确保您的机器学习系统可以利用由多个互连处理节点组成的分布式计算集群的计算能力。
+- en: 7.1 What if a single node is enough for my machine learning model?
+  id: totrans-8
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.1 如果我的机器学习模型只需要单个节点，该怎么办？
+- en: This section teaches you about the factors that should inform your decision
+    on whether the PyTorch capabilities for scaling machine learning systems are relevant
+    to your machine learning project.
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '本章节教授如何确定PyTorch机器学习系统的扩展能力与您的机器学习项目是否有关。 '
+- en: If you (a) work with data sets that fit in memory of a single node of your machine
+    learning platform, (b) expect your data sets to continue to fit in memory even
+    after you launch your system, and (c) find the performance of your machine learning
+    code on a CPU or a GPU to be sufficient, then you can forego the scaling techniques
+    described in this and the next chapter.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果（a）您使用的数据集可以适应您机器学习平台的单个节点内存，（b）即使启动系统后您的数据集仍可适应内存，（c）您认为CPU或GPU上的机器学习代码的性能已足够，则可以放弃本章和下一章中描述的扩展技巧。
+- en: Note As a general rule of thumb, *if your machine learning model and the data
+    set are guaranteed to fit in memory, keep them in memory*.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意作为一般经验法则，如果您的机器学习模型和数据集保证适合内存，请将其保留在内存中。
+- en: The machine learning algorithms that work on in-memory data sets provide the
+    best performance both in terms of the computational efficiency and machine learning
+    effectiveness. This means that your machine learning model training and inference
+    are going to take less time when using machine learning on in-memory data, and
+    you are going to be able to reach the best loss and metric performance sooner.
+    Further, with data sets that fit in memory, you can use single node machine learning
+    frameworks like scikit-learn to develop and test a variety of machine learning
+    models before going to production. If your plan is to avoid implementing the code
+    for scaling machine learning, you can consider skipping to chapter 9 to continue
+    with feature selection and engineering.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 针对内存数据集的机器学习算法在计算效率和机器学习效果方面提供了最佳性能。这意味着当使用内存数据上的机器学习时，你的机器学习模型训练和推断将需要更少的时间，并且你将能够更快地达到最佳的损失和度量性能。此外，对于适合内存的数据集，你可以使用单节点的机器学习框架（如scikit-learn）在进入生产之前开发和测试各种机器学习模型。如果你的计划是避免实现用于扩展机器学习的代码，你可以考虑跳转到第9章继续进行特征选择和工程。
+- en: Before you rush ahead, you should keep in mind that “The Bitter Lesson,” an
+    influential 2019 publication by distinguished computer scientist and artificial
+    intelligence researcher Rich Sutton ([http://www.incompleteideas.net/IncIdeas/BitterLesson.html](http://www.incompleteideas.net/IncIdeas/BitterLesson.html))
+    argues that the machine learning systems that take advantage of massive computational
+    capacity have been the most effective, and by a large margin. Sutton’s paper describes
+    examples of breakthrough results from such disparate fields of artificial intelligence
+    research as playing the ancient board game of Go, performing speech recognition,
+    and tackling computer vision. If you are working on a machine learning system
+    hosted on a cloud platform, the scale of the information technology capacity available
+    to your system is bounded by your financial budget rather than technical limitations.
+    So, as part of your machine learning system design, you need to make decisions
+    about the scale at which your system is expected to consume information technology
+    resources available in the cloud. If you are building machine learning systems
+    that need to outperform in the marketplace or deliver state-of-the-art results
+    in academia, then you should learn from the “bitter lesson” and design for both
+    scaling up and scaling out.
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在你匆忙前进之前，你应该记住，“The Bitter Lesson”是由杰出计算机科学家和人工智能研究员Rich Sutton在2019年发表的一篇有影响力的论文（[http://www.incompleteideas.net/IncIdeas/BitterLesson.html](http://www.incompleteideas.net/IncIdeas/BitterLesson.html)），该论文认为利用大规模计算能力的机器学习系统一直以来效果最佳，且差距较大。Sutton的论文描述了在围棋游戏、语音识别和计算机视觉等人工智能研究的不同领域取得突破性成果的例子。如果你正在构建托管在云平台上的机器学习系统，你的系统可以利用的信息技术能力规模受到财务预算而不是技术限制的限制。因此，在你的机器学习系统设计中，你需要对你的系统预计在云中使用的信息技术资源的规模做出决策。如果你正在构建需要在市场上表现优越或在学术领域提供最新成果的机器学习系统，那么你应该从“苦涩的教训”中汲取教训，并为扩展和缩放设计系统。
+- en: If you plan on taking the bitter lesson to heart and scaling your machine learning
+    system, you need to put in some work to get a deeper understanding of data set
+    batching, use of GPUs, and distributed processing using PyTorch. Although there
+    are many popular and effective machine learning algorithms, including gradient-boosted
+    decision trees, what makes the gradient descent and deep learning stand out is
+    their ability to take advantage of compute, storage, and networking at the scale
+    described by Rich Sutton.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你打算认真对待“苦涩的教训”，并扩展你的机器学习系统，你需要付出一些努力，深入了解数据集批处理、使用GPU和使用PyTorch进行分布式处理。尽管有许多流行和有效的机器学习算法，包括梯度提升决策树，但梯度下降和深度学习的优势在于它们能够利用由Rich
+    Sutton描述的规模的计算、存储和网络的优势。
+- en: 7.2 Using IterableDataset and ObjectStorageDataset
+  id: totrans-15
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.2 使用IterableDataset和ObjectStorageDataset
+- en: This section introduces you to the applications of the IterableDataset class
+    that can help you support out-of-memory and streaming data sets with gradient
+    descent. You are also going to learn about ObjectStorageDataset, which can help
+    you use data sets residing in AWS object storage or in similar services from other
+    major cloud providers.
+  id: totrans-16
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本节介绍了 IterableDataset 类的应用，它可以帮助你支持 out-of-memory 和流式数据集的梯度下降。你还将了解到 ObjectStorageDataset，它可以帮助你使用位于
+    AWS 对象存储或其他主要云提供商的类似服务中的数据集。
+- en: In out-of-memory datasets, an example in the data set may reside on disk or
+    in the memory of an arbitrary node of your machine learning platform. The assumption
+    of in-memory, index-based addressing used by map-style data sets (in the __getitem__
+    method) does not fit with this out-of-memory model. Also, the map-style data sets
+    (as described in chapter 6) assume that the data set must use a __len__ method,
+    rendering them unsuitable for the conceptually unbounded, streaming data sets.
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 out-of-memory 数据集中，数据集中的一个示例可能存储在磁盘上或者你机器学习平台的任意节点的内存中。map-style 数据集（在 __getitem__
+    方法中使用的基于索引的内存假设）不适用于这种 out-of-memory 模型。此外，map-style 数据集（如第 6 章所述）假设数据集必须使用 __len__
+    方法，因此对于概念上无界的流式数据集不适用。
+- en: The newer, torch.utils.data.IterableDataset, introduced to PyTorch in version
+    1.2, eliminates the requirement to define the __getitem__ and __len__ methods
+    and instead requires only the definition of an __iter__ method, which can be used
+    with Python built-in iterator APIs.
+  id: totrans-18
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 新的 torch.utils.data.IterableDataset，在 PyTorch 1.2 版本中引入，消除了定义 __getitem__ 和
+    __len__ 方法的要求，而只需定义一个 __iter__ 方法，可以与 Python 内置的迭代器 API 一起使用。
+- en: Listing 7.1 Sketch of a declaration for an IterableDataset subclass
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.1 IterableDataset 子类声明草图
+- en: '[PRE0]'
+  id: totrans-20
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: 'For example to retrieve a single batch of examples from a data set and assign
+    it to a batch variable, you can use Python next and iter functions:'
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，要从数据集中检索单个批次的示例并将其分配给批次变量，可以使用 Python 的 next 和 iter 函数：
+- en: '[PRE1]'
+  id: totrans-22
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: While the number of the examples in the batch is not specified as part of the
+    IterableDataset class, the individual implementations and instances of the IterableDataset
+    class are responsible for managing the batch size. For example, in the ObjectStorageDataset
+    class used in the rest of this book, the batch size is specified as one of the
+    arguments for the __init__ method of the class.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然批量中的示例数量未作为 IterableDataset 类的一部分指定，但 IterableDataset 类的各个实现和实例负责管理批量大小。例如，在本书的其余部分中使用的
+    ObjectStorageDataset 类中，批量大小被指定为类的 __init__ 方法的参数之一。
+- en: Just like TensorDataset (described in chapter 6) provides support for tensor-based,
+    in-memory data sets for the map-style interface, the ObjectStorageDataset provides
+    support for tensor-based, out-of-memory data sets for the iterable-style interface.
+    The ObjectStorageDataset is not available by default when you install PyTorch,
+    so you need to install it separately from Kaen framework using
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 就像 TensorDataset（在第 6 章中描述）为基于张量的、内存中的数据集提供了对 map-style 接口的支持一样，ObjectStorageDataset
+    为基于张量的、out-of-memory 数据集提供了对 iterable-style 接口的支持。当你安装 PyTorch 时，默认情况下不会提供 ObjectStorageDataset，因此你需要从
+    Kaen 框架中单独安装它
+- en: '[PRE2]'
+  id: totrans-25
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: Once installed, import the class in your runtime using
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 安装后，可以使用以下命令在运行时导入该类
+- en: '[PRE3]'
+  id: totrans-27
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: The ObjectStorageDataset class provides a standard PyTorch interface to data
+    sets stored in the CSV format, regardless of whether they are located in public
+    cloud object storage or on your local filesystem. For every call to the __iter__
+    method of the class, the result is a PyTorch tensor of the numeric values from
+    the CSV-based data set. In the case of the DC taxi development data set created
+    by the dctaxi_dev _test.py PySpark job from chapter 4, this means that the tensor
+    returned by ObjectStorageDataset must be separated into the label (y) and the
+    features (X) needed to perform an iteration of gradient descent. For example,
+    this can be done using Python slicing notation ❷.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ObjectStorageDataset 类为以 CSV 格式存储的数据集提供了标准的 PyTorch 接口，无论它们是位于公共云对象存储中还是位于本地文件系统中。对于类的
+    __iter__ 方法的每次调用，结果是来自基于 CSV 的数据集的数值的 PyTorch 张量。在第 4 章的 dctaxi_dev _test.py PySpark
+    作业创建的 DC 出租车开发数据集的情况下，这意味着 ObjectStorageDataset 返回的张量必须分离为执行梯度下降迭代所需的标签（y）和特征（X）。例如，这可以使用
+    Python 切片表示法来完成 ❷。
+- en: Listing 7.2 Partitioning a batch tensor
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.2 划分批量张量
+- en: '[PRE4]'
+  id: totrans-30
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Eliminate the leading (batch) dimension of the tensor.
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 消除张量的前导（批量）维度。
+- en: ❷ Slice batch into first (y_batch) and remaining columns (X_batch).
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将批次切片为第一个（y_batch）和剩余列（X_batch）。
+- en: All of the rows in the first column of the batch are assigned to the label tensor
+    y_batch and all the rows of the remaining columns are assigned to the feature
+    tensor X_batch.
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一列中的所有行都分配给标签张量 y_batch，剩余列的所有行都分配给特征张量 X_batch。
+- en: To instantiate the ObjectStorageDataset, you must specify a URL-style path (similar
+    to a Unix glob string) that points to the location of your CSV-formatted data
+    set. For example, if you have configured the BUCKET_ID and AWS_DEFAULT_REGION
+    environment variables for the S3 bucket containing your development data set,
+    you can instantiate the class using
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要实例化 ObjectStorageDataset，您必须指定一个 URL 样式路径（类似于 Unix 通配符字符串），该路径指向您的 CSV 格式数据集的位置。例如，如果已经为包含开发数据集的
+    S3 存储桶配置了 BUCKET_ID 和 AWS_DEFAULT_REGION 环境变量，您可以使用以下命令实例化该类
+- en: '[PRE5]'
+  id: totrans-35
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: where the train_ds gets assigned an instance of the ObjectStorageDataset. Since
+    the ObjectStorageDataset supports the wildcard character (*), the Python f-string
+    used to create the train_ds instance specifies that the data set should include
+    all of the objects in S3 matching the /csv/dev/part*.csv glob in the dc-taxi-${BUCKET_
+    ID}-${AWS_DEFAULT_REGION} S3 bucket.
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其中 train_ds 被分配了 ObjectStorageDataset 的一个实例。由于 ObjectStorageDataset 支持通配符字符
+    (*)，用于创建 train_ds 实例的 Python f-string 指定数据集应包括 dc-taxi-${BUCKET_ID}-${AWS_DEFAULT_REGION}
+    S3 存储桶中匹配 /csv/dev/part*.csv glob 的所有对象。
+- en: The partitions_glob parameter of the ObjectStorageDataset points to the metadata
+    file about the CSV part files that match the /csv/dev/part*.csv glob. Recall that
+    the dctaxi_dev_test.py PySpark job saved the Spark partition (also known as part-file)
+    metadata to the .meta/shards subfolder of your development and test data sets.
+    For the development part of the data set, you can preview this metadata by loading
+    it in memory as a pandas DataFrame,
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ObjectStorageDataset 的 partitions_glob 参数指向有关匹配 /csv/dev/part*.csv glob 的 CSV
+    部分文件的元数据文件。请回想 dctaxi_dev_test.py PySpark 作业将 Spark 分区（也称为部分文件）元数据保存到开发和测试数据集的
+    .meta/shards 子文件夹中。对于数据集的开发部分，您可以通过将其加载到内存中作为 pandas DataFrame 来预览此元数据，
+- en: '[PRE6]'
+  id: totrans-38
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'which should produce an output similar to the following:'
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这应该会产生类似以下的输出：
+- en: '[PRE7]'
+  id: totrans-40
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: where the id column represents the ID of one of the part files in the .meta/shards
+    subfolder and the count column represents the count of the number of lines (records)
+    in the part file.
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其中 id 列表示 .meta/shards 子文件夹中的一个部分文件的 ID，count 列表示部分文件中行数（记录数）的计数。
+- en: The ObjectStorageDataset is designed to instantiate in the shortest amount of
+    time possible to start the iterations of gradient descent. In practice, this translates
+    to ObjectStorageDataset caching in memory and on disk only the data set objects
+    needed to return the first batch of examples from the data set, as illustrated
+    in figure 7.1.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ObjectStorageDataset 被设计为在最短可能的时间内实例化，以启动梯度下降的迭代。实际上，这意味着 ObjectStorageDataset
+    仅缓存内存和磁盘上需要从数据集返回第一批示例的数据集对象，如图 7.1 所示。
+- en: '![07-01](Images/07-01.png)'
+  id: totrans-43
+  prefs: []
+  type: TYPE_IMG
+  zh: '![07-01](Images/07-01.png)'
+- en: Figure 7.1 Multilevel cache access to object storage using ObjectStorageDataset
+  id: totrans-44
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.1 ObjectStorageDataset 使用对象存储的多级缓存访问
+- en: In the example in figure 7.1, ObjectStorageDataset is instantiated using a fictional
+    src S3 bucket containing CSV-formatted objects with a complete URL-style path
+    as s3://src/data/part*.csv (right side of figure 7.1). The partitions of the data
+    set (i.e., the CSV-formatted objects with the names matching part*.csv) reside
+    under the data folder in the src bucket. In figure 7.1, part*.csv objects are
+    shown as numbered squares in the S3 bucket. For illustration, each one of the
+    part*.csv objects in the S3 bucket is assumed to consist of 1,000 examples, which
+    are represented in the CSV format as one line per row.
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图 7.1 的示例中，ObjectStorageDataset 使用一个虚构的 src S3 存储桶实例化，该存储桶包含以完整 URL 样式路径 s3://src/data/part*.csv
+    作为 CSV 格式对象（图 7.1 的右侧）。数据集的分区（即名称匹配 part*.csv 的 CSV 格式对象）位于 src 存储桶的 data 文件夹下。在图
+    7.1 中，part*.csv 对象显示为 S3 存储桶中的带编号的正方形。为了说明，假定 S3 存储桶中的每个 part*.csv 对象都包含 1,000
+    个示例，这些示例以 CSV 格式的每行一行表示。
+- en: After ObjectStorageDataset is instantiated with a batch_size of 2,048 in the
+    Python runtime of a compute node (left side of the figure), the implementation
+    of ObjectStorageDataset triggers a network transfer of three data set partitions
+    from the S3 bucket to the filesystem cache of the compute node. Since each object
+    in S3 is 1,000 rows, 3 objects (totaling 3,000 rows) need to be transferred from
+    S3 to the compute node’s filesystem for the ObjectStorageDataset instance to produce
+    a batch of 2,048 rows. In the figure, the location of the filesystem cache is
+    shown as the /tmp directory; however, a Linux operating system-specific location
+    can vary depending on the operating system defaults. The filesystem cache is needed
+    to minimize the aggregate data transfer over the network in cases where the process
+    for training a machine learning model is repeated for multiple epochs.
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在使用 batch_size 为 2,048 实例化 ObjectStorageDataset 后（计算节点 Python 运行时的左侧），ObjectStorageDataset
+    的实现会触发从 S3 存储桶到计算节点的文件系统缓存的三个数据集分区的网络传输。由于 S3 中的每个对象有 1,000 行，需要将 3 个对象（总共 3,000
+    行）从 S3 传输到计算节点的文件系统，以使 ObjectStorageDataset 实例生成一个 2,048 行的批次。在图中，文件系统缓存的位置显示为
+    /tmp 目录；但是，Linux 操作系统特定的位置可能会因操作系统默认值而异。文件系统缓存是为了在多次重复训练机器学习模型的过程中最小化网络上的总数据传输。
+- en: Note that the size (number of rows) of the partitions is entirely independent
+    of the batch_size used to instantiate ObjectStorageDataset, meaning that the batch_size
+    can vary while the size of the partitions stays constant. In the DC taxi project
+    used in this book, the number and the size of the partitions are specified in
+    the PySpark jobs that save the cleaned-up data set to object storage. In general,
+    the number and size of the data set partitions vary depending on the specifics
+    of the machine learning project, although it is better to choose partition size
+    in the range of 100—200 MB for efficient transfer over a network connection if
+    you are working with commonly deployed 100 Mbps network interfaces.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，分区的大小（行数）完全独立于用于实例化 ObjectStorageDataset 的 batch_size，这意味着 batch_size 可以变化，而分区的大小保持不变。在本书中使用的
+    DC 出租车项目中，分区的数量和大小在保存清理后的数据集到对象存储中的 PySpark 作业中指定。一般来说，数据集分区的数量和大小取决于机器学习项目的具体情况，尽管如果您使用的是常见的
+    100 Mbps 网络接口，最好选择 100—200 MB 范围内的分区大小以实现有效的网络传输。
+- en: Note The data set partitions are copied to the filesystem cache unless the URL-style
+    path starts with the file:// protocol handler or the data set originates from
+    the node’s filesystem.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：除非 URL 样式路径以 file:// 协议处理程序开头，或者数据集源自节点的文件系统，否则数据集分区将被复制到文件系统缓存中。
+- en: When a single batch of training examples fits in memory, after the partitions
+    are cached in the filesystem, partitions 1, 2, and the first 48 lines from partition
+    3 (shown with a dashed line in figure 7.1) that make up a 2,048-sized shard are
+    cached in memory as PyTorch tensors. Each subsequent call to the __iter__ method
+    of the ObjectStorageDataset flushes the in-memory cache, triggers the network
+    transfer of the additional data set partitions needed for the next shard from
+    the bucket to the filesystem cache directory, and loads into memory the next 2,048
+    examples as PyTorch tensors.
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当单个批次的训练示例适合内存时，在分区被缓存到文件系统后，缓存了分区 1、2 和第 3 个分区的前 48 行（在图 7.1 中以虚线显示）的内存中，这些构成了一个大小为
+    2,048 的碎片，作为 PyTorch 张量被缓存在内存中。ObjectStorageDataset 的每次对 __iter__ 方法的调用都会清空内存缓存，触发网络传输将下一个碎片所需的额外数据集分区从存储桶传输到文件系统缓存目录，并将下一个
+    2,048 个示例加载到内存中作为 PyTorch 张量。
+- en: 'All the capabilities of ObjectStorageDataset described in this section apply
+    to data sets that reside in serverless object storage services from major cloud
+    providers.[¹](#pgfId-1013545) Although the example in this book focuses on using
+    AWS and S3, you can easily repoint an instance of the ObjectStorageDataset class
+    to a different cloud provider (or a local filesystem) by modifying the protocol
+    specified in the URL-style glob named parameter of the class:'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本节描述的 ObjectStorageDataset 的所有功能都适用于驻留在主要云提供商的无服务器对象存储服务中的数据集。[¹](#pgfId-1013545)尽管本书中的示例侧重于使用
+    AWS 和 S3，但您可以通过修改类的 URL 样式 glob 命名参数中指定的协议，轻松地将 ObjectStorageDataset 类的实例重新定向到不同的云提供商（或本地文件系统）：
+- en: gcs:// for Google Cloud Storage, for example using
+  id: totrans-51
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 例如使用 gcs:// 来表示 Google Cloud Storage，
+- en: '[PRE8]'
+  id: totrans-52
+  prefs:
+  - PREF_UL
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: abfs:// for Azure Blob Storage or Azure Datalake Gen2, for example using
+  id: totrans-53
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 例如使用 abfs:// 来表示 Azure Blob Storage 或 Azure Datalake Gen2，
+- en: '[PRE9]'
+  id: totrans-54
+  prefs:
+  - PREF_UL
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: file:// for the files residing on the local filesystem, for example using
+  id: totrans-55
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于位于本地文件系统上的文件，使用file://，例如使用
+- en: '[PRE10]'
+  id: totrans-56
+  prefs:
+  - PREF_UL
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: 7.3 Gradient descent with out-of-memory data sets
+  id: totrans-57
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 使用内存中的数据集进行梯度下降
+- en: In this section, you are going to extend the basic linear regression example
+    explained in chapter 6 to calculate a weak baseline performance metric for the
+    DC taxi training and test data sets.
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，你将扩展第6章中解释的基本线性回归示例，以计算DC出租车训练和测试数据集的弱基准性能指标。
+- en: So far in this chapter, you have learned about using PyTorch gradient descent
+    based on batches using instances of Dataset and DataLoader classes along with
+    a basic linear regression model with just a single model parameter. Since the
+    DC taxi data set you have prepared for training consists of eight features (latitude
+    and longitude coordinates for pickup and drop-off locations as well as year, month,
+    day of the week, and hour of the trip), to perform linear regression, you need
+    to extend the machine learning model to at least eight parameters, one per feature.
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，在本章中，你已经学会了使用基于批次的PyTorch梯度下降，使用Dataset和DataLoader类的实例以及只有一个模型参数的基本线性回归模型。由于你准备用于训练的DC出租车数据集包含八个特征（接送地点的纬度和经度坐标，以及行程的年份，月份，星期几和小时），要执行线性回归，你需要将机器学习模型扩展到至少八个参数，每个特征一个。
+- en: 'Also, notice that, until now, none of the linear regression examples you have
+    seen used a bias parameter. This was intentional to simplify the sample code:
+    since the previous examples of linear regression relied on data sets with a zero
+    mean, the bias parameter was not necessary. However, the columns of the DC taxi
+    data set do not have a mean of zero in the next example. Hence, you are going
+    to add an extra tensor scalar to represent the bias parameter for linear regression.'
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意，到目前为止，你看到的线性回归示例都没有使用偏置参数。这是有意为之的，以简化示例代码：由于先前的线性回归示例依赖于具有零均值的数据集，因此不需要偏置参数。然而，DC出租车数据集的列在下一个示例中不具有零均值。因此，你将添加一个额外的张量标量来表示线性回归的偏置参数。
+- en: Previously, you used the torch.randn method to initialize the model parameters
+    by sampling from a normal distribution, but since you are transitioning to more
+    complex models, you can take advantage of better model parameter initialization
+    schemes available from PyTorch.
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以前，你使用torch.randn方法通过从正态分布中采样来初始化模型参数，但由于你正在过渡到更复杂的模型，你可以利用PyTorch提供的更好的模型参数初始化方案。
+- en: 'Kaiming initialization was popularized in a seminal research paper by He and
+    colleagues in 2015 titled “Delving Deep into Rectifiers: Surpassing Human-Level
+    Performance on ImageNet Classification.”[²](#pgfId-1014263) Kaiming initialization
+    sets the initial model parameter values by taking into account the number of the
+    model parameters that need to be initialized. To use the Kaiming initialization,
+    you simply wrap the calls to torch.empty with a call to the torch.nn.init.kaiming_uniform_
+    method ❷, ❸.'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Kaiming初始化是由何等人在2015年的一篇名为《深入研究整流器：在ImageNet分类中超越人类水平的性能》的重要研究论文中流行化的。Kaiming初始化通过考虑需要初始化的模型参数的数量来设置初始模型参数值。要使用Kaiming初始化，你只需将对torch.empty的调用包装在torch.nn.init.kaiming_uniform_方法中。
+- en: Listing 7.3 Using Kaiming initialization for model parameters
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表7.3 使用Kaiming初始化进行模型参数初始化
+- en: '[PRE11]'
+  id: totrans-64
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: ❶ Use torch.float64 as the dtype for newly created tensors.
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用torch.float64作为新创建张量的dtype。
+- en: Here, the model parameters (also known as coefficients in linear regression)
+    are assigned to the w variable and the model bias (intercept) is assigned to b.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这里，模型参数（也称为线性回归中的系数）被分配给变量w，模型偏置（截距）被分配给b。
+- en: Note As explained in more detail in chapter 5, the kaiming_uniform_ method is
+    an example of a PyTorch in-place method, which is indicated by the trailing underscore
+    in the method name. Since the example of the Kaiming initialization in this chapter
+    uses the in-place method, the tensor values returned by the empty method are replaced
+    by the initialization.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：正如第5章中更详细地解释的那样，kaiming_uniform_方法是PyTorch中的一个例子，它是一个就地方法，方法名后面有一个下划线。由于本章中对Kaiming初始化的示例使用了就地方法，因此由empty方法返回的张量值将被初始化替换。
+- en: In section 7.2, you saw that by default ObjectStorageDataset returns float64
+    as the dtype for the batch tensors. As explained in chapter 5, PyTorch requires
+    that tensors have an identical dtype before you can perform operations such as
+    matrix multiplication on the tensors. The set_default_dtype method used in listing
+    7.3 ❶ ensures that the w and b tensors are created using the float64 data type
+    to match the dtype returned by the ObjectStorageDataset.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第7.2节中，你已经看到默认情况下，ObjectStorageDataset将float64作为批量张量的dtype返回。如第5章所述，PyTorch要求张量在执行诸如矩阵乘法之类的操作之前具有相同的dtype。列表7.3中使用的set_default_dtype方法❶确保w和b张量使用float64数据类型创建，以匹配ObjectStorageDataset返回的dtype。
+- en: 'To take advantage of the modified model parameters, you will have to change
+    the details of the forward step of the gradient descent iteration. At this point,
+    since the feature tensor X for the DC taxi data set has a shape of torch.Size([DATASET_SIZE,
+    FEATURE_COUNT]) and the model parameter tensor w has a shape of torch.Size ([FEATURE_COUNT,
+    1]), their product must have a shape of torch.Size([DATASET_ SIZE, 1]). However,
+    the y_batch tensor created by slicing the batch from the ObjectStorageDataset,
+    as explained in listing 7.2, has a shape of torch.Size([DATASET_ SIZE]). So, before
+    the y_batch and the y_est tensors can be subtracted during the computation of
+    the loss metric, you should update the y_est tensor using the PyTorch squeeze
+    method to ensure their shapes are both torch.Size([DATASET_SIZE]):'
+  id: totrans-69
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要利用修改后的模型参数，你需要改变梯度下降迭代的前进步骤的细节。此时，由于DC出租车数据集的特征张量X的形状为torch.Size([DATASET_SIZE,
+    FEATURE_COUNT])，模型参数张量w的形状为torch.Size([FEATURE_COUNT, 1])，它们的乘积必须具有torch.Size([DATASET_SIZE,
+    1])的形状。然而，如列表7.2中所述，从ObjectStorageDataset切片创建的y_batch张量的形状为torch.Size([DATASET_SIZE])。因此，在计算损失指标期间，在y_batch和y_est张量进行减法计算之前，你应该使用PyTorch的squeeze方法更新y_est张量，以确保它们的形状都是torch.Size([DATASET_SIZE])：
+- en: '[PRE12]'
+  id: totrans-70
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: Given these changes, the baseline linear regression implementation for the DC
+    taxi data set is ready.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 经过这些变化，DC出租车数据集的基线线性回归实现已经准备就绪。
+- en: Listing 7.4 Weak baseline using linear regression
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表7.4 使用线性回归的弱基线
+- en: '[PRE13]'
+  id: totrans-73
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ Assume GRADIENT_NORM is not initialized by setting it to None.
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 假设GRADIENT_NORM未初始化，将其设置为None。
+- en: ❷ Clip the gradients if the gradients are above GRADIENT_NORM, no-op otherwise.
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 如果梯度高于GRADIENT_NORM，则剪裁梯度；否则不进行任何操作。
+- en: 'The ITERATION_COUNT in listing 7.4 is intentionally set to a value of 5 because
+    once you execute the code from the listing, you are going to see an output resembling
+    the following:'
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表7.4中的ITERATION_COUNT故意设置为5，因为一旦执行列表中的代码，你将会看到类似以下的输出：
+- en: '[PRE14]'
+  id: totrans-77
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: Notice that unlike the linear regression example from chapter 6, the loss function
+    in this output fails to converge. If you have never seen this behavior from gradient
+    descent before picking up this book, congratulations! You just observed your first
+    exploding gradients!
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，与第6章中的线性回归示例不同，此输出中的损失函数未收敛。如果在看本书之前从未见过梯度下降产生这种行为，那么恭喜你！你刚刚观察到了你的第一个梯度爆炸！
+- en: 'If you find this result at all surprising, think back to the synthetic X and
+    y data tensors used in chapter 6: their values had a mean of zero and were relatively
+    small. In contrast, the data in the DC taxi data set consists of the unmodified
+    original values for the locations and the taxi fares, with large values and a
+    non-zero mean. You are going to learn about techniques to properly prepare the
+    data set and prevent the likelihood of exploding (and vanishing) gradients later
+    in this book. For now you should know that exploding gradients can be easily resolved
+    using the built-in PyTorch torch.nn .utils.clip_grad_norm_ method.'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你对这个结果感到意外，回想一下第6章中使用的合成X和y数据张量：它们的值的平均值为零，相对较小。相比之下，DC出租车数据集中的数据由原始的位置和出租车费用值组成，具有较大的值和非零均值。你将在本书的后续部分学习有关如何正确准备数据集并防止梯度爆炸（和消失）的技术。现在，你应该知道可以使用内置的PyTorch
+    torch.nn.utils.clip_grad_norm_方法轻松解决梯度爆炸的问题。
+- en: The first two annotations in listing 7.4 ❶ and ❸ illustrate how to include gradient
+    clipping in your gradient descent iteration. When you observed exploding gradients
+    during the execution listing code, the GRADIENT_NORM was set to None ❶, which
+    turned off gradient clipping. To enable gradient clipping, the value of GRADIENT_NORM
+    should be set to a positive decimal value. The value is used as an upper limit
+    on the maximum gradient value in the model tensors. In other words, gradient clipping
+    amounts to running the Python min(gradient, GRADIENT_NORM) function on every gradient
+    value of the tensors passed to the clip_grad_norm method. Hence, it is critical
+    to use the clip_ grad_norm method after the backward step (which sets the potentially
+    exploding gradient values) but before the optimizer step, which uses the gradient
+    values to update the model parameters.
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.4 中的前两个注释 ❶ 和 ❸ 展示了如何在梯度下降迭代中包含梯度裁剪。当您在执行列表中的代码时观察到梯度爆炸时，GRADIENT_NORM
+    被设置为 None ❶，这将关闭梯度裁剪。要启用梯度裁剪，GRADIENT_NORM 的值应设置为正的小数值。该值被用作模型张量中最大梯度值的上限。换句话说，梯度裁剪相当于在传递给
+    clip_grad_norm 方法的张量的每个梯度值上运行 Python 的 min(gradient, GRADIENT_NORM) 函数。因此，在 backward
+    步骤（设置可能爆炸的梯度值）之后但优化器步骤（使用梯度值来更新模型参数）之前，使用 clip_grad_norm 方法非常重要。
+- en: 'To obtain the baseline metric for mean squared error over your training data
+    set, modify the GRADIENT_NORM to be 0.5 and ITERATION_COUNT to be 50. The values
+    of GRADIENT_NORM and ITERATION_COUNT are inversely proportional: clipping gradients
+    to smaller values means that gradient descent needs a larger number of iterations
+    to adjust the values of the model parameters. While it is useful to know about
+    gradient clipping when troubleshooting a machine learning model, the better approach
+    is to minimize the risk of having an exploding gradient in the first place.'
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了获取训练数据集上均方误差的基准度量，将 GRADIENT_NORM 修改为 0.5，将 ITERATION_COUNT 修改为 50。GRADIENT_NORM
+    和 ITERATION_COUNT 的值成反比：将梯度裁剪到较小的值意味着梯度下降需要更多的迭代次数来调整模型参数的值。虽然了解梯度裁剪对于排查机器学习模型问题是有用的，但更好的方法是在首次出现梯度爆炸的风险最小化。
+- en: 'Assuming that you used the default seed setting of 0 from listing 7.4 and re-executed
+    the code from the listing using GRADIENT_NORM=0.5 and ITERATION_COUNT=50, the
+    training should return the following results for the last 10 iterations of the
+    gradient descent:'
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 假设您在列表 7.4 中使用了默认的种子设置为 0，并使用 GRADIENT_NORM=0.5 和 ITERATION_COUNT=50 重新执行了代码，那么训练应该会返回梯度下降的最后
+    10 次迭代的以下结果：
+- en: '[PRE15]'
+  id: totrans-83
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: In the last 10 iterations, the value of the MSE loss function is not improving
+    and the range of 200—400 is obviously a weak baseline. However, with gradient
+    clipping enabled the gradients are no longer exploding.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在最后 10 次迭代中，均方误差损失函数的值没有改善，并且 200-400 的范围明显是一个较弱的基准线。然而，启用了梯度裁剪后，梯度不再爆炸。
+- en: 7.4 Faster PyTorch tensor operations with GPUs
+  id: totrans-85
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.4 使用 GPU 加速 PyTorch 张量操作
+- en: This section describes the graphical processing unit (GPU) support provided
+    by PyTorch tensor APIs and when GPUs can help improve the performance of machine
+    learning algorithms with higher throughput computing. Learning about GPU support
+    in PyTorch is going to prepare you for the next section, where you will modify
+    the weak baseline linear regression implementation for the DC taxi data set to
+    use a GPU instead of a CPU.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本节介绍了 PyTorch 张量 API 提供的图形处理单元 (GPU) 支持，以及 GPU 如何帮助提高机器学习算法的性能，实现更高吞吐量的计算。了解
+    PyTorch 中的 GPU 支持将为下一节做准备，在下一节中，您将修改基准线性回归实现来使用 GPU 而不是 CPU 来处理 DC 出租车数据集。
+- en: Alex Krizhevsky’s winning entry at the 2012 ImageNet competition[³](#pgfId-1015825)
+    was one of the most visible success stories that helped re-ignite interest in
+    deep learning. While the convolutional neural network, the machine learning model
+    used by Krizhevsky, was well known since the 1990s, it captured the top place
+    in the rankings in large part due to a “very efficient GPU implementation.”[⁴](#pgfId-1015838)
+    Since 2012, GPUs and other dedicated processors[⁵](#pgfId-1015916) have been used
+    to efficiently train state-of-the-art machine learning models, in particular for
+    domains with large, unstructured data sets, such as those that contain images,
+    video, audio, or a large quantity of natural language documents.
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Alex Krizhevsky 在 2012 年 ImageNet 竞赛中的获胜作品是帮助重新燃起对深度学习兴趣的最具有代表性的成功故事之一。 尽管卷积神经网络（Krizhevsky
+    使用的机器学习模型）自 1990 年代以来就广为人知，但它之所以在排行榜中获得最高排名，很大程度上要归功于“非常高效的 GPU 实现。” 从 2012 年以来，GPU
+    和其他专用处理器已被用于高效训练最先进的机器学习模型，特别是对于包含大量非结构化数据集的领域，例如包含图像，视频，音频或大量自然语言文档的领域。
+- en: PyTorch tensors can take advantage of the higher-throughput computation possible
+    with GPUs without changes to the implementation of the machine learning code.
+    However, if you are planning on using GPUs on your machine learning project, you
+    should have a clear understanding of the tensor performance you can get with CPUs,
+    and also be aware of the barriers to entry for using GPUs for PyTorch tensors.
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch 张量可以在不更改机器学习代码实现的情况下利用 GPU 的更高吞吐量计算。 但是，如果您计划在机器学习项目中使用 GPU，则应清楚了解可以使用
+    CPU 获得的张量性能，并且还要了解使用 PyTorch 张量的 GPU 的入门障碍。
+- en: PyTorch relies on Compute Unified Device Architecture (CUDA)-based APIs for
+    interfacing with a GPU. CUDA was introduced in 2007 by nVidia, a major GPU manufacturer,
+    and since then became a de facto standard for software libraries providing applications
+    and frameworks like PyTorch with GPU APIs. CUDA enables PyTorch to perform parallel
+    processing of tensor operations on a GPU regardless of whether the GPU was built
+    by nVidia, Intel, or another processor manufacturer that supports the CUDA standard.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch 依赖于基于 Compute Unified Device Architecture (CUDA) 的 API 与 GPU 进行交互。 CUDA
+    是由 nVidia（一个主要 GPU 制造商）于 2007 年引入的，此后成为为像 PyTorch 这样的应用程序和框架提供 GPU API 的软件库的事实上的标准。
+    CUDA 使 PyTorch 能够在 GPU 上对张量操作进行并行处理，而不管 GPU 是由 nVidia，Intel 还是其他支持 CUDA 标准的处理器制造商构建的。
+- en: 'PyTorch can perform a limited degree of parallel processing using CPUs since
+    it is common for modern processors to have anywhere from 2 to 16 cores. To find
+    out the exact number of CPU cores available to PyTorch you can execute the following
+    Python code:'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch 可以使用 CPU 执行有限程度的并行处理，因为现代处理器通常具有 2 至 16 个核心。 要查找 PyTorch 可用的 CPU 核心数量，可以执行以下
+    Python 代码：
+- en: '[PRE16]'
+  id: totrans-91
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: which in my case returns a 4. In processor terminology, each one of these CPU
+    cores can act as an independent arithmetic logic unit (ALU) that performs the
+    low-level arithmetic computations needed by PyTorch tensor operations. However,
+    as illustrated in figure 7.2, the number of ALUs on a standard CPU pales in comparison
+    with the number of ALUs on a GPU.
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我的情况下，它返回 4。 在处理器术语中，每个 CPU 核心都可以充当独立的算术逻辑单元 (ALU)，执行 PyTorch 张量操作所需的底层算术计算。
+    然而，如图 7.2 所示，在标准 CPU 上的 ALU 数量与 GPU 上的 ALU 数量相比相形见绌。
+- en: '![07-02](Images/07-02.png)'
+  id: totrans-93
+  prefs: []
+  type: TYPE_IMG
+  zh: '![07-02](Images/07-02.png)'
+- en: Figure 7.2 While equipped with a larger cache, a CPU (left) is limited in parallel
+    processing throughput by the number of ALU cores. Smaller cache and control units
+    in a GPU (right) are shared across a larger number of ALU cores having a higher
+    total parallel processing throughput than a CPU.
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.2 虽然具有更大的缓存，但 CPU（左）的并行处理吞吐量受 ALU 核心数的限制。 GPU（右）中较小的缓存和控制单元在更多的 ALU 核心之间共享，并具有比
+    CPU 更高的总并行处理吞吐量。
+- en: PyTorch CUDA APIs can provide you with information about the exact number of
+    ALUs available on your GPU device. In PyTorch, it is customary to initialize the
+    device variable before using the GPU.
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: PyTorch CUDA APIs 可以为您提供有关 GPU 设备上的 ALU 数量的信息。 在使用 GPU 之前，习惯上需要在 PyTorch 中初始化设备变量。
+- en: Listing 7.5 Checking if GPU and CUDA device drivers are available
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.5 检查 GPU 和 CUDA 设备驱动程序是否可用
+- en: '[PRE17]'
+  id: totrans-97
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: 'If you have a CUDA device available on your computer, the device variable has
+    the value of "cuda". To find out the number of ALUs you have available, you need
+    to first use the get_device_capability method to find out your CUDA compute capability
+    profile:'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果您的计算机上有一个 CUDA 设备可用，设备变量的值为 "cuda"。要找出您可用的 ALU 数量，您需要首先使用 get_device_capability
+    方法找出您的 CUDA 计算能力配置文件：
+- en: '[PRE18]'
+  id: totrans-99
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: which in my case reports
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我的情况下报告
+- en: '[PRE19]'
+  id: totrans-101
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: 'The values returned by get_device_capability are not the actual ALUs counts
+    but rather a generic device profile. To find out the actual number of ALUs for
+    the profile, you need to look up the corresponding entry on the nVidia CUDA website:
+    [https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html).
+    For example, in the case of the 6,0 profile, the specific URL is [https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability-6-x](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability-6-x%20which)
+    which lists 64 ALUs, matching the number on the right side of figure 7.2.'
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: get_device_capability 返回的值不是实际的 ALU 计数，而是通用的设备配置。要找出配置文件的实际 ALU 数量，您需要查阅相应的
+    nVidia CUDA 网站条目：[https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html)。例如，在
+    6,0 配置文件的情况下，特定 URL 是 [https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability-6-x](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability-6-x)，其中列出了
+    64 个 ALU，与图 7.2 右侧的数字相匹配。
+- en: 'In section 7.3, you learned about using the set_default_dtype method to specify
+    the default dtypes for the tensors created in your PyTorch code. For every supported
+    PyTorch dtype (e.g., torch.float64), there are two alternative implementations
+    available from the PyTorch library: one for CPU-based and another for GPU-based
+    tensors.[⁶](#pgfId-1080789) PyTorch defaults to using the CPU-based tensors unless
+    you specify the CUDA-based implementation as the default using the set_default_tensor_type
+    method. For example,'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 7.3 节中，您了解了如何使用 set_default_dtype 方法指定 PyTorch 代码中创建的张量的默认 dtype。对于每种受支持的
+    PyTorch dtype（例如，torch.float64），PyTorch 库都提供了两种替代实现：一种是基于 CPU 的，另一种是基于 GPU 的张量。[⁶](#pgfId-1080789)
+    PyTorch 默认使用基于 CPU 的张量，除非您使用 set_default_tensor_type 方法将 CUDA-based 实现指定为默认值。例如，
+- en: '[PRE20]'
+  id: totrans-104
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: outputs
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 输出
+- en: '[PRE21]'
+  id: totrans-106
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: where the device attribute of the tensor instance reports that PyTorch defaulted
+    to a CPU-based implementation. However, you can configure PyTorch to default to
+    a GPU-based implementation (listing 7.6 ❶).
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 张量实例的设备属性报告 PyTorch 默认为基于 CPU 的实现。但是，您可以配置 PyTorch 默认为基于 GPU 的实现（清单 7.6 ❶）。
+- en: Listing 7.6 Using a GPU tensor as the default tensor type
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单 7.6 使用 GPU 张量作为默认张量类型
+- en: '[PRE22]'
+  id: totrans-109
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: ❶ Use the torch.cuda.FloatTensor as default tensor type.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 使用 torch.cuda.FloatTensor 作为默认张量类型。
+- en: This code produces
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此代码生成
+- en: '[PRE23]'
+  id: totrans-112
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: showing that the tensor is defaulting to the first CUDA GPU device, as indicated
+    by the cuda prefix and the 0-based index postfix.
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显示张量默认到第一个 CUDA GPU 设备，如 cuda 前缀和基于 0 的索引后缀所示。
+- en: Note In this chapter, you will learn about scaling up PyTorch code to use a
+    single GPU per compute node. Chapter 8 and later chapters explain how to scale
+    out to multiple GPU devices and to multiple compute nodes in a network.
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 在本章中，您将学习如何扩展 PyTorch 代码以使用每个计算节点的单个 GPU。第 8 章和以后的章节解释如何扩展到多个 GPU 设备和网络中的多个计算节点。
+- en: The set_default_tensor_type method is a global setting, and as such it may inadvertently
+    impact your entire PyTorch codebase. Even if you specify set_default_tensor_ type
+    to use a GPU-based implementation for a FloatTensor tensor, all tensors created
+    in your code are converted to use GPUs. For example,
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: set_default_tensor_type 方法是全局设置，因此可能会意外影响整个 PyTorch 代码库。即使您将 set_default_tensor_type
+    指定为使用 FloatTensor 张量的基于 GPU 的实现，您代码中创建的所有张量也会转换为使用 GPU。例如，
+- en: '[PRE24]'
+  id: totrans-116
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: prints out
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 打印出
+- en: '[PRE25]'
+  id: totrans-118
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: showing that the tensor instance configured as an int also defaulted to the
+    GPU-based implementation.
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 显示配置为 int 的张量实例也默认为基于 GPU 的实现。
+- en: 'While it is important to be mindful of the global set_default_tensor_type setting,
+    a better practice when using a GPU for tensor operations is to create tensors
+    directly on a desired device. Assuming that you initialize the device variable
+    as explained in listing 7.5, you can create a tensor on a specific device by setting
+    the device named parameter:'
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然注意全局 set_default_tensor_type 设置很重要，但在使用 GPU 进行张量操作时更好的做法是直接在所需设备上创建张量。假设你按照清单
+    7.5 中的说明初始化设备变量，你可以通过设置设备命名参数在特定设备上创建张量：
+- en: '[PRE26]'
+  id: totrans-121
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: which outputs
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这导致输出
+- en: '[PRE27]'
+  id: totrans-123
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE27]'
+- en: if a CUDA device is available to PyTorch (i.e., cuda.is_available is True).
+    When a CUDA device is not available or not configured,[⁷](#pgfId-1081375) the
+    same code outputs
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果 PyTorch 可用 CUDA 设备（即 cuda.is_available 为 True）。 当 CUDA 设备不可用或未配置时，[⁷](#pgfId-1081375)
+    相同的代码输出
+- en: '[PRE28]'
+  id: totrans-125
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE28]'
+- en: In the situations where your PyTorch code processes tensors from external libraries
+    such as NumPy, it can be useful to move the existing tensor to a different device
+    using the to method. For example, if your device variable is initialized to cuda,
+    then to create an array tensor with 100 random elements on a GPU, you can use
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在您的 PyTorch 代码处理来自外部库（如 NumPy）的张量的情况下，将现有张量移动到不同设备可能很有用，方法是使用 to 方法。 例如，如果您的设备变量初始化为
+    cuda，则可以使用以下方法在 GPU 上创建包含 100 个随机元素的数组张量
+- en: '[PRE29]'
+  id: totrans-127
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE29]'
+- en: Note that all tensors used by a tensor operation have to reside on the same
+    device for the operation to succeed. This means that
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，张量操作使用的所有张量必须驻留在同一设备上，以使操作成功。 这意味着
+- en: '[PRE30]'
+  id: totrans-129
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE30]'
+- en: correctly returns the sum of tensors a and b, while
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正确返回张量 a 和 b 的和，而
+- en: '[PRE31]'
+  id: totrans-131
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE31]'
+- en: 'fails with a RuntimeError: expected device cuda:0 but got device cpu.'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '失败，出现 RuntimeError: 预期设备 cuda:0，但得到设备 cpu。'
+- en: 'While GPUs offer significant performance improvements for machine learning
+    compared to CPUs, there is a latency overhead involved in moving contents of a
+    tensor from the main computer memory to the memory of the GPU. To quantify the
+    performance advantages of the GPU, you can start with the following benchmark
+    function:'
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管与 CPU 相比，GPU 为机器学习提供了显著的性能改进，但将张量的内容从主计算机内存移动到 GPU 内存中涉及延迟开销。 要量化 GPU 的性能优势，您可以从以下基准函数开始：
+- en: '[PRE32]'
+  id: totrans-134
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE32]'
+- en: where, after the execution of the benchmark method, the ratio variable contains
+    the performance of the GPU versus CPU (higher is better). For example, in my measurements,
+    a GPU achieved speed-ups of over 1000 times versus the CPU (figure 7.3), especially
+    for larger tensor sizes.
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其中，在执行基准方法之后，ratio 变量包含 GPU 与 CPU 的性能比（越高越好）。 例如，在我的测量中，GPU 对 CPU 的加速超过 1000
+    倍（图 7.3），特别是对于较大的张量大小。
+- en: '![07-03](Images/07-03.png)'
+  id: totrans-136
+  prefs: []
+  type: TYPE_IMG
+  zh: '![07-03](Images/07-03.png)'
+- en: Figure 7.3 For larger tensor sizes (horizontal axis), a GPU can be up to 150
+    times faster than a CPU (vertical axis) for tensor addition.
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.3 对于更大的张量大小（横轴），GPU 可比 CPU（纵轴）快高达 150 倍。
+- en: However, for smaller tensor sizes, those containing 4,096 floating point values
+    or fewer (figure 7.4), the performance of the CPU is either on par or faster than
+    that of the GPU.
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但是，对于较小的张量大小，即包含 4,096 个浮点值或更少的张量（图 7.4），CPU 的性能要么与 GPU 相当，要么更快。
+- en: '![07-04](Images/07-04.png)'
+  id: totrans-139
+  prefs: []
+  type: TYPE_IMG
+  zh: '![07-04](Images/07-04.png)'
+- en: Figure 7.4 For tensors with fewer than 4K values (horizontal axis), the overhead
+    of data transfer to GPU memory can mean GPU performance at 50% of a CPU (vertical
+    axis).
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.4 对于少于 4K 个值的张量（横轴），将数据传输到 GPU 内存的开销可能导致 GPU 性能等于 CPU 性能的 50%。
+- en: 7.5 Scaling up to use GPU cores
+  id: totrans-141
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.5 扩展以使用 GPU 核心
+- en: In this section, you will modify the baseline linear regression implementation
+    from listing 7.4 to take advantage of multiple GPU cores of your compute node.
+    As you learned from section 7.4, to adapt your machine learning code to take advantage
+    of GPUs, you need to ensure that the CUDA device and the device drivers are properly
+    configured for PyTorch by invoking the torch.cuda.is_available() method (listing
+    7.7 ❶), where the available device is assigned to the device variable.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，您将修改列表 7.4 中的基准线性回归实现，以利用计算节点的多个 GPU 核心。 正如您从第 7.4 节中学到的那样，要使您的机器学习代码适应
+    GPU 的优势，您需要确保通过调用 torch.cuda.is_available() 方法正确配置 PyTorch 的 CUDA 设备和设备驱动程序（列表
+    7.7 ❶），其中可用设备被分配给设备变量。
+- en: Listing 7.7 Weak baseline using linear regression
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.7 使用线性回归的弱基准
+- en: '[PRE33]'
+  id: totrans-144
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE33]'
+- en: ❶ Use GPU when the device is available.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 当设备可用时，使用 GPU。
+- en: ❷ Customize the DataLoader to pin the data in memory for accelerated transfer.
+  id: totrans-146
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 自定义 DataLoader 以将数据固定在内存中以加速传输。
+- en: ❷' Initialize the model parameters . . .
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 初始化模型参数...
+- en: ❸ . . . and the model bias to use the GPU device when available and CPU otherwise.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 当可用时，将模型偏差设置为使用 GPU 设备，否则使用 CPU。
+- en: ❽ Transfer the batch data to the GPU device when available, no-op otherwise.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❽ 当 GPU 设备可用时，将批数据传输到 GPU 设备，否则不执行操作。
+- en: 'The remaining changes are highlighted in listing 7.7 ❸—❾. Notice that the DataLoader
+    instantiation is changed to take advantage of the pin_memory parameter ❸. This
+    parameter helps accelerate the transfer of large tensors from CPU memory to GPU
+    by “pinning” virtual memory pages of the operating system to prevent the pages
+    from swapping from physical memory to storage, and vice versa. The remaining changes
+    ❹—❾ are simply to specify the correct device to use with the PyTorch tensors:
+    cuda, if the GPU is available to the PyTorch runtime, and cpu otherwise.'
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 剩余的更改在清单7.7❸—❾中突出显示。请注意，DataLoader的实例化已更改以利用pin_memory参数❸。此参数通过“固定住”操作系统的虚拟内存页面，以防止页面从物理内存交换到存储器，反之亦然，从而帮助加速大张量从CPU内存到GPU的传输。其余的更改❹—❾只是为了指定正确的设备与PyTorch张量一起使用：如果GPU可用于PyTorch运行时，则为cuda，否则为cpu。
+- en: 'Running the code from listing 7.7 should demonstrate a weak baseline as measured
+    by MSE loss:'
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 运行代码清单7.7应该可以通过MSE损失来展示弱基线：
+- en: '[PRE34]'
+  id: totrans-152
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE34]'
+- en: Summary
+  id: totrans-153
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 总结
+- en: 'While using in-memory approaches is faster and more effective for smaller machine
+    learning problems, using out-of-memory techniques enables scalability to larger
+    data sets and larger pools of information technology resources: compute, storage,
+    networking.'
+  id: totrans-154
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在较小的机器学习问题中使用内存中的方法更快且更有效，而使用内存不足的技术可以扩展到更大的数据集和更大的信息技术资源池：计算、存储、网络。
+- en: Using data set batches with gradient descent enables your PyTorch code to scale
+    up to take advantage of the compute resources within a single node and scale out
+    to take advantage of multiple nodes in a compute cluster.
+  id: totrans-155
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用数据集批处理结合梯度下降，使得您的PyTorch代码能够利用单个节点中的计算资源并扩展到利用计算集群中的多个节点。
+- en: PyTorch IterableDataset simplifies the use of batches for out-of-memory and
+    streaming data sets in PyTorch code, while the ObjectStorageDataset utility class
+    provides ready-to-use implementations for out-of-memory data sets.
+  id: totrans-156
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: PyTorch的IterableDataset简化了在PyTorch代码中对于内存不足和流式数据集的批处理的使用，而ObjectStorageDataset实用程序类提供了已经准备好的用于内存不足数据集的实现。
+- en: PyTorch support for GPUs is enabled by CUDA device drivers, providing PyTorch
+    developers with the option to easily scale existing PyTorch code to take advantage
+    of the higher throughput and more parallel compute capabilities of GPUs.
+  id: totrans-157
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: PyTorch对于GPU的支持是由CUDA设备驱动程序实现的，它使得PyTorch开发人员可以轻松地扩展现有的PyTorch代码，以利用GPU的更高吞吐量和更多的并行计算能力。
+- en: A basic linear regression implementation in PyTorch can provide a weak baseline
+    for the expected training mean squared error on the DC taxi data set.
+  id: totrans-158
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在PyTorch中实现基本的线性回归可以为DC出租车数据集上预期的训练均方误差提供一个弱基线。
+- en: ^(1.)The complete list of the storage options supported by ObjectStorageDataset
+    is available from [https:// filesystem-spec.readthedocs.io/en/latest/](https://filesystem-spec.readthedocs.io/en/latest/).
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(1.)ObjectStorageDataset支持的存储选项的完整列表可在此处找到：[https:// filesystem-spec.readthedocs.io/en/latest/](https://filesystem-spec.readthedocs.io/en/latest/)。
+- en: '^(2.)The abstract of the paper along with a link to the PDF version are available
+    from arXiv: [https://arxiv.org/ abs/1502.01852](https://arxiv.org/abs/1502.01852).'
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(2.)论文摘要以及PDF版本的链接可以从arXiv获取：[https://arxiv.org/ abs/1502.01852](https://arxiv.org/abs/1502.01852)。
+- en: '^(3.)The competition website along with the links to the competition results
+    is available here: [http://mng.bz/Koqj](http://mng.bz/Koqj).'
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(3.)比赛网站以及比赛结果的链接可在此处找到：[http://mng.bz/Koqj](http://mng.bz/Koqj)。
+- en: '^(4.)As described by Alex Krizhevsky’s paper: [http://www.cs.toronto.edu/~hinton/absps/imagenet.pdf](http://www.cs.toronto.edu/~hinton/absps/imagenet.pdf).'
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(4.)如Alex Krizhevsky的论文所述：[http://www.cs.toronto.edu/~hinton/absps/imagenet.pdf](http://www.cs.toronto.edu/~hinton/absps/imagenet.pdf)。
+- en: ^(5.)Google has developed a tensor processing unit (TPU) designed to accelerate
+    tensor operations.
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(5.)谷歌开发了一种用于加速张量操作的张量处理单元（TPU）。
+- en: ^(6.)For detailed documentation about PyTorch dtypes and the corresponding CPU
+    and GPU tensor implementation, refer to [http://mng.bz/9an7](http://mng.bz/9an7).
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(6.)关于PyTorch数据类型（dtypes）以及相应的CPU和GPU张量实现的详细文档，请参考[http://mng.bz/9an7](http://mng.bz/9an7)。
+- en: '^(7.)The device parameter is available for all PyTorch tensor creation operations
+    and documented here: [http:// mng.bz/jj8r](http://mng.bz/jj8r).'
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ^(7.)设备参数对于所有PyTorch张量的创建操作都可用，并在此处记录：[http:// mng.bz/jj8r](http://mng.bz/jj8r)。

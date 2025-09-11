@@ -1,0 +1,1381 @@
+- en: Appendix C. Creating an HPO service with Kubeflow Katib
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 附录 C. 创建使用 Kubeflow Katib 的 HPO 服务
+- en: We will introduce you to an open source hyperparameter optimization (HPO) service—Kubeflow
+    Katib—that addresses virtually all the HPO requirements we discussed in chapter
+    5\. We strongly recommend that you consider adopting Katib before building your
+    HPO service. Along with showing you how to use Katib, we will also cover its system
+    design and its codebase to make you comfortable with the open source service.
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们将向您介绍一个开源的超参数优化（HPO）服务——Kubeflow Katib，它满足了我们在第 5 章讨论的几乎所有 HPO 要求。我们强烈建议您在构建自己的
+    HPO 服务之前考虑采用 Katib。除了向您展示如何使用 Katib 外，我们还将介绍其系统设计和代码库，以使您对这个开源服务感到舒适。
+- en: As a member of the Kubeflow family, Katib is a cloud-native, scalable, and production-ready
+    hyperparameter optimization system. In addition, Katib is agnostic to the machine
+    learning framework or programming language. Also, Katib is written in Go, takes
+    a Kubernetes-native approach, and runs standalone in a Kubernetes cluster. In
+    addition to hyperparameter optimization with early stopping support, Katib supports
+    neural architecture search (NAS).
+  id: totrans-2
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为 Kubeflow 家族的一员，Katib 是一个云原生、可扩展且可投入生产的超参数优化系统。此外，Katib 不关心机器学习框架或编程语言。此外，Katib
+    是用 Go 编写的，采用 Kubernetes 本地方法，可以在 Kubernetes 集群中独立运行。除了支持具有早期停止支持的超参数优化外，Katib
+    还支持神经架构搜索（NAS）。
+- en: 'There are many advantages to Katib, including its ability to support multitenancy
+    and distributed training, its cloud nativeness, and its extensibility, all of
+    which distinguish it from other systems. No matter if you manage your server cluster
+    using Kubernetes in the cloud or on your local server, Katib is the best choice.
+    In this chapter, we will tour Katib in the following five steps: Katib overview,
+    how to use Katib, Katib system design and code reading, expediting HPO execution,
+    and adding customized HPO algorithms to Katib.'
+  id: totrans-3
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 有许多优点，包括其支持多租户和分布式训练的能力、其云原生性以及其可扩展性，所有这些都使其与其他系统有所区别。无论您是在云中还是在本地服务器上使用
+    Kubernetes 管理服务器集群，Katib 都是最佳选择。在本章中，我们将以以下五个步骤介绍 Katib：Katib 概述、如何使用 Katib、Katib
+    系统设计和代码阅读、加速 HPO 执行以及向 Katib 添加自定义 HPO 算法。
+- en: C.1 Katib overview
+  id: totrans-4
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.1 Katib 概览
+- en: Katib manages HPO experiments and computing resources in a black-box fashion,
+    so Katib users only need to provide training code and define the HPO execution
+    plan, and then Katib will take care of the rest. Figure C.1 shows Katib’s system
+    overview.
+  id: totrans-5
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 以黑盒方式管理 HPO 实验和计算资源，因此 Katib 用户只需要提供训练代码并定义 HPO 执行计划，然后 Katib 就会处理其余事务。图
+    C.1 显示了 Katib 的系统概述。
+- en: '![](../Images/C-1.png)'
+  id: totrans-6
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/C-1.png)'
+- en: 'Figure C.1 Katib system overview. Katib components run as Kubernetes native
+    services, and Katib supports three types of user interfaces: UI, API, and SDK.'
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 C.1 Katib 系统概述。Katib 组件作为 Kubernetes 本地服务运行，并且 Katib 支持三种类型的用户界面：UI、API 和
+    SDK。
+- en: 'In figure C.1, we see that Katib exposes three types of user interfaces for
+    the user’s convenience: a web UI, a Python SDK, and a set of APIs. Users can run
+    HPO via a web page, a Jupyter notebook, Kubernetes commands, and an HTTP request.'
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图 C.1 中，我们看到 Katib 为用户的方便性提供了三种类型的用户界面：一个 Web UI，一个 Python SDK，以及一组 API。用户可以通过网页、Jupyter
+    笔记本、Kubernetes 命令和 HTTP 请求来运行 HPO。
+- en: 'From a user perspective, Katib is a remote system. To run HPO, a user submits
+    an experiment request to Katib, and Katib executes the HPO experiment for them.
+    To build the experiment request, users need to do two things: first, Dockerize
+    the training code and expose the hyperparameters they want to optimize as external
+    variables; second, create an experiment object that defines the spec of the HPO
+    experiment, such as HPO algorithm, trial budget, or hyperparameters and their
+    value search space. Once the experiment object is created inside Katib, Katib
+    will allocate computing resources to start the HPO execution.'
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从用户的角度来看，Katib 是一个远程系统。要运行 HPO，用户需要向 Katib 提交一个实验请求，然后 Katib 为他们执行 HPO 实验。要构建实验请求，用户需要做两件事：首先，将训练代码制作成
+    Docker 镜像，并将要优化的超参数暴露为外部变量；其次，创建一个实验对象，定义 HPO 实验的规范，如 HPO 算法、试验预算或超参数及其值搜索空间。一旦实验对象在
+    Katib 中创建完成，Katib 将分配计算资源以启动 HPO 执行。
+- en: Katib runs inside a Kubernetes cluster. Katib service itself doesn’t consume
+    a lot of memory or disk space; it launches Kubernetes pod to run model training
+    jobs (HPO trials) for testing different hyperparameter suggestions. Katib can
+    run training jobs in different namespaces for different users to create resource
+    segregation.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 在 Kubernetes 集群内部运行。Katib 服务本身并不消耗大量内存或磁盘空间；它启动 Kubernetes pod 来运行模型训练作业（HPO
+    试验）以测试不同的超参数建议。Katib 可以在不同的命名空间为不同的用户运行训练作业，以创建资源隔离。
+- en: C.2 Getting started with Katib
+  id: totrans-11
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.2 使用 Katib 入门
+- en: In this section, we will look at how to operate Katib. First, we install Katib
+    locally and then explain the terms, and finally, we show you a Katib end-to-end
+    use case.
+  id: totrans-12
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将看一下如何操作 Katib。首先，我们在本地安装 Katib，然后解释术语，最后，我们向您展示一个 Katib 的端到端使用案例。
+- en: Why talk about Katib operation and installation in a design book?
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为什么在设计书中谈论 Katib 操作和安装呢？
+- en: Ideally, we don’t want to include installation and user guides for software
+    in a design book, because this information might become stale right after the
+    book is published, and we can find the living doc on its official website. Here
+    are two reasons why we violated our rules.
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 理想情况下，我们不希望在设计书中包含软件的安装和用户指南，因为这些信息在书出版后可能会过时，并且我们可以在官方网站上找到实时的文档。以下是我们违反规则的两个原因。
+- en: First, because we recommend you use Katib instead of building your own service,
+    we are obligated to show you the complete user experience, both from the perspective
+    of a Katib user (a data scientist) and a Katib operator (an engineer). Second,
+    to understand Katib's design and learn how to read its codebase, it's best to
+    first explain its terminology and typical user workflow. Once you comprehend how
+    Katib works, you'll have a much easier time reading its code.
+  id: totrans-15
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，因为我们建议您使用 Katib 而不是构建您自己的服务，我们有责任向您展示完整的用户体验，既从 Katib 用户（数据科学家）的角度，又从 Katib
+    运营者（工程师）的角度。其次，为了理解 Katib 的设计并学习如何阅读其代码库，最好先解释其术语和典型用户工作流程。一旦你理解了 Katib 的工作原理，阅读其代码就会更容易。
+- en: 'C.2.1 Step 1: Installation'
+  id: totrans-16
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.1 第一步：安装
+- en: 'If you install the Kubeflow system ([https://mng.bz/WAp4](https://mng.bz/WAp4)),
+    then Katib is included. But if you are only interested in HPO, you can install
+    Katib standalone. Katib is actively evolving and well maintained, so please check
+    its official installation document “Getting Started with Katib: Installing Katib”
+    ([http://mng.bz/81YZ](http://mng.bz/81YZ)) for the up-to-date installation tips.'
+  id: totrans-17
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '如果您安装了 Kubeflow 系统 ([https://mng.bz/WAp4](https://mng.bz/WAp4))，那么 Katib 已包含在内。但如果您只对
+    HPO 感兴趣，您可以单独安装 Katib。Katib 正在积极发展和得到良好维护，所以请查看其官方安装文档 “Getting Started with Katib:
+    Installing Katib” ([http://mng.bz/81YZ](http://mng.bz/81YZ))，获取最新的安装提示。'
+- en: 'C.2.2 Step 2: Understanding Katib terms'
+  id: totrans-18
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.2 第二步：理解 Katib 术语
+- en: For a Katib user, experiment, suggestion, and trial are the three most important
+    entities/concepts with which to familiarize yourself. The definitions are as follows.
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于 Katib 用户来说，实验、建议和试验是需要熟悉的三个最重要的实体/概念。定义如下。
+- en: Experiment
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实验
+- en: 'An experiment is a single optimization run; it is an end-to-end HPO process.
+    An experiment configuration contains the following main components: a Docker image
+    for training code, an objective metric (aka target value) for what we want to
+    optimize, hyperparameters to tune, and a value search space and HPO algorithm.'
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个实验是单一的优化运行；它是一个端到端的 HPO 过程。一个实验配置包含以下主要组件：用于训练代码的 Docker 镜像，一个我们要优化的客观指标（也称为目标值），需要调整的超参数，以及一个值搜索空间和
+    HPO 算法。
+- en: Suggestion
+  id: totrans-22
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 建议
+- en: A suggestion is a set of hyperparameter values that the HPO algorithm has proposed.
+    Katib creates a trial job to evaluate the suggested set of values.
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个建议是一个由 HPO 算法提出的一组超参数值。Katib 创建一个试验作业来评估建议的值集。
+- en: Trial
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 试验
+- en: A trial is one iteration of the experiment. A trial takes one suggestion, executes
+    a training process (a trial job) to produce a model, and evaluates the model performance.
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 试验是实验的一次迭代。一次试验会接受一个建议，执行一个训练过程（一个试验作业）以产生一个模型，并评估模型的性能。
+- en: Each experiment runs a trial loop. The experiment keeps scheduling new trials
+    until either the objective is met or the configured maximum number of trials is
+    reached. You can see more of Katib concepts’ explanation in Katib’s official doc
+    “Introduction to Katib” ([http://mng.bz/ElBo](http://mng.bz/ElBo)).
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 每个实验都运行一个试验循环。实验会持续调度新的试验，直到达到客观目标或者配置的最大试验数。您可以在 Katib 官方文档 “Introduction to
+    Katib” ([http://mng.bz/ElBo](http://mng.bz/ElBo)) 中看到更多的 Katib 概念解释。
+- en: 'C.2.3 Step 3: Packaging training code to Docker image'
+  id: totrans-27
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.3 第三步：将训练代码打包为 Docker 镜像
+- en: Compared to the HPO library approaches (section 5.4), the biggest difference
+    is that the HPO service approach requires us to package model training code to
+    a Docker image. This is because the HPO service needs to run the HPO training
+    experiment in a remote cluster, and a Docker image is the ideal method to run
+    the model training code remotely.
+  id: totrans-28
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与超参数优化库的方法相比（第 5.4 节），最大的区别在于优化服务方法要求我们将模型训练代码打包成一个 Docker 镜像。这是因为优化服务需要在远程集群中运行优化训练实验，而
+    Docker 镜像是在远程运行模型训练代码的理想方法。
+- en: 'There are two things we need to pay attention to when preparing the Docker
+    image: defining hyperparameters as command-line arguments of the training code
+    and reporting training metrics to Katib. Let’s look at an example.'
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在准备 Docker 镜像时，有两个需要注意的地方：将超参数定义为训练代码的命令行参数，以及将训练指标报告给 Katib。让我们来看一个例子。
+- en: 'First, we define the hyperparameters needed to be optimized as command-line
+    arguments in the training code. Because Katib needs to execute the training code
+    as a docker container for different hyperparameter values, the training code needs
+    to take the hyperparameter value from the command-line arguments. In the next
+    code example, we define two hyperparameters to tune: lr (learning rate) and batch
+    size. During the HPO process, Katib will pass in the values at the training container
+    launching time; see the code that follows:'
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们在训练代码中将需要优化的超参数定义为命令行参数。因为 Katib 需要为不同的超参数值执行训练代码作为一个 docker 容器，所以训练代码需要从命令行参数中获取超参数值。在下面的代码示例中，我们定义了两个要调整的超参数：lr（学习率）和批量大小。在优化过程中，Katib
+    将在训练容器启动时传入这些值；请参见以下代码：
+- en: '[PRE0]'
+  id: totrans-31
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ Parses the hyperparameter value from the command line arguments
+  id: totrans-32
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 从命令行参数解析超参数值
+- en: 'Second, we let the training code report training metrics, especially the objective
+    metrics, to Katib, so it can track the progress and result of each trial execution.
+    Katib can collect metrics from the following three places: stdout (OS standard
+    output location), an arbitrary file, and TensorFlow events. If you have special
+    metric collection or storage requirements, you can also write your own metric
+    collection container.'
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 其次，我们让训练代码报告训练指标，尤其是目标指标，给 Katib，这样它就可以跟踪每个试验执行的进度和结果。Katib 可以从以下三个位置收集指标：stdout（操作系统的标准输出位置），任意文件和
+    TensorFlow 事件。如果你有特殊的指标收集或存储要求，也可以编写自己的指标收集容器。
+- en: 'The simplest option is to print evaluation (objective) metrics to stdout from
+    your training code and collect them with Katib’s standard metrics collector. For
+    example, if we define our objective metric as `Validation-accuracy` and want the
+    HPO process to find optimal HP to minimize this value, we can write the following
+    logs to stdout. Katib standard metric collector will detect `Validation-accuracy=0.924463`
+    in the stdout and parse the value. See a sample stdout output as follows:'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最简单的选项是将评估（目标）指标打印到训练代码的标准输出（stdout）中，并使用 Katib 的标准指标收集器收集它们。例如，如果我们将目标指标定义为`Validation-accuracy`，并希望优化过程找到最小化此值的最优超参数，我们可以将以下日志写入到
+    stdout 中。Katib 的标准指标收集器将在 stdout 中检测到`Validation-accuracy=0.924463`，并将解析该值。如下所示是标准输出样本：
+- en: '[PRE1]'
+  id: totrans-35
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: The default regex format Katib uses to parse objective metrics from the log
+    is `([\w|-]+)\s*=\s*([+-]?\d*(\.\d+)?([Ee][+-]?\d+)?)`. You can define your own
+    regex format at `.source.filter.metricsFormat` in the experiment configuration
+    file. Please check out the Metrics Collector section ([http://mng.bz/NmvN](http://mng.bz/NmvN))
+    of the Katib doc “Running an Experiment” for more details.
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 默认使用的正则表达式格式来解析日志中的目标指标是`([\w|-]+)\s*=\s*([+-]?\d*(\.\d+)?([Ee][+-]?\d+)?)`。您可以在实验配置文件的`.source.filter.metricsFormat`中定义自己的正则表达式格式。更多详细信息，请参阅
+    Katib 文档“运行实验”的指标收集器部分（[http://mng.bz/NmvN](http://mng.bz/NmvN)）。
+- en: To get you started, Katib provides a list of sample training codes and sample
+    Docker image files to show you how to package your training code. These examples
+    are written for different training frameworks, such as TensorFlow, PyTorch, MXNet,
+    and more. You can find these samples in the Katib GitHub repo ([http://mng.bz/DZln](http://mng.bz/DZln)).
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了帮助你入门，Katib 提供了一系列示例训练代码和示例 Docker 镜像文件，以展示如何打包你的训练代码。这些示例是为不同的训练框架编写的，如 TensorFlow、PyTorch、MXNet
+    等。你可以在 Katib 的 GitHub 仓库中找到这些示例（[http://mng.bz/DZln](http://mng.bz/DZln)）。
+- en: 'C.2.4 Step 4: Configuring an experiment'
+  id: totrans-38
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.4 第四步：配置一个实验
+- en: Now that you have the training code ready, we can start to prepare an HPO experiment
+    in Katib. We just need to create an Experiment CRD (customer resource definition)
+    object in Katib.
+  id: totrans-39
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在你已经准备好了训练代码，我们可以开始在Katib中准备一个HPO实验。我们只需要在Katib中创建一个实验CRD（customer resource
+    definition）对象。
+- en: By using Kubernetes API or the `kubectl` command, we can create the experiment
+    CRD by specifying a YAML configuration. See the following config as an example.
+    For ease of reading, we divided the sample config into three chunks. Let’s go
+    over each chunk individually.
+  id: totrans-40
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过使用Kubernetes API或`kubectl`命令，我们可以通过指定一个YAML配置来创建实验CRD。以下是一个示例配置。为了便于阅读，我们将示例配置分成了三个部分。我们逐个部分讨论一下。
+- en: 'First section: Objective'
+  id: totrans-41
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第一部分：目标
+- en: The first section is to define the goal of an HPO experiment and determine how
+    to measure the performance of each trial (training execution). Katib uses the
+    value of `objectiveMetric` and `additionalMetric` as the objective value to monitor
+    how the suggested hyperparameters work with the model. If the objective value
+    in a trial reaches the goal, Katib will mark the suggested hyperparameters as
+    the best value and stop further trials in the experimentation.
+  id: totrans-42
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '第一部分是定义HPO实验的目标，并确定如何衡量每个试验（训练执行）的性能。Katib使用`objectiveMetric`和`additionalMetric`的值作为目标值，以监控建议的超参数与模型的配合情况。如果一个试验的目标值达到了目标，Katib将将建议的超参数标记为最佳值，并停止进一步的试验。 '
+- en: 'For the following configuration, the objective metric is set as `Validation-accuracy`
+    and the goal is set to `0.99`:'
+  id: totrans-43
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于以下配置，目标指标被设置为`Validation-accuracy`，目标值为`0.99`：
+- en: '[PRE2]'
+  id: totrans-44
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ Defines the objective metric
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 定义了目标指标
+- en: 'Second section: The HPO algorithm and hyperparameters'
+  id: totrans-46
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第二部分：HPO算法和超参数
+- en: After setting the HPO objective, we can configure the HPO algorithm and declare
+    their search spaces and the hyperparameters that need to be tuned. Let’s look
+    at these configs separately.
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 设置完HPO的目标后，我们可以配置HPO算法并声明它们的搜索空间以及需要调整的超参数。我们分别来看这些配置。
+- en: The *algorithm config* specifies the HPO algorithm we want Katib to use for
+    the experiment. In the current example, we chose the Bayesian optimization algorithm
+    ([http://mng.bz/lJw6](http://mng.bz/lJw6)). Katib supports many cutting-edge HPO
+    algorithms; you can see them in the Katib official doc “Running an Experiment”
+    in the section Search Algorithm in Detail ([http://mng.bz/BlV0](http://mng.bz/BlV0)).
+    You can also add your own HPO algorithm to Katib, which we will discuss in section
+    C.5.
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*algorithm config*指定了我们希望Katib在实验中使用的HPO算法。在当前的示例中，我们选择了贝叶斯优化算法（[http://mng.bz/lJw6](http://mng.bz/lJw6)）。Katib支持许多最新的HPO算法，你可以在Katib官方文档的“Running
+    an Experiment”一节的Search Algorithm in Detail中看到它们（[http://mng.bz/BlV0](http://mng.bz/BlV0)）。你还可以将自己的HPO算法添加到Katib中，我们将在C.5节中讨论。'
+- en: '`ParallelTrialCount`, `maxTrialCount`, and `maxFailedTrialCount`: are self-explanatory
+    by their names, which define how the trials are scheduled for experimentation.
+    In this example, we run three trials in parallel, with a total of 12 trials. The
+    experiment stops if we have three failed trials.'
+  id: totrans-49
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`ParallelTrialCount`、`maxTrialCount`和`maxFailedTrialCount`：根据它们的名称，可以自解释地定义试验如何安排实验。在这个示例中，我们并行运行了三个试验，共进行了12个试验。如果有三个试验失败，实验将停止。'
+- en: 'The *parameters config* defines the hyperparameters to tune and their value
+    search space. Katib selects hyperparameter values in the search space based on
+    the hyperparameter tuning algorithm that you specified. See the following code:'
+  id: totrans-50
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '*parameters config*定义了要调整的超参数及其值的搜索空间。Katib根据你指定的超参数调整算法在搜索空间中选择超参数的值。请参考以下代码：'
+- en: '[PRE3]'
+  id: totrans-51
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: ❶ Uses the Bayesian optimization algorithm provided by Katib
+  id: totrans-52
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 使用了Katib提供的贝叶斯优化算法
+- en: ❷ Defines hyperparameters to optimize and their value search space
+  id: totrans-53
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 定义了要优化的超参数及其值的搜索空间
+- en: 'Last section: Trial configuration'
+  id: totrans-54
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后一节：试验配置
+- en: In this *trial template* *config*, we define what training code (Docker image)
+    to execute and what hyperparameters are passed to the training code. Katib has
+    built-in jobs for almost every model training framework—such as TensorFlow, PyTorch
+    MXNet job types, and more—which takes care of the actual training execution in
+    Kubernetes.
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个*trial template config*中，我们定义了要执行的训练代码（Docker镜像）和要传递给训练代码的超参数。Katib为几乎每个模型训练框架（如TensorFlow、PyTorch、MXNet等）都内置了作业，它负责在Kubernetes中执行实际的训练。
+- en: For example, if we want to run distributed training in an HPO trial for a PyTorch
+    training code, which requires setting up a distributed group, we can define the
+    trial as a PyTorch job type. Katib will run the distributed training for you.
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，如果我们想要在 PyTorch 训练代码的 HPO 试验中运行分布式训练，需要设置一个分布式组，我们可以将试验定义为 PyTorch 作业类型。Katib
+    将为您运行分布式训练。
+- en: 'In the following example, we define the trial as the default job type `Kubernetes`
+    `Job`. In the experimentation, Katib will run the trial job as a Kubernetes pod,
+    using no special customized configuration for the training code; see the code
+    as follows:'
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在以下示例中，我们将试验定义为默认的作业类型 `Kubernetes Job`。在实验过程中，Katib 将以 Kubernetes Pod 的形式运行试验作业，无需对训练代码进行任何特殊的自定义配置；请参阅以下代码：
+- en: '[PRE4]'
+  id: totrans-58
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Declares hyperparameters for the training code
+  id: totrans-59
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 为训练代码声明超参数
+- en: ❷ Configures the training container
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 配置训练容器
+- en: ❸ Configures how to execute the training code
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 配置如何执行训练代码
+- en: 'Katib provides sample experiment configuration files for each HPO algorithm
+    it supports; you can find them in the Katib GitHub repo: `katib/examples/v1beta1/hp-tuning/`
+    ([http://mng.bz/dJVN](http://mng.bz/dJVN))'
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 为其支持的每个 HPO 算法提供了示例实验配置文件；您可以在 Katib GitHub 仓库中找到它们：`katib/examples/v1beta1/hp-tuning/`
+    ([http://mng.bz/dJVN](http://mng.bz/dJVN))
+- en: 'C.2.5 Step 5: Start the experiment'
+  id: totrans-63
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.5 步骤 5：开始实验
+- en: 'Once we define the experiment configuration and save it in a YAML file, we
+    can run the following command to start the experiment:'
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦我们定义了实验配置并将其保存在 YAML 文件中，我们可以运行以下命令来启动实验：
+- en: '[PRE5]'
+  id: totrans-65
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: From the return message of the `kubectl` `get` `experiment` `-n` `kubeflow`,
+    we see the experiment `bayesian-optimization` is created as an Experiment CRD
+    resource. From now on, Katib will own the HPO experiment completely until a result
+    is obtained.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从 `kubectl get experiment -n kubeflow` 的返回消息中，我们看到实验 `bayesian-optimization`
+    被创建为 Experiment CRD 资源。从现在开始，Katib 将完全拥有 HPO 实验，直到获得结果。
+- en: Note Katib completely relies on Kubernetes CRD objects to manage the HPO experiments
+    and trials. It also uses CRD objects to store metrics and status for its HPO activities,
+    so we say Katib is a Kubernetes native application.
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 请注意，Katib 完全依赖于 Kubernetes CRD 对象来管理 HPO 实验和试验。它还使用 CRD 对象来存储其 HPO 活动的指标和状态，因此我们说
+    Katib 是一个 Kubernetes 原生应用程序。
+- en: Besides the previous `kubectl` commands, we can also start an experiment by
+    using Katib SDK, by using its web UI, or by sending HTTP requests.
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了上述 `kubectl` 命令之外，我们还可以使用 Katib SDK、其 Web UI 或发送 HTTP 请求来启动实验。
+- en: 'C.2.6 Step 6: Query progress and result'
+  id: totrans-69
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.6 步骤 6：查询进度和结果
+- en: 'You can check the experiment running status by using the following commands:'
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您可以使用以下命令来检查实验的运行状态：
+- en: '[PRE6]'
+  id: totrans-71
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: 'The `kubectl` `describe` command will return all the information about the
+    experiment, such as its configuration, metadata, and status. From a progress tracking
+    perspective, we are mostly interested in the status section. See the following
+    example:'
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`kubectl describe` 命令将返回有关实验的所有信息，例如其配置、元数据和状态。从进度跟踪的角度来看，我们主要关注状态部分。请参阅以下示例：'
+- en: '[PRE7]'
+  id: totrans-73
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ Experiment history
+  id: totrans-74
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 实验历史
+- en: ❷ Metadata of the current best trial
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 当前最佳试验的元数据
+- en: ❸ The objective metrics of the current best trial
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 当前最佳试验的目标度量
+- en: ❹ Hyperparameters’ value used in the current best trial
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 当前最佳试验中使用的超参数值
+- en: ❺ The list of finished trials
+  id: totrans-78
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 已完成试验列表
+- en: 'Here are a few explanations of the previous sample response:'
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下是对前面示例响应的几点解释：
+- en: '*Status/conditions*—Shows current and previous states. In the previous example,
+    we see that the experiment went through three states: created, ran, and succeeded.
+    From the message, we know the experiment completes because it runs out the training
+    budget—the max trial count.'
+  id: totrans-80
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*状态/条件*—显示当前和以前的状态。在前面的示例中，我们看到实验经历了三个状态：创建、运行和成功。从消息中，我们知道实验已完成，因为它用完了训练预算——最大试验计数。'
+- en: '*Current optimal trial*—Displays the current “best” trial and the hyperparameter
+    values the trial used. It also shows the statistics of the objective metrics.
+    As the experiment progresses, these values will keep updating until all the trials
+    in the experiment are completed, and then we take `status.currentOptimalTrial
+    .parameterAssignment` (the hyperparameter value assignment) as the final result.'
+  id: totrans-81
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*当前最佳试验*—显示当前的“最佳”试验以及试验使用的超参数值。它还显示目标度量的统计信息。随着实验的进行，这些值将不断更新，直到实验中的所有试验都完成，然后我们将
+    `status.currentOptimalTrial.parameterAssignment`（超参数值分配）作为最终结果。'
+- en: '*Succeeded trial lists/failed trial lists/trials*—Shows how the experiment
+    is progressing by listing all the trials the experiment executes.'
+  id: totrans-82
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*成功的试验列表/失败的试验列表/试验*—通过列出实验执行的所有试验来显示实验的进展情况。'
+- en: 'C.2.7 Step 7: Troubleshooting'
+  id: totrans-83
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.2.7 步骤 7：故障排除
+- en: 'If there are failed trials, we can run the following command to check the error
+    message of the failed trial job. See the failed HPO example as follows:'
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果有失败的试验，我们可以运行以下命令来检查失败的试验作业的错误消息。参见以下失败的 HPO 示例：
+- en: '[PRE8]'
+  id: totrans-85
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: ❶ Failure message
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 失败消息
+- en: From the return data, we can see the hyperparameter values used in the trial
+    and the associated error message.
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从返回的数据中，我们可以看到试验中使用的超参数值以及相关的错误消息。
+- en: 'Besides the error message from the `describe` command, we can also find the
+    root cause by checking the logs of the training container. If you choose to use
+    the Katib standard metric collector, Katib will run a `metrics-logger-and-collector`
+    container with your training code container in the same pod. That metric collector
+    captures all the stdout logging from your training container; you can check these
+    logs by using the following command: `kubectl` `logs` `${trial_pod}` `-c` `metrics-logger-and-collector`
+    `-n` `kubeflow`. See a sample command as follows:'
+  id: totrans-88
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了 `describe` 命令的错误消息外，我们还可以通过检查训练容器的日志来找到根本原因。如果选择使用 Katib 标准度量收集器，Katib 将在同一
+    pod 中的训练代码容器中运行 `metrics-logger-and-collector` 容器。该度量收集器捕获来自训练容器的所有 stdout 日志；您可以使用以下命令检查这些日志：`kubectl
+    logs ${trial_pod} -c metrics-logger-and-collector -n kubeflow`。参见以下示例命令：
+- en: '[PRE9]'
+  id: totrans-89
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: 'The `logs` command outputs lots of valuable information, such as initial parameters
+    to the training process, dataset download results, and model training metrics.
+    In the following sample log output, we can see `Validation-accuracy` and `Train-accuracy`.
+    Katib metric collector will parse these values out because they are defined as
+    the objective metric in the experiment configuration:'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`logs` 命令输出大量有价值的信息，例如训练过程的初始参数，数据集下载结果和模型训练指标。在以下示例日志输出中，我们可以看到 `Validation-accuracy`
+    和 `Train-accuracy`。Katib 度量收集器将解析这些值，因为它们在实验配置中被定义为目标度量：'
+- en: '[PRE10]'
+  id: totrans-91
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: ❶ Trial name
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 试验名称
+- en: ❷ Initial parameters of the training trial
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 训练试验的初始参数
+- en: ❸ Dataset download
+  id: totrans-94
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 数据集下载
+- en: ❹ Additional metric value
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 附加度量值
+- en: ❺ Objective metric value
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 目标度量值
+- en: C.3 Expedite HPO
+  id: totrans-97
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.3 加速 HPO
+- en: 'HPO is a time-consuming and expensive operation. Katib offers three methods
+    to expedite the process: parallel trials, distributed training, and early stopping.'
+  id: totrans-98
+  prefs: []
+  type: TYPE_NORMAL
+  zh: HPO 是一项耗时且昂贵的操作。Katib 提供了三种方法来加速该过程：并行试验，分布式训练和提前停止。
+- en: C.3.1 Parallel trials
+  id: totrans-99
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.3.1 并行试验
+- en: By specifying `parallelTrialCount` in the experiment configuration, you can
+    run trials parallelly. One thing we should be aware of is that some HPO algorithms
+    don’t support parallel trial execution. Because this type of algorithm has a linear
+    requirement on the trial execution sequence, the next trial needs to wait until
+    the current trial completes.
+  id: totrans-100
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过在实验配置中指定 `parallelTrialCount`，您可以并行运行试验。我们应该注意的一件事是，一些 HPO 算法不支持并行试验执行。因为这种类型的算法对试验执行顺序有线性要求，下一个试验需要等到当前试验完成。
+- en: C.3.2 Distributed trial (training) job
+  id: totrans-101
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.3.2 分布式试验（训练）作业
+- en: To get trial jobs completed faster, Katib allows us to enable distributed training
+    for running training code. As we explained in C.2 (step 4), Katib defines different
+    job types in `trialTemplate` for different training frameworks, such as PyTorch,
+    TensorFlow, and MXNet.
+  id: totrans-102
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了更快完成试验作业，Katib 允许我们为运行训练代码启用分布式训练。正如我们在 C.2（步骤 4）中所解释的那样，Katib 为不同的训练框架（如
+    PyTorch、TensorFlow 和 MXNet）在 `trialTemplate` 中定义了不同的作业类型。
+- en: 'The following is an example of how to enable distributed training (one master,
+    two workers) for a PyTorch training code in the Katib experiment:'
+  id: totrans-103
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下是如何为 Katib 实验中的 PyTorch 训练代码启用分布式训练（一个主节点，两个工作节点）的示例：
+- en: '[PRE11]'
+  id: totrans-104
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: ❶ Declares learning rate and momentum as hyperparameters
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将学习率和动量声明为超参数
+- en: ❷ Sets the trial job type as PyTorch
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将试验作业类型设置为 PyTorch
+- en: ❸ Configures the master trainer
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 配置主训练器
+- en: ❹ Configures the worker trainer
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 配置工作训练器
+- en: 'In the previous example, we see the only difference compared to the nondistributed
+    experiment configuration in section C.2 (step 4) is the `trialSpec` section. The
+    job type now changes to `PyTorchJob`, and it has separate settings, such as replicas
+    numbers, for the master and worker trainer. You can find the details of the Katib
+    training operator and their configuration examples in the following two GitHub
+    repositories: Kubeflow training operator ([https://github.com/kubeflow/training-operator](https://github.com/kubeflow/training-operator))
+    and Katib operator configuration examples ([http://mng.bz/rdgB](http://mng.bz/rdgB)).'
+  id: totrans-109
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在前面的示例中，与第 C.2 节中的非分布式实验配置相比（步骤 4），唯一的区别是 `trialSpec` 部分。作业类型现在变为 `PyTorchJob`，并且具有主训练器和工作训练器的副本数等单独的设置。您可以在以下两个
+    GitHub 仓库中找到 Katib 训练操作符及其配置示例的详细信息：Kubeflow 训练操作符（[https://github.com/kubeflow/training-operator](https://github.com/kubeflow/training-operator)）和
+    Katib 操作符配置示例（[http://mng.bz/rdgB](http://mng.bz/rdgB)）。
+- en: C.3.3 Early stopping
+  id: totrans-110
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.3.3 早期停止
+- en: Another useful trick Katib offers is early stopping. Early stopping ends the
+    trial when its objective metric(s) no longer improves. It saves computing resources
+    and reduces execution times by cutting off the unpromising trials.
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 提供的另一个有用技巧是早期停止。当试验的目标指标不再改善时，早期停止结束试验。它通过终止不太有希望的试验来节省计算资源并减少执行时间。
+- en: The advantage of using early stopping in Katib is that we only need to update
+    our experiment configuration file without modifying our training code. Simply
+    define `.earlyStopping.algorithmName` and `.earlyStopping.algorithmSettings` in
+    the `.spec.algorithm` section and you are good to go.
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 Katib 中使用早期停止的优点是我们只需要更新实验配置文件，而不需要修改训练代码。只需在 `.spec.algorithm` 部分中定义 `.earlyStopping.algorithmName`
+    和 `.earlyStopping.algorithmSettings`，您就可以开始使用了。
+- en: The current early stopping algorithm Katib supports is median stopping rules,
+    which stops a trial if the trial’s best objective value is worse than the median
+    value of the running averages of all other completed trials’ objectives reported
+    up to the same step. Please read more details in the Katib official doc “Using
+    Early Stopping.”
+  id: totrans-113
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 当前支持的早期停止算法是中位数停止规则，如果试验的最佳目标值比所有其他已完成试验的目标报告到相同步骤的运行平均值的中位数值更差，则停止试验。请在
+    Katib 官方文档“使用早期停止”中阅读更多详细信息。
+- en: C.4 Katib system design
+  id: totrans-114
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.4 Katib 系统设计
+- en: Finally, we can talk about our favorite topic—system design. By reading sections
+    C.2 and C.3, you should have a clear sense of how Katib solves HPO problems from
+    a user perspective. This builds a great foundation for understanding Katib’s system
+    design.
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后，我们可以谈谈我们最喜欢的话题——系统设计。通过阅读第 C.2 节和第 C.3 节，您应该对 Katib 如何从用户角度解决 HPO 问题有一个清晰的了解。这为理解
+    Katib 的系统设计打下了良好的基础。
+- en: As we have seen, Katib is not only solving the HPO problem but also addressing
+    it in production quality. Normally, such a powerful system has a large and complicated
+    codebase, but Katib is an exception. Because the core Katib’s components are all
+    implemented in a sample design pattern—Kubernetes controller/operator pattern—if
+    you understand one component, you understand almost the entire system. By following
+    our introduction in this section, reading the Katib source code will be straightforward
+    for you.
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们所见，Katib 不仅解决了 HPO 问题，而且还以生产质量来解决它。通常，这样一个功能强大的系统具有庞大而复杂的代码库，但是 Katib 是一个例外。因为核心
+    Katib 组件都是按照一个简单的设计模式——Kubernetes 控制器/操作器模式来实现的，如果您理解一个组件，您几乎就理解了整个系统。通过在本节中阅读我们的介绍，阅读
+    Katib 源代码对您来说将会很简单。
+- en: C.4.1 Kubernetes controller/operator pattern
+  id: totrans-117
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.4.1 Kubernetes 控制器/操作器模式
+- en: We have discussed the controller design pattern in section 3.4.2\. However,
+    to help you remember, we reposted figure 3.10 as figure C.2 here. If figure C.2
+    doesn’t look familiar, please revisit section 3.4.2.
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经在第 3.4.2 节中讨论了控制器设计模式。但是，为了帮助您记住，我们在此将图 3.10 重新发布为图 C.2。如果图 C.2 看起来不太熟悉，请回顾第
+    3.4.2 节。
+- en: '![](../Images/C-2.png)'
+  id: totrans-119
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/C-2.png)'
+- en: Figure C.2 The Kubernetes controller/operator pattern runs an infinite control
+    loop that watches the actual state (on the right) and desired state (on the left)
+    of certain Kubernetes resources and tries to move its actual state to the desired
+    one.
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 C.2 Kubernetes 控制器/操作器模式运行一个无限控制循环，监视特定 Kubernetes 资源的实际状态（右侧）和期望状态（左侧），并尝试将其实际状态移动到期望状态。
+- en: C.4.2 Katib system design and workflow
+  id: totrans-121
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.4.2 Katib 系统设计和工作流程
+- en: 'Figure C.2 illustrates Katib’s internal components and their interactions.
+    The system has three core components: experiment controller (marked as A), suggestion
+    controller (marked as B), and trial controller (marked as C).'
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 C.2 说明了 Katib 的内部组件及其交互方式。系统有三个核心组件：实验控制器（标记为 A）、建议控制器（标记为 B）和试验控制器（标记为 C）。
+- en: The experiment controller manages HPO experiments throughout its lifecycle,
+    such as scheduling HPO trials for an experiment and updating its status. The suggestion
+    controller runs HPO algorithms to provide suggested values for given hyperparameters.
+    And the trial controller runs the actual model training for a given set of hyperparameters.
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实验控制器管理整个 HPO 实验的生命周期，例如为实验安排 HPO 试验并更新其状态。建议控制器运行 HPO 算法，为给定的超参数提供建议值。试验控制器运行给定超参数集的实际模型训练。
+- en: From the names of these core components, you know their implementations all
+    follow the Kubernetes controller pattern. Besides the controller, Katib defines
+    a set of CRD objects (spec) to work with these three controllers. For example,
+    *experiment spec* is a type of CRD that defines the desired state for an HPO experiment
+    and works as an input request to the experiment controller.
+  id: totrans-124
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从这些核心组件的名称可以知道，它们的实现都遵循 Kubernetes 控制器模式。除了控制器外，Katib 还定义了一组 CRD 对象（spec）来与这三个控制器一起工作。例如，*实验规范*
+    是一种 CRD 类型，用于定义 HPO 实验的期望状态，并作为输入请求传递给实验控制器。
+- en: As shown in figure C.3, Alex, a data scientist, might follow a typical workflow
+    when interacting with Katib. The major steps are listed in the following sections.
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如图 C.3 所示，数据科学家 Alex 在与 Katib 交互时可能会遵循典型的工作流程。主要步骤列在以下各节中。
+- en: '![](../Images/C-3.png)'
+  id: totrans-126
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/C-3.png)'
+- en: Figure C.3 A Katib system design graph and user workflow
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 C.3 显示了 Katib 系统设计图和用户工作流程
+- en: 'Step 1: Creating an experiment request'
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 1 步：创建实验请求
+- en: In step 1, Alex creates an experiment CRD object by using client tools, such
+    as Katib SDK, Katib web UI, or `kubectl` commands. This experiment object contains
+    all the HPO experiment definitions, such as the training algorithm, hyperparameters
+    and their search spaces, HPO algorithm, and trial budget.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 1 步中，Alex 使用客户端工具（如 Katib SDK、Katib web UI 或 `kubectl` 命令）创建了一个实验 CRD 对象。这个实验对象包含了所有
+    HPO 实验的定义，如训练算法、超参数及其搜索空间、HPO 算法和试验预算。
+- en: The experiment controller (component A) periodically scans all the experiment
+    CRD objects. For every experiment CRD object, it creates the declared suggestion
+    CRD object and trial CRD object. In short, the experiment controller spawns the
+    actual resources to achieve the desired state defined in the experiment CRD. Additionally,
+    it keeps the experiment’s runtime status updated in the experiment’s CRD object,
+    so Alex can see trial hyperparameters and the execution status of the experiment
+    in real time.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实验控制器（组件 A）定期扫描所有实验 CRD 对象。对于每个实验 CRD 对象，它创建声明的建议 CRD 对象和试验 CRD 对象。简而言之，实验控制器生成实际资源，以实现实验
+    CRD 中定义的所需状态。此外，它会在实验 CRD 对象中更新实验的运行状态，因此 Alex 可以实时查看试验超参数和实验的执行状态。
+- en: Once Alex’s experiment object has been created in step 1, Katib deploys an HPO
+    algorithm suggestion service (component D) for Alex’s experiment so that the required
+    HPO algorithm can be run. In this suggestion service, the HPO search algorithm
+    (library) defined in the experiment CRD object is loaded and exposed through a
+    gRPC interface, allowing the suggestion controller to talk to it and ask for suggested
+    hyperparameters.
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦在第 1 步中创建了 Alex 的实验对象，Katib 就会为 Alex 的实验部署一个 HPO 算法建议服务（组件 D），以便运行所需的 HPO
+    算法。在这个建议服务中，实验 CRD 对象中定义的 HPO 搜索算法（库）被加载并通过 gRPC 接口公开，允许建议控制器与其通信并请求建议的超参数。
+- en: 'Step 2: Get the next trial hyperparameters'
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 2 步：获取下一个试验的超参数
+- en: When the experiment controller finds Alex’s experiment CRD object in step 2,
+    it creates a suggestion CRD object as an input request for the suggestion controller
+    (component B). Hyperparameters and their values are specified in this suggestion
+    CRD object, as well as the search algorithm and the number of suggestions.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当实验控制器在第 2 步中发现了 Alex 的实验 CRD 对象时，它会创建一个建议 CRD 对象作为建议控制器（组件 B）的输入请求。在此建议 CRD
+    对象中指定了超参数及其值，以及搜索算法和建议的数量。
+- en: Afterward, the suggestion controller calls the suggestion algorithm service,
+    created in step 1, to calculate the suggested hyperparameter values. Additionally,
+    the suggestion controller maintains the history of the suggested hyperparameter
+    values in the suggestion CRD objects.
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 随后，建议控制器调用在第 1 步创建的建议算法服务来计算建议的超参数值。此外，建议控制器在建议 CRD 对象中维护建议的超参数值的历史记录。
+- en: 'Step 3: Create a trial request'
+  id: totrans-135
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 3 步：创建试验请求
+- en: As part of step 3, after the suggestion controller provides a set of trial hyperparameter
+    values, the experiment controller (component A) creates a trial CRD object to
+    kick off a model training trial. The trial trains the model using the set of hyperparameter
+    values calculated by the suggestion service (component D).
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 作为第 3 步的一部分，在建议控制器提供一组试验超参数值后，实验控制器（组件 A）创建一个试验 CRD 对象来启动模型训练试验。试验使用建议服务（组件
+    D）计算出的超参数值集来训练模型。
+- en: 'Step 4: Launch training job'
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 4 步：启动训练作业
+- en: In step 4, the trial controller (component C) reads the newly created trial
+    CRD objects (created in step 3) and creates a TrialJob CRD object. There are several
+    types of TrialJob CRD objects, including Kubernetes jobs, PyTorch jobs, TF jobs,
+    and MXNet jobs. For each job type, Kubeflow ([https://www.kubeflow.org/docs/components/training/](https://www.kubeflow.org/docs/components/training/))
+    provides a dedicated training operator to execute it, such as a PyTorch training
+    operator or TensorFlow training operator (component E).
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 4 步中，试验控制器（组件 C）读取新创建的试验 CRD 对象（在第 3 步创建），并创建一个 TrialJob CRD 对象。有几种类型的 TrialJob
+    CRD 对象，包括 Kubernetes 作业、PyTorch 作业、TF 作业和 MXNet 作业。对于每种作业类型，Kubeflow（[https://www.kubeflow.org/docs/components/training/](https://www.kubeflow.org/docs/components/training/)）提供了一个专用的训练运算符来执行它，如
+    PyTorch 训练运算符或 TensorFlow 训练运算符（组件 E）。
+- en: Upon detecting a newly created TrialJob CRD object in its type, the training
+    operator (component E) creates Kubernetes pods to execute the training image based
+    on the hyperparameters defined in the trial job. The training trials for Alex’s
+    HPO experiment will be run by a PyTorch training operator because his training
+    code is written in PyTorch.
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在检测到其类型中新创建的 TrialJob CRD 对象后，训练运算符（组件 E）会根据试验作业中定义的超参数创建 Kubernetes Pod 来执行训练图像。Alex
+    的 HPO 实验的训练试验将由 PyTorch 训练运算符运行，因为他的训练代码是用 PyTorch 编写的。
+- en: 'Step 5: Return trial result'
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 5 步：返回试验结果
+- en: As the model trial training begins, the metric collector sidecar (a Docker container
+    in a Kubernetes training pod) collects training metrics and reports them to the
+    Katib metric storage (a MySQL database) in step 5\. Using these metrics, the trial
+    controller (component C) updates the trial execution status to the trial CRD object.
+    When the experiment controller notices the latest changes on the trial CRD object,
+    it reads the change and updates the experiment CRD object with the latest trial
+    execution information, so the experiment object has the latest status. The latest
+    status is aggregated into the experiment object in this way.
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当模型试训练开始时，度量收集器边车（一个位于 Kubernetes 训练 Pod 中的 Docker 容器）在第 5 步收集训练指标，并将其报告给 Katib
+    指标存储（一个 MySQL 数据库）。使用这些指标，试验控制器（组件 C）将试验执行状态更新到试验 CRD 对象上。当实验控制器注意到试验 CRD 对象的最新更改时，它读取更改并使用最新的试验执行信息更新实验
+    CRD 对象，以便实验对象具有最新状态。最新状态以这种方式聚合到实验对象中。
+- en: The HPO workflow is essentially a trial loop. To work on Alex’s HPO request
+    in Katib, steps 2, 3, 4, and 5 in this workflow keep repeating until the exit
+    criterion is met. Alex can check the experiment CRD object throughout the HPO
+    execution process to obtain the timely execution status of the HPO, which includes
+    the number of completed or failed trials, the model training metrics, and the
+    current best hyperparameter values.
+  id: totrans-142
+  prefs: []
+  type: TYPE_NORMAL
+  zh: HPO 工作流本质上是一个试验循环。为了在 Katib 上处理 Alex 的 HPO 请求，此工作流中的第 2、3、4 和 5 步会重复进行，直到满足退出标准。Alex
+    可以在 HPO 执行过程中始终检查实验 CRD 对象，以获取 HPO 的及时执行状态，其中包括已完成或失败的试验数量、模型训练指标和当前最佳超参数值。
+- en: Note Simplicity and reliability are two major benefits of using CRD objects
+    to store HPO execution data. First, the information on the experiment’s latest
+    status can be accessed easily. For example, you can use Kubernetes commands, such
+    as `kubectl` `describe` `experiment|trial|suggestion`, to get the intermediate
+    data and the latest status of experiments, trials, and suggestions in a few seconds.
+    Second, CRD objects help improve the reliability of HPO experiments. When the
+    Katib service is down or the training operator fails, we can resume the HPO execution
+    from where it failed, because these CRD objects retain the HPO execution history.
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：使用 CRD 对象存储 HPO 执行数据有两个主要优点：简单性和可靠性。首先，可以轻松访问实验的最新状态信息。例如，你可以使用 Kubernetes
+    命令，如 `kubectl` `describe` `experiment|trial|suggestion`，在几秒钟内获取实验、试验和建议的中间数据和最新状态。其次，CRD
+    对象有助于提高 HPO 实验的可靠性。当 Katib 服务关闭或训练操作员失败时，我们可以从失败的地方恢复 HPO 执行，因为这些 CRD 对象保留了 HPO
+    执行历史记录。
+- en: C.4.3 Kubeflow training operator integration for distributed training
+  id: totrans-144
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.4.3 Kubeflow 训练操作员集成分布式训练
+- en: Katib’s default training operator—Kubernetes job operator—only supports single-pod
+    model training; it launches a Kubernetes pod for each trial in an experiment.
+    To support distributed training, Katib works with Kubeflow training operators
+    ([https://www.kubeflow.org/docs/components/training/](https://www.kubeflow.org/docs/components/training/)).
+    You can see how this works in figure C.4.
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib 的默认训练操作员——Kubernetes 作业操作员——只支持单 pod 模型训练；它为实验中的每个试验启动一个 Kubernetes pod。为了支持分布式训练，Katib
+    与 Kubeflow 训练操作员合作（[https://www.kubeflow.org/docs/components/training/](https://www.kubeflow.org/docs/components/training/)）。你可以在图
+    C.4 中看到这是如何运作的。
+- en: '![](../Images/C-4.png)'
+  id: totrans-146
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/C-4.png)'
+- en: Figure C.4 Katib creates different trial jobs to trigger training operators
+    to run distributed training for different training frameworks.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 C.4 Katib 创建不同的试验作业以触发训练操作员为不同的训练框架运行分布式训练。
+- en: An HPO experiment consists of trials. Katib creates a trial CRD object and a
+    TrialJob CRD object for each trail. The trial CRD contains the HPO trial metadata,
+    such as suggested hyperparameter values, worker numbers, and exit criteria. In
+    the TrialJob CRD, trial metadata is reformatted so that Kubeflow training operators
+    can understand it.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: HPO 实验由试验组成。Katib 为每个试验创建一个试验 CRD 对象和一个 TrialJob CRD 对象。试验 CRD 包含 HPO 试验的元数据，例如建议的超参数值、工作人员数量和退出条件。在
+    TrialJob CRD 中，试验元数据被重新格式化，以便 Kubeflow 训练操作员能够理解它。
+- en: '`PyTorchJob` and `TFJob` are two of the most commonly used CRD types for TrialJobs.
+    They can be processed by TensorFlow training operators and PyTorch training operators,
+    each of which supports distributed training. When Alex sets the number of workers
+    to three in the experiment CRD object, Katib creates a PyTorchJob trial CRD object,
+    and the PyTorch trainer can conduct distributed training on this experiment.'
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`PyTorchJob` 和 `TFJob` 是两种最常用的 TrialJobs CRD 类型。它们可以被 TensorFlow 训练操作员和 PyTorch
+    训练操作员处理，每个操作员都支持分布式训练。当 Alex 在实验 CRD 对象中将工作人员数量设置为三时，Katib 会创建一个 PyTorchJob 试验
+    CRD 对象，PyTorch 训练器可以在这个实验上进行分布式训练。'
+- en: This example also illustrates how flexible and extensible the Kubernetes controller
+    pattern is. Two applications, Katib and KubeFlow training operators, can integrate
+    easily if they are all implemented as controllers.
+  id: totrans-150
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个例子还说明了 Kubernetes 控制器模式是多么的灵活和可扩展。如果它们都被实现为控制器，两个应用程序 Katib 和 KubeFlow 训练操作员可以轻松集成。
+- en: note We discussed Kubeflow training operator design in section 3.4.3\. Please
+    revisit it if you want to know more.
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：我们在第 3.4.3 节讨论了 Kubeflow 训练操作员设计，请如果你想了解更多内容，请重新阅读。
+- en: C.4.4 Code reading
+  id: totrans-152
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.4.4 代码阅读
+- en: Although Katib has a large code repository ([https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)),
+    reading and debugging its code isn’t too difficult.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 虽然 Katib 有一个庞大的代码库（[https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)），但阅读和调试其代码并不太困难。
+- en: Where to start code reading
+  id: totrans-154
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从哪里开始阅读代码
+- en: 'All Katib core components are written in controller pattern: `experiment_controller`,
+    `trial_controller``,` and `suggestion_controller`. It’s a controller’s job to
+    ensure that, for any given object, the actual state of the Kubernetes world matches
+    the desired state in the object. We call this process *reconciling*. For example,
+    the reconcile function in `experiment_controller` reads the state of the cluster
+    for an experiment object and makes changes (suggestion, trial) based on the state
+    read. By following this thought, we can start with the reconcile function of each
+    controller class to understand its core logic.'
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 所有Katib核心组件都采用了控制器模式：`experiment_controller`、`trial_controller`和`suggestion_controller`。控制器的工作是确保对于任何给定的对象，Kubernetes世界的实际状态与对象中的期望状态相匹配。我们称这个过程为*reconciling*。例如，在`experiment_controller`中的reconcile函数会读取实验对象的集群状态，并根据所读取的状态进行更改（建议、试验）。通过遵循这个思路，我们可以从每个控制器类的reconcile函数开始理解其核心逻辑。
+- en: You can find the experiment controller at `pkg/controller.v1beta1/experiment/experiment_controller.go`,
+    suggestion controller at `pkg/controller.v1beta1/ suggestion/suggestion_controller.go`,
+    and trial controller at `pkg/controller .v1beta1/trial/trial_ controller.go`.
+    Remember to start with the reconcile function in these files.
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可以在`pkg/controller.v1beta1/experiment/experiment_controller.go`找到实验控制器，建议控制器在`pkg/controller.v1beta1/suggestion/suggestion_controller.go`，试验控制器在`pkg/controller.v1beta1/trial/trial_controller.go`。记得从这些文件的reconcile函数开始。
+- en: Debugging
+  id: totrans-157
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 调试
+- en: The Katib core application (katib-controller) runs as a console application.
+    There is no UI or web code in this console application, just pure logic code,
+    so its local debugging setup is straightforward. To debug Katib, first set up
+    your local Kubernetes cluster and run katib-controller locally with breakpoints,
+    then you can start the HPO process by creating a test experiment request—for example,
+    `kubectl` `apply` `-f` `{test_experiment.yaml}`. The breakpoint in the reconcile
+    function will be hit, and you can start to debug and explore the code from there.
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Katib核心应用（katib-controller）作为控制台应用程序运行。这个控制台应用程序中没有UI或者Web代码，只有纯逻辑代码，因此它的本地调试设置很简单。要调试Katib，首先设置好你的本地Kubernetes集群，然后通过断点在本地运行katib-controller，接着你可以通过创建一个测试实验请求，例如`kubectl
+    apply -f {test_experiment.yaml}`来启动HPO过程。reconcile函数中的断点会被触发，你可以从那里开始调试和探索代码。
+- en: To set up a local development environment, please follow Katib’s Developer Guide
+    ([http://mng.bz/VpzP](http://mng.bz/VpzP)). The entry point for katib-controller
+    is at cmd/katib-controller/ v1beta1/main.go.
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要设置一个本地开发环境，请按照Katib的开发者指南操作（[http://mng.bz/VpzP](http://mng.bz/VpzP)）。katib-controller的入口点在cmd/katib-controller/v1beta1/main.go。
+- en: Note Katib is a production-quality HPO tool. It runs with high reliability and
+    stability. But to operate it on a daily basis, we need to read its source code
+    to understand its behavior so we know how to steer it when an HPO execution goes
+    off the script. By following the workflow in figure C.2 and reading the reconcile
+    function of each controller, you will gain a great understanding of Katib in a
+    few hours.
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意Katib是一个生产质量的HPO工具。它以高可靠性和稳定性运行。但是要在日常操作中使用它，我们需要阅读其源代码以了解其行为，这样我们就知道在HPO执行偏离脚本时该如何引导它。通过遵循图C.2中的工作流程并阅读每个控制器的reconcile函数，你将在几个小时内对Katib有很好的理解。
+- en: C.5 Adding a new algorithm
+  id: totrans-161
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.5 添加新算法
+- en: From figure C.2, we know Katib runs different HPO algorithms as independent
+    suggestion/algorithm services. Once an experiment is created, Katib creates a
+    suggestion service for the selected HPO algorithm. This mechanism makes it easy
+    to add a new algorithm to Katib and let the newly added algorithm work consistently
+    with existing algorithms. To add a new algorithm to Katib, we need to carry out
+    the following three steps.
+  id: totrans-162
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从图C.2中我们知道Katib将不同的HPO算法作为独立的建议/算法服务运行。一旦创建了一个实验，Katib就会为所选的HPO算法创建一个建议服务。这个机制使得向Katib添加新算法并让新添加的算法与现有算法一致变得很容易。要向Katib添加一个新算法，我们需要执行以下三个步骤。
+- en: 'C.5.1 Step 1: Implement Katib Suggestion API with the new algorithm'
+  id: totrans-163
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.5.1 第1步：用新算法实现Katib建议API
+- en: 'First, we need to implement the Katib `Suggestion` interface. This interface
+    is defined in gRPC, so you can implement it in any language you prefer. The detailed
+    definition of this interface can be found at [http://mng.bz/xdzW](http://mng.bz/xdzW);
+    see the following code:'
+  id: totrans-164
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，我们需要实现Katib的`Suggestion`接口。这个接口在gRPC中定义，所以你可以用你喜欢的任何语言来实现它。这个接口的详细定义可以在[http://mng.bz/xdzW](http://mng.bz/xdzW)找到；请看以下代码：
+- en: '[PRE12]'
+  id: totrans-165
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: 'The following code snippet is one example of implementing the `Suggestion`
+    interface. The hyperparameters and their value search spaces are defined in the
+    `request` variable. The past trials and their metrics can also be found in the
+    `request` variable, so you can run your algorithm to calculate the next suggestion
+    by using these input data in the `GetSuggestions` method; see the following code:'
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下代码片段是实现 `Suggestion` 接口的一个示例。超参数及其值搜索空间在 `request` 变量中定义。过去的试验及其指标也可以在 `request`
+    变量中找到，因此您可以运行您的算法来计算下一个建议，方法是在 `GetSuggestions` 方法中使用这些输入数据；请参阅以下代码：
+- en: '[PRE13]'
+  id: totrans-167
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ Defines a new algorithm service and implements the GetSuggestions interface
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 定义一个新的算法服务，并实现 GetSuggestions 接口
+- en: ❷ The Suggestion function provides hyperparameters to each trial.
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ Suggestion 函数为每个试验提供超参数。
+- en: ❸ Obtains the past trials
+  id: totrans-170
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 获取过去的试验
+- en: ❹ Implements the actual HPO algorithm to provide candidate values
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 实现了实际的 HPO 算法，提供候选值。
+- en: 'C.5.2 Step 2: Dockerize the algorithm code as a GRPC service'
+  id: totrans-172
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.5.2 步骤 2：将算法代码作为 GRPC 服务 Docker 化
+- en: 'Once we implement the `Suggestion` interface, we need to build a gRPC server
+    to expose this API to Katib and Dockerize it so Katib can launch the algorithm
+    service and obtain hyperparameter suggestions by sending gRPC calls. The code
+    would look as follows:'
+  id: totrans-173
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦我们实现了 `Suggestion` 接口，我们需要构建一个 gRPC 服务器来将此 API 暴露给 Katib，并将其 Docker 化，以便 Katib
+    可以通过发送 gRPC 调用来启动算法服务并获取超参数建议。代码如下所示：
+- en: '[PRE14]'
+  id: totrans-174
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: 'C.5.3 Step 3: Register the algorithm to Katib'
+  id: totrans-175
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.5.3 步骤 3：将算法注册到 Katib
+- en: 'The last step is to register the new algorithm to Katib’s starting configuration.
+    Add a new entry in the `suggestion` section of the Katib service config; see an
+    example as follows:'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 最后一步是将新算法注册到 Katib 的起始配置中。在 Katib 服务配置的 `suggestion` 部分添加一个新条目；以下是一个示例：
+- en: '[PRE15]'
+  id: totrans-177
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: C.5.4 Examples and documents
+  id: totrans-178
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: C.5.4 示例和文档
+- en: Most of the previous content comes from the readme file—“Document about How
+    to Add a New Algorithm in Katib” ([http://mng.bz/Alrz](http://mng.bz/Alrz))—at
+    the Katib GitHub repo ([https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)).
+    This is a very detailed and well-written doc that we highly recommend you read.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 大部分前文来自 Katib GitHub 仓库（[https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)）的
+    readme 文件，“关于如何在 Katib 中添加新算法的文档”（[http://mng.bz/Alrz](http://mng.bz/Alrz)）— 这是一份非常详细和写得很好的文档，我们强烈建议您阅读。
+- en: Because all of Katib’s predefined HPO algorithms follow the same HPO algorithm
+    registering pattern, you can use them as examples. This sample code can be found
+    at katib/cmd/suggestion ([http://mng.bz/ZojP](http://mng.bz/ZojP)).
+  id: totrans-180
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为 Katib 的所有预定义 HPO 算法都遵循相同的 HPO 算法注册模式，您可以将它们用作示例。此示例代码可在 katib/cmd/suggestion（[http://mng.bz/ZojP](http://mng.bz/ZojP)）找到。
+- en: C.6 Further reading
+  id: totrans-181
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.6 进一步阅读
+- en: Good job on getting here! This is a lot to digest, but you made it this far.
+    Although we have covered a good portion of Katib, there are still important pieces
+    we didn’t discuss because of page limits. In case you want to proceed further,
+    we listed some useful reading materials for you to explore.
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 恭喜您到达这里！这是需要消化的大量内容，但您已经走了这么远。虽然我们已经涵盖了 Katib 的很大一部分，但由于页面限制，我们仍然没有讨论到一些重要的部分。如果您想进一步进行，我们列出了一些有用的阅读材料供您探索。
+- en: To understand the thinking process behind the Katib design, please read “A Scalable
+    and Cloud-Native Hyperparameter Tuning System” ([https://arxiv.org/pdf/2006.02085.pdf](https://arxiv.org/pdf/2006.02085.pdf)).
+  id: totrans-183
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 要了解 Katib 设计背后的思维过程，请阅读“一个可扩展的云原生超参数调整系统”（[https://arxiv.org/pdf/2006.02085.pdf](https://arxiv.org/pdf/2006.02085.pdf)）。
+- en: To check feature updates, tutorials, and code examples, please visit the Katib
+    official website ([https://www.kubeflow.org/docs/components/katib/](https://www.kubeflow.org/docs/components/katib/))
+    and Katib GitHub repo ([https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)).
+  id: totrans-184
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 要检查功能更新、教程和代码示例，请访问 Katib 官方网站（[https://www.kubeflow.org/docs/components/katib/](https://www.kubeflow.org/docs/components/katib/)）和
+    Katib GitHub 仓库（[https://github.com/kubeflow/katib](https://github.com/kubeflow/katib)）。
+- en: To use Python SDK to run an HPO from a Jupyter notebook directly, please read
+    the SDK API doc ([http://mng.bz/RlpK](http://mng.bz/RlpK)) and Jupyter notebook
+    samples ([http://mng.bz/2aY0](http://mng.bz/2aY0)).
+  id: totrans-185
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 要直接从 Jupyter 笔记本中使用 Python SDK 运行 HPO，请阅读 SDK API 文档（[http://mng.bz/RlpK](http://mng.bz/RlpK)）和
+    Jupyter 笔记本示例（[http://mng.bz/2aY0](http://mng.bz/2aY0)）。
+- en: C.7 When to use it
+  id: totrans-186
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: C.7 使用它的时机
+- en: As we can see from this discussion, Katib satisfies all the design principles
+    of an HPO service. It is agnostic to training frameworks and training code; it
+    can be extended to incorporate different HPO algorithms and different metric collectors;
+    and it is portable and scalable thanks to Kubernetes. Katib is the best option
+    if you are seeking a production-level HPO service.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从这次讨论中我们可以看到，Katib 满足了 HPO 服务的所有设计原则。它对训练框架和训练代码是不可知的；它可以扩展以纳入不同的 HPO 算法和不同的指标收集器；并且由于
+    Kubernetes 的存在，它是可移植和可扩展的。如果你正在寻找一个生产级别的 HPO 服务，Katib 是最佳选择。
+- en: The only caveat for Katib is that its upfront costs are high. You need to build
+    a Kubernetes cluster, install Katib, and Dockerize the training code to get started.
+    You need to know Kubernetes commands to troubleshoot failures. It requires dedicated
+    engineers to operate and maintain the system, as these are nontrivial tasks.
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于 Katib 唯一的注意事项是它的前期成本很高。你需要建立一个 Kubernetes 集群，安装 Katib，并将训练代码 Docker 化才能开始。你需要了解
+    Kubernetes 命令来排查故障。这需要专门的工程师来操作和维护系统，因为这些都是非常重要的任务。
+- en: For production scenarios, these challenges are not major problems, because usually
+    the model training system is set up in the same way as Katib in Kubernetes. As
+    long as engineers have experience operating model training systems, they can manage
+    Katib easily. But for small teams or prototyping projects, if you prefer something
+    simpler, an HPO library approach—such as Ray Tune—is a better fit.
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于生产场景，这些挑战并不是主要问题，因为通常模型训练系统的设置与 Kubernetes 中的 Katib 相同。只要工程师有操作模型训练系统的经验，就可以轻松管理
+    Katib。但对于小团队或原型项目来说，如果你更喜欢简单的东西，像 Ray Tune 这样的 HPO 库方法更合适。

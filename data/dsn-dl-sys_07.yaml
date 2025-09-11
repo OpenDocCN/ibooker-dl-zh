@@ -1,0 +1,3195 @@
+- en: 7 Model serving in practice
+  id: totrans-0
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+  zh: 7 模型服务实践
+- en: This chapter covers
+  id: totrans-1
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 本章涵盖
+- en: Building a sample predictor with the model service approach
+  id: totrans-2
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用模型服务方法构建样本预测器
+- en: Building a sample service with TorchServe and the model server approach
+  id: totrans-3
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用TorchServe和模型服务器方法构建样本服务
+- en: Touring popular open source model serving libraries and systems
+  id: totrans-4
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 参观流行的开源模型服务库和系统
+- en: Explaining the production model release process
+  id: totrans-5
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 解释生产模型发布流程
+- en: Discussing postproduction model monitoring
+  id: totrans-6
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 讨论后期模型监控
+- en: In the previous chapter, we discussed the concept of model serving, as well
+    as user scenarios and design patterns. In this chapter, we will focus on the actual
+    implementation of these concepts in production.
+  id: totrans-7
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在上一章中，我们讨论了模型服务的概念，以及用户场景和设计模式。在本章中，我们将重点放在这些概念在生产环境中的实际实现上。
+- en: As we’ve said, one of the challenges to implementing model serving nowadays
+    is that we have too many possible ways of doing it. In addition to multiple black-box
+    solutions, there are many options for customizing and building all or part of
+    it from scratch. We think the best way to teach you how to choose the right approach
+    is with concrete examples.
+  id: totrans-8
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 正如我们所说，当前实施模型服务的挑战之一是我们有太多可能的做法。除了多个黑盒解决方案之外，还有许多定制和从头开始构建全部或部分模型服务的选项。我们认为教您如何选择正确方法的最佳方式是通过具体的例子。
+- en: 'In this chapter, we implement two sample services to demo two of the most commonly
+    used model serving approaches: one uses a self-build model serving container,
+    which demonstrates the model service approach (section 7.1), and the other uses
+    TorchServe (a model server for the PyTorch model), which demonstrates the model
+    server approach (section 7.2). Both of these serve the intent classification model
+    trained in chapter 3\. Once you work through the examples, we provide (in section
+    7.3) a tour of the most popular open source model serving tools to help you understand
+    their features, best uses, and other factors important to your decision on which
+    to use. In the rest of the chapter, we will focus on the model serving operation
+    and monitoring, including shipping models to production and monitoring the model
+    performance.'
+  id: totrans-9
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本章中，我们实现了两个示例服务，演示了两种最常用的模型服务方法：一种使用自建模型服务容器，演示了模型服务方法（第7.1节），另一种使用TorchServe（用于PyTorch模型的模型服务器），演示了模型服务器方法（第7.2节）。这两种都用于第3章训练的意图分类模型。一旦您完成了示例，我们将提供（在第7.3节中）对最受欢迎的开源模型服务工具的介绍，以帮助您了解它们的特性、最佳用法和其他对您决定使用哪种工具的重要因素。在本章的其余部分，我们将重点关注模型服务操作和监控，包括将模型部署到生产环境并监控模型性能。
+- en: By reading this chapter, you will not only have a concrete understanding of
+    different model serving designs but also have the acumen to choose the right approach
+    for your own situation. More importantly, this chapter will present a holistic
+    view of the model serving field, not just *building* model serving but also *operating*
+    and *monitoring* it after the model serving system is built.
+  id: totrans-10
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过阅读本章，您不仅将对不同的模型服务设计有具体的理解，还将具备选择适合自己情况的正确方法的眼光。更重要的是，本章将全面呈现模型服务领域的视角，不仅仅是*构建*模型服务，还有*运行*和*监控*模型服务系统在构建后的过程。
+- en: Note In this chapter, the terms *model serving*, *model inference*, and *model
+    prediction* are used interchangeably. They all refer to executing a model with
+    given data points.
+  id: totrans-11
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：在本章中，术语*模型服务*、*模型推断*和*模型预测*是可以互换使用的。它们都指的是使用给定数据点执行模型。
+- en: 7.1 A model service sample
+  id: totrans-12
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.1 模型服务示例
+- en: In this section, we will show you the first sample prediction service. This
+    service takes the model service approach (section 6.2.2), and it can be used for
+    both single-model (section 6.3.1) and multitenant applications (section 6.3.2).
+  id: totrans-13
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将向您展示第一个样本预测服务。该服务采用了模型服务方法（第6.2.2节），可用于单模型（第6.3.1节）和多租户应用（第6.3.2节）。
+- en: 'This sample service follows the single model application design (section 6.3.1),
+    which has a frontend API component and a backend predictor. We also made some
+    enhancements in the predictor so it can support multiple intent classification
+    models. We will tour this sample service by following these steps:'
+  id: totrans-14
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此示例服务遵循单一模型应用设计（第6.3.1节），其中包含前端API组件和后端预测器。我们还对预测器进行了一些增强，以支持多个意图分类模型。我们将按照以下步骤对此示例服务进行参观：
+- en: Running the sample prediction service locally
+  id: totrans-15
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 在本地运行示例预测服务
+- en: Discussing the system design
+  id: totrans-16
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 讨论系统设计
+- en: 'Looking at the implementation details of its subcomponents: frontend service
+    and backend predictor'
+  id: totrans-17
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 查看其子组件的实现细节：前端服务和后端预测器
+- en: 7.1.1 Play with the service
+  id: totrans-18
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.1 与服务玩耍
+- en: Listing 7.1 shows how to run the sample prediction service on your local machine.
+    The following scripts first run the backend predictor and then the frontend service.
+  id: totrans-19
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.1 显示了如何在本地机器上运行示例预测服务。以下脚本首先运行后端预测器，然后运行前端服务。
+- en: Note Setting up a prediction service is a bit tedious; we need to run the metadata
+    and artifactory store service and prepare the models. To demonstrate the idea
+    clearly, listing 7.1 highlights the main setup steps. To make model serving work
+    on your local machine, please complete the lab (section A.2) in appendix A and
+    then use the code `./scripts/lab-004-model-serving.sh` `{run_id}` `{document}`
+    to send the model prediction requests.
+  id: totrans-20
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意设置预测服务有点繁琐；我们需要运行元数据和艺术品存储服务，并准备好模型。为了清晰地演示这个想法，列表 7.1 强调了主要的设置步骤。要使模型服务在您的本地机器上工作，请完成附录
+    A 中的实验（A.2 节），然后使用代码 `./scripts/lab-004-model-serving.sh` `{run_id}` `{document}`
+    发送模型预测请求。
+- en: Listing 7.1 Starting a prediction service
+  id: totrans-21
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.1 启动预测服务
+- en: '[PRE0]'
+  id: totrans-22
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE0]'
+- en: ❶ Builds the predictor Docker image
+  id: totrans-23
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 构建预测器 Docker 镜像
+- en: ❷ Runs the predictor service container
+  id: totrans-24
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 运行预测器服务容器
+- en: ❸ Builds the prediction service image
+  id: totrans-25
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 构建预测服务镜像
+- en: ❹ Runs the prediction service container
+  id: totrans-26
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 运行预测服务容器
+- en: 'Once the service starts, you can send prediction requests to it; the service
+    will load the intent classification model trained in chapter 3, run the model
+    prediction with the given text, and return the prediction results. In the following
+    example, a text string “merry christmas” is sent to the service and is predicted
+    to the “joy” category:'
+  id: totrans-27
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦服务启动，您就可以向其发送预测请求；服务将加载第 3 章训练的意图分类模型，对给定文本进行模型预测，并返回预测结果。在以下示例中，将文本字符串“merry
+    christmas”发送到服务，并预测为“joy”类别：
+- en: '[PRE1]'
+  id: totrans-28
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE1]'
+- en: ❶ Specifies the model ID to the response
+  id: totrans-29
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将模型 ID 指定给响应
+- en: ❷ Prediction payload
+  id: totrans-30
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 预测负载
+- en: ❸ Prediction response, the predicted category
+  id: totrans-31
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 预测响应，预测类别
+- en: 7.1.2 Service design
+  id: totrans-32
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.2 服务设计
+- en: 'This sample service consists of a frontend interface component and a backend
+    predictor. The frontend component does three things: hosts the public prediction
+    API, downloads model files from the metadata store to a shared disk volume, and
+    forwards the prediction request to the backend predictor. The backend predictor
+    is a self-built predictor container that responds to load intent classification
+    models and executes these models to serve prediction requests.'
+  id: totrans-33
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此示例服务由前端界面组件和后端预测器组成。前端组件有三个功能：托管公共预测 API、从元数据存储下载模型文件到共享磁盘卷，并将预测请求转发给后端预测器。后端预测器是一个自建的预测器容器，用于响应加载意图分类模型并执行这些模型以服务于预测请求。
+- en: 'This prediction service has two external dependencies: the metadata store service
+    and a shared disk volume. The metadata store keeps all the information about a
+    model, such as the model algorithm name, the model version, and the model URL,
+    which points to the cloud storage of real model files. The shared volume enables
+    model file sharing between the frontend service and the backend predictor. You
+    can see an end-to-end overview of the model serving process in figure 7.1.'
+  id: totrans-34
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此预测服务有两个外部依赖项：元数据存储服务和共享磁盘卷。元数据存储保存有关模型的所有信息，例如模型算法名称、模型版本和指向真实模型文件的云存储的模型 URL。共享卷使前端服务和后端预测器之间能够共享模型文件。您可以在图
+    7.1 中看到模型服务过程的端到端概述。
+- en: '![](../Images/07-01.png)'
+  id: totrans-35
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 07-01](../Images/07-01.png)'
+- en: Figure 7.1 A system overview and model serving end-to-end workflow
+  id: totrans-36
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.1 系统概述和模型服务端到端工作流程
+- en: 'Going through the system design of the sample model serving service shown in
+    figure 7.1, you can see it takes six steps to complete a prediction request. Let’s
+    go through each step numbered in the figure:'
+  id: totrans-37
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 浏览图 7.1 中显示的样本模型服务的系统设计，您可以看到完成预测请求需要六个步骤。让我们逐步浏览图中编号的每一步：
+- en: The user sends a prediction request to the prediction service (frontend component)
+    with a specified model ID and a text string—namely, `document`. The model ID is
+    a unique identifier produced by the training service to identify each model it
+    produces.
+  id: totrans-38
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 用户向预测服务（前端组件）发送带有指定模型 ID 和文本字符串（即，`document`）的预测请求。模型 ID 是训练服务生成的唯一标识符，用于识别其生成的每个模型。
+- en: The frontend service fetches the model metadata from the metadata store by searching
+    the model ID. For each successful model training, the training service will save
+    the model files to cloud storage and also save the model metadata (model ID, model
+    version, name, and URL) to the metadata store; this is why we can find the model
+    information in the metadata store.
+  id: totrans-39
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 前端服务通过搜索模型 ID 从元数据存储中获取模型元数据。对于每个成功的模型训练，训练服务将模型文件保存到云存储中，并将模型元数据（模型 ID、模型版本、名称和
+    URL）保存到元数据存储中；这就是为什么我们可以在元数据存储中找到模型信息的原因。
+- en: If the model file is not already downloaded, the frontend component will download
+    it to the shared disk volume.
+  id: totrans-40
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 如果模型文件尚未下载，前端组件将会将其下载到共享磁盘卷上。
+- en: The frontend component forwards the inference request to the backend predictor.
+  id: totrans-41
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 前端组件将推理请求转发给后端预测器。
+- en: The backend predictor loads the intent classification model to memory by reading
+    model files from the shared disk volume.
+  id: totrans-42
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 后端预测器通过从共享磁盘卷上的模型文件中读取，将意图分类模型加载到内存中。
+- en: The backend predictor executes the model to make a prediction on the given text
+    string and returns the prediction result to the frontend component.
+  id: totrans-43
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 后端预测器执行模型，对给定的文本字符串进行预测，并将预测结果返回给前端组件。
+- en: 7.1.3 The frontend service
+  id: totrans-44
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.3 前端服务
+- en: 'Now, let’s focus on the frontend service. The frontend service has three main
+    components: a web interface, a predictor management, and a predictor backend client
+    (`CustomGrpcPredictorBackend`). These components respond to the host public gRPC
+    model serving the API and manage the backend predictors’ connection and communication.
+    Figure 7.2 shows the internal structure of the frontend service and its inner
+    workflow when receiving a prediction request.'
+  id: totrans-45
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们重点关注前端服务。前端服务主要由三个组件组成：Web 接口、预测器管理器和预测器后端客户端（`CustomGrpcPredictorBackend`）。这些组件响应主机公共
+    gRPC 模型提供 API，并管理后端预测器的连接和通信。图 7.2 显示了前端服务的内部结构以及在接收到预测请求时的内部工作流程。
+- en: '![](../Images/07-02.png)'
+  id: totrans-46
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-02.png)'
+- en: Figure 7.2 The frontend service design and the model serving workflow
+  id: totrans-47
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.2 前端服务设计和模型提供工作流程
+- en: 'Let’s consider the intent prediction scenario in the model serving workflow
+    described in figure 7.2, applying the six steps we just reviewed:'
+  id: totrans-48
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来我们考虑在图 7.2 中描述的模型提供工作流程中的意图预测场景，并应用刚刚复习过的六个步骤：
+- en: T he user sends an intent prediction request with model ID A to the web interface.
+  id: totrans-49
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 用户向 Web 接口发送包含模型 ID A 的意图预测请求。
+- en: The web interface calls the predictor connection manager to serve this request.
+  id: totrans-50
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: Web 接口调用预测器连接管理器来提供此请求。
+- en: The predictor connection manager queries the metadata store to get model metadata
+    by searching model IDs that equal A; the returned model metadata contains the
+    model algorithm type and model file URL.
+  id: totrans-51
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 预测器连接管理器通过查询元数据存储获取模型元数据，查询的条件为模型 ID 等于 A；返回的模型元数据包含模型算法类型和模型文件 URL。
+- en: Based on the model algorithm type, the predictor manager picks the right predictor
+    backend client to handle the request. In this case, it chooses `CustomGrpcPredictorBackend`
+    because we are demoing a self-built model serving container for intent classification.
+  id: totrans-52
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 基于模型算法类型，预测器管理器选择合适的预测器后端客户端来处理请求。在这种情况下，它选择了 `CustomGrpcPredictorBackend`，因为我们正在演示用于意图分类的自建模型提供容器。
+- en: The `CustomGrpcPredictorBackend` client first checks the existence of the model
+    file in the shared model file disk for model A. If the model hasn’t been downloaded
+    before, it uses the model URL (from model metadata) to download model files from
+    cloud storage to the shared file disk.
+  id: totrans-53
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`CustomGrpcPredictorBackend` 客户端首先在模型 A 的共享模型文件磁盘中检查模型文件的存在。如果在以前没有下载过模型，则使用模型
+    URL（从模型元数据中获取）从云存储中下载模型文件到共享文件磁盘。'
+- en: The `CustomGrpcPredictorBackend` client then calls the model predictor that
+    is preregistered with this backend client in the service configuration file. In
+    this example, the `CustomGrpcPredictorBackend` will call our self-built predictor,
+    the intent predictor, which will be discussed in section 7.1.4.
+  id: totrans-54
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: '`CustomGrpcPredictorBackend` 客户端然后调用在服务配置文件中与该后端客户端预注册的模型预测器。在此示例中，`CustomGrpcPredictorBackend`
+    将调用我们自建的预测器，即意图预测器，将在第 7.1.4 节中讨论。'
+- en: Now that we have reviewed the system design and workflow, let’s consider the
+    actual code implementation of the main components, including the web interface
+    (prediction API), predictor connection manager, predictor backend clients, and
+    intent predictor.
+  id: totrans-55
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在我们已经审查了系统设计和工作流程，让我们考虑主要组件的实际代码实现，包括 Web 接口（预测 API）、预测器连接管理器、预测器后端客户端和意图预测器。
+- en: Frontend service model serving code walkthrough
+  id: totrans-56
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前端服务模型服务代码演示
+- en: The following code listing highlights the core implementation of the prediction
+    workflow mentioned in figure 7.2\. You can also find the full implementation at
+    `src/main/` `java/org/orca3/miniAutoML/prediction/PredictionService.java.`
+  id: totrans-57
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 以下代码清单突出了图 7.2 中提到的预测工作流的核心实现。你也可以在 `src/main/` `java/org/orca3/miniAutoML/prediction/PredictionService.java`
+    找到完整的实现。
+- en: Listing 7.2 Frontend service prediction workflow
+  id: totrans-58
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.2 前端服务预测工作流
+- en: '[PRE2]'
+  id: totrans-59
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE2]'
+- en: ❶ Obtains the required model ID
+  id: totrans-60
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 获取所需的模型 ID
+- en: ❷ Fetches the model metadata from the metadata store
+  id: totrans-61
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 从元数据存储中获取模型元数据
+- en: ❸ Chooses the backend predictor based on the model algorithm type
+  id: totrans-62
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 根据模型算法类型选择后端预测器
+- en: ❹ Downloads the model file
+  id: totrans-63
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 下载模型文件
+- en: ❺ Calls the backend predictor to run model inference
+  id: totrans-64
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 调用后端预测器运行模型推理
+- en: Prediction API
+  id: totrans-65
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预测 API
+- en: The frontend service offers only one API—`Predict`—for issuing a prediction
+    request. The request has two parameters, `runId` and `document`. The `runId` not
+    only is used for referencing a model training run in the training service (chapter
+    3), but it also can be used as the model ID to reference a model. The `document`
+    is the text on which the customer wants to run predictions.
+  id: totrans-66
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前端服务仅提供一个 API — `Predict` — 用于发出预测请求。该请求有两个参数，`runId` 和 `document`。`runId` 不仅用于在训练服务（第
+    3 章）中引用模型训练运行，还可以用作引用模型的模型 ID。`document` 是客户想要运行预测的文本。
+- en: By using the `Predict` API, users can specify an intent model (with `runId`)
+    to predict the intent of a given text string (`document`). The following listing
+    shows the gRPC contract of the `Predict` API (`grpc-contract/src/main/proto/prediction_service
+    .proto`).
+  id: totrans-67
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过使用 `Predict` API，用户可以指定一个意图模型（带有 `runId`）来预测给定文本字符串（`document`）的意图。以下清单显示了
+    `Predict` API 的 gRPC 合同（`grpc-contract/src/main/proto/prediction_service .proto`）。
+- en: Listing 7.3 Prediction service gRPC interface
+  id: totrans-68
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.3 预测服务 gRPC 接口
+- en: '[PRE3]'
+  id: totrans-69
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE3]'
+- en: Predictor connection manager
+  id: totrans-70
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预测器连接管理器
+- en: One important role of the frontend service is routing prediction requests. Given
+    a prediction request, the frontend service needs to find the right backend predictor
+    based on the model algorithm type required in the request. This routing is done
+    in the `PredictorConnectionManager`. In our design, the mapping of model algorithms
+    and predictors is predefined in environment properties. When the service starts,
+    `PredictorConnectionManager` will read the mapping, so the service knows which
+    backend predictor to use for which model algorithm type.
+  id: totrans-71
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 前端服务的一个重要作用是路由预测请求。给定一个预测请求，前端服务需要根据请求中所需的模型算法类型找到正确的后端预测器。这个路由是在 `PredictorConnectionManager`
+    中完成的。在我们的设计中，模型算法和预测器的映射是预定义的在环境属性中。当服务启动时，`PredictorConnectionManager` 将读取映射，这样服务就知道为哪种模型算法类型使用哪个后端预测器。
+- en: Although we are only demoing our self-built intent classification predictor
+    in this example, `PredictorConnectionManager` can support any other type of backend
+    predictors. Let’s look at the following listing (`config/config-docker-docker.properties`)
+    to see how the model algorithm and predictor mapping are configured.
+  id: totrans-72
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 尽管在这个示例中我们只是演示了我们自己构建的意图分类预测器，`PredictorConnectionManager` 可以支持任何其他类型的后端预测器。让我们看一下以下清单（`config/config-docker-docker.properties`）来看看模型算法和预测器映射是如何配置的。
+- en: Listing 7.4 Model algorithm and predictor mapping configuration
+  id: totrans-73
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.4 模型算法和预测器映射配置
+- en: '[PRE4]'
+  id: totrans-74
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE4]'
+- en: ❶ Maps the intent-classification predictor to the intent-classification algorithm
+  id: totrans-75
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将意图分类预测器映射到意图分类算法
+- en: Now, let’s review code listing 7.5 to see how the predictor manager reads the
+    algorithm and predictor mapping and uses that information to initialize the predictor
+    backend client to send prediction requests. The full implementation is located
+    at `prediction-service/src/main/java/org/orca3/miniAutoML/prediction/PredictorConnectionManager.java.`
+  id: totrans-76
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 现在，让我们回顾代码清单 7.5，看看预测器管理器如何读取算法和预测器映射，并使用该信息初始化预测器后端客户端发送预测请求。完整的实现位于 `prediction-service/src/main/java/org/orca3/miniAutoML/prediction/PredictorConnectionManager.java`。
+- en: Listing 7.5 Predictor manager load algorithm and predictor mapping
+  id: totrans-77
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 7.5 预测器管理器加载算法和预测器映射
+- en: '[PRE5]'
+  id: totrans-78
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE5]'
+- en: ❶ The algorithm for the predictor backend mapping
+  id: totrans-79
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 预测器后端映射的算法
+- en: ❷ The model metadata cache; the key string is the model ID.
+  id: totrans-80
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 模型元数据缓存; 键字符串为模型 ID。
+- en: ❸ Reads the algorithm and predictor mapping from the configuration
+  id: totrans-81
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 从配置中读取算法和预测器映射
+- en: ❹ Creates the predictor backend client and saves it in the memory
+  id: totrans-82
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 创建预测器后端客户端并将其保存在内存中
+- en: In listing 7.5, we see the `PredictorConnectionManager` class offers the `registerPredictor`
+    function to register predictors. It first reads the algorithm and predictor mapping
+    information from the properties, and then it creates the actual predictor backend
+    client—`CustomGrpcPredictorBackend`—to communicate with the backend intent predictor
+    container.
+  id: totrans-83
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在列表 7.5 中，我们可以看到 `PredictorConnectionManager` 类提供了`registerPredictor`函数来注册预测器。它首先从属性中读取算法和预测器映射信息，然后创建实际的预测器后端客户端`CustomGrpcPredictorBackend`与后端意图预测器容器通信。
+- en: You may also notice `PredictorConnectionManager` class has several caches, such
+    as the model metadata cache (`artifactCache`) and the model backend predictor
+    clients (`clients)`. These caches can greatly improve the model serving efficiency.
+    For example, the model metadata cache (`artifactCache`) can reduce the serving
+    request response time by avoiding calling the metadata store service for the model
+    that has already been downloaded.
+  id: totrans-84
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 您还可以注意到 `PredictorConnectionManager` 类有几个缓存，如模型元数据缓存（`artifactCache`）和模型后端预测器客户端（`clients`）。这些缓存可以极大地提高模型服务的效率。例如，模型元数据缓存（`artifactCache`）可以通过避免调用元数据存储服务来减少呼叫已经下载的模型的服务请求响应时间。
+- en: Predictor backend clients
+  id: totrans-85
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预测器后端客户端
+- en: Predictor clients are the objects that the frontend service uses to talk to
+    different predictor backends. By design, each type of predictor backend supports
+    its own kind of model, and it has its own client for communication, which is created
+    and stored in `PredictorConnectionManager`. Every predictor backend client inherits
+    an interface `PredictorBackend`, as in the following listing.
+  id: totrans-86
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预测器客户端是前端服务用于与不同的预测器后端进行通信的对象。按设计，每种类型的预测器后端都支持其自己的模型类型，并且它有自己的用于通信的客户端，该客户端在`PredictorConnectionManager`中创建并存储。每个预测器后端客户端都会继承一个名为`PredictorBackend`的接口，如下列表所示。
+- en: Listing 7.6 Predictor backend interface
+  id: totrans-87
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.6 预测器后端接口
+- en: '[PRE6]'
+  id: totrans-88
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE6]'
+- en: The three methods, `downloadMode`, `predict``,` and `registerModel``,` are self-explanatory.
+    Each client implements these methods to download models and send prediction requests
+    to its registered backend service. The parameter `GetArtifactResponse` is a model’s
+    metadata object that is fetched from the metadata store.
+  id: totrans-89
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`downloadMode`、`predict`和`registerModel`三个方法都是不言自明的。每个客户端实现这些方法来下载模型并向其注册的后端服务发送预测请求。`GetArtifactResponse`参数是从元数据存储中获取的模型元数据对象。'
+- en: 'In this (intent predictor) example, the predictor backend client is `CustomGrpcPredictorBackend`.
+    You can find the detailed implementation in `prediction-service/ src/main/java/org/orca3/miniAutoML/prediction/CustomGrpcPredictorBackend.java`.
+    The following code snippet shows how this client sends prediction requests to
+    the self-built intent predictor container by using gRPC protocol:'
+  id: totrans-90
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个（意图预测器）示例中，预测器后端客户端是`CustomGrpcPredictorBackend`。您可以在`prediction-service/src/main/java/org/orca3/miniAutoML/prediction/CustomGrpcPredictorBackend.java`中找到详细的实现。下面的代码片段展示了该客户端如何使用
+    gRPC 协议将预测请求发送到自建的意图预测器容器：
+- en: '[PRE7]'
+  id: totrans-91
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE7]'
+- en: ❶ Text input for the model
+  id: totrans-92
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 模型的文本输入
+- en: ❷ Model ID
+  id: totrans-93
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 模型 ID
+- en: 7.1.4 Intent classification predictor
+  id: totrans-94
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.4 意图分类预测器
+- en: 'We have seen the frontend service and its internal routing logic, so now let’s
+    look at the last piece of this sample prediction service: the backend predictor.
+    To show you a complete deep learning use case, we implement a predictor container
+    to execute the intent classification models trained in chapter 3.'
+  id: totrans-95
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经看到了前端服务及其内部路由逻辑，现在让我们来看看这个示例预测服务的最后一部分：后端预测器。为了向您展示一个完整的深度学习用例，我们实现了一个预测器容器来执行第3章训练的意图分类模型。
+- en: We can see this self-built intent classification predictor as an independent
+    microservice, which can serve multiple intent models simultaneously. It has a
+    gRPC web interface and a model manager. The model manager is the heart of the
+    predictor; it does multiple things, including loading model files, initializing
+    the model, caching the model in memory, and executing the model with user input.
+    Figure 7.3 shows the predictor’s design graph and the prediction workflow within
+    the predictor.
+  id: totrans-96
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们可以将这个自建的意图分类预测器视为一个独立的微服务，可以同时为多个意图模型提供服务。它具有 gRPC web 接口和模型管理器。模型管理器是预测器的核心；它执行多项任务，包括加载模型文件，初始化模型，将模型缓存在内存中，并使用用户输入执行模型。图
+    7.3 显示了预测器的设计图和预测器内的预测工作流程。
+- en: 'Let’s use an intent prediction request for model A to consider the workflow
+    in figure 7.3\. It runs in the following steps:'
+  id: totrans-97
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 让我们使用图 7.3 中的模型 A 的意图预测请求来考虑工作流程。它按以下步骤运行：
+- en: The predictor client in the frontend service calls the predictor’s web gRPC
+    interface to run an intent prediction with model A.
+  id: totrans-98
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 前端服务中的预测客户端调用预测器的 web gRPC 接口，使用模型 A 运行意图预测。
+- en: The model manager is invoked for the request.
+  id: totrans-99
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 请求调用模型管理器。
+- en: The model manager loads the model files of model A from the shared disk volume,
+    initializes the model, and puts it into the model cache. The model file should
+    be placed at the shared disk volume by the frontend service already.
+  id: totrans-100
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 模型管理器从共享磁盘卷加载模型 A 的模型文件，初始化模型，并将其放入模型缓存中。模型文件应该已经由前端服务放置在共享磁盘卷上。
+- en: The model manager executes model A with the transformer’s help to preprocess
+    and postprocess the input and output data.
+  id: totrans-101
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 模型管理器使用转换器的帮助执行模型 A，对输入和输出数据进行预处理和后处理。
+- en: The predicted result is returned.
+  id: totrans-102
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 返回预测结果。
+- en: '![](../Images/07-03.png)'
+  id: totrans-103
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-03.png)'
+- en: Figure 7.3 The backend intent predictor design and prediction workflow
+  id: totrans-104
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.3 后端意图预测器设计和预测工作流程
+- en: Next, let’s look at the actual implementation of the components mentioned in
+    the workflow.
+  id: totrans-105
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，让我们看看工作流程中提到的组件的实际实现。
+- en: Prediction API
+  id: totrans-106
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 预测 API
+- en: Intent predictor has one API—`PredictorPredict` (see code listing 7.7). It accepts
+    two parameters, `runId` and `document`. The `runId` is the model ID, and the `document`
+    is a text string. You can find the full gRPC contract at `grpc-contract/src/main/proto/`
+    `prediction_service.proto.`
+  id: totrans-107
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 意图预测器有一个 API — `PredictorPredict`（见代码列表 7.7）。它接受两个参数，`runId` 和 `document`。`runId`
+    是模型 ID，`document` 是一个文本字符串。你可以在 `grpc-contract/src/main/proto/` `prediction_service.proto`
+    中找到完整的 gRPC 合同。
+- en: Listing 7.7 Intent predictor gRPC interface
+  id: totrans-108
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.7 意图预测器 gRPC 接口
+- en: '[PRE8]'
+  id: totrans-109
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE8]'
+- en: You may notice the predictor API is the same as the frontend API (code listing
+    7.2); this is for simplicity. But in real-world applications, they are normally
+    different, mostly because they are designed for different purposes. The predictor’s
+    predict API is designed in favor of model execution, whereas the frontend predict
+    API is designed in favor of the customer’s and business’s requirements.
+  id: totrans-110
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能注意到预测器 API 与前端 API（代码列表 7.2）相同；这是为了简单起见。但在实际应用中，它们通常是不同的，主要是因为它们被设计用于不同的目的。预测器的
+    predict API 设计有利于模型执行，而前端的 predict API 设计有利于客户和业务的需求。
+- en: Model files
+  id: totrans-111
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型文件
+- en: 'Each intent classification model produced in our model training service (chapter
+    3) has three files. The `manifest.json` file contains both model metadata and
+    dataset labels; the predictor needs this information to translate the model prediction
+    result from an integer to a meaningful text string. The `model.pth` is the model’s
+    learned parameters; the predictor will read these network parameters to set up
+    the model’s neural network for model serving. The `vocab.pth` is the vocabulary
+    file used in model training, which is also necessary for serving because we need
+    it to transform user input (string) to model input (decimal number). Let’s review
+    the sample intent model:'
+  id: totrans-112
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们在模型训练服务（第 3 章）中生成的每个意图分类模型都有三个文件。`manifest.json` 文件包含模型元数据和数据集标签；预测器需要这些信息将模型预测结果从整数转换为有意义的文本字符串。`model.pth`
+    是模型的学习参数；预测器将读取这些网络参数以设置模型的神经网络以进行模型服务。`vocab.pth` 是模型训练中使用的词汇文件，这也是服务所必需的，因为我们需要它将用户输入（字符串）转换为模型输入（十进制数）。让我们来看一下示例意图模型：
+- en: '[PRE9]'
+  id: totrans-113
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE9]'
+- en: ❶ Model metadata and dataset labels
+  id: totrans-114
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 模型元数据和数据集标签
+- en: ❷ Model weights file
+  id: totrans-115
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 模型权重文件
+- en: ❸ Vocabulary file
+  id: totrans-116
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 词汇文件
+- en: ❹ Model metadata
+  id: totrans-117
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 模型元数据
+- en: ❺ Dataset labels
+  id: totrans-118
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 数据集标签
+- en: 'When saving a PyTorch model, there are two choices: serialize the entire model
+    or serialize only the learned parameters. The first option serializes the entire
+    model object, including its classes and directory structure, whereas the second
+    option only saves the learnable parameters of the model network.'
+  id: totrans-119
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当保存 PyTorch 模型时，有两种选择：序列化整个模型或仅序列化学习参数。第一种选项序列化整个模型对象，包括其类和目录结构，而第二种选项仅保存模型网络的可学习参数。
+- en: 'From Matthew Inkawhich’s article “PyTorch: Saving and Loading Models” ([http://mng.bz/zm9B](http://mng.bz/zm9B)),
+    the PyTorch team recommends only saving the model’s learned parameters (a model’s
+    `state_dict`). If we save the entire model, the serialized data is bound to the
+    specific classes and the exact directory structure used when the model is saved.
+    The model class itself is not saved; rather, the file containing the class is
+    saved. Consequently, during loading time, the serialized model code can break
+    in various ways when used in other projects or after refactors.'
+  id: totrans-120
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '根据马修·英卡威奇的文章“PyTorch: Saving and Loading Models”（[http://mng.bz/zm9B](http://mng.bz/zm9B)），PyTorch
+    团队建议仅保存模型的学习参数（模型的`state_dict`）。如果我们保存整个模型，序列化数据将与保存模型时使用的特定类和确切目录结构绑定。模型类本身不会被保存；而是保存包含类的文件。因此，在加载时，当在其他项目中使用或进行重构后，序列化的模型代码可能会以各种方式中断。'
+- en: 'For this reason, we only save the model `state_dict` (learned parameters) as
+    the model file after training; in this example, it is the `model.pth` file. We
+    use the following code to save it: `torch.save(model.state_dict(),` `model_local_path)`.
+    As a result, the predictor needs to know the model’s neural network architecture
+    (see code listing 7.8) to load the model file because the model file is just `state_dict`—the
+    model network’s parameters.'
+  id: totrans-121
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为此，我们只保存模型的`state_dict`（学习参数）作为训练后的模型文件；在这个例子中，它是`model.pth`文件。我们使用以下代码保存它：`torch.save(model.state_dict(),
+    model_local_path)`。因此，预测器需要知道模型的神经网络架构（见代码清单7.8）来加载模型文件，因为模型文件只是`state_dict`——模型网络的参数。
+- en: Listing 7.8 (`predictor/predict.py`) shows the model architecture that we use
+    to load the model file—`model.pth` (parameters only)—in the predictor. The model
+    execution code in serving is derived from the model training code. If you compare
+    the model definition in the following listing with the `TextClassificationModel`
+    class in our training code (`training-code/text-classification/train.py`), you
+    will find they are identical. This is because model serving is essentially a model
+    training run.
+  id: totrans-122
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单7.8（`predictor/predict.py`）显示了我们用来在预测器中加载模型文件`model.pth`（仅参数）的模型架构。服务中的模型执行代码源自模型训练代码。如果你将以下清单中的模型定义与我们训练代码中的`TextClassificationModel`类（`training-code/text-classification/train.py`）进行比较，你会发现它们是相同的。这是因为模型服务本质上是模型训练运行。
+- en: Listing 7.8 The model’s neural network (architecture)
+  id: totrans-123
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单7.8 模型的神经网络（架构）
+- en: '[PRE10]'
+  id: totrans-124
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE10]'
+- en: ❶ Defines model architecture
+  id: totrans-125
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 定义模型架构
+- en: You might wonder whether the training code and the model serving code are now
+    combined. When the training code changes, it seems the model serving code in the
+    predictor also needs to be adjusted. This is only partially true; the context
+    tends to dictate how model serving is affected by changes to the model training
+    algorithm. The following are some nuances of that relationship.
+  id: totrans-126
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你可能会想知道训练代码和模型服务代码是否现在合并了。当训练代码发生变化时，似乎预测器中的模型服务代码也需要调整。这只是部分正确；上下文往往会决定模型服务如何受到模型训练算法变化的影响。以下是这种关系的一些微妙之处。
+- en: First, the training code and the serving code will only need to sync on the
+    neural network architecture and input/output data schema. Other model training
+    changes, such as training strategy, hyperparameter tuning, dataset splitting,
+    and enhancements, will not affect serving because they result in model weights
+    and bias files. Second, model versioning should be introduced when neural network
+    architecture changes in training. In practice, every model training or retraining
+    assigns a new model version to the output model. So the problem to address is
+    how to serve different versions of a model.
+  id: totrans-127
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，训练代码和服务代码只需在神经网络架构和输入/输出数据模式上同步。其他模型训练变化，比如训练策略、超参数调整、数据集拆分和增强，不会影响服务，因为它们会产生模型权重和偏置文件。其次，在训练时应引入模型版本控制。在实践中，每次模型训练或重新训练都会给输出模型分配一个新的模型版本。所以要解决的问题是如何为模型的不同版本提供服务。
+- en: This sample service does not handle model version management. However, in section
+    7.5 and chapter 8, we will discuss metadata management for the model version in
+    depth. We just describe the rough idea here.
+  id: totrans-128
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 这个示例服务不处理模型版本管理。但是，在第 7.5 节和第 8 章中，我们将深入讨论模型版本的元数据管理。我们在这里只是描述了大致的想法。
+- en: If you are using a similar model service approach with a customized predictor
+    backend, you need to prepare multiple versions of the predictor backend to match
+    the models that are trained with different neural network architectures. When
+    releasing a model, the versions of the training code, serving code, and model
+    file need to be related as part of the model metadata and saved in the metadata
+    store. So, at the serving time, the prediction service (frontend service) can
+    search the metadata store to determine which predictor version it should route
+    a request to for the given model.
+  id: totrans-129
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你正在使用类似的模型服务方法，并且有一个自定义的预测器后端，你需要准备多个版本的预测器后端，以匹配使用不同神经网络架构训练的模型。在发布模型时，训练代码的版本、服务代码的版本以及模型文件的版本需要作为模型元数据的一部分相关联，并保存在元数据存储中。因此，在提供服务时，预测服务（前端服务）可以搜索元数据存储，以确定应将请求路由到给定模型的哪个预测器版本。
+- en: If you are using a model server approach, serving models with different versions
+    becomes a lot easier because this approach breaks the dependency between the serving
+    code (model execution code) and training code. You can see a concrete example
+    in section 7.2.
+  id: totrans-130
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果你使用模型服务器方法，使用不同版本的模型变得更加容易，因为这种方法打破了服务代码（模型执行代码）和训练代码之间的依赖关系。你可以在第 7.2 节中看到一个具体的例子。
+- en: 'Note As we mentioned in chapter 6 (section 6.1.3), model training and serving
+    both utilize the same machine learning algorithm but in different execution modes:
+    learning and evaluation. However, we would like to clarify this concept once more.
+    Understanding the relationship between training code, serving code, and model
+    files is the foundation of a serving system design.'
+  id: totrans-131
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：正如我们在第 6 章（第 6.1.3 节）中提到的，模型训练和服务都利用相同的机器学习算法，但是在不同的执行模式下：学习和评估。然而，我们想再次澄清这个概念。理解训练代码、服务代码和模型文件之间的关系是服务系统设计的基础。
+- en: Model manager
+  id: totrans-132
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型管理器
+- en: The model manager is the key component of this intent predictor. It hosts a
+    memory model cache, loads the model file, and executes the model. The following
+    listing (`predictor/predict.py`) shows the core code of the model manager.
+  id: totrans-133
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型管理器是这个意图预测器的关键组件。它托管一个内存模型缓存，加载模型文件，并执行模型。下面的清单（`predictor/predict.py`）显示了模型管理器的核心代码。
+- en: Listing 7.9 Intent predictor model manager
+  id: totrans-134
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单 7.9 意图预测器模型管理器
+- en: '[PRE11]'
+  id: totrans-135
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE11]'
+- en: ❶ Hosts the model in memory
+  id: totrans-136
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将模型托管在内存中
+- en: ❷ Caches model graph; dependencies and classes in memory
+  id: totrans-137
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将模型图、内存中的依赖项和类缓存
+- en: ❸ Runs the model to obtain prediction results
+  id: totrans-138
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 运行模型以获取预测结果
+- en: Intent predictor prediction request workflow
+  id: totrans-139
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 意图预测器预测请求工作流程
+- en: You’ve met the main components of the intent predictor, so let’s see an end-to-end
+    workflow inside this predictor. First, we expose the prediction API by registering
+    `PredictorServicer` to the gRPC server, so the frontend service can talk to the
+    predictor remotely. Second, when the frontend service calls the `PredictorPredict`
+    API, the model manager will load the model into memory, run the model, and return
+    the prediction result. Code listing 7.10 highlights the aforementioned workflow’s
+    code implementation. You can find the full implementation at `predictor/predict.py`.
+  id: totrans-140
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你已经了解了意图预测器的主要组件，现在让我们来看看这个预测器内部的端到端工作流程。首先，我们通过将 `PredictorServicer` 注册到 gRPC
+    服务器来公开预测 API，这样前端服务就可以远程与预测器通信。其次，当前端服务调用 `PredictorPredict` API 时，模型管理器将加载模型到内存中，运行模型，并返回预测结果。清单
+    7.10 突出了上述工作流程的代码实现。你可以在 `predictor/predict.py` 中找到完整的实现。
+- en: Listing 7.10 Intent predictor prediction workflow
+  id: totrans-141
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单 7.10 意图预测器预测工作流程
+- en: '[PRE12]'
+  id: totrans-142
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE12]'
+- en: ❶ Starts the gRPC server
+  id: totrans-143
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 启动 gRPC 服务器
+- en: ❷ Registers the model serving logic to the public API
+  id: totrans-144
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将模型服务逻辑注册到公共 API
+- en: ❸ Makes the prediction
+  id: totrans-145
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 进行预测
+- en: 7.1.5 Model eviction
+  id: totrans-146
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.1.5 模型逐出
+- en: The sample code did not cover model eviction—that is, evicting infrequently
+    used model files from the prediction service’s memory space. In the design, for
+    every prediction request, the prediction service will query and download the request
+    model from the metadata store and then read and initialize the model from the
+    local disk to memory. For some models, these operations are time-consuming.
+  id: totrans-147
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 示例代码未涵盖模型淘汰——即从预测服务的内存空间中淘汰不经常使用的模型文件。在设计中，对于每个预测请求，预测服务将从元数据存储中查询和下载请求模型，然后从本地磁盘读取和初始化模型到内存中。对于一些模型来说，这些操作是耗时的。
+- en: To reduce the latency for each model prediction request, our design caches model
+    graphs in the model manager component (in memory) to avoid model loading a used
+    model. But imagine that we could continue training new intent classification models
+    and running predictions on them. These newly produced models will keep loading
+    into the model manager’s model cache in memory. Eventually, the predictor will
+    run out of memory.
+  id: totrans-148
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了减少每个模型预测请求的延迟，我们的设计在模型管理器组件（内存中）中缓存模型图，以避免模型加载已使用的模型。但想象一下，我们可以继续训练新的意图分类模型并对其进行预测。这些新产生的模型将继续加载到模型管理器的模型缓存中。最终，预测器将耗尽内存。
+- en: To address such problems, the model manager needs to be upgraded to include
+    a model eviction feature. For example, we could introduce the LRU (least recently
+    used) algorithm to rebuild the model manager’s model cache. With the help of the
+    LRU, we can keep only the recently visited model in the model cache and evict
+    the least visited models when the currently loaded model exceeds the memory threshold.
+  id: totrans-149
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了解决这些问题，模型管理器需要升级以包含模型淘汰功能。例如，我们可以引入 LRU（最近最少使用）算法来重建模型管理器的模型缓存。借助 LRU 的帮助，我们可以仅保留最近访问的模型在模型缓存中，并在当前加载的模型超过内存阈值时淘汰最少访问的模型。
+- en: 7.2 TorchServe model server sample
+  id: totrans-150
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.2 TorchServe 模型服务器示例
+- en: In this section, we will show you an example of building a prediction service
+    with the model server approach. More specifically, we use the TorchServe backend
+    (a model serving tool built for the PyTorch model) to replace the self-built predictor
+    discussed in the previous section (7.1.4).
+  id: totrans-151
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在本节中，我们将向您展示使用模型服务器方法构建预测服务的示例。更具体地说，我们使用了 TorchServe 后端（一个为 PyTorch 模型构建的模型服务工具）来替换上一节（7.1.4）中讨论的自建预测器。
+- en: To make a fair comparison to the model service approach in section 7.1, we develop
+    this model server approach example by reusing the frontend service shown in the
+    previous section. More precisely, we add only another predictor backend and still
+    use the frontend service, gRPC API, and intent classification models to demo the
+    same end-to-end prediction workflow.
+  id: totrans-152
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了与第 7.1 节中的模型服务方法进行公平比较，我们通过重新使用上一节中展示的前端服务来开发此模型服务器方法示例。更确切地说，我们只添加了另一个预测器后端，仍然使用前端服务、gRPC
+    API 和意图分类模型来演示相同的端到端预测工作流程。
+- en: There is one big difference between the intent predictor in section 7.1.4 and
+    the TorchServe predictor (model server approach). The same predictor can serve
+    any PyTorch model, regardless of its prediction algorithm.
+  id: totrans-153
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第 7.1.4 节的意图预测器和 TorchServe 预测器（模型服务器方法）之间有一个很大的区别。相同的预测器可以为任何 PyTorch 模型提供服务，而不管其预测算法如何。
+- en: 7.2.1 Playing with the service
+  id: totrans-154
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.1 玩转服务
+- en: Because this model server sample is developed on top of the previous sample
+    service, we interact with the prediction service in the same way. The only difference
+    is we launch a TorchServe backend (container) instead of launching a self-built
+    intent predictor container. Code listing 7.11 shows only the key steps to starting
+    the service and sending intent prediction requests. To run the lab locally, please
+    complete the lab in appendix A (section A.2), and refer to the `scripts/lab-006-model-serving-torchserve.sh`
+    file ([http://mng.bz/0yEN](http://mng.bz/0yEN)).
+  id: totrans-155
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为这个模型服务器示例是在上一个示例服务的基础上开发的，所以我们以相同的方式与预测服务交互。唯一的区别是我们启动了一个 TorchServe 后端（容器），而不是启动一个自建的意图预测器容器。代码清单
+    7.11 仅显示了启动服务和发送意图预测请求的关键步骤。要在本地运行实验，请完成附录 A（A.2 节）中的实验，并参考 `scripts/lab-006-model-serving-torchserve.sh`
+    文件（[http://mng.bz/0yEN](http://mng.bz/0yEN)）。
+- en: Listing 7.11 Starting the prediction service and making a prediction call
+  id: totrans-156
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.11 启动预测服务并进行预测调用
+- en: '[PRE13]'
+  id: totrans-157
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE13]'
+- en: ❶ Mounts local dir to the TorchServe container
+  id: totrans-158
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将本地目录挂载到 TorchServe 容器
+- en: ❷ Starts TorchServe
+  id: totrans-159
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 启动 TorchServe
+- en: ❸ Sets TorchServe to load the model from /models dir
+  id: totrans-160
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 设置 TorchServe 从 /models 目录加载模型
+- en: ❹ Sets local model dir for the prediction service to download the model
+  id: totrans-161
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 设置预测服务的本地模型目录以下载模型
+- en: 7.2.2 Service design
+  id: totrans-162
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.2 服务设计
+- en: This sample service follows the same system design in figure 7.1; the only difference
+    is the predictor backend becomes the TorchServe server. See figure 7.4 for the
+    updated system design.
+  id: totrans-163
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 此示例服务遵循图 7.1 中的相同系统设计；唯一的区别是预测器后端变成了 TorchServe 服务器。请参阅图 7.4 以获取更新后的系统设计。
+- en: '![](../Images/07-04.png)'
+  id: totrans-164
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 7.4](../Images/07-04.png)'
+- en: Figure 7.4 The system overview and model serving end-to-end workflow
+  id: totrans-165
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.4 系统概述和模型服务端到端工作流程
+- en: From figure 7.4, we see the model serving workflow remains the same as the model
+    service sample in figure 7.1\. The user calls the prediction service’s frontend
+    API to send model serving requests; the frontend service then downloads the model
+    files and forwards the prediction request to the TorchServe backend.
+  id: totrans-166
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从图 7.4 可以看出，模型服务工作流程与图 7.1 中的模型服务示例保持一致。用户调用预测服务的前端 API 发送模型服务请求；前端服务然后下载模型文件，并将预测请求转发到
+    TorchServe 后端。
+- en: 7.2.3 The frontend service
+  id: totrans-167
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.3 前端服务
+- en: In section 7.1.3, we established that the frontend service can support different
+    predictor backends by registering predictors in the predictor connection manager.
+    When a prediction request comes in, the predictor connection manager will route
+    the request to the proper predictor backend by checking the model algorithm type
+    of the request.
+  id: totrans-168
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 7.1.3 节中，我们确认了前端服务可以通过在预测器连接管理器中注册预测器来支持不同的预测器后端。当预测请求到来时，预测器连接管理器将通过检查请求的模型算法类型将请求路由到适当的预测器后端。
+- en: Following the previous design, to support our new TorchServe backend, we add
+    a new predictor client (`TorchGrpcPredictorBackend`) to the frontend service to
+    represent the TorchServe backend; see figure 7.5 for the updated system design.
+  id: totrans-169
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 遵循之前的设计，为了支持我们的新 TorchServe 后端，我们在前端服务中添加了一个新的预测器客户端（`TorchGrpcPredictorBackend`）来代表
+    TorchServe 后端；请参阅图 7.5 以获取更新后的系统设计。
+- en: '![](../Images/07-05.png)'
+  id: totrans-170
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 7.5](../Images/07-05.png)'
+- en: Figure 7.5 The frontend service design and the model serving workflow
+  id: totrans-171
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.5 前端服务设计和模型服务工作流程
+- en: In figure 7.5, two gray boxes are added; they are the TorchServe gRPC predictor
+    backend client (`TorchGrpcPredictorBackend`) and the backend TorchServe server.
+    `TorchGrpcPredictorBackend` responds by downloading the model files and then sending
+    prediction requests to the TorchServe container. The TorchServe backend will be
+    chosen by the predictor connection manager in this example because the requested
+    model’s metadata (in the metadata store) defines TorchServe as its predictor.
+  id: totrans-172
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图 7.5 中，添加了两个灰色的方框；它们分别是 TorchServe gRPC 预测器后端客户端（`TorchGrpcPredictorBackend`）和后端
+    TorchServe 服务器。`TorchGrpcPredictorBackend` 通过下载模型文件并向 TorchServe 容器发送预测请求进行响应。在这个示例中，TorchServe
+    后端将由预测器连接管理器选择，因为请求的模型元数据（在元数据存储中）将 TorchServe 定义为其预测器。
+- en: 7.2.4 TorchServe backend
+  id: totrans-173
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.4 TorchServe 后端
+- en: TorchServe is a tool built by the PyTorch team to serve PyTorch models. TorchServe
+    runs as a black box, and it provides HTTP and gRPC interfaces for model prediction
+    and internal resource management. Figure 7.6 visualizes the workflow for how we
+    use TorchServe in this sample.
+  id: totrans-174
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe 是由 PyTorch 团队构建的用于提供 PyTorch 模型服务的工具。TorchServe 作为一个黑盒运行，它提供 HTTP
+    和 gRPC 接口用于模型预测和内部资源管理。图 7.6 可视化了我们在这个示例中如何使用 TorchServe 的工作流程。
+- en: '![](../Images/07-06.png)'
+  id: totrans-175
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图 7.6](../Images/07-06.png)'
+- en: 'Figure 7.6 The model serving workflow in the TorchServe backend: the TorchServe
+    application runs as a black box.'
+  id: totrans-176
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.6 TorchServe 后端的模型服务工作流程：TorchServe 应用程序作为一个黑盒运行。
+- en: In our sample code, we run TorchServe as a Docker container, which is provided
+    by the PyTorch team, and then mount a local file directory to the container. This
+    file directory runs as the model store for the TorchServe process. In figure 7.6,
+    we take three steps to run a model prediction. First, we copy PyTorch model files
+    to the model store directory. Second, we call the TorchServe management API to
+    register the model to the TorchServe process. Finally, we call the TorchServe
+    API to run the model prediction for the model—in our case, the intent classification
+    model.
+  id: totrans-177
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的示例代码中，我们将 TorchServe 作为一个 Docker 容器运行，这是由 PyTorch 团队提供的，然后将本地文件目录挂载到容器中。这个文件目录作为
+    TorchServe 进程的模型存储。在图 7.6 中，我们分三步来运行模型预测。首先，我们将 PyTorch 模型文件复制到模型存储目录中。其次，我们调用
+    TorchServe 管理 API 将模型注册到 TorchServe 进程中。最后，我们调用 TorchServe API 来运行模型预测，对于我们来说，是意图分类模型。
+- en: Compared to the self-built intent predictor in section 7.1.4, TorchServe is
+    much simpler. We can make the model serving work without writing any code; we
+    just need to set up a Docker container with disk sharing. Also, unlike the intent
+    predictor that only works for intent classification algorithms, TorchServe is
+    not tied to any specific training algorithm; it can serve any model as long as
+    it’s trained with the PyTorch framework.
+  id: totrans-178
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 跟第7.1.4节中的自构建意图预测器相比，TorchServe要简单得多。我们甚至不需要编写任何代码就可以使模型服务正常运行，只需使用共享磁盘设置Docker容器即可。此外，TorchServe不仅适用于意图分类算法，它不受任何特定训练算法的限制，只要模型是使用PyTorch框架训练的，TorchServe就可以为其提供服务。
+- en: The great flexibility and convenience offered by TorchServe come with requirements.
+    TorchServe requires operators to use their own set of APIs to send model serving
+    requests, and it also requires that the model files are packaged in the TorchServe
+    format. Let’s look at these mandates in the next two subsections.
+  id: totrans-179
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe提供了极大的灵活性和便利性，但也有相关要求。TorchServe要求操作员使用其独有的API发送模型服务请求，并要求模型文件以TorchServe格式打包。下面的两小节会详细介绍这些要求。
+- en: 7.2.5 TorchServe API
+  id: totrans-180
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.5 TorchServe API
+- en: 'TorchServe offers many types of APIs, such as health checks, model explanation,
+    model serving, worker management, and model registration. Each API has two types
+    of implementations: HTTP and gRPC. Because TorchServe has very detailed explanations
+    of its API contract and usage on its official website ([https://pytorch.org/serve/](https://pytorch.org/serve/))
+    and GitHub repo ([https://github.com/pytorch/serve](https://github.com/pytorch/serve)),
+    you can find the details there. In this section, we will focus on the model registration
+    and model inference APIs that we use in our sample service.'
+  id: totrans-181
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe提供了众多类型的API，例如健康检查、模型解释、模型服务、工作线程管理和模型注册等。每个API都有HTTP和gRPC两种实现方式。由于TorchServe在其官网（[https://pytorch.org/serve/](https://pytorch.org/serve/)）和GitHub仓库（[https://github.com/pytorch/serve](https://github.com/pytorch/serve)）上都对API的协议和使用方式进行了详细的解释，你可以在那里找到具体的信息。在本小节中，我们将着重介绍我们在示例服务中使用的模型注册API和模型推理API。
+- en: Model registration API
+  id: totrans-182
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型注册API
+- en: Because TorchServe takes a black-box approach to model serving, it requires
+    a model to be registered first before using it. More specifically, after we place
+    model files in TorchServe’s model store (a local file directory), TorchServe won’t
+    load the model automatically. We need to register the model file and the model’s
+    execution method to TorchServe, so TorchServe knows how to work with this model.
+  id: totrans-183
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 由于TorchServe采用黑箱方式进行模型服务，所以在使用模型之前需要将其注册。具体来说，我们需要先将模型文件放到TorchServe的模型存储库中（即本地文件目录），但是TorchServe并不会自动加载该模型文件。我们需要向TorchServe注册模型文件和该模型的运行方法，以便TorchServe知道如何正常运行该模型。
+- en: 'In our code example, we use the TorchServe’s gRPC model registration API to
+    register our intent model from the prediction service, as in the following snippet:'
+  id: totrans-184
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的代码示例中，我们使用了TorchServe的gRPC模型注册API来从预测服务中注册我们的意图模型，示例如下：
+- en: '[PRE14]'
+  id: totrans-185
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE14]'
+- en: ❶ Registers the model to TorchServe by providing the model file and model name
+  id: totrans-186
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 通过提供模型文件和模型名称向TorchServe注册模型
+- en: The TorchServe model file already contains the model’s metadata—including the
+    model version, model runtime, and model serving entry point. So when registering
+    models, we normally just set the model file name in the `registerModel` API. In
+    addition to model registration, we can also use the `scaleWorker` API to control
+    how much compute resources we allocate to this model.
+  id: totrans-187
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe模型文件中已经包含有模型的元数据，包括模型版本、模型运行时和模型服务入口。因此，在注册模型时，通常只需要在`registerModel`API中设置模型文件名。除了模型注册之外，我们还可以使用`scaleWorker`API来控制为该模型分配多少计算资源。
+- en: Model inference API
+  id: totrans-188
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型推理API
+- en: TorchServe provides a unified model serving API for diverse models; this makes
+    TorchServe simple to use. To run predictions for the default version of a model,
+    make a REST call to `POST` `/predictions/{model_name}`. To run predictions for
+    a specific version of a loaded model, make a REST call to `POST` `/predictions/{model_name}/
+    {version}`. The content to be predicted in the prediction request is entered in
+    binary format. For example,
+  id: totrans-189
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe为各种模型提供了统一的模型服务API，使其使用起来非常简单。如果想要为模型的默认版本运行预测，只需向`/predictions/{model_name}`发送一个REST请求；如果想要为加载的特定版本的模型运行预测，则向`/predictions/{model_name}/{version}`发送REST请求。需要预测的内容以二进制格式输入到预测请求中。例如：
+- en: '[PRE15]'
+  id: totrans-190
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE15]'
+- en: In our sample service, we use the gRPC interface to send prediction requests
+    to TorchServe. Code listing 7.12 shows the `TorchGrpcPredictorBackend` client
+    translating a prediction request from a frontend API call to a TorchServe backend
+    gRPC call. You can find the full source ode of `TorchGrpcPredictorBackend` at
+    `prediction-service/` `src/main/java/org/orca3/miniAutoML/prediction/TorchGrpcPredictorBackend.java.`
+  id: totrans-191
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的样本服务中，我们使用 gRPC 接口将预测请求发送到 TorchServe。代码清单 7.12 展示了 `TorchGrpcPredictorBackend`
+    客户端将预测请求从前端 API 调用转换为 TorchServe 后端 gRPC 调用。您可以在 `prediction-service/src/main/java/org/orca3/miniAutoML/prediction/TorchGrpcPredictorBackend.java`
+    找到 `TorchGrpcPredictorBackend` 的完整源代码。
+- en: Listing 7.12 Calling the TorchServe prediction API from the frontend service
+  id: totrans-192
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 清单 7.12 从前端服务调用 TorchServe 预测 API
+- en: '[PRE16]'
+  id: totrans-193
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE16]'
+- en: ❶ Converts text input to binary format for calling TorchServe
+  id: totrans-194
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 将文本输入转换为二进制格式以调用 TorchServe
+- en: 7.2.6 TorchServe model files
+  id: totrans-195
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.6 TorchServe 模型文件
+- en: So far, you have seen the TorchServe model serving workflow and API. You may
+    wonder how model serving works in TorchServe when it knows nothing about the model
+    it serves. In chapter 6, we learned that to serve a model, the prediction service
+    needs to know the model algorithm and model input/output schema. Counterintuitively,
+    TorchServe runs model serving without knowing the model algorithm and model input/output
+    data format. The trick lies in the TorchServe model file.
+  id: totrans-196
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 到目前为止，您已经看到了 TorchServe 模型服务的工作流程和 API。您可能想知道当 TorchServe 对其所服务的模型一无所知时，TorchServe
+    的模型服务是如何工作的。在第 6 章中，我们学到要服务一个模型，预测服务需要知道模型算法和模型输入/输出模式。与直觉相反，TorchServe 运行模型服务而不知道模型算法和模型输入/输出数据格式。诀窍在于
+    TorchServe 模型文件。
+- en: TorchServe requires models to be packed into a special .mar file. We can use
+    the `torch-model-archiver` CLI or `model_archiver` Python library to package PyTorch
+    model files into a .mar file.
+  id: totrans-197
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe 要求模型打包到一个特殊的 `.mar` 文件中。我们可以使用 `torch-model-archiver` CLI 或 `model_archiver`
+    Python 库将 PyTorch 模型文件打包成一个 `.mar` 文件。
+- en: To archive a TorchServe .mar file, we need to provide the model name, model
+    files (.pt or .pth), and a handler file. The handler file is the key piece; it
+    is a Python code file that defines the logic for handling custom TorchServe inference
+    logic. Because TorchServe’s model package (.mar file) contains the model algorithm,
+    model data, and model execution code and the model execution code follows TorchServe’s
+    prediction interface (protocol), TorchServe can execute any model (.mar file)
+    by using its generic prediction API without knowing the model algorithm.
+  id: totrans-198
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要归档 TorchServe 的 `.mar` 文件，我们需要提供模型名称、模型文件（`.pt` 或 `.pth`）和一个处理程序文件。处理程序文件是关键部分；它是一个定义处理自定义
+    TorchServe 推理逻辑的 Python 代码文件。因为 TorchServe 的模型包（`.mar` 文件）包含模型算法、模型数据和模型执行代码，而模型执行代码遵循
+    TorchServe 的预测接口（协议），所以 TorchServe 可以通过使用其通用预测 API 在不知道模型算法的情况下执行任何模型（`.mar` 文件）。
+- en: 'When TorchServe receives a prediction request, it will first find the internal
+    worker process that hosts the model and then trigger the model’s handler file
+    to process the request. The handler file contains four pieces of logic: model
+    network initialization, input data preprocess, model inference, and prediction
+    result postprocess. To make the previous explanation more concrete, let’s look
+    at our intent model file as an example.'
+  id: totrans-199
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当 TorchServe 收到预测请求时，它首先会找到承载模型的内部工作进程，然后触发模型的处理程序文件来处理请求。处理程序文件包含四个逻辑部分：模型网络初始化、输入数据预处理、模型推理和预测结果后处理。为了使前面的解释更具体，让我们以我们的意图模型文件为例。
+- en: Intent classification .mar file
+  id: totrans-200
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 意图分类 `.mar` 文件
+- en: 'If we open the .mar file of an intent model in our sample service, we will
+    see that two additional files—`MANIFEST.json` and `torchserve_handler.py`—are
+    added, compared with the model files we see in section 7.1.4\. The following is
+    the folder structure of an intent .mar file:'
+  id: totrans-201
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 如果我们打开样本服务中意图模型的 `.mar` 文件，与我们在第 7.1.4 节中看到的模型文件相比，我们会看到额外添加了两个文件——`MANIFEST.json`
+    和 `torchserve_handler.py`。以下是意图 `.mar` 文件的文件夹结构：
+- en: '[PRE17]'
+  id: totrans-202
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE17]'
+- en: ❶ TorchServe .mar file metadata
+  id: totrans-203
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ TorchServe .mar 文件元数据
+- en: ❷ Contains label information
+  id: totrans-204
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 包含标签信息
+- en: ❸ Model weights file
+  id: totrans-205
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 模型权重文件
+- en: ❹ Model architecture and model serving logic
+  id: totrans-206
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 模型架构和模型服务逻辑
+- en: ❺ Vocabulary file, required by the intent algorithm
+  id: totrans-207
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 词汇文件，意图算法所需
+- en: The `MANIFEST.json` file defines the metadata of a model, including the model
+    version, model weights, model name, and handler file. By having a `MANIFEST.json`
+    file, TorchServe knows how to load and run prediction on arbitrary models without
+    knowing their implementation details.
+  id: totrans-208
+  prefs: []
+  type: TYPE_NORMAL
+  zh: '`MANIFEST.json` 文件定义了模型的元数据，包括模型版本、模型权重、模型名称和处理程序文件。通过拥有`MANIFEST.json`文件，TorchServe
+    知道如何加载和运行预测任意模型，而不知道其实现细节。'
+- en: TorchServe handler file
+  id: totrans-209
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe 处理程序文件
+- en: Once a model is registered in TorchServe, TorchServe will use the `handle(self`,
+    `data`, `context)` function in the model’s handler file as the entry point for
+    model prediction. The handler file manages the entire process of model serving,
+    including model initialization, preprocess on input request, model execution,
+    and postprocess on the predicted outcome.
+  id: totrans-210
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一旦模型在 TorchServe 中注册，TorchServe 将使用模型处理程序文件中的`handle(self`, `data`, `context)`函数作为模型预测的入口点。处理程序文件管理模型服务的整个过程，包括模型初始化、对输入请求的预处理、模型执行和对预测结果的后处理。
+- en: Code listing 7.13 highlights the key pieces of the handler file defined for
+    the intent classification .mar file used in this sample service. You can find
+    this file in our Git repository at `training-code/text-classification/torchserve_handler.py`.
+  id: totrans-211
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 代码清单 7.13 强调了在该示例服务中使用的意图分类 .mar 文件的处理程序文件中定义的关键部分。您可以在我们的 Git 代码库中找到此文件，路径为`training-code/text-classification/torchserve_handler.py`。
+- en: Listing 7.13 Intent model TorchServe handler file
+  id: totrans-212
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 列表 7.13 意图模型 TorchServe 处理文件
+- en: '[PRE18]'
+  id: totrans-213
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE18]'
+- en: By starting from the `handle` function in listing 7.13, you will have a clear
+    view of how model serving is executed by the handler file. The `initialize` function
+    loads all the model files (weights, labels, and vocabulary) and initializes the
+    model. The `handle` function is the entry point of model serving; it preprocesses
+    the binary model input, runs the model inference, postprocesses the model output,
+    and returns the result.
+  id: totrans-214
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从清单 7.13 中的`handle`函数开始，您将清楚地了解处理程序文件是如何执行模型服务的。`initialize`函数加载所有模型文件（权重、标签和词汇表）并初始化模型。`handle`函数是模型服务的入口点；它对二进制模型输入进行预处理，运行模型推断，对模型输出进行后处理，并返回结果。
+- en: Packaging .mar file in training
+  id: totrans-215
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在训练过程中打包 .mar 文件
+- en: When we decide to use TorchServe for model serving, it’s better to produce the
+    .mar file at training time. Also, because the TorchServe handler file contains
+    the model architecture and model execution logic, it is usually a part of the
+    model training code.
+  id: totrans-216
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当我们决定在模型服务中使用 TorchServe 时，最好在训练时生成 .mar 文件。另外，因为 TorchServe 处理程序文件包含模型架构和模型执行逻辑，通常是模型训练代码的一部分。
+- en: 'There are two methods of packaging a .mar file. First, when model training
+    completes, we can run the `torch-model-archiver` CLI tool to package model weights
+    as serialized files and dependent files as extra files. Second, we can use the
+    `model_ archiver` Python library to produce the .mar file as the last step of
+    the model training code. The following code snippets are the examples we used
+    for packaging intent classification models:'
+  id: totrans-217
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 打包 .mar 文件有两种方法。首先，在模型训练完成后，我们可以运行`torch-model-archiver` CLI 工具，将模型权重打包成序列化文件，将依赖文件作为额外文件。其次，我们可以使用`model_
+    archiver` Python 库，在模型训练代码的最后一步生成 .mar 文件。以下代码片段是我们用于打包意图分类模型的示例：
+- en: '[PRE19]'
+  id: totrans-218
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE19]'
+- en: 7.2.7 Scaling up in Kubernetes
+  id: totrans-219
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.2.7 在 Kubernetes 中扩展规模
+- en: 'In our sample service, for demo purposes, we run a single TorchServe container
+    as the prediction backend, but this is not the case for the production environment.
+    The challenges for scaling up TorchServe are as follows:'
+  id: totrans-220
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的示例服务中，为了演示目的，我们运行单个 TorchServe 容器作为预测后端，但这在生产环境中并非如此。扩展 TorchServe 面临的挑战如下：
+- en: The load balancer makes TorchServe model registration difficult. In TorchServe,
+    model files need to be registered to the TorchServe server first before they can
+    be used. But in production, the TorchServe instances are put behind a network
+    load balancer, so we can only send prediction requests to the load balancer and
+    let it route the request to a random TorchServe instance. In this case, it’s difficult
+    to register models because we can’t specify which TorchServe instance serves which
+    model. The load balancer hides the TorchServe instances from us.
+  id: totrans-221
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 负载均衡器使 TorchServe 模型注册变得困难。在 TorchServe 中，模型文件需要先注册到 TorchServe 服务器，然后才能使用。但是在生产环境中，TorchServe
+    实例被放置在网络负载均衡器后，因此我们只能将预测请求发送到负载均衡器，让它将请求路由到随机的 TorchServe 实例。在这种情况下，由于我们无法指定哪个
+    TorchServe 实例为哪个模型提供服务，注册模型变得困难。负载均衡器向我们隐藏了 TorchServe 实例。
+- en: Each TorchServe instance needs to have a model store directory for loading models,
+    and model files need to be put in the model store directory before they can be
+    registered. Having multiple TorchServe instances makes model file copying difficult
+    to manage because we need to know every TorchServe instance’s IP address or DNS
+    to copy the model files.
+  id: totrans-222
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 每个 TorchServe 实例都需要有一个用于加载模型的模型存储目录，并且在可以注册之前，模型文件需要放在模型存储目录中。有多个 TorchServe
+    实例会使模型文件复制变得难以管理，因为我们需要知道每个 TorchServe 实例的 IP 地址或 DNS 来复制模型文件。
+- en: We need to balance the models among the TorchServe instances. Letting every
+    TorchServe instance load every model file is a bad idea; it would be a great waste
+    of compute resources. We should spread the load evenly across different TorchServe
+    instances.
+  id: totrans-223
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 我们需要在 TorchServe 实例之间平衡模型。让每个 TorchServe 实例加载每个模型文件是一个糟糕的想法；这将极大浪费计算资源。我们应该将负载均匀分配到不同的
+    TorchServe 实例上。
+- en: To address these challenges and scale up the TorchServe backend, we can introduce
+    the “sidecar” pattern in Kubernetes. Figure 7.7 illustrates the overall concept.
+  id: totrans-224
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要解决这些挑战并扩展 TorchServe 后端，我们可以在 Kubernetes 中引入“边车”模式。图 7.7 描绘了整体概念。
+- en: '![](../Images/07-07.png)'
+  id: totrans-225
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-07.png)'
+- en: Figure 7.7 Add a proxy container in the TorchServe pod to scale up TorchServe
+    in Kubernetes.
+  id: totrans-226
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.7 在 Kubernetes 中的 TorchServe pod 中添加代理容器以扩展 TorchServe。
+- en: The proposal in figure 7.7 is to add a proxy container (as a sidecar) along
+    with the TorchServe container in each TorchServe pod. Instead of calling the TorchServe
+    API directly, we send the prediction requests to the proxy container. The proxy
+    API in the proxy container will hide the TorchServe model management details,
+    including model downloading and model registration. It will prepare the TorchServe
+    container to serve arbitrary models.
+  id: totrans-227
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.7 中的建议是在每个 TorchServe pod 中与 TorchServe 容器一起添加代理容器（作为边车）。我们不直接调用 TorchServe
+    API，而是将预测请求发送到代理容器。代理容器中的代理 API 将隐藏 TorchServe 模型管理细节，包括模型下载和模型注册。它将准备 TorchServe
+    容器以服务任意模型。
+- en: After adding a proxy container, the model serving workflow (figure 7.7) occurs
+    as follows. First, the prediction request lands on the proxy container. Second,
+    the proxy downloads the model file and inputs the shared disk (model store). Third,
+    the proxy registers the model to the TorchServe container and converts the inference
+    request to the TorchServe format. Fourth, the TorchServe container runs model
+    serving and returns the result to the proxy. Finally, the proxy container returns
+    the prediction response to the user.
+  id: totrans-228
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 添加代理容器后，模型服务工作流程（图 7.7）如下。首先，预测请求落在代理容器上。其次，代理下载模型文件并将其输入到共享磁盘（模型存储库）。第三，代理将模型注册到
+    TorchServe 容器并将推理请求转换为 TorchServe 格式。第四，TorchServe 容器运行模型服务并将结果返回给代理。最后，代理容器将预测响应返回给用户。
+- en: By having a proxy container, we don’t need to worry about sending a prediction
+    request to a TorchServe instance that doesn’t have that model registered. The
+    proxy container (sidecar) will get the TorchServe container ready for any prediction
+    request by copying model files to the model store and registering the model. It
+    also simplifies the resource management effort because now we can simply rely
+    on the load balancer to spread the prediction workload (models) across the TorchServe
+    pods. Also, by sharing a disk across all TorchServe pods, we can share the model
+    store for all the TorchServe instances, which reduces model downloading time and
+    saves network bandwidth.
+  id: totrans-229
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过添加代理容器，我们无需担心将预测请求发送到未注册该模型的 TorchServe 实例。代理容器（边车）将确保 TorchServe 容器准备好处理任何预测请求，方法是将模型文件复制到模型存储库并注册模型。这也简化了资源管理工作，因为现在我们可以简单地依赖负载均衡器将预测负载（模型）在
+    TorchServe pod 之间分配。此外，通过在所有 TorchServe pod 之间共享磁盘，我们可以为所有 TorchServe 实例共享模型存储库，从而减少了模型下载时间并节省了网络带宽。
+- en: 'The sidecar pattern: A common approach to running the model server'
+  id: totrans-230
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 边车模式：运行模型服务器的常用方法。
+- en: In section 7.4, we will introduce several other model server approaches, such
+    as TensorFlow serving and Triton. Although the implementation of these model servers
+    is different, their design ideas are similar. They all take a black-box approach
+    and require certain model formats and some model management to enable model serving.
+  id: totrans-231
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在第 7.4 节中，我们将介绍其他几种模型服务器方法，例如 TensorFlow serving 和 Triton。尽管这些模型服务器的实现方式不同，但它们的设计思想是相似的。它们都采用黑盒方法，并需要特定的模型格式和一些模型管理来启用模型服务。
+- en: The sidecar pattern in figure 7.7 is a common solution to running these different
+    model server containers in a Kubernetes pod. The proxy container encapsulates
+    all the special requirements of the model server and only exposes a general model
+    serving API.
+  id: totrans-232
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.7中的旁路模式是在Kubernetes pod中运行这些不同模型服务器容器的常见解决方案。代理容器封装了模型服务器的所有特殊要求，并且只暴露通用模型服务API。
+- en: 7.3 Model server vs. model service
+  id: totrans-233
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.3 模型服务器 vs. 模型服务
+- en: Choosing between the model server approach and the model service approach is
+    the first decision we need to make when designing a model serving application.
+    When we choose improperly, our serving application either is hard to use and maintain
+    or takes an unnecessarily long time to build.
+  id: totrans-234
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在设计模型服务应用程序时，选择模型服务器方法和模型服务方法之间是我们需要做出的第一个决定。当我们选择不当时，我们的服务应用程序要么难以使用和维护，要么构建所需时间过长。
+- en: We’ve already reviewed the differences between these two approaches in chapter
+    6 (sections 6.2 and 6.3), but this is such a crucial choice that it’s worth examining
+    again. Now that you’ve seen concrete examples of each approach in action, these
+    ideas may make more intuitive sense.
+  id: totrans-235
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们已经在第6章（第6.2节和第6.3节）中回顾了这两种方法之间的差异，但这是一个非常关键的选择，值得再次审查。现在你已经看到了每种方法的具体示例，这些想法可能更容易理解。
+- en: From working through the two sample services in sections 7.1 and 7.2, it’s clear
+    that the model server approach avoids the effort of building dedicated backend
+    predictors for specific model types. Instead, it works out of the box and can
+    serve arbitrary models regardless of which algorithm the model is implementing.
+    So, it might seem like the model server approach should always be the best choice.
+    But this is not true; the choice between the model server or model service should
+    depend on the use case and business requirements.
+  id: totrans-236
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通过在第7.1节和第7.2节中讨论的两个示例服务，可以清楚地看出，模型服务器方法避免了为特定模型类型构建专用后端预测器的工作量。相反，它可以直接使用，并且可以为任意模型提供服务，而不管模型实现了哪种算法。因此，模型服务器方法似乎应该始终是最佳选择。但这并不是真的；选择模型服务器或模型服务应该取决于用例和业务需求。
+- en: For single-application scenarios, the model service approach is simpler to build
+    and maintain in practice. Model service backend predictors are quite straightforward
+    to build because model serving code is a simplified version of the training code.
+    This means we can easily convert a model training container to a model serving
+    container. Once it is built, the model service approach is easier to maintain
+    because we own the code end to end and the workflow is simple. For the model server
+    approach, whether we choose open source, prebuilt model servers, or build our
+    own server, the process of setting up the system is complicated. It takes a lot
+    of effort to learn the system well enough to operate and maintain it.
+  id: totrans-237
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于单一应用场景，在实践中，模型服务方法更容易构建和维护。模型服务后端预测器相当容易构建，因为模型服务代码是训练代码的简化版本。这意味着我们可以轻松地将模型训练容器转换为模型服务容器。一旦构建完成，模型服务方法更容易维护，因为我们完全拥有代码，并且工作流程简单。对于模型服务器方法，无论我们选择开源、预构建的模型服务器还是构建自己的服务器，设置系统的过程都很复杂。要学会并运营和维护系统需要花费大量的精力。
+- en: For model serving platform scenarios, where the system needs to support many
+    different types of models, the model server approach is unquestionably the best.
+    When you are building a model serving system for 500 different types of models,
+    if you choose the model server approach, you only need to have one single type
+    of predictor backend for all the models. In contrast, using the model service
+    approach, you would need to have 500 different model predictors! It is incredibly
+    hard to manage the compute resources and perform the maintenance work for all
+    those predictors.
+  id: totrans-238
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于模型服务平台场景，系统需要支持多种不同类型的模型时，模型服务器方法无疑是最佳选择。当你为500种不同类型的模型构建模型服务系统时，如果选择模型服务器方法，你只需要一个单一类型的预测器后端来支持所有模型。相比之下，使用模型服务方法，你将需要500种不同的模型预测器！管理计算资源和进行所有这些预测器的维护工作非常困难。
+- en: Our recommendation is to use the model service approach when you are first learning
+    because it is simpler and easier. You can move to the model server approach when
+    you need to support more than 5 to 10 types of models or applications in your
+    serving system.
+  id: totrans-239
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 我们的建议是，当你初学时使用模型服务方法，因为它更简单、更容易。当你需要在你的服务系统中支持超过5到10种类型的模型或应用时，你可以转向模型服务器方法。
+- en: 7.4 Touring open source model serving tools
+  id: totrans-240
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.4 开源模型服务工具巡回
+- en: There are plenty of open source model serving tools available. It’s great to
+    have options, but having so many of them can be overwhelming. To help make that
+    choice easier for you, we will introduce you to some popular model serving tools,
+    including TensorFlow Serving, TorchServe, Triton, and KServe. All of these can
+    work out of the box and are applicable to production use cases.
+  id: totrans-241
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有很多开源的模型服务工具可以使用。这些选择非常多，但是选择这么多有时会让人感到困惑。为了帮助您更轻松地做出选择，我们将向您介绍一些流行的模型服务工具，包括
+    TensorFlow Serving、TorchServe、Triton 和 KServe。所有这些工具都可以立即使用，并适用于生产用例。
+- en: Because each of the tools we describe here has thorough documentation, we will
+    keep the discussion at a general level, looking just at their overall design,
+    main features, and suitable use cases. This information should be enough to act
+    as a starting point from which to explore further on your own.
+  id: totrans-242
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为这里描述的每一个工具都有详尽的文档，所以我们将保持讨论在一个通用的层面，只看它们的总体设计、主要特征和适当使用情况。这些信息应该足以作为一个起点，让你自己深入探索。
+- en: 7.4.1 TensorFlow Serving
+  id: totrans-243
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.1 TensorFlow Serving。
+- en: TensorFlow Serving ([https://www.tensorflow.org/tfx/guide/serving](https://www.tensorflow.org/tfx/guide/serving))
+    is a customizable, standalone web system for serving TensorFlow models in production
+    environments. TensorFlow Serving takes a model server approach; it can serve all
+    types of TensorFlow models with the same server architecture and APIs.
+  id: totrans-244
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving ([https://www.tensorflow.org/tfx/guide/serving](https://www.tensorflow.org/tfx/guide/serving))
+    是一个可自定义的独立网页系统，用于在生产环境中提供 TensorFlow 模型。TensorFlow Serving 采用模型服务器方法；它可以使用相同的服务器架构和
+    API 为所有类型的 TensorFlow 模型提供服务。
+- en: Features
+  id: totrans-245
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 特征。
+- en: 'TensorFlow Serving offers the following features:'
+  id: totrans-246
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving 提供以下特点：
+- en: Can serve multiple models or multiple versions of the same model
+  id: totrans-247
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 可以为多个模型或相同模型的多个版本提供服务。
+- en: Has out-of-the-box integration with TensorFlow models
+  id: totrans-248
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 与 TensorFlow 模型具有开箱即用的整合。
+- en: Automatically discovers new model versions and supports different model file
+    sources
+  id: totrans-249
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 自动发现新的模型版本，支持不同的模型文件源。
+- en: Has unified gRPC and HTTP endpoints for model inference
+  id: totrans-250
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 具有统一的 gRPC 和 HTTP 端点，用于模型推断。
+- en: Supports batching prediction requests and performance tuning
+  id: totrans-251
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持批量预测请求和性能调优。
+- en: Has an extensible design, which is customizable on version policy and model
+    loading
+  id: totrans-252
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 具有可扩展的设计，可以在版本策略和模型加载上进行自定义。
+- en: high-level architecture
+  id: totrans-253
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 高级架构。
+- en: In TensorFlow Serving, a model is composed of one or more servables. A servable
+    is the underlying object to perform computation (for example, a lookup or inference);
+    it is the central abstraction in TensorFlow Serving. Sources are plugin modules
+    that find and provide servables. Loader standards are the API for loading and
+    unloading a servable. The manager handles the full lifecycle of servables, including
+    loading, unloading, and serving servables.
+  id: totrans-254
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在 TensorFlow Serving 中，一个模型由一个或多个可用服务程序组成。可用服务程序是用于执行计算的基础对象（例如查找或推断）；它是 TensorFlow
+    Serving 中的中心抽象。来源是用于查找和提供可用服务程序的插件模块。装载器标准是用于装载和卸载可用服务程序的 API。管理器处理可用服务程序的整个生命周期，包括加载、卸载和提供可用服务程序。
+- en: '![](../Images/07-08.png)'
+  id: totrans-255
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-08.png)'
+- en: 'Figure 7.8 TensorFlow Serving architecture and model serving life cycle. Blue
+    = darkest gray; green = lighter gray; yellow = lightest gray. (Source: TensorFlow;
+    [http://mng.bz/KlNj](http://mng.bz/KlNj))'
+  id: totrans-256
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.8 显示了 TensorFlow Serving 的架构和模型服务的生命周期。蓝色 = 最深的灰色；绿色 = 较浅的灰色；黄色 = 最浅的灰色。（来源：TensorFlow；[http://mng.bz/KlNj](http://mng.bz/KlNj)）
+- en: Figure 7.8 illustrates the workflow of presenting a servable to the customer.
+    First, the source plugin creates a loader for a specific servable; the loader
+    contains the metadata to load the servable. Second, the source finds a servable
+    in the filesystem (a model repository); it notifies the servable’s version and
+    loader to DynamicManager. Third, based on the predefined version policy, DynamicManager
+    determines whether to load the model. Finally, the client sends a prediction request
+    for a servable, and DynamicManager returns a handle, so the client can execute
+    the model.
+  id: totrans-257
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.8 说明了向客户提供可提供服务的工作流程。首先，源插件为特定的可用服务程序创建一个加载器，加载器包含加载可用服务程序的元数据。第二，源从文件系统（模型库）中找到一个可用服务程序；它通知
+    DynamicManager 可用服务程序的版本和加载器。第三，基于预定义的版本策略，DynamicManager 确定是否加载模型。最后，客户端发送一个预测请求给可用服务程序，DynamicManager
+    返回一个句柄，以便客户端可以执行模型。
+- en: TensorFlow Serving model file
+  id: totrans-258
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving 模型文件。
+- en: TensorFlow Serving requires models to be saved in SavedModel ([http://mng.bz/9197](http://mng.bz/9197))
+    format. We could use the `tf.saved_model.save(model,` `save_path)` API for this
+    purpose. A saved model is a directory containing serialized signatures and the
+    state needed to run them, including variable values and vocabularies. For example,
+    a saved model directory has two subdirectories, `assets` and `variables`, and
+    one file, `saved_model.pb`.
+  id: totrans-259
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving 要求模型以 SavedModel ([http://mng.bz/9197](http://mng.bz/9197))
+    格式保存。我们可以使用 `tf.saved_model.save(model,` `save_path)` API 来实现这个目的。一个保存的模型是一个包含了序列化签名和运行它们所需的状态的目录，包括变量值和词汇表。例如，一个保存的模型目录有两个子目录，`assets`
+    和 `variables`，以及一个文件，`saved_model.pb`。
+- en: The assets folder contains files used by TensorFlow graphs, such as text files
+    for initializing vocabulary tables. The variables folder contains training checkpoints.
+    The `saved_model.pb` file stores the actual TensorFlow program, or model, and
+    a set of named signatures, each identifying a function that accepts tensor inputs
+    and produces tensor outputs.
+  id: totrans-260
+  prefs: []
+  type: TYPE_NORMAL
+  zh: assets 文件夹包含了 TensorFlow 图使用的文件，比如用于初始化词汇表的文本文件。variables 文件夹包含了训练检查点。`saved_model.pb`
+    文件存储了实际的 TensorFlow 程序，或者说模型，以及一组命名的签名，每个签名标识了一个接受张量输入并产生张量输出的函数。
+- en: Model serving
+  id: totrans-261
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型服务
+- en: 'Because TensorFlow’s SavedModel files can be directly loaded into the TensorFlow
+    Serving process, running model serving is straightforward. Once the serving process
+    starts, we can copy model files to TensorFlow Serving’s model directory and then
+    send gRPC or REST prediction requests right away. Let’s review the following prediction
+    example:'
+  id: totrans-262
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 因为 TensorFlow 的 SavedModel 文件可以直接加载到 TensorFlow Serving 进程中，所以运行模型服务非常简单。一旦服务进程启动，我们可以将模型文件复制到
+    TensorFlow Serving 的模型目录中，然后立即发送 gRPC 或 REST 预测请求。让我们来看下面的预测示例：
+- en: '[PRE20]'
+  id: totrans-263
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE20]'
+- en: 'For loading multiple models and multiple versions of the same model into the
+    serving server, we can configure the model’s versions in the model config as follows:'
+  id: totrans-264
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了将多个模型和同一模型的多个版本加载到服务服务器中，我们可以在模型配置中配置模型的版本，如下所示：
+- en: '[PRE21]'
+  id: totrans-265
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE21]'
+- en: ❶ Finds model v2 at /models/model_a/versions/2
+  id: totrans-266
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 在 /models/model_a/versions/2 找到模型 v2
+- en: ❷ Finds model v3 at /models/model_a/versions/3
+  id: totrans-267
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 在 /models/model_a/versions/3 找到模型 v3
+- en: In this config, we defined two models, `model_a` and `model_b`. Because `model_a`
+    has a `model_version_policy`, both the two versions (v2 and v3) are loaded and
+    can serve requests. By default, the latest version of the model will be served,
+    so when a new version of `model_b` is detected, the previous one will be replaced
+    by the new one.
+  id: totrans-268
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这个配置中，我们定义了两个模型，`model_a` 和 `model_b`。因为 `model_a` 有一个 `model_version_policy`，所以两个版本（v2
+    和 v3）都被加载并可以提供请求服务。默认情况下，模型的最新版本将被提供服务，所以当检测到 `model_b` 的新版本时，旧版本将被新版本替换。
+- en: Review
+  id: totrans-269
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回顾
+- en: TensorFlow Serving is a production-level model serving solution for TensorFlow
+    models; it supports REST, gRPC, GPU acceleration, minibatching, and model serving
+    on edge devices. Although TensorFlow Serving falls short on advanced metrics,
+    flexible model management, and deployment strategies, it’s still a good choice
+    if you only have TensorFlow models.
+  id: totrans-270
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving 是用于 TensorFlow 模型的生产级模型服务解决方案；它支持 REST、gRPC、GPU 加速、小批量处理和边缘设备上的模型服务。虽然
+    TensorFlow Serving 在高级指标、灵活的模型管理和部署策略方面存在不足，但如果你只有 TensorFlow 模型的话，它仍然是一个不错的选择。
+- en: The main disadvantage of TensorFlow Serving is that it’s a vendor lock-in solution;
+    it only supports TensorFlow models. If you are looking for a training framework
+    agnostic approach, TensorFlow Serving wouldn’t be your choice.
+  id: totrans-271
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TensorFlow Serving 的主要缺点是它是一个供应商锁定的解决方案；它只支持 TensorFlow 模型。如果你正在寻找一个训练框架无关的方法，那么
+    TensorFlow Serving 将不是你的选择。
+- en: 7.4.2 TorchServe
+  id: totrans-272
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.2 TorchServe
+- en: TorchServe ([https://pytorch.org/serve/](https://pytorch.org/serve/)) is a performant,
+    flexible, and easy-to-use tool for serving PyTorch eager mode and torchscripted
+    models (an intermediate representation of a PyTorch model that can be run in a
+    high-performance environment such as C++). Similar to TensorFlow Serving, TorchServe
+    takes a model server approach to serving all kinds of PyTorch models with a unified
+    API. The difference is TorchServe provides a set of management APIs that makes
+    model management very convenient and flexible. For example, we can programmatically
+    register and unregister models or different versions of a model. And we can also
+    scale up and scale down serving workers for models and different versions of a
+    model.
+  id: totrans-273
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe ([https://pytorch.org/serve/](https://pytorch.org/serve/)) 是一个性能出色、灵活且易于使用的工具，用于为
+    PyTorch eager 模式和 torchscripted 模型提供服务（torchscripted 模型是 PyTorch 模型的一种中间表示，可以在高性能环境（如
+    C++）中运行）。与 TensorFlow Serving 类似，TorchServe 采用模型服务器方法为所有类型的 PyTorch 模型提供服务，并提供统一的
+    API。不同之处在于 TorchServe 提供了一组管理 API，使模型管理非常方便灵活。例如，我们可以以编程方式注册和注销模型或模型的不同版本。我们还可以为模型和模型的不同版本扩展和缩小服务工作程序。
+- en: High-level architecture
+  id: totrans-274
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 高层架构
+- en: 'A TorchServe server is composed of three components: the frontend, backend,
+    and model store. The frontend handles TorchServe’s request/response. It also manages
+    the life cycles of the models. The backend is a list of model workers that are
+    responsible for running the actual inference on the models. The model store is
+    a directory in which all the loadable models exist; it can be a cloud storage
+    folder or a local host folder. Figure 7.9 shows the high-level architecture of
+    a TorchServing instance.'
+  id: totrans-275
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 一个 TorchServe 服务器由三个组件组成：前端、后端和模型存储。前端处理 TorchServe 的请求/响应。它还管理模型的生命周期。后端是一组负责在模型上运行实际推断的模型工作程序。模型存储是一个包含所有可加载模型的目录；它可以是云存储文件夹或本地主机文件夹。图
+    7.9 显示了 TorchServing 实例的高级架构。
+- en: '![](../Images/07-09.png)'
+  id: totrans-276
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-09.png)'
+- en: 'Figure 7.9 A TorchServe architecture diagram (Source: Kuldeep Singh, “Deploying
+    Named Entity Recognition model to production using TorchServe,” Analytics Vidhya,
+    2020)'
+  id: totrans-277
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.9 TorchServe 架构图（来源：Kuldeep Singh，“使用 TorchServe 将命名实体识别模型部署到生产环境”，Analytics
+    Vidhya，2020）
+- en: 'Figure 7.9 draws two workflows: model inference and model management. For model
+    inference, first, the user sends a prediction request to the inference endpoint
+    of a model, such as `/predictions/{model_name}/{version}`. Next, the inference
+    request is routed to one of the worker processes that already loaded the model.
+    Then, the worker process will read model files from the model store and let the
+    model handler load the model, preprocess the input data, and run the model to
+    obtain a prediction result.'
+  id: totrans-278
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.9 描绘了两个工作流程：模型推断和模型管理。对于模型推断，首先，用户将预测请求发送到模型的推断端点，例如 `/predictions/{model_name}/{version}`。然后，推断请求被路由到已加载模型的工作进程之一。接下来，工作进程将从模型存储中读取模型文件，并让模型处理器加载模型，预处理输入数据，并运行模型以获得预测结果。
+- en: For model management, a model needs to be registered before users can access
+    it. This is done by using the management API. We can also scale up and down the
+    worker process count for a model. We will see an example in the upcoming sample
+    usage section.
+  id: totrans-279
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于模型管理，用户需要在可以访问模型之前注册模型。这可以通过使用管理 API 来完成。我们还可以为模型调整工作进程计数的规模。我们将在即将到来的示例使用部分中看到一个示例。
+- en: Features
+  id: totrans-280
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 功能
+- en: 'TorchServe offers the following features:'
+  id: totrans-281
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe 提供以下功能：
+- en: Can serve multiple models or multiple versions of the same model
+  id: totrans-282
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 可以为多个模型或同一模型的多个版本提供服务
+- en: Has unified gRPC and HTTP endpoints for model inference
+  id: totrans-283
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 将模型推断的 gRPC 和 HTTP 端点统一起来
+- en: Supports batching prediction requests and performance tuning
+  id: totrans-284
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持批量预测请求和性能调优
+- en: Supports workflow to compose PyTorch models and Python functions in sequential
+    and parallel pipelines
+  id: totrans-285
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持将 PyTorch 模型和 Python 函数组合成顺序和并行管道的工作流程
+- en: Provides management API to register/unregister models and scale up/down workers
+  id: totrans-286
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 提供管理 API 来注册/注销模型和调整工作进程的规模
+- en: Handles model versioning for A/B testing and experimentation
+  id: totrans-287
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 处理模型版本控制，用于 A/B 测试和实验
+- en: Torch serving model file
+  id: totrans-288
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Torch 服务模型文件
+- en: Pure PyTorch models cannot be loaded to the Torch serving server directly. TorchServe
+    requires all its models to be packaged into a .mar file. Please refer to section
+    7.2.6 for a detailed example of how a .mar file is created.
+  id: totrans-289
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 纯 PyTorch 模型不能直接加载到 Torch 服务服务器中。TorchServe 要求将其所有模型打包成 .mar 文件。请参阅 7.2.6 节，了解如何创建
+    .mar 文件的详细示例。
+- en: Model serving
+  id: totrans-290
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型服务
+- en: 'The following code snippet lists five general steps to running model inference
+    with TorchServe. For a concrete example, you can check out the README doc of our
+    sample intent classification predictor ([http://mng.bz/WA8a](http://mng.bz/WA8a)):'
+  id: totrans-291
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 下面的代码片段列出了使用 TorchServe 运行模型推理的五个一般步骤。有关具体示例，您可以查看我们的示例意图分类预测器的 README 文档（[http://mng.bz/WA8a](http://mng.bz/WA8a)）：
+- en: '[PRE22]'
+  id: totrans-292
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE22]'
+- en: ❶ Creates local model dir and copies the intent classification model
+  id: totrans-293
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 创建本地模型目录并复制意图分类模型
+- en: ❷ Binds local model dir as the model store dir for TorchServe
+  id: totrans-294
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 将本地模型目录绑定为 TorchServe 的模型存储目录
+- en: ❸ Intent_1.mar contains the model file and model metadata, such as the model
+    version.
+  id: totrans-295
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ Intent_1.mar 包含模型文件和模型元数据，例如模型版本。
+- en: 'Besides using management API to register models, we can also use the scale
+    worker API to dynamically adjust the number of workers for any version of a model
+    to better serve different inference request loads, as in the following example:'
+  id: totrans-296
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用管理 API 注册模型之外，我们还可以使用 scale worker API 动态调整任何版本模型的工作节点数量，以更好地服务不同的推理请求负载，如下例所示：
+- en: '[PRE23]'
+  id: totrans-297
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE23]'
+- en: Review
+  id: totrans-298
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回顾
+- en: TorchServe is a production-level model serving solution for PyTorch models;
+    it’s designed for high-performance inference and production use cases. TorchServe’s
+    management API adds a lot of flexibility for customizing model deployment strategy,
+    and it allows us to manage compute resources at the per-model level.
+  id: totrans-299
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchServe 是用于 PyTorch 模型的生产级模型服务解决方案；它专为高性能推理和生产用例而设计。TorchServe 的管理 API 增加了许多灵活性，用于自定义模型部署策略，并允许我们在每个模型级别管理计算资源。
+- en: Similar to TensorFlow Serving, the main disadvantage of TorchServe is that it’s
+    a vendor lock-in solution; it only supports PyTorch models. So, if you are looking
+    for a training framework agnostic approach, TorchServe wouldn’t be your choice.
+  id: totrans-300
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与 TensorFlow Serving 类似，TorchServe 的主要缺点是它是一种供应商锁定解决方案；它仅支持 PyTorch 模型。因此，如果您正在寻找一种训练框架不可知的方法，TorchServe
+    将不是您的选择。
+- en: 7.4.3 Triton Inference Server
+  id: totrans-301
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.3 Triton 推理服务器
+- en: Triton Inference Server ([https://developer.nvidia.com/nvidia-triton-inference-server](https://developer.nvidia.com/nvidia-triton-inference-server))
+    is an open source inference server developed by NVIDIA. It provides a cloud and
+    edge inferencing solution optimized for both CPUs and GPUs. Triton supports an
+    HTTP/ REST and gRPC protocol that allows remote clients to request inferencing
+    for any model being managed by the server. For edge deployments, Triton is available
+    as a shared library with a C API that allows the full functionality of Triton
+    to be included directly in an application.
+  id: totrans-302
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Triton 推理服务器（[https://developer.nvidia.com/nvidia-triton-inference-server](https://developer.nvidia.com/nvidia-triton-inference-server)）是由
+    NVIDIA 开发的开源推理服务器。它提供了一个针对 CPU 和 GPU 优化的云和边缘推理解决方案。Triton 支持 HTTP/REST 和 gRPC
+    协议，允许远程客户端请求服务器管理的任何模型的推理。对于边缘部署，Triton 可作为具有 C API 的共享库提供，允许直接在应用程序中包含 Triton
+    的全部功能。
+- en: Training framework compatibility is one of Triton’s main advantages when compared
+    with other serving tools. Unlike TensorFlow Serving, which only works with the
+    TensorFlow model, and Torch serving, which only works with the PyTorch model,
+    the Triton server can serve models trained from almost any framework, including
+    TensorFlow, TensorRT, PyTorch, ONNX, and XGBoost. Triton server can load model
+    files from local storage, Google Cloud Platform, or Amazon Simple Storage Service
+    (Amazon S3) on any GPU- or CPU-based infrastructure (cloud, data center, or edge).
+  id: totrans-303
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与其他服务工具相比，Triton 的训练框架兼容性是其主要优势之一。与仅适用于 TensorFlow 模型的 TensorFlow Serving 和仅适用于
+    PyTorch 模型的 Torch 服务不同，Triton 服务器可以为从几乎任何框架训练的模型提供服务，包括 TensorFlow、TensorRT、PyTorch、ONNX
+    和 XGBoost。Triton 服务器可以从本地存储、Google Cloud Platform 或 Amazon Simple Storage Service
+    (Amazon S3) 加载模型文件，并在基于 GPU 或 CPU 的基础设施（云、数据中心或边缘）上运行。
+- en: Inference performance is also an advantage for Triton. Triton runs models concurrently
+    on GPUs to maximize throughput and utilization; supports x86 and ARM CPU-based
+    inferencing; and offers features like dynamic batching, model analyzer, model
+    ensemble, and audio streaming. These features make model serving memory efficient
+    and robust.
+  id: totrans-304
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 推理性能对于 Triton 也是一项优势。Triton 在 GPU 上并发运行模型，以最大化吞吐量和利用率；支持基于 x86 和 ARM CPU 的推断；并提供动态批处理、模型分析器、模型集成和音频流等功能。这些功能使模型服务内存高效且稳健。
+- en: High-level architecture
+  id: totrans-305
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 高层架构
+- en: Figure 7.10 shows the Triton Inference Server’s high-level architecture. All
+    the inference requests are sent as REST or gRPC requests, and then they are converted
+    to C API calls internally. Models are loaded from the model repository, which
+    is a filesystem-based repository that we can see as folders/directories.
+  id: totrans-306
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.10 显示了 Triton 推理服务器的高级架构。所有推理请求都作为 REST 或 gRPC 请求发送，然后在内部转换为 C API 调用。模型从模型仓库加载，模型仓库是一个基于文件系统的仓库，我们可以将其视为文件夹/目录。
+- en: '![](../Images/07-10.png)'
+  id: totrans-307
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-10.png)'
+- en: 'Figure 7.10 Triton Inference Server high-level architecture (Source: NVIDIA
+    Developer, [https://developer.nvidia.com/nvidia-triton-inference-server](https://developer.nvidia.com/nvidia-triton-inference-server))'
+  id: totrans-308
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.10 Triton 推理服务器的高级架构（来源：NVIDIA Developer，[https://developer.nvidia.com/nvidia-triton-inference-server](https://developer.nvidia.com/nvidia-triton-inference-server)）
+- en: For each model, Triton prepares a scheduler. The scheduling and batching algorithms
+    are configurable on a model-by-model basis. Each model’s scheduler optionally
+    performs batching of inference requests and then passes the requests to the backend
+    corresponding to the model type, such as PyTorch backend for the PyTorch model.
+    A Triton backend is the implementation that executes a model. It can be a wrapper
+    around a deep learning framework, like PyTorch, TensorFlow, TensorRT, or ONNX
+    Runtime. Once the backend performs inferencing using the inputs provided in the
+    batched requests to produce the requested outputs, the outputs are returned.
+  id: totrans-309
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于每个模型，Triton 准备一个调度程序。调度和批处理算法可以根据模型逐个配置。每个模型的调度程序可选择对推理请求进行批处理，然后将请求传递给与模型类型对应的后端，例如
+    PyTorch 模型的 PyTorch 后端。 Triton 后端是执行模型的实现。它可以是围绕深度学习框架（如 PyTorch、TensorFlow、TensorRT
+    或 ONNX Runtime）的包装器。一旦后端使用批处理请求中提供的输入执行推理以产生请求的输出，输出就会返回。
+- en: One thing worth noting is that Triton supports a backend C API that allows Triton
+    to be extended with new functionality, such as custom pre- and postprocessing
+    operations or even a new deep learning framework. This is how we can extend the
+    Triton server. You can check out the triton-inference-server/backend GitHub repo
+    ([https://github.com/triton-inference-server/backend](https://github.com/triton-inference-server/backend))
+    to find all Triton backend implementations. As a bonus, the models being served
+    by Triton can be queried and controlled by a dedicated model management API that
+    is available by HTTP/REST, gRPC protocol, or the C API.
+  id: totrans-310
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 值得注意的是，Triton 支持一个后端 C API，允许通过自定义预处理和后处理操作或甚至一个新的深度学习框架来扩展 Triton 的功能。这就是我们如何扩展
+    Triton 服务器的方式。您可以查看 triton-inference-server/backend GitHub 仓库（[https://github.com/triton-inference-server/backend](https://github.com/triton-inference-server/backend)）来找到所有
+    Triton 后端实现。作为一个额外的好处，由 Triton 服务的模型可以通过专用的模型管理 API 进行查询和控制，该 API 可通过 HTTP/REST、gRPC
+    协议或 C API 使用。
+- en: Features
+  id: totrans-311
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 特点
+- en: 'Triton offers the following features:'
+  id: totrans-312
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Triton 提供以下功能：
+- en: Supports all major deep learning and machine learning framework backends.
+  id: totrans-313
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持所有主要的深度学习和机器学习框架后端。
+- en: Runs multiple models from the same or different frameworks concurrently on a
+    single GPU or CPU. In a multi-GPU server, Triton automatically creates an instance
+    of each model on each GPU to increase utilization.
+  id: totrans-314
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在单个 GPU 或 CPU 上同时运行来自相同或不同框架的多个模型。在多 GPU 服务器上，Triton 会自动在每个 GPU 上创建每个模型的一个实例，以提高利用率。
+- en: Optimizes inference serving for real-time inferencing, batch inferencing to
+    maximize GPU/CPU utilization, and streaming inference with built-in support for
+    audio streaming input. Triton also supports model ensembles for use cases that
+    require multiple models to perform end-to-end inference, such as conversational
+    AI.
+  id: totrans-315
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 优化推理服务以进行实时推理、批量推理以最大化 GPU/CPU 利用率，并使用内置支持音频流输入的流推理。Triton 还支持模型集成，用于需要多个模型执行端到端推理的用例，例如对话型
+    AI。
+- en: Handles dynamic batching of input requests for high throughput and utilization
+    under strict latency constraints.
+  id: totrans-316
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 处理输入请求的动态批处理，以获得高吞吐量和利用率，并在严格的延迟约束下。
+- en: Updates models live in production without restarting the inference server or
+    disrupting the application.
+  id: totrans-317
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在生产环境中实时更新模型，而无需重新启动推理服务器或中断应用程序。
+- en: Uses model analyzer to automatically find the optimal model configuration and
+    maximize performance.
+  id: totrans-318
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 使用模型分析器自动找到最佳模型配置并最大化性能。
+- en: Supports multi-GPU, multinode inference of large models.
+  id: totrans-319
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 支持大模型的多 GPU、多节点推理。
+- en: Triton model file
+  id: totrans-320
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Triton 模型文件
+- en: 'Each model in Triton must include a model configuration that provides required
+    and optional information about the model. Typically, it’s a config.pbtxt file
+    specified as ModelConfig protobuf ([http://mng.bz/81Kz](http://mng.bz/81Kz)).
+    See a simple model config (config.pbtxt) for a PyTorch model as follows:'
+  id: totrans-321
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Triton 中的每个模型都必须包含一个模型配置，提供关于模型的必需和可选信息。通常，它是一个指定为 ModelConfig protobuf 的 config.pbtxt
+    文件（[http://mng.bz/81Kz](http://mng.bz/81Kz)）。以下是 PyTorch 模型的简单模型配置（config.pbtxt）：
+- en: '[PRE24]'
+  id: totrans-322
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE24]'
+- en: ❶ Specifies the PyTorch serving backend for this model
+  id: totrans-323
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ 指定此模型的 PyTorch 服务后端
+- en: ❷ Indicates this is a PyTorch backend config
+  id: totrans-324
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 表示这是一个 PyTorch 后端配置
+- en: ❸ Defines the maximum batch size that the model supports
+  id: totrans-325
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 定义模型支持的最大批处理大小
+- en: ❹ Models input data schema
+  id: totrans-326
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❹ 模型输入数据架构
+- en: ❺ Models output data schema
+  id: totrans-327
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❺ 模型输出数据架构
+- en: Normally, the training application creates this config.pbtxt file when training
+    completes at the training service and then uploads this config as part of the
+    model files to the model repository. For more detail on Triton model configs,
+    please check out the Triton model configuration documentation at [http://mng.bz/Y6mA](http://mng.bz/Y6mA).
+  id: totrans-328
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 通常，训练应用程序在训练服务完成训练后会创建此 config.pbtxt 文件，然后将此配置作为模型文件的一部分上传到模型存储库。有关 Triton 模型配置的更多详细信息，请查看
+    Triton 模型配置文档（[http://mng.bz/Y6mA](http://mng.bz/Y6mA)）。
+- en: Besides a unified config file, the Triton model file format is different per
+    training framework. For example, TensorFlow models in SavedModel format ([http://mng.bz/El4d](http://mng.bz/El4d))
+    can be loaded with Triton directly. But PyTorch models need to be saved by the
+    TorchScript program.
+  id: totrans-329
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 除了统一的配置文件外，Triton 模型文件格式因训练框架而异。例如，TensorFlow 模型以 SavedModel 格式（[http://mng.bz/El4d](http://mng.bz/El4d)）可以直接加载到
+    Triton 中。但 PyTorch 模型需要由 TorchScript 程序保存。
+- en: TorchScript
+  id: totrans-330
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchScript
+- en: 'TorchScript is a way to create serializable and optimizable models from PyTorch
+    code. The reason Triton requires PyTorch models to be serialized as TorchScript
+    is that TorchScript can be used as an intermediate representation of a PyTorch
+    model. It can run independently from Python, such as in a standalone C++ program.
+    See the following code snippet for creating a TorchScript model from a PyTorch
+    model:'
+  id: totrans-331
+  prefs: []
+  type: TYPE_NORMAL
+  zh: TorchScript 是一种从 PyTorch 代码创建可序列化和可优化模型的方法。Triton 要求 PyTorch 模型被序列化为 TorchScript
+    的原因是 TorchScript 可以用作 PyTorch 模型的中间表示。它可以独立于 Python 运行，例如在独立的 C++ 程序中。请参阅以下代码片段，了解如何从
+    PyTorch 模型创建 TorchScript 模型：
+- en: '[PRE25]'
+  id: totrans-332
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE25]'
+- en: For the model format requirement of other training frameworks, please check
+    out the triton-inference-server/backend GitHub repo ([http://mng.bz/NmOn](http://mng.bz/NmOn)).
+  id: totrans-333
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于其他训练框架的模型格式要求，请查看 triton-inference-server/backend GitHub 存储库（[http://mng.bz/NmOn](http://mng.bz/NmOn)）。
+- en: Model serving
+  id: totrans-334
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 模型服务
+- en: 'Model serving in Triton involves the following three steps: first, copy the
+    model file to the model repository; second, call the management API `(POST` `v2/repository/
+    models/${MODEL_NAME}/load`) to register the model; and third, send an inference
+    request `(POST` `v2/models/${MODEL_NAME}/versions/${MODEL_VERSION})`. For more
+    information on the Triton management API, you can check the Triton HTTP/REST and
+    gRPC protocol documentation ([http://mng.bz/DZvR](http://mng.bz/DZvR)). For inference
+    API, you can check the KServe community standard inference protocols documentation
+    ([https://kserve.github.io/website/0.10/modelserving/data_plane/v2_protocol/](https://kserve.github.io/website/0.10/modelserving/data_plane/v2_protocol/)).'
+  id: totrans-335
+  prefs: []
+  type: TYPE_NORMAL
+  zh: Triton 中的模型服务包括以下三个步骤：首先，将模型文件复制到模型存储库；其次，调用管理 API（`POST v2/repository/ models/${MODEL_NAME}/load`）注册模型；第三，发送推理请求（`POST
+    v2/models/${MODEL_NAME}/versions/${MODEL_VERSION}`）。有关 Triton 管理 API 的更多信息，请查看
+    Triton HTTP/REST 和 gRPC 协议文档（[http://mng.bz/DZvR](http://mng.bz/DZvR)）。有关推理 API，请查看
+    KServe 社区标准推理协议文档（[https://kserve.github.io/website/0.10/modelserving/data_plane/v2_protocol/](https://kserve.github.io/website/0.10/modelserving/data_plane/v2_protocol/)）。
+- en: Review
+  id: totrans-336
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 回顾
+- en: As we write this book, we consider Triton the best model serving approach for
+    three reasons. First, Triton is training-framework agnostic; it provides a well-designed
+    and extensible backend framework, which allows it to execute the models built
+    by almost any training framework. Second, Triton offers better model serving performance,
+    such as serving throughput. Triton has multiple mechanisms to improve its serving
+    performance, such as dynamic batching, GPU optimization, and model analyzing tools.
+    Third, Triton supports advanced model serving use cases such as model ensembles
+    and audio streaming.
+  id: totrans-337
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在撰写本书时，我们认为 Triton 是最佳的模型服务方法，原因有三。首先，Triton 不依赖任何训练框架；它提供了一个设计良好且可扩展的后端框架，使得它能够执行几乎任何训练框架构建的模型。其次，Triton
+    提供了更好的模型服务性能，例如服务吞吐量。Triton 有多种机制来提高其服务性能，例如动态批处理、GPU 优化和模型分析工具。第三，Triton 支持高级的模型服务用例，如模型集成和音频流式传输。
+- en: WARNING Be cautious! Triton may not be free. Triton is under BSD 3-Clause “new”
+    or “revised” licensing, meaning it can be modified and distributed for commercial
+    purposes for free. But what about troubleshooting and bug fixing? The project
+    is complex, with a large code base, so you’ll have a hard time debugging and fixing
+    performance concerns, such as memory leaks. If you look for the NVIDIA AI-enterprise
+    license to get the support, as this book is being written, it would cost you several
+    thousand dollars per GPU per year. So be sure that you understand the Triton codebase
+    before signing up.
+  id: totrans-338
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 警告 要小心！ Triton 可能不是免费的。Triton 采用 BSD 3-Clause "new" 或 "revised" 许可证，可以免费进行修改和商业发布。但是修复故障和错误呢？该项目非常复杂，代码量大，因此会在调试和修复性能问题（如内存泄漏）上带来一定困难。如果你想获取支持，可以考虑购买
+    NVIDIA 的 AI-Enterprise 许可证，但在本书撰写时，这将需要支付每年每块 GPU 数千美元的费用。所以在注册之前，请确保你了解 Triton
+    的代码库。
+- en: 7.4.4 KServe and other tools
+  id: totrans-339
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.4 KServe 和其他工具
+- en: 'The list of open source serving tools is extensive and includes KServe ([https://www.kubeflow.org/docs/external-add-ons/kserve/](https://www.kubeflow.org/docs/external-add-ons/kserve/)),
+    Seldon Core ([https://www.seldon.io/solutions/open-source-projects/core](https://www.seldon.io/solutions/open-source-projects/core)),
+    and BentoML ([https://github.com/bentoml/BentoML](https://github.com/bentoml/BentoML)).
+    Each of these tools has some unique strengths. They either run lightweight and
+    are easy to use, like BentoML, or they make model deployment easy and fast in
+    Kubernetes, as do Seldon Core and KServe. Despite the diversity of the serving
+    tools, they have a lot in common: they all need to pack models in a certain format,
+    define a model wrapper and configuration file to execute the model, upload models
+    to a repository, and send prediction requests via a gRPC or HTTP/REST endpoint.
+    By reading the TorchServe, TensorFlow, and Triton examples in this chapter, you
+    should be able to explore other tools on your own.'
+  id: totrans-340
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 开源服务工具的列表很长，包括 KServe ([https://www.kubeflow.org/docs/external-add-ons/kserve/](https://www.kubeflow.org/docs/external-add-ons/kserve/))、Seldon
+    Core ([https://www.seldon.io/solutions/open-source-projects/core](https://www.seldon.io/solutions/open-source-projects/core))
+    和 BentoML ([https://github.com/bentoml/BentoML](https://github.com/bentoml/BentoML))。这些工具各有其独特的优势。它们要么运行轻量且易于使用，像
+    BentoML 一样，要么使得在 Kubernetes 中轻松快速部署模型，就像 Seldon Core 和 KServe 一样。尽管服务工具的多样性，它们也有很多共同之处：它们都需要以一定的格式打包模型，定义一个模型包装器和配置文件来执行模型，将模型上传到存储库，并通过
+    gRPC 或 HTTP/REST 端点发送预测请求。通过阅读本章中的 TorchServe、TensorFlow 和 Triton 示例，你应该能够自己探索其他工具。
+- en: Before we end the serving tools discussion, we want to call out KServe specifically.
+    KServe is a collaboration on model serving between several established high-tech
+    companies, including Seldon, Google, Bloomberg, NVIDIA, Microsoft, and IBM. This
+    open source project is worth your attention because it is designed to create a
+    standardized solution for common machine learning serving problems.
+  id: totrans-341
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在结束服务工具讨论之前，我们想特别提到 KServe。KServe 是几家知名高科技公司（包括 Seldon、Google、Bloomberg、NVIDIA、Microsoft
+    和 IBM）在模型服务方面的合作项目。这个开源项目值得关注，因为它旨在为常见的机器学习服务问题创建一个标准化的解决方案。
+- en: KServe aims to provide a serverless inference solution on Kubernetes. It provides
+    an abstract model serving interface that works for common machine learning frameworks
+    like TensorFlow, XGBoost, scikit-learn, PyTorch, and ONNX.
+  id: totrans-342
+  prefs: []
+  type: TYPE_NORMAL
+  zh: KServe 的目标是在 Kubernetes 上提供一种无服务器推断解决方案。它提供了一个抽象的模型服务接口，适用于像 TensorFlow、XGBoost、scikit-learn、PyTorch
+    和 ONNX 等常见的机器学习框架。
+- en: From our point of view, KServe’s main contribution is that it creates a standard
+    serving interface that works for all major serving tools. For example, all the
+    serving tools we mentioned previously now support the KServe model inference protocol.
+    This means we can use only one set of inference APIs (the KServe API) to query
+    any model hosted by different serving tools, such as Triton, TorchServe, and TensorFlow.
+  id: totrans-343
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从我们的角度来看，KServe的主要贡献在于它创建了一个标准的服务接口，适用于所有主要的服务工具。例如，我们之前提到的所有服务工具现在都支持KServe模型推理协议。这意味着我们可以仅使用一组推理API（KServe
+    API）来查询由不同服务工具托管的任何模型，如Triton、TorchServe和TensorFlow。
+- en: 'Another strength of KServe is that it is designed to provide a serverless solution
+    natively on Kubernetes. KServe uses Knative to take care of the network routing,
+    model worker autoscaling (even to zero), and model revision tracking. With a simple
+    config (see the following example), you can deploy a model to your Kubernetes
+    cluster and then use the standardized API to query it:'
+  id: totrans-344
+  prefs: []
+  type: TYPE_NORMAL
+  zh: KServe的另一个优势是它被设计为在Kubernetes上本地提供无服务器解决方案。KServe使用Knative来处理网络路由、模型工作器自动扩展（甚至到零）和模型版本跟踪。通过简单的配置（见下面的示例），您可以将模型部署到您的Kubernetes集群，然后使用标准化的API来查询它：
+- en: '[PRE26]'
+  id: totrans-345
+  prefs: []
+  type: TYPE_PRE
+  zh: '[PRE26]'
+- en: ❶ A sample model deployment config for KServe
+  id: totrans-346
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❶ KServe的样本模型部署配置
+- en: ❷ A backend server type
+  id: totrans-347
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❷ 后端服务器类型
+- en: ❸ A model file location
+  id: totrans-348
+  prefs: []
+  type: TYPE_NORMAL
+  zh: ❸ 模型文件位置
+- en: Behind the scenes, KServe uses different serving tools to run inference, such
+    as TensorFlow Serving and Triton. KServe provides the benefit of hiding all the
+    details behind a simple Kubernetes CRD config. In the previous example, the `InferenceService`
+    CRD config hides the work, including prediction server setup, model copy, model
+    version tracking, and prediction request routing.
+  id: totrans-349
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在幕后，KServe使用不同的服务工具来运行推理，如TensorFlow Serving和Triton。KServe提供了一个隐藏所有细节的简单Kubernetes
+    CRD配置的好处。在前面的示例中，`InferenceService` CRD配置隐藏了工作，包括预测服务器设置、模型复制、模型版本跟踪和预测请求路由。
+- en: As the book is being written, KServe’s newer version (v2) is still in beta.
+    Although it’s not quite mature, its unique advantage of a standardized inference
+    protocol across platform support and serverless model deployment makes it stand
+    out among other approaches. If you want to set up a large serving platform that
+    works for all major training frameworks on Kubernetes, KServe is worth your attention.
+  id: totrans-350
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在书写本书时，KServe的新版本（v2）仍处于测试阶段。虽然它还不够成熟，但其在跨平台支持和无服务器模型部署方面的独特优势使其在其他方法中脱颖而出。如果您想要建立一个适用于Kubernetes上所有主要训练框架的大型服务平台，那么KServe值得您的关注。
+- en: 7.4.5 Integrating a serving tool into an existing serving system
+  id: totrans-351
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.4.5 将服务工具集成到现有服务系统中
+- en: In many cases, replacing an existing prediction service with a new serving backend
+    is not an option. Each serving tool has its own requirements for model storage,
+    model registration, and inference request format. These requirements sometimes
+    conflict with the existing system’s prediction interface and the internal model
+    metadata and file systems. To introduce new technology without disrupting the
+    business, we usually take an integration approach instead of completely replacing
+    it.
+  id: totrans-352
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在许多情况下，用新的服务后端替换现有的预测服务是不可行的选择。每个服务工具对于模型存储、模型注册和推理请求格式都有自己的要求。这些要求有时与现有系统的预测接口以及内部模型元数据和文件系统相冲突。为了引入新技术而不影响业务，我们通常采取集成方法，而不是完全替换它。
+- en: 'Here, we use the Triton server as an example to show how to integrate a serving
+    tool into an existing prediction service. In this example, we assume three things:
+    first, the existing prediction service runs in Kubernetes; second, the existing
+    prediction service’s web inference interface is not allowed to change; and third,
+    there is a model storage system that stores model files in cloud storage, such
+    as Amazon S3\. Figure 7.11 shows the process.'
+  id: totrans-353
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在这里，我们以Triton服务器为例，展示如何将服务工具集成到现有的预测服务中。在这个示例中，我们假设三件事情：首先，现有的预测服务在Kubernetes中运行；其次，现有的预测服务的Web推理接口不允许更改；第三，有一个模型存储系统，将模型文件存储在云存储中，如Amazon
+    S3。图7.11显示了这个过程。
+- en: '![](../Images/07-11.png)'
+  id: totrans-354
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-11.png)'
+- en: Figure 7.11 A proposal to integrate a list of Triton server instances into an
+    existing serving system
+  id: totrans-355
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.11 提议将一系列Triton服务器实例集成到现有服务系统中
+- en: Figure 7.11 (A) illustrates the system overview. A list of Triton server Kubernetes
+    pods is added behind the existing prediction API. With the Kubernetes load balancer,
+    a prediction request can land on any Triton pod. We also add a shared volume that
+    all Triton pods can access; this shared volume acts as a shared Triton model repository
+    for all Triton instances.
+  id: totrans-356
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.11（A）说明了系统概述。一列 Triton 服务器 Kubernetes pod 被添加到现有的预测 API 后面。通过 Kubernetes
+    负载均衡器，预测请求可以落在任何 Triton pod 上。我们还添加了一个共享卷，所有 Triton pod 都可以访问；这个共享卷充当了所有 Triton
+    实例的共享 Triton 模型存储库。
+- en: 'Figure 7.11 (B) shows what’s inside a Triton server Kubernetes pod. Each Triton
+    pod has two Docker containers: a Triton Server Container and a sidecar container.
+    The Triton server container is the Triton inference server we discussed in section
+    7.4.3\. The model prediction happens in this container, and we can simply treat
+    this container as a black box. The sidecar container acts as an adapter/proxy
+    to prepare what Triton needs before forwarding the prediction request to the Triton
+    container. This sidecar container downloads the model from cloud storage to the
+    Triton local model repository (the shared volume), calls Triton to register the
+    model, and converts the prediction request to the Triton API call.'
+  id: totrans-357
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.11（B）显示了 Triton 服务器 Kubernetes pod 内部的内容。每个 Triton pod 都有两个 Docker 容器：一个
+    Triton 服务器容器和一个 sidecar 容器。Triton 服务器容器是我们在第 7.4.3 节中讨论的 Triton 推理服务器。模型预测发生在此容器中，我们可以简单地将此容器视为黑匣子。sidecar
+    容器充当适配器/代理，以准备 Triton 在将预测请求转发到 Triton 容器之前需要的内容。这个 sidecar 容器从云存储中下载模型到 Triton
+    的本地模型存储库（共享卷），调用 Triton 注册模型，并将预测请求转换为 Triton API 调用。
+- en: By using this integration approach, all the changes happen inside the prediction
+    service. The public prediction API and the external model storage system remain
+    untouched, and our users won’t be affected when we switch to a Triton backend.
+    Although we use a specific tool (Triton) and a specific infrastructure (Kubernetes)
+    to demo the idea, you can apply this pattern to any other system as long as they
+    use Docker.
+  id: totrans-358
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用这种集成方法，所有的更改都发生在预测服务内部。公共预测 API 和外部模型存储系统保持不变，当我们切换到 Triton 后端时，我们的用户不会受到影响。虽然我们使用了一个特定的工具（Triton）和一个特定的基础设施（Kubernetes）来演示这个想法，但只要它们使用
+    Docker，你就可以将这种模式应用到任何其他系统中。
+- en: Note Because the Triton server supports major training frameworks and KServe
+    provides a standardized serving protocol, we can combine them to produce a serving
+    system that works for all kinds of models trained by different frameworks.
+  id: totrans-359
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意 因为 Triton 服务器支持主要的训练框架，KServe 提供了一个标准化的服务协议，我们可以将它们结合起来生成一个适用于不同框架训练的各种模型的服务系统。
+- en: 7.5 Releasing models
+  id: totrans-360
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.5 发布模型
+- en: Releasing a model is the act of deploying the newly trained model to the prediction
+    service and exposing it to users. Automating the model deployment and supporting
+    model evaluation are the two main problems we need to address when building model
+    serving systems in production.
+  id: totrans-361
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 发布模型是将新训练的模型部署到预测服务并向用户公开的行为。在构建生产中的模型服务系统时，自动化模型部署和支持模型评估是我们需要解决的两个主要问题。
+- en: First, when the training service finishes the model building, the model should
+    be published to the prediction service in the production environment automatically.
+    Second, the newly published model and its previous versions should all be accessible
+    in the prediction service, so we can evaluate them in the same environment and
+    make a fair comparison. In this section, we propose a three-step model release
+    process to address these challenges.
+  id: totrans-362
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，当训练服务完成模型构建时，应自动将模型发布到生产环境中的预测服务。其次，新发布的模型及其先前版本应全部在预测服务中可访问，以便我们可以在相同环境中对它们进行评估并进行公平比较。在本节中，我们提出了一个三步模型发布过程来解决这些挑战。
+- en: First, the data scientist (Alex) or training service registers the recently
+    produced model (consisting of the model’s files and its metadata) to a metadata
+    store—a cloud metadata and artifact storage system that will be discussed in the
+    next chapter. Second, Alex runs the model evaluation on the newly registered models.
+    He can test the performance of these models by sending prediction requests with
+    their specific model versions to the prediction service. The prediction service
+    has a built-in mechanism to load any specific version of a model from the metadata
+    store.
+  id: totrans-363
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 首先，数据科学家（Alex）或训练服务向元数据存储注册最近生成的模型（由模型文件和其元数据组成）—这是一个将在下一章中讨论的云元数据和工件存储系统。其次，Alex对新注册的模型进行模型评估。他可以通过向预测服务发送具有特定模型版本的预测请求来测试这些模型的性能。预测服务具有从元数据存储加载任何特定版本模型的内置机制。
+- en: Third, Alex sets the best-performing model version as the release model version
+    in the metadata store. Once this is set, the selected version of the model will
+    go public! Customer applications will unknowingly start using the new release
+    version of the model from the prediction service. Figure 7.12 illustrates this
+    three-step process.
+  id: totrans-364
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 第三，Alex将性能最佳的模型版本设置为元数据存储中的发布模型版本。一旦设置完成，所选版本的模型将会公开！客户应用程序将不知不觉地开始使用来自预测服务的新发布版本的模型。图7.12说明了这个三步骤的过程。
+- en: '![](../Images/07-12.png)'
+  id: totrans-365
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-12.png)'
+- en: 'Figure 7.12 The model release process workflow: (1) registers models in the
+    model metadata store; (2) loads arbitrary versions of a model to serve prediction
+    requests; and (3) releases the model in the metadata store'
+  id: totrans-366
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.12 模型发布流程工作流程：（1）在模型元数据存储中注册模型；（2）加载模型的任意版本以提供预测请求；以及（3）在元数据存储中发布模型
+- en: In the next three sections, we will delve into the three model release steps
+    (pictured in figure 7.12) one by one. As we do this, we will also explore the
+    details of the metadata store and its interactions with storage and with the prediction
+    service. Let’s get started!
+  id: totrans-367
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在接下来的三个部分中，我们将逐个探讨三个模型发布步骤（如图7.12所示）。在此过程中，我们还将探讨元数据存储的细节以及其与存储和预测服务的交互。让我们开始吧！
+- en: 7.5.1 Registering a model
+  id: totrans-368
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.5.1 注册模型
+- en: In most deep learning systems, there is a storage service to store models. In
+    our example, this service is called the *metadata* *store*; it is used to manage
+    the metadata of the artifacts produced by the deep learning system, such as models.
+    The metadata and artifact store service will be discussed in detail in the next
+    chapter.
+  id: totrans-369
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在大多数深度学习系统中，都有一个存储模型的存储服务。在我们的示例中，这个服务称为*元数据存储*；它用于管理深度学习系统生成的工件的元数据，如模型。元数据和工件存储服务将在下一章中详细讨论。
+- en: To register a model to the metadata store, we usually need to provide model
+    files and model metadata. Model files can be model weights, embeddings, and other
+    dependent files to execute the model. Model metadata can be any data that describes
+    the fact of the model, such as the model name, model ID, model version, training
+    algorithm, dataset info, and training execution metrics. Figure 7.13 illustrates
+    how metadata stores model metadata and model files internally.
+  id: totrans-370
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 要向元数据存储注册模型，通常需要提供模型文件和模型元数据。模型文件可以是模型权重、嵌入和执行模型所需的其他依赖文件。模型元数据可以是描述模型事实的任何数据，例如模型名称、模型ID、模型版本、训练算法、数据集信息和训练执行指标。图7.13说明了元数据如何在内部存储模型元数据和模型文件。
+- en: '![](../Images/07-13.png)'
+  id: totrans-371
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-13.png)'
+- en: Figure 7.13 The internal storage design of the metadata store; model metadata
+    are stored as object files with lookup tables in front of them.
+  id: totrans-372
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图7.13 元数据存储的内部存储设计；模型元数据存储为对象文件，并带有前置查找表。
+- en: 'In figure 7.13, we can see the metadata store has two sections: the model lookup
+    table and the model metadata list. The model metadata list is just pure metadata
+    storage; all the model metadata objects are stored in this list. The model lookup
+    table is used as an index table for quick searches. Each record in the lookup
+    table points to an actual metadata object in the metadata list.'
+  id: totrans-373
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图7.13中，我们可以看到元数据存储有两个部分：模型查找表和模型元数据列表。模型元数据列表只是纯元数据存储；所有模型元数据对象都存储在这个列表中。模型查找表用作快速搜索的索引表。查找表中的每个记录指向元数据列表中的实际元数据对象。
+- en: Training service can register models automatically to the metadata store after
+    training completes. Data scientists can also register models manually, which often
+    happens when data scientists want to deploy the model they build locally (without
+    using the deep learning system).
+  id: totrans-374
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在训练完成后，训练服务可以自动将模型注册到元数据存储中。数据科学家也可以手动注册模型，这通常发生在数据科学家想要部署他们本地构建的模型（而不使用深度学习系统）时。
+- en: When the metadata store receives a model register request, first, it creates
+    a metadata object for this model. Second, it updates the model lookup table by
+    adding a new search record; the record enables us to find that model metadata
+    object by using the model name and version. Besides searching the lookup table
+    by using the model name and version, the metadata store also allows a model metadata
+    search by using the model ID.
+  id: totrans-375
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 当元数据存储接收到模型注册请求时，首先，它为此模型创建一个元数据对象。其次，通过添加一个新的搜索记录来更新模型查找表；该记录使我们能够通过使用模型名称和版本来找到该模型元数据对象。除了通过使用模型名称和版本搜索查找表外，元数据存储还允许通过使用模型ID进行模型元数据搜索。
+- en: The actual model files are stored in the artifact store—a cloud object storage,
+    such as Amazon S3\. A model’s storage location in the artifact store is saved
+    in the model’s metadata object as a pointer.
+  id: totrans-376
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 实际模型文件存储在工件存储中——云对象存储，例如 Amazon S3。模型在工件存储中的存储位置保存在模型的元数据对象中作为指针。
+- en: 'Figure 7.13 shows two search records in the model lookup table for model A:
+    versions 1.0.0 and 1.1.0\. Each search record maps to a different model metadata
+    object (respectively, ID = 12345 and ID = 12346). With this storage structure,
+    we can find any model metadata by using the model name and model version; for
+    example, we can find model metadata object ID = 12346 by searching “model A” and
+    version “1.1.0.”'
+  id: totrans-377
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.13 显示了模型查找表中模型 A 的两个搜索记录：版本 1.0.0 和 1.1.0。每个搜索记录映射到不同的模型元数据对象（分别为 ID = 12345
+    和 ID = 12346）。有了这种存储结构，我们可以通过使用模型名称和模型版本找到任何模型元数据；例如，我们可以通过搜索“模型 A”和版本“1.1.0”找到模型元数据对象
+    ID = 12346。
+- en: Using the model’s canonical names and versions to find the actual metadata and
+    model files is foundational to the prediction service’s ability to serve different
+    model versions at the same time. Let’s see how the metadata store is used in the
+    prediction service in the next section.
+  id: totrans-378
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 使用模型的规范名称和版本来查找实际的元数据和模型文件是预测服务同时提供不同模型版本的能力的基础。让我们在下一节中看看元数据存储在预测服务中的应用。
+- en: 7.5.2 Loading an arbitrary version of a model in real time with a prediction
+    service
+  id: totrans-379
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: '-   实时加载模型的任意版本与预测服务'
+- en: To make decisions on which model version to use in production, we want to evaluate
+    the model performance of each model version fairly (in the same environment) and
+    easily (using the same API). To do so, we can call the prediction service to run
+    prediction requests with different model versions.
+  id: totrans-380
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了在生产环境中决定使用哪个模型版本，我们希望公平地（在相同的环境中）和轻松地（使用相同的 API）评估每个模型版本的模型性能。为此，我们可以调用预测服务以使用不同的模型版本运行预测请求。
+- en: In our proposal, the prediction service loads a model in real time from the
+    metadata store when it receives a prediction request. Data scientists can allow
+    the prediction services to use any model version to run the prediction by defining
+    the model name and version in the prediction request. Figure 7.14 illustrates
+    the process.
+  id: totrans-381
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的提案中，当预测服务收到预测请求时，它会实时从元数据存储加载模型。数据科学家可以通过在预测请求中定义模型名称和版本来允许预测服务使用任何模型版本来运行预测。图
+    7.14 说明了该过程。
+- en: '![](../Images/07-14.png)'
+  id: totrans-382
+  prefs: []
+  type: TYPE_IMG
+  zh: '![](../Images/07-14.png)'
+- en: Figure 7.14 Model serving in prediction service with the metadata store
+  id: totrans-383
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.14 模型在预测服务中的服务
+- en: 'Figure 7.14 shows the prediction service loads models specified in the serving
+    request in real time. When receiving a prediction request, the routing layer first
+    finds the requested model in the metadata store, downloads the model files, and
+    then passes the request to the backend predictor. Here is a detailed explanation
+    of the seven steps of the runtime model loading and serving process:'
+  id: totrans-384
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.14 显示了预测服务实时加载指定的服务请求中的模型。在接收到预测请求时，路由层首先在元数据存储中找到请求的模型，下载模型文件，然后将请求传递给后端预测器。以下是运行时模型加载和服务过程的七个步骤的详细说明：
+- en: The user sends prediction requests to the prediction service. In the request,
+    they can specify which model to use by providing the model name and version (`/predict/{model_name}/{version}`)
+    or model ID (`/predict/{model_id}`).
+  id: totrans-385
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 用户向预测服务发送预测请求。在请求中，他们可以通过提供模型名称和版本（`/predict/{model_name}/{version}`）或模型ID（`/predict/{model_id}`）来指定要使用的模型。
+- en: The routing layer inside the prediction service searches the metadata store
+    and finds the model metadata object.
+  id: totrans-386
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 预测服务内部的路由层搜索元数据存储，并找到模型元数据对象。
+- en: The routing layer then downloads the model files to a shared disk that all the
+    predictors can access.
+  id: totrans-387
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 路由层然后将模型文件下载到所有预测器都可以访问的共享磁盘上。
+- en: By checking the model metadata, such as the algorithm type, the routing layer
+    routes the prediction request to the correct backend predictor.
+  id: totrans-388
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 通过检查模型元数据，例如算法类型，路由层将预测请求路由到正确的后端预测器。
+- en: The predictor loads the model from the shared disk.
+  id: totrans-389
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 预测器从共享磁盘加载模型。
+- en: The predictor handles data preprocessing, executes the model, performs postprocessing,
+    and returns the result to the routing layer.
+  id: totrans-390
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 预测器处理数据预处理，执行模型，执行后处理，并将结果返回给路由层。
+- en: The routing layer returns prediction results to the caller.
+  id: totrans-391
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+  zh: 路由层将预测结果返回给调用者。
+- en: 7.5.3 Releasing the model by updating the default model version
+  id: totrans-392
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.5.3 通过更新默认模型版本释放模型
+- en: After model evaluation, the last step of the model release is letting the customers
+    consume the newly verified model version in the prediction service. We want the
+    model release process to happen unknowingly, so customers aren’t aware of the
+    underlying model version changes.
+  id: totrans-393
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在模型评估之后，模型释放的最后一步是让客户在预测服务中使用新验证的模型版本。我们希望模型释放过程在不知不觉中发生，以便客户不知道底层模型版本的更改。
+- en: In step 1 of the previous section (7.5.2), users can request a model serving
+    on any specified model version by using the `/predict/{model_name}/{version}`
+    API. This capability is crucial to evaluating multiple versions of the same model,
+    so we can prevent model performance regression.
+  id: totrans-394
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在上一节（7.5.2）的步骤1中，用户可以使用`/predict/{model_name}/{version}`API请求任何指定模型版本的模型服务。这种能力对于评估同一模型的多个版本至关重要，因此我们可以防止模型性能回归。
+- en: But in the production scenario, we don’t expect our customers to track the model
+    versions and model IDs. Alternatively, we can define a few static version strings
+    as variables to represent the newly released models and let customers use them
+    in the prediction request instead of using the real model version.
+  id: totrans-395
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 但在生产场景中，我们不希望客户跟踪模型版本和模型ID。相反，我们可以定义几个静态版本字符串作为变量来表示新发布的模型，并让客户在预测请求中使用它们，而不是使用真实的模型版本。
+- en: For example, we can define two special static model versions or tags, such as
+    `STG` and `PROD`, which represent the preproduction and production environments,
+    respectively. If the model version associated with the `PROD` tag for model A
+    is `1.0.0`, a user can call `/predict/model_A/PROD` and the prediction service
+    will load model A and version `1.0.0` to run model serving. When we upgrade the
+    newly released model version to `1.2.0`—by associating the `PROD` tag to version
+    1.2.0—the `/predict/model_A/PROD` request will land on model version `1.2.0`.
+  id: totrans-396
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 例如，我们可以定义两个特殊的静态模型版本或标签，例如`STG`和`PROD`，分别表示预生产和生产环境。如果与模型A关联的`PROD`标签的模型版本为`1.0.0`，则用户可以调用`/predict/model_A/PROD`，而预测服务将加载模型A和版本`1.0.0`来运行模型服务。当我们将新发布的模型版本升级到`1.2.0`时——将`PROD`标签与版本1.2.0关联——`/predict/model_A/PROD`请求将落在模型版本`1.2.0`上。
+- en: With the special static version/tag strings, prediction users don’t need to
+    remember model ID or versions; they can just use `/predict/{model_name}/PROD`
+    to send prediction requests to consume the newly released model. Behind the scenes,
+    we (data scientists or engineers) maintain the mapping between these special strings
+    and the actual version in the metadata store’s lookup table, so the prediction
+    service knows which model version to download for a `/STG` or `/PROD` request.
+  id: totrans-397
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 有了特殊的静态版本/标签字符串，预测用户不需要记住模型ID或版本；他们只需使用`/predict/{model_name}/PROD`即可发送预测请求以消耗新发布的模型。在幕后，我们（数据科学家或工程师）维护这些特殊字符串与元数据存储的查找表中实际版本之间的映射，因此预测服务知道对于`/STG`或`/PROD`请求下载哪个模型版本。
+- en: In our proposal, we named the operation of mapping a specific model version
+    to the static model version the *model release operation*. Figure 7.15 illustrates
+    the model release process.
+  id: totrans-398
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在我们的提案中，我们将将特定模型版本映射到静态模型版本的操作命名为*模型释放操作*。图7.15说明了模型释放过程。
+- en: '![](../Images/07-15.png)'
+  id: totrans-399
+  prefs: []
+  type: TYPE_IMG
+  zh: '![图片 7.15](../Images/07-15.png)'
+- en: Figure 7.15 Model serving in prediction service with the metadata store
+  id: totrans-400
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 图 7.15 在带有元数据存储的预测服务中模型提供服务
+- en: In figure 7.15, data scientists first register model A, version 1.0.0 to model
+    A, version `PROD` in the metadata store. Then in the model lookup table, the (`Model`
+    `A,` `PROD)` record changes to point to the actual model object record (`ModelA,`
+    `version:` `1.0.0)`. So when users call `/predict/ModelA/PROD` in the prediction
+    service, they are actually calling `/predict/ModelA/1.0.0`.
+  id: totrans-401
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 在图 7.15 中，数据科学家首先在元数据存储中将模型 A，版本 1.0.0 注册到模型 A，版本`PROD`。然后在模型查找表中，（`Model` `A，`
+    `PROD)` 记录更改为指向实际的模型对象记录（`ModelA，` `version:` `1.0.0)`。因此，当用户在预测服务中调用`/predict/ModelA/PROD`时，他们实际上是在调用`/predict/ModelA/1.0.0`。
+- en: Next, when the prediction service receives a prediction request with a model
+    version equal to `STG` or `PROD`, the service will search the lookup table in
+    the metadata store and use the actual model version, which is registered to `PROD`,
+    to download model files. In figure 7.15, the prediction service will load model
+    `ModelA,version:` 1.0.0 for the `/ModelA/PROD` `request`, and it will load model
+    `ModelA,version:` 1.1.0 for the `/ModelA/STG` `request`.
+  id: totrans-402
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 接下来，当预测服务收到一个模型版本等于`STG`或`PROD`的预测请求时，服务将在元数据存储中搜索查找表，并使用实际的模型版本，即已注册到`PROD`的版本，来下载模型文件。在图
+    7.15 中，预测服务将为`/ModelA/PROD`的请求加载模型`ModelA, version:` 1.0.0，并为`/ModelA/STG`的请求加载模型`ModelA,
+    version:` 1.1.0。
+- en: For future model releases, data scientists only need to update the model records
+    to map the latest model version to `STG` and `PROD` in the metadata store’s lookup
+    table. The prediction service will load the new model version automatically for
+    new prediction requests. All of these operations happen automatically and are
+    imperceptible to users.
+  id: totrans-403
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 对于未来的模型发布，数据科学家只需在元数据存储的查找表中更新模型记录，将最新的模型版本映射到`STG`和`PROD`。预测服务将自动加载新的模型版本以响应新的预测请求。所有这些操作都是自动进行的，对用户来说是不可感知的。
+- en: Note The proposed release workflow is not the only way to release models. Model
+    release approaches are highly dependent on a company’s internal DevOps process
+    and the prediction service design, so there is no single best design on this topic.
+    We hope by reading the problem analysis and the proposed solution in section 7.5,
+    you can derive a model release process that suits your situation.
+  id: totrans-404
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 注意：所提出的发布工作流程并不是发布模型的唯一方法。模型发布方法高度依赖于公司内部的DevOps流程和预测服务设计，因此在这个主题上没有单一的最佳设计。我们希望通过阅读第
+    7.5 节中的问题分析和提出的解决方案，您可以得出适合您情况的模型发布流程。
+- en: 7.6 Postproduction model monitoring
+  id: totrans-405
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 7.6 生产后模型监控
+- en: Compared with monitoring other services, such as data management, in machine
+    learning systems, the job is still not complete after the model goes into production.
+    We need not only to monitor and maintain the prediction service itself but also
+    look at *the performance of models* that the service serves. Model drifting is
+    a shift in the knowledge domain distribution that no longer matches the training
+    dataset and leads to the deterioration of the model performance. This can happen
+    while the prediction service is completely healthy because model inference runs
+    independently from the prediction service.
+  id: totrans-406
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 与监控其他服务（如数据管理）相比，在机器学习系统中，模型投入生产后工作仍未完成。我们不仅需要监控和维护预测服务本身，还需要关注服务提供的*模型性能*。模型漂移是指知识领域分布发生变化，不再与训练数据集匹配，导致模型性能下降。这可能发生在预测服务完全正常运行的情况下，因为模型推理是独立于预测服务运行的。
+- en: To battle model drifting, data scientists need to retrain the model with new
+    data or rebuild the model with an improved training algorithm. This sounds like
+    a data science project on the surface, but it requires a lot of underlying engineering
+    work, such as collecting and analyzing the model metrics from the prediction service
+    to detect model drifting. In this section, we discuss model monitoring from an
+    engineering perspective and look at the role that engineers can play in the monitoring
+    process.
+  id: totrans-407
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了应对模型漂移，数据科学家需要使用新数据重新训练模型或使用改进的训练算法重建模型。表面上，这听起来像是一个数据科学项目，但它需要大量的底层工程工作，例如从预测服务收集和分析模型指标以检测模型漂移。在本节中，我们从工程的角度讨论模型监控，并探讨工程师在监控过程中的作用。
+- en: 7.6.1 Metric collection and quality gate
+  id: totrans-408
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.6.1 指标收集和质量门限
+- en: The two most important areas where engineers can contribute are *model metric
+    collection* and *model quality gate setup*. Let us explain.
+  id: totrans-409
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 工程师可以为 *模型指标收集* 和 *模型质量门设置* 这两个最重要的领域做出贡献。让我们解释一下。
+- en: To run an analysis to detect model drift, data scientists need data to analyze,
+    and engineers can find ways to deliver the necessary data (metrics). Although
+    engineers would have to create a separate data pipeline to collect model performance
+    metrics, it would be overkill in most cases. Normally, model performance metrics
+    can be collected and visualized with the existing telemetry system (like Datadog)
+    and logging system (like Sumo and Splunk). So do yourself a favor and try to fully
+    utilize the existing logging and metric systems you already have, instead of doing
+    the heavy lifting of building a new metric system.
+  id: totrans-410
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 为了运行检测模型漂移的分析，数据科学家需要分析数据，工程师可以找到途径提供必要的数据（指标）。尽管工程师可能必须创建一个单独的数据管道来收集模型性能指标，但在大多数情况下这将是不划算的。通常，模型性能指标可以使用现有的遥测系统（如Datadog）和日志记录系统（如Sumo和Splunk）进行收集和可视化。因此，请善用您已经拥有的现有日志记录和指标系统，而不是费力地建立一个新的指标系统。
+- en: Engineers can also help with building model-quality gates. Engineers can work
+    with data scientists to automate their troubleshooting steps, such as checking
+    data quality and generating model inference analysis reports. With a given threshold,
+    these checks will eventually form a model quality gate.
+  id: totrans-411
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 工程师还可以帮助构建模型质量门。工程师可以与数据科学家合作，自动化他们的故障排除步骤，例如检查数据质量和生成模型推理分析报告。通过给定的阈值，这些检查最终将形成一个模型质量门。
+- en: 7.6.2 Metrics to collect
+  id: totrans-412
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+  zh: 7.6.2 需要收集的指标
+- en: 'Theoretically, we need to collect at least five kinds of metrics to support
+    model performance measurements. They are prediction tracing, the date of the prediction,
+    model versions, observation, and observation rate and date. Let’s look at them
+    one by one:'
+  id: totrans-413
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 从理论上讲，我们需要收集至少五种指标来支持模型性能测量。它们是预测跟踪、预测日期、模型版本、观察和观察率、以及日期。让我们逐一来看看它们：
+- en: '*Prediction tracing*—We normally track each prediction request by assigning
+    it a unique request ID, but this is not enough. For some complicated scenarios,
+    such as PDF scanning, we composite different types of model predictions together
+    to produce a final result. For example, we first send a PDF doc to an OCR (optical
+    character recognition) model to extract text information and then send the text
+    to an NLP (natural language processing) model to recognize the targeted entities.
+    In this case, besides assigning a unique request ID for a parent prediction request,
+    we can also assign a `groupRequestID` to each sub/child prediction request, so
+    we can group all the associated prediction requests when troubleshooting.'
+  id: totrans-414
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*预测跟踪* — 通常，我们通过为每个预测请求分配一个唯一的请求 ID 来跟踪每个预测请求，但这还不够。对于一些复杂的场景，比如 PDF 扫描，我们将不同类型的模型预测组合在一起以产生最终结果。例如，我们首先将
+    PDF 文档发送到 OCR（光学字符识别）模型以提取文本信息，然后将文本发送到 NLP（自然语言处理）模型以识别目标实体。在这种情况下，除了为父预测请求分配唯一的请求
+    ID 外，我们还可以为每个子预测请求分配一个 `groupRequestID`，这样我们就可以在故障排除时将所有相关的预测请求分组起来。'
+- en: '*Date of the prediction*—Normally, a prediction request completes within a
+    second. To track the date of a prediction, we can either use prediction start
+    time or complete time because there is not much difference. But for cases like
+    fraud detection, the prediction’s completion timestamp might be a lot different
+    from the prediction start timestamp because it can take multiple days of user
+    activities as input.'
+  id: totrans-415
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*预测日期* — 通常，预测请求在一秒内完成。为了追踪预测的日期，我们可以使用预测开始时间或完成时间，因为它们之间没有太大的区别。但是对于像欺诈检测这样的情况，预测的完成时间戳可能与预测开始时间戳相差很大，因为它可能需要多天的用户活动作为输入。'
+- en: '*Model version*—To map model performance data to the exact model file, we need
+    to know the model version. Furthermore, when we combine multiple models to serve
+    one prediction request, the version of every model needs to be tracked in logs.'
+  id: totrans-416
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*模型版本* — 为了将模型性能数据映射到确切的模型文件，我们需要知道模型版本。此外，当我们组合多个模型来提供一个预测请求时，需要在日志中跟踪每个模型的版本。'
+- en: '*Observation*—The prediction result needs to be logged along with prediction
+    input for future comparison. Additionally, we can provide a feedback or investigation
+    API for customers to report model performance concerns. By using the feedback
+    API, customers can report the model ID, expected prediction result, and current
+    prediction result.'
+  id: totrans-417
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*观察* —— 预测结果需要与预测输入一起记录，以供将来比较。此外，我们可以为客户提供反馈或调查 API，以报告模型性能问题。通过使用反馈 API，客户可以报告模型
+    ID、预期预测结果和当前预测结果。'
+- en: '*Observation date and rate*—Many times, observations are collected manually,
+    and the frequency of observation needs to be logged as well. Data scientists need
+    the date and rate to decide whether the data can statistically represent the model’s
+    overall performance.'
+  id: totrans-418
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: '*观察日期和频率* —— 许多时候，观察是手动收集的，观察的频率也需要记录。数据科学家需要日期和频率来决定数据是否能够在统计上代表模型的整体性能。'
+- en: It is great that you have read this far! Model serving is an essential component
+    of a machine learning system because external business applications depend on
+    it. As types of models, numbers of prediction requests, and types of inference
+    (online/offline) increase, many model serving frameworks/systems are invented,
+    and they become increasingly complex. If you follow the serving mental model introduced
+    in chapters 6 and 7, starting with how a model is loaded and executed, you can
+    easily navigate these serving systems, regardless of how large the codebase or
+    the number of components is.
+  id: totrans-419
+  prefs: []
+  type: TYPE_NORMAL
+  zh: 你能读到这里真是太好了！模型服务是机器学习系统的重要组成部分，因为外部业务应用程序依赖于它。随着模型类型、预测请求数量和推理类型（在线/离线）的增加，许多模型服务框架/系统被发明出来，并且它们变得越来越复杂。如果你遵循第
+    6 和第 7 章介绍的服务心理模型，从模型如何加载和执行开始，你可以轻松地浏览这些服务系统，无论代码库有多大或组件数量有多少。
+- en: Summary
+  id: totrans-420
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+  zh: 摘要
+- en: The model service sample in this chapter is made of a frontend API component
+    and a backend model predictor container. Because the predictor is built on top
+    of the intent model training code in chapter 3, it can only serve intent classification
+    models.
+  id: totrans-421
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 这一章的模型服务示例由一个前端 API 组件和一个后端模型预测器容器组成。由于预测器是基于第 3 章的意图模型训练代码构建的，因此它只能为意图分类模型提供服务。
+- en: The model server sample is composed of the same frontend API as in chapter 3
+    and a different backend—TorchServe predictor. The TorchServe backend is not limited
+    to intent classification models; it can serve arbitrary PyTorch models. This is
+    a great advantage for the model server approach over the model service approach.
+  id: totrans-422
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模型服务器示例由与第 3 章相同的前端 API 和一个不同的后端 —— TorchServe 预测器组成。TorchServe 后端不仅限于意图分类模型；它可以为任意的
+    PyTorch 模型提供服务。这是模型服务器方法在模型服务方法上的一个巨大优势。
+- en: For implementing model server approaches, we recommend using existing tools—for
+    example, the Triton server—instead of building your own.
+  id: totrans-423
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 对于实施模型服务器方法，我们建议使用现有工具，例如 Triton 服务器，而不是自己构建。
+- en: The model service approach works for single application scenarios; it can be
+    implemented quickly, and you have full control of the code implementation of the
+    end-to-end workflow.
+  id: totrans-424
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模型服务方法适用于单个应用场景；它可以快速实施，并且您可以完全控制端到端工作流的代码实现。
+- en: The model server approach fits platform scenarios; it can greatly reduce development
+    and maintenance efforts when the serving system needs to support five or more
+    different types of models.
+  id: totrans-425
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模型服务器方法适用于平台场景；当服务系统需要支持五种或更多不同类型的模型时，它可以极大地减少开发和维护工作量。
+- en: TorchServe, TensorFlow Serving, and Triton are all solid open source model serving
+    tools, and they all take a model server approach. If applicable, we recommend
+    Triton because it is compatible with most model training frameworks and has a
+    performance advantage in terms of GPU acceleration.
+  id: totrans-426
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: TorchServe、TensorFlow Serving 和 Triton 都是可靠的开源模型服务工具，它们都采用了模型服务器方法。如果适用，我们推荐
+    Triton，因为它与大多数模型训练框架兼容，并且在 GPU 加速方面具有性能优势。
+- en: KServe provides a standard serving interface that works for all major serving
+    tools, including TensorFlow Serving, TorchServe, and Triton. KServe can greatly
+    improve the compatibility of our serving system because we can use a single set
+    API to run model serving with different backends.
+  id: totrans-427
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: KServe 提供了一个标准的服务接口，适用于所有主要的服务工具，包括 TensorFlow Serving、TorchServe 和 Triton。KServe
+    可以极大地提高我们的服务系统的兼容性，因为我们可以使用单一集合的 API 来运行具有不同后端的模型服务。
+- en: Releasing a new model or new version of the model serving system in production
+    shouldn’t be an afterthought; we need to consider it properly in the design phase.
+  id: totrans-428
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 在生产中发布新模型或模型服务系统的新版本不应该是事后才考虑的事情；我们需要在设计阶段妥善考虑这一点。
+- en: Model metric collection and model quality gates are the two areas on which engineers
+    need to focus for model performance monitoring.
+  id: totrans-429
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+  zh: 模型度量收集和模型质量门是工程师需要专注于模型性能监控的两个领域。
