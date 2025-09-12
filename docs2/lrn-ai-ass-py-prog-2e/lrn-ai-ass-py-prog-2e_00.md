@@ -1,4 +1,4 @@
-# 1 使用 GitHub Copilot 介绍 AI 辅助编程
+# 第一章：使用 GitHub Copilot 介绍 AI 辅助编程
 
 ### 本章涵盖
 

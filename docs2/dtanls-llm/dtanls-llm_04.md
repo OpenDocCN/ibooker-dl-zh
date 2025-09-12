@@ -1,4 +1,4 @@
-# 3 OpenAI Python 库
+# 第三章：OpenAI Python 库
 
 ### 本章涵盖
 

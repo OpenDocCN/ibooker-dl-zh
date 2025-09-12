@@ -1,4 +1,4 @@
-# 3 图卷积网络和 GraphSAGE
+# 第三章：图卷积网络和 GraphSAGE
 
 ### 本章涵盖
 

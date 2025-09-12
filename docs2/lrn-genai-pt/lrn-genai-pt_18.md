@@ -1,4 +1,4 @@
-# 15 种扩散模型和文本到图像 Transformer
+# 第十五章：种扩散模型和文本到图像 Transformer
 
 本章涵盖
 

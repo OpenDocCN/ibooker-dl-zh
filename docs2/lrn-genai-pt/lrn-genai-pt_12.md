@@ -1,4 +1,4 @@
-# 10 训练 Transformer 以将英语翻译成法语
+# 第十章：训练 Transformer 以将英语翻译成法语
 
 本章涵盖
 

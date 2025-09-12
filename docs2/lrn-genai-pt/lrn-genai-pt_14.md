@@ -1,4 +1,4 @@
-# 12 训练一个 Transformer 生成文本
+# 第十二章：训练一个 Transformer 生成文本
 
 本章涵盖
 

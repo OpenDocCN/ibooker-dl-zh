@@ -1,4 +1,4 @@
-# 5 使用 GitHub Copilot 和 Copilot Chat 管理数据
+# 第五章：使用 GitHub Copilot 和 Copilot Chat 管理数据
 
 本章涵盖
 

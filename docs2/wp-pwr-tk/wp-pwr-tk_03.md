@@ -1,4 +1,4 @@
-# 4 AI-powered writing
+# 第四章：AI-powered writing
 
 本章涵盖
 

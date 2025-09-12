@@ -1,4 +1,4 @@
-# 1 探索 FinTech 和生成式 AI
+# 第一章：探索 FinTech 和生成式 AI
 
 ### 本章涵盖
 

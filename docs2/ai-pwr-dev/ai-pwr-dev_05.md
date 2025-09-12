@@ -1,4 +1,4 @@
-# 4 使用 GitHub Copilot 构建软件
+# 第四章：使用 GitHub Copilot 构建软件
 
 本章涵盖
 

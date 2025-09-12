@@ -1,4 +1,4 @@
-# 在 Altair 和 GitHub Copilot 中运行您的第一个数据故事
+# 第二章：在 Altair 和 GitHub Copilot 中运行您的第一个数据故事
 
 ### 本章涵盖
 
