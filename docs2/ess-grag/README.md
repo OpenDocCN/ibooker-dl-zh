@@ -1,6 +1,6 @@
-# Go 编程蓝图
+# 图检索增强生成（GraphRAG）精要
 
-> 原文：[`zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66`](https://zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66)
+> 原文：[`zh.annas-archive.org/md5/2c8245e0e83797ed40746ad357b9e3f5`](https://zh.annas-archive.org/md5/2c8245e0e83797ed40746ad357b9e3f5)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

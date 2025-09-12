@@ -1,6 +1,6 @@
-# Go 编程蓝图
+# 表格数据的机器学习
 
-> 原文：[`zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66`](https://zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66)
+> 原文：[`zh.annas-archive.org/md5/7c92abc8663909ba4bdf951baf02d310`](https://zh.annas-archive.org/md5/7c92abc8663909ba4bdf951baf02d310)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

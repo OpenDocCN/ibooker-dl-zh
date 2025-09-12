@@ -1,6 +1,6 @@
-# Go 编程蓝图
+# AI 辅助的 Python 编程学习指南
 
-> 原文：[`zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66`](https://zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66)
+> 原文：[`zh.annas-archive.org/md5/8f93267a61af3c28aa765d9c5f3f38e8`](https://zh.annas-archive.org/md5/8f93267a61af3c28aa765d9c5f3f38e8)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 
