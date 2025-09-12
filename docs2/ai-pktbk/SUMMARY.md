@@ -1,0 +1,8 @@
++   [AI 口袋手册](README.md)
++   [第一章：AI 的工作原理](ai-pktbk_0.md)
++   [第二章：幻觉](ai-pktbk_1.md)
++   [第三章：选择和评估人工智能工具](ai-pktbk_2.md)
++   [第四章：何时使用（以及何时不使用）AI](ai-pktbk_3.md)
++   [第五章：人工智能将如何影响工作以及如何保持领先](ai-pktbk_4.md)
++   [第六章：详细说明](ai-pktbk_5.md)
++   [附录 A  生成式 AI 工具目录](ai-pktbk_6.md)
