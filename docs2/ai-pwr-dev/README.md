@@ -1,6 +1,6 @@
-# Go 编程蓝图
+# AI 驱动的开发者指南
 
-> 原文：[`zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66`](https://zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66)
+> 原文：[`zh.annas-archive.org/md5/e55b4f3eb6eab9f07792aed60810ba2f`](https://zh.annas-archive.org/md5/e55b4f3eb6eab9f07792aed60810ba2f)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 

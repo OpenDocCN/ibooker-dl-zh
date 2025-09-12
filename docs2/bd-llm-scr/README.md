@@ -1,6 +1,6 @@
-# Go 编程蓝图
+# 从零开始的大语言模型构建指南
 
-> 原文：[`zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66`](https://zh.annas-archive.org/md5/AC9839247134C458206EE3BE6D404A66)
+> 原文：[`zh.annas-archive.org/md5/50e5c3d523232e78df8d9d341a0eae11`](https://zh.annas-archive.org/md5/50e5c3d523232e78df8d9d341a0eae11)
 > 
 > 译者：[飞龙](https://github.com/wizardforcel)
 > 
