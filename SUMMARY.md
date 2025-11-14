@@ -5,6 +5,7 @@
 +   [人工智能即服务](docs/aiaas/README.md)
 +   [使用生成式 AI 的金融软件构建指南](docs/bd-fin-sw-genai/README.md)
 +   [从零开始的大语言模型构建指南](docs/bd-llm-scr/README.md)
++   [超越氛围编程](docs/byd-vbcd/README.md)
 +   [贝叶斯优化实战](docs/bys-optm-ia/README.md)
 +   [生成式人工智能的完整过时指南（MEAP）](docs/cmpl-obs-gd-genai/README.md)
 +   [推理式人工智能](docs/csl-ai/README.md)
