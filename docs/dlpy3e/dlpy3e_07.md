@@ -1,4 +1,4 @@
-# 深入探讨 Keras
+# 第七章：深入探讨 Keras
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter07_deep-dive-keras`](https://deeplearningwithpython.io/chapters/chapter07_deep-dive-keras)
 

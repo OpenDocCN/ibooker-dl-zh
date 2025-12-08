@@ -1,4 +1,4 @@
-# ConvNet 架构模式
+# 第九章：ConvNet 架构模式
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter09_convnet-architecture-patterns`](https://deeplearningwithpython.io/chapters/chapter09_convnet-architecture-patterns)
 

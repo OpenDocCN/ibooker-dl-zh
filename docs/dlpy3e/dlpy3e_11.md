@@ -1,4 +1,4 @@
-# 图像分割
+# 第十一章：图像分割
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter11_image-segmentation`](https://deeplearningwithpython.io/chapters/chapter11_image-segmentation)
 

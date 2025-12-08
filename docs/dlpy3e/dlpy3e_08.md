@@ -1,4 +1,4 @@
-# 图像分类
+# 第八章：图像分类
 
 > [`deeplearningwithpython.io/chapters/chapter08_image-classification`](https://deeplearningwithpython.io/chapters/chapter08_image-classification)
 

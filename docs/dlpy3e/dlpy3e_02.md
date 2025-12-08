@@ -1,4 +1,4 @@
-# 神经网络的数学基础
+# 第二章：神经网络的数学基础
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter02_mathematical-building-blocks`](https://deeplearningwithpython.io/chapters/chapter02_mathematical-building-blocks)
 

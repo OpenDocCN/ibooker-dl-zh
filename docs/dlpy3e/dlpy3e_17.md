@@ -1,4 +1,4 @@
-# 图像生成
+# 第十七章：图像生成
 
 > [`deeplearningwithpython.io/chapters/chapter17_image-generation`](https://deeplearningwithpython.io/chapters/chapter17_image-generation)
 

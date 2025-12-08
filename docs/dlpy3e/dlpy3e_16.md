@@ -1,4 +1,4 @@
-# 文本生成
+# 第十六章：文本生成
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter16_text-generation`](https://deeplearningwithpython.io/chapters/chapter16_text-generation)
 

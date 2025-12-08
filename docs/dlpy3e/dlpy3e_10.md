@@ -1,4 +1,4 @@
-# 解释卷积神经网络学习的内容
+# 第十章：解释卷积神经网络学习的内容
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter10_interpreting-what-convnets-learn`](https://deeplearningwithpython.io/chapters/chapter10_interpreting-what-convnets-learn)
 

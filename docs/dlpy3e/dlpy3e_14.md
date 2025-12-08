@@ -1,4 +1,4 @@
-# 文本分类
+# 第十四章：文本分类
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter14_text-classification`](https://deeplearningwithpython.io/chapters/chapter14_text-classification)
 

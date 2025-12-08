@@ -1,4 +1,4 @@
-# 语言模型和 Transformer
+# 第十五章：语言模型和 Transformer
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter15_language-models-and-the-transformer`](https://deeplearningwithpython.io/chapters/chapter15_language-models-and-the-transformer)
 

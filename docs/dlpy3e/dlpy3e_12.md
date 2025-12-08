@@ -1,4 +1,4 @@
-# 物体检测
+# 第十二章：物体检测
 
 > 原文：[`deeplearningwithpython.io/chapters/chapter12_object-detection`](https://deeplearningwithpython.io/chapters/chapter12_object-detection)
 
