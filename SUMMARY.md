@@ -23,6 +23,7 @@
 +   [从零开始的深度学习](docs/dl-scr/README.md)
 +   [结构化数据的深度学习](docs/dl-strc-dt/README.md)
 +   [视觉系统的深度学习](docs/dl-vis-sys/README.md)
++   [Python 深度学习第三版](docs/dlpy3e/README.md)
 +   [深度强化学习实战](docs/drl-ia/README.md)
 +   [深度学习系统设计](docs/dsn-dl-sys/README.md)
 +   [使用 Altair 和人工智能的数据故事讲述指南](docs/dt-stytl-altair-ai/README.md)
