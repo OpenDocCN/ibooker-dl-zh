@@ -1,0 +1,1045 @@
+<html><head></head><body>
+<div id="book-content">
+<div id="sbo-rt-content"><section data-type="chapter" epub:type="chapter" data-pdf-bookmark="Chapter 12. Retrieval-Augmented Generation"><div class="chapter" id="ch12">
+<h1><span class="label">Chapter 12. </span>Retrieval-Augmented Generation</h1>
+
+
+<p>In <a data-type="xref" href="ch10.html#ch10">Chapter 10</a>, we demonstrated how to vastly expand the capabilities of LLMs<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" id="xi_retrievalaugmentedgenerationRAG12475"/><a data-type="indexterm" data-primary="RAG (retrieval-augmented generation)" data-see="retrieval-augmented generation (RAG)" id="id1528"/> by interfacing them with external data and software. In <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>, we introduced the concept of embedding-based retrieval, a foundational technique for retrieving relevant data from data stores in response to queries. Armed with this knowledge, let’s explore the application paradigm of augmenting LLMs with external data, called retrieval-augmented generation (RAG), in a holistic fashion.</p>
+
+<p>In this chapter, we will take a comprehensive view of the RAG pipeline, diving deep into each of the steps that make up a typical workflow of a RAG application. We will explore the various decisions involved in operationalizing RAG, including what kind of data we can retrieve, how to retrieve it, and when to retrieve it. We will highlight how RAG can help not only during model inference but also during model training and fine-tuning. We will also compare RAG with other paradigms and discuss scenarios where RAG shines in comparison to alternatives or vice versa.</p>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="The Need for RAG"><div class="sect1" id="id206">
+<h1>The Need for RAG</h1>
+
+<p>As introduced in <a data-type="xref" href="ch10.html#ch10">Chapter 10</a>, RAG is an umbrella term used to describe a variety of techniques for using external data sources to augment the capabilities of an LLM. Here are some reasons we might want to use RAG:</p>
+
+<ul>
+<li>
+<p>We need the LLMs to access our private/proprietary data, or data that was not part of the LLM’s pre-training datasets. Using RAG is a much more lightweight option than pre-training an LLM on our private data.</p>
+</li>
+<li>
+<p>To reduce the risk of hallucinations, we would like the LLM to refer to data provided through a retrieval mechanism rather than rely on its own internal knowledge. RAG facilitates this. RAG also enables more accurate data citations, connecting LLM outputs to their ground-truth sources.</p>
+</li>
+<li>
+<p>We would like the LLM to answer questions about recent events and concepts that have emerged after the LLM was pre-trained. While there are memory editing techniques for updating LLM parameters with new knowledge like <a href="https://oreil.ly/kxI3j">MEMIT</a>, they are not yet reliable or scalable. As discussed in <a data-type="xref" href="ch07.html#ch07">Chapter 7</a>, continually training an LLM to keep its knowledge up-to-date is expensive and risky.</p>
+</li>
+<li>
+<p>We would like the LLM to answer queries involving long-tail entities, which occur only rarely in the pre-training datasets.</p>
+</li>
+</ul>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1529">
+<h1>LLMs Struggle with the Long-Tail</h1>
+<p>LLMs typically need a lot of samples to memorize a fact. The memorization<a data-type="indexterm" data-primary="memorization challenges for LLMs" id="id1530"/><a data-type="indexterm" data-primary="long-tail information challenges for LLMs" id="id1531"/> ability is probabilistic, so we cannot predict the exact number of samples the LLM needs to see during training for it to memorize. This sample-inefficiency means that the LLM will struggle to answer questions about entities and concepts that rarely occur in the training data. As an example, <a href="https://oreil.ly/dqXV4">Kandpal et al.</a> show that the accuracy of BLOOM-176B on question-answering is only 25% when the relevant documents occur only 10 times in the pre-training dataset, versus 55% when the relevant documents occur 10,000 times.</p>
+
+<p>Kandpal et al. also show that larger LLMs need relatively fewer examples to memorize a fact. Even then, this leaves a large number of long-tail concepts that the LLM is unable to memorize. The relationship between LLM size and memorization capability is log-linear, meaning that the LLM needs to be in the order of quadrillions of parameters to be competitive on long-tail data-related tasks.</p>
+
+<p>One way to improve the chances of LLM memorization is by training it for more epochs or upsampling data in the training set corresponding to concepts and facts we want memorized. We could also modify the learning objective to upweight the training loss for tokens representing facts.</p>
+
+<p>Curriculum learning<a data-type="indexterm" data-primary="curriculum learning" id="id1532"/>, discussed in <a data-type="xref" href="ch02.html#ch02">Chapter 2</a>, is another way to help improve memorization.  <a href="https://oreil.ly/5BP_V">Jagielski et al.</a> show that samples seen earlier in the training phase tend to be forgotten. Thus we can modify the order in which we show the samples during training to ensure a higher likelihood of memorization for the data we want memorized.</p>
+
+<p>Yet another way to improve performance on long-tail concepts is to use RAG, as we will discuss throughout the chapter.</p>
+</div></aside>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1533">
+<h1>Exercise</h1>
+<p>Just about every LLM has been trained on Wikipedia, which is considered a high-quality dataset. Wikipedia contains pages for lesser-known individuals, football (soccer) players of lower leagues, for instance. For any such relatively unknown individual with a Wikipedia page, try asking questions about them to LLMs, where the answers to those questions are on the Wikipedia page. Try this with LLMs of various sizes. Repeat this with relatively more well-known individuals (the size of their pages could be a pseudo-indicator of their popularity). Do you notice the size of the LLM impacting its ability to answer these questions?</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Typical RAG Scenarios"><div class="sect1" id="id254">
+<h1>Typical RAG Scenarios</h1>
+
+<p>Now that we have seen <em>why</em> we need RAG, let’s explore <em>where</em> we can utilize it. The four most popular scenarios<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="scenarios" id="id1534"/><a data-type="indexterm" data-primary="use cases" data-secondary="RAG scenarios" id="id1535"/> are:</p>
+<dl>
+<dt>Retrieving external knowledge</dt>
+<dd>
+<p>This is the predominant use case that has seen a lot of success with productionization. As discussed earlier in the chapter, we can use RAG to plug LLM knowledge gaps or to reduce hallucination risk.</p>
+</dd>
+<dt>Retrieving context history</dt>
+<dd>
+<p>LLMs have a limited context window, but often we need access to more context in order to answer a query than what fits in the context window. We would also like to have longer conversations with the LLM than what fits in the context window. In these cases, we could retrieve parts of the conversation history or session context when needed.</p>
+</dd>
+<dt>Retrieving in-context training examples</dt>
+<dd>
+<p>Few-shot learning is an effective approach to help LLMs get acquainted with the input-output mapping of a task. You can make few-shot learning more effective by dynamically selecting few-shot examples based on the current input. The few-shot examples can be retrieved from a training example data store at inference time.</p>
+</dd>
+<dt>Retrieving tool-related information</dt>
+<dd>
+<p>As described in <a data-type="xref" href="ch10.html#ch10">Chapter 10</a>, LLMs can invoke software tools as part of their workflow. The list of tools available and their description is stored in a tool store. The LLM can then use retrieval for tool selection, selecting the tool best suited to the task. Tool-related information can also include API documentation, for instance.</p>
+</dd>
+</dl>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Deciding When to Retrieve"><div class="sect1" id="id207">
+<h1>Deciding When to Retrieve</h1>
+
+<p>For each step in an agentic workflow<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="during agentic workflow" id="xi_retrievalaugmentedgenerationRAGduringagenticworkflow125737"/><a data-type="indexterm" data-primary="agentic systems" data-secondary="retrieving decision during workflow" id="xi_agenticsystemsretrievingdecisionduringworkflow125737"/>, the LLM can advance its task using one of the following steps:</p>
+
+<ul>
+<li>
+<p>Use its internal capabilities</p>
+</li>
+<li>
+<p>Choose from among several data stores</p>
+</li>
+<li>
+<p>Choose from among several software tools</p>
+</li>
+</ul>
+
+<p>There can be tasks that the LLM can fully solve using its parametric memory, but one or more data stores may also contain the requisite data needed to solve them. In these cases, should we just default to using RAG, given all its benefits that we presented earlier?</p>
+
+<p>We have seen earlier in the chapter that LLMs struggle with long-tail information, and that RAG can be an effective means to answer questions about long-tail entities. However, <a href="https://oreil.ly/MF7Y1">Mallen et al.</a>  show that for queries about more popular entities, the LLM might sometimes be better at answering queries than RAG. This is because of the inevitable limitations of the retrieval model, which might retrieve irrelevant or incorrect information that could mislead the LLM.</p>
+
+<p>For a given query, you can dynamically determine whether to use retrieval or to rely on the LLM’s parametric memory<a data-type="indexterm" data-primary="queries" data-secondary="retrieval or parametric memory decision" id="id1536"/>. The rules determining the right approach to take include:</p>
+
+<ul>
+<li>
+<p>Whether the query is about a more frequently occurring entity. For example, the LLM is more likely to memorize the birthday of Taylor Swift than of a substitute drummer of a local band whose Wikipedia page is a stub.</p>
+</li>
+<li>
+<p>Whether the query has timeliness constraints, i.e., if the data needed to address the query may not have existed before the LLM’s knowledge cutoff date.</p>
+</li>
+<li>
+<p>Whether the model has been continually pre-trained or memory tuned as described in <a data-type="xref" href="ch07.html#ch07">Chapter 7</a>, and the given query relates to concepts over which the training was performed.</p>
+</li>
+</ul>
+
+<p>If you are using LLMs for general-purpose question answering, Mallen et al. show that you can use sources like Wikipedia as a pseudo-popularity metric for entities. If the entities present in your inputs have an entity count in Wikipedia greater than a threshold, then the LLM can choose to answer the question on its own without using RAG. Note that the threshold can change across LLMs. This strategy works only if you have a good understanding about the datasets the LLM has been pre-trained on.</p>
+
+<p>Dynamically<a data-type="indexterm" data-primary="dynamic retrieval" id="id1537"/> deciding when to retrieve data can also help optimize the model’s latency and responsiveness, as the RAG pipeline will  introduce additional overhead.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>Dynamic retrieval is mostly useful when you are using very large LLMs. For smaller models (7B or below), it is almost always beneficial to prefer using RAG rather than relying on the LLM’s internal memory<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGduringagenticworkflow125737" id="id1538"/><a data-type="indexterm" data-startref="xi_agenticsystemsretrievingdecisionduringworkflow125737" id="id1539"/>.</p>
+</div>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="The RAG Pipeline"><div class="sect1" id="id208">
+<h1>The RAG Pipeline</h1>
+
+<p>A typical RAG application<a data-type="indexterm" data-primary="RAG pipeline" id="xi_RAGpipeline128731"/> follows the <em>retrieve-read</em> framework<a data-type="indexterm" data-primary="retrieval-reader framework" id="id1540"/>, as discussed in <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>. In response to a query, a retrieval model identifies documents that are relevant to answering the query. These documents are then passed along to the LLM as context, which the LLM can rely on in addition to its internal capabilities to generate a response. In practice, we typically need to add a lot of bells and whistles to get RAG working in a production context. This involves adding several more optional stages to the retrieve-read framework. In practice, your pipeline stages might consist of a <em>rewrite-retrieve-read-refine-insert-generate</em> workflow, with some of these steps potentially comprising multiple stages. Later in the chapter, we will go through each of the steps in more detail.</p>
+
+<p><a data-type="xref" href="#RAG-pipeline">Figure 12-1</a> shows the various stages of the RAG pipeline and the components involved.</p>
+
+<figure><div id="RAG-pipeline" class="figure">
+<img src="assets/dllm_1201.png" alt="RAG-pipeline" width="600" height="381"/>
+<h6><span class="label">Figure 12-1. </span>RAG pipeline</h6>
+</div></figure>
+<div data-type="tip"><h6>Tip</h6>
+<p>As in the rest of the book, we refer to user or LLM requests to retrieve data as queries, and units of text retrieved from the data store as documents.</p>
+</div>
+
+<p>Let’s illustrate with an example. Consider a RAG application that answers questions about Canadian politics and parliamentary activity. The application has access to a knowledge base containing transcripts of parliamentary proceedings. We will assume that the data is represented using the representation techniques described in 
+<span class="keep-together"><a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a></span>.</p>
+
+<p>When a user issues a query<a data-type="indexterm" data-primary="queries" data-secondary="RAG pipeline" id="id1541"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="queries" id="id1542"/>, we might want to rephrase it before sending it to the retriever. Traditionally in the field of information retrieval (IR), this is referred to as query expansion<a data-type="indexterm" data-primary="queries" data-secondary="expansion of" id="xi_queriesexpansionof12103190"/>. Query expansion is especially useful because of the vocabulary mismatch between the query space<a data-type="indexterm" data-primary="document space versus query space" id="id1543"/> and the document space. The user might use different terminology in the query than that used in the documents. Rephrasing a query can help bridge the vocabulary gap. In general, we would like to rephrase the query in such a way that it improves the chances of the retriever fetching the most relevant documents. This stage is called<a data-type="indexterm" data-primary="rewrite stage, RAG pipeline" id="id1544"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="rewrite" id="id1545"/> the <em>rewrite</em> stage.</p>
+
+<p>Next, in the <em>retrieve</em> stage<a data-type="indexterm" data-primary="retrieve stage, RAG pipeline" id="id1546"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="retrieve" id="id1547"/>, a retrieval model is used to retrieve the documents relevant to the query. In <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>, we discussed embedding-based retrieval, a popular retrieval paradigm in the LLM era. The retrieval stage can be an extensive multi-stage pipeline.</p>
+
+<p>The retrieval can happen over a very large document space. In this case, it is computationally infeasible to use more advanced retrieval models. Therefore, retrieval is usually carried out in a two-step process, with the first step using faster methods<a data-type="indexterm" data-primary="embeddings" data-secondary="and RAG retrieval stage" data-secondary-sortas="RAG retrieval stage" id="id1548"/> (these days, typically embedding-based) to retrieve a list of potentially relevant documents (optimizing recall), and a second step that reranks<a data-type="indexterm" data-primary="rerank stage, RAG pipeline" id="id1549"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="rerank" id="id1550"/> the retrieved list based on relevance (optimizing precision) so that the top-k ranked documents are then taken as the context to be passed along to the LLM. This stage is called the <em>rerank</em> stage.</p>
+
+<p>After identifying the top-k documents relevant to the query, they need to be passed along to the LLM. However, the documents may not fit into the context window and thus need to be shortened. They also could potentially be rephrased in a way that makes it more likely for the LLM to use the context to generate the answer. This is done during the <em>refine</em> stage<a data-type="indexterm" data-primary="refine stage, RAG pipeline" id="id1551"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="refine" id="id1552"/>.</p>
+
+<p>Next, we provide the output of the refine step to the LLM. The default approach is to concatenate all the documents in the prompt. However, you could also pass them one at a time, and then ensemble the results. How the documents are ordered in the prompt can also make a difference. Several such techniques determine the way the context is fed to the LLM. This is called the <em>insert</em> stage<a data-type="indexterm" data-primary="insert stage, RAG pipeline" id="id1553"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="insert" id="id1554"/>.</p>
+
+<p>Finally, in the <em>generate</em> stage, the LLM<a data-type="indexterm" data-primary="generate stage, RAG pipeline" id="id1555"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="generate" id="id1556"/> reads the prompt containing the query and the context and generates the response. The generation can happen all at once or the retrieval process can be interleaved with the generation, i.e., the model can generate a few tokens, then call the retrieval model again to retrieve additional content, generate a few more tokens, and then call the retrieval model again, and so on.</p>
+
+<p>The output of each stage can be run through a <em>verify</em> stage<a data-type="indexterm" data-primary="verify stage, RAG pipeline" id="id1557"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="verify" id="id1558"/> to assess the quality of the outputs and even take corrective measures. The verify stage can employ either heuristics or AI-based methods.</p>
+
+<p>In this example, the query was generated by a human user. But if we consider RAG in the context of agentic workflows<a data-type="indexterm" data-primary="agentic systems" data-secondary="agents as query initiators" id="id1559"/>, the query might be generated by an LLM. In an agentic workflow, the agent can determine at any given point that it needs to retrieve data to progress with its task, which sets the aforementioned pipeline into motion.</p>
+
+<p>Apart from the retrieve and generate steps, the rest of the pipeline is optional, and including other steps depends on your performance and latency tradeoffs.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>Our example pertains to RAG when used at inference time. RAG can also be applied when pre-training or fine-tuning the model, which we will describe later in the chapter.</p>
+</div>
+
+<p>Let’s examine each step in the pipeline in detail.</p>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Rewrite"><div class="sect2" id="id209">
+<h2>Rewrite</h2>
+
+<p>After a query is issued, it might need to be rewritten<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="rewrite" id="xi_RAGpipelinerewrite1213055"/><a data-type="indexterm" data-primary="rewrite stage, RAG pipeline" id="xi_rewritestageRAGpipeline1213055"/> to make it more amenable to retrieval. The rewriting process depends on the retrieval models used.  As mentioned before, there is usually a mismatch between the query space and the document space, as the vocabulary, phrasing, and semantics used by the query might vary drastically from how the relevant concepts are conveyed in the document.</p>
+
+<p>As an example, consider the query: “Which politicians have complained about the budget not being balanced?”</p>
+
+<p>and the data store contains the text “Senator Paxton: ‘I just can’t stand the sight of our enormous deficit.’”</p>
+
+<p>If you are using traditional retrieval approaches that rely more on keywords, this text may not be selected as relevant during retrieval. Using embedding-based methods bridges the gap as embeddings of similar sentences are closer to each other in embedding space, but it does not entirely solve the problem.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>If the query is coming from the user, the user might add instructions along with the query, like, “Which politicians have complained about the budget not being balanced? Provide the results in the form of a table.” In this case you will have to separate the query from the instructions before feeding the query into the retrieval pipeline. This can be done by an LLM using prompting techniques like CoT, ReAct, etc., which we discussed in Chapters <a data-type="xref" data-xrefstyle="select:labelnumber" href="ch05.html#chapter_utilizing_llms">5</a> and <a data-type="xref" data-xrefstyle="select:labelnumber" href="ch10.html#ch10">10</a>, respectively.</p>
+</div>
+
+<p>For systems using traditional retrieval techniques, query rewriting is typically performed using query expansion techniques, in which the query is augmented with similar keywords. Basic query expansion techniques include adding synonyms of keywords and other topic information in your query.</p>
+
+<p>A well-tested method for query expansion is pseudo-relevance feedback (PRF). In PRF, the original query is used to retrieve documents, and salient terms from these documents are extracted and added to the original query.</p>
+
+<p>Let’s see how PRF would help with our query, ‘‘Which politicians have complained about the budget not being balanced?” We use a retrieval technique like BM25 (explained later in the chapter) to return a candidate set of k documents. We then use a technique like term frequency or, more effectively, <a href="https://oreil.ly/5be9z">Tf-IDf</a> to extract the salient terms occurring in these returned documents. For this example the salient phrases turn out to be “fiscal policy,” “deficit,” “financial mismanagement,” and “budgetary reforms.” Adding these phrases to the original query will lead to the text:</p>
+<blockquote>
+<p>“Senator Paxton: ‘I just can’t stand the sight of our enormous deficit!’” being retrieved successfully.</p></blockquote>
+
+<p>In recent years, LLM-driven query expansion methods are gaining more prominence. Two such examples<a data-type="indexterm" data-primary="Query2doc" id="id1560"/><a data-type="indexterm" data-primary="Hypothetical Document Embeddings (HyDE)" id="id1561"/><a data-type="indexterm" data-primary="embeddings" data-secondary="HyDE" id="id1562"/> are <a href="https://oreil.ly/BDJAN">Query2doc</a> and <a href="https://oreil.ly/tZyUV">Hypothetical Document Embeddings (HyDE)</a>.</p>
+
+<p>Let’s explore how LLM-based query expansion works. We pass a given query to an LLM and ask it to generate a hypothetical document that contains the answer to the query.</p>
+<blockquote>
+<p><em>Prompt:</em> For the provided query, generate a hypothetical document in 2 sentences or less that answers the query. Assume the documents are transcripts of Canadian parliamentary proceedings, containing verbatim statements of representatives in the House and Senate.</p>
+
+<p><em>Query:</em> Which politicians have complained about the budget not being balanced?</p></blockquote>
+
+<p>The prompt contains:</p>
+
+<ul>
+<li>
+<p>Instructions to generate a hypothetical document</p>
+</li>
+<li>
+<p>Desired length limit of the generated document</p>
+</li>
+<li>
+<p>Description of the document corpus containing relevant documents</p>
+</li>
+<li>
+<p>The original query</p>
+</li>
+</ul>
+
+<p>The hypothetical document generated by the LLM is as follows:</p>
+<blockquote>
+<p><em>LLM:</em> “Honorable Senator Mark Wellington stated, <em>This government’s failure to balance the budget is unacceptable and jeopardizes our economic future.</em> Similarly, MP Emily Fraser remarked, <em>We cannot continue on this path of reckless spending without addressing the deficit—it’s time for real fiscal responsibility.</em>”</p></blockquote>
+
+<p>Using this hypothetical document as the query will return the sentence ‘‘Senator Paxton: ‘I just can’t stand the sight of our enormous deficit!”’ with a higher similarity score.</p>
+
+<p>While this hypothetical document is not factually accurate, and laughably so (there are no senators or MPs in Canada named Mark Wellington and Emily Fraser), it does contain verbiage and semantics very similar to what an actual politician would say. If we use this document as the query (optionally combining with the original query), then the chances of it being semantically similar to actual instances of politicians talking about the topic is higher than if matched with the query alone.</p>
+
+<p>The length of the hypothetical document could be similar to the typical length of the retrieval unit. You can use a smaller LLM to generate the hypothetical document, as we do not care for factuality guarantees in this setting. However, smaller models are also not as adept as generating quality hypothetical documents, so you will have to manage the tradeoff. Both LangChain and LlamaIndex provide implementations of hypothetical document-based query rewriting.</p>
+
+<p>If the model has been pre-trained or fine-tuned on the data corpus containing the relevant data, then adding descriptions of the corpus in the prompt as shown in the example will make it more likely that the generated document follows the structure, format, and linguistics of that data corpus<a data-type="indexterm" data-startref="xi_queriesexpansionof12103190" id="id1563"/>.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p>One pitfall of query rewriting techniques is the risk of topic drift<a data-type="indexterm" data-primary="topic drift, query rewriting" id="id1564"/>. In the case of hypothetical documents, the document may drift into irrelevant topics after the first few tokens. Upweighting the logits bias for tokens in the query can partially address this problem. PRF techniques are also susceptible to topic drift.</p>
+</div>
+
+<p>You can also combine PRF style techniques with hypothetical documents. Instead of generating hypothetical documents to replace or augment the query, you can use them to extract keywords that you can add to the original query. <a href="https://oreil.ly/cOnMs">Li et al.</a> propose a technique<a data-type="indexterm" data-primary="query2document2keyword" id="id1565"/> called <em>query2document2keyword</em>. In this 
+<span class="keep-together">technique</span>, the LLM generates a hypothetical document using the query, similar to HyDE. The LLM is then prompted to extract salient keywords from this document.</p>
+
+<p>We can then further improve the quality of the extracted keywords by taking them through a filtering step. The authors propose using the <em>self-consistency</em> method<a data-type="indexterm" data-primary="self-consistency" data-secondary="rewrite stage of RAG pipeline" id="id1566"/>, which we discussed in <a data-type="xref" href="ch05.html#chapter_utilizing_llms">Chapter 5</a>. To recap, in the self-consistency method, we repeat the keyword generation multiple times, and then select the top keywords based on the number of generations they are present in.</p>
+
+<p>Another way to combine traditional retrieval with LLM-driven query rewriting is to first return the top-k documents from the initial retrieval step, then use LLMs to generate salient keywords from the returned documents and add them to the query.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1567">
+<h1>Exercise</h1>
+<p>For the Canadian parliament proceedings example in the book’s <a href="https://oreil.ly/llm-playbooks">GitHub repo</a>, using smaller models like Gemma 2B, Llama 2B, etc., are the hypothetical documents effective? Similarly, try increasing the size of the models and see if the performance increases. What effect does integrating hypothetical documents have on system latency overall?</p>
+</div></aside>
+
+<p>So far we have discussed techniques that bridge the query document mismatch problem by modifying the query and bringing it closer to the document space. An alternative approach to solve the mismatch problem is to represent the documents in a way that brings them closer to the query space. Examples of this approach include <a href="https://oreil.ly/CGUtP">doc2query</a> and <a href="https://oreil.ly/ZJuIu">contextual retrieval</a>. While document rewriting techniques initially have a large cost if the data stores are very large, they can reduce latency during inference time as no or little query rewriting needs to be performed. On the other hand, query rewriting techniques are simple to implement and integrate into a RAG workflow.</p>
+
+<p>Yet another form of query rewriting is called query decomposition<a data-type="indexterm" data-primary="queries" data-secondary="decomposition of" id="id1568"/>. For complex queries in an agentic workflow, we can have the LLM divide the task into multiple queries that can be executed sequentially or in parallel, depending on how the query was decomposed<a data-type="indexterm" data-startref="xi_RAGpipelinerewrite1213055" id="id1569"/><a data-type="indexterm" data-startref="xi_rewritestageRAGpipeline1213055" id="id1570"/>. We discussed query decomposition techniques in <a data-type="xref" href="ch10.html#ch10">Chapter 10</a>.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>If your external data is in a structured form like databases, then the
+query needs to be rewritten into a SQL query or equivalent, as discussed in <a data-type="xref" href="ch10.html#ch10">Chapter 10</a>.</p>
+</div>
+
+<p>Now that we have discussed the query rewriting step of the pipeline, let’s move on to the retrieve step.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Retrieve"><div class="sect2" id="id210">
+<h2>Retrieve</h2>
+
+<p>The retrieve<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="retrieve" id="xi_RAGpipelineretrieve1221713"/><a data-type="indexterm" data-primary="retrieve stage, RAG pipeline" id="xi_retrievestageRAGpipeline1221713"/> step is the most crucial stage of the RAG pipeline. It is easy to see why: all RAG applications are bottlenecked by the quality of retrieval. Even if you are working with the world’s best language model, you won’t be able to get the correct results if the retrieval step didn’t retrieve the correct documents needed to answer the query. Therefore, this step of the pipeline should focus on increasing recall.</p>
+
+<p>Embedding-based retrieval, which we discussed in detail in <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>, is highly popular. However, traditional information-retrieval techniques should not be dismissed. The right technique to use depends on the expected nature of queries (can a significant proportion of them be answered by just keyword or regex match?), the expected degree of query-document vocabulary mismatch, latency and compute limitations, and performance requirements.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>The information retrieval (IR) research<a data-type="indexterm" data-primary="information retrieval (IR) research" id="id1571"/> field has been studying these problems for a long time. Now that retrieval is more relevant than ever in NLP, I am noticing a lot of efforts to reinvent the wheel rather than reusing IR insights. For insights in retrieval research, check out papers from leading IR research conferences like SIGIR, ECIR, TREC, etc.</p>
+</div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1572">
+<h1>The Unreasonable Effectiveness of BM25</h1>
+<p>Despite the existence of advanced deep learning techniques for retrieval, keyword matching/probabilistic retrieval<a data-type="indexterm" data-primary="keyword matching/probabilistic retrieval" id="id1573"/><a data-type="indexterm" data-primary="BM25" id="id1574"/> techniques like <a href="https://oreil.ly/Jqrh0">BM25</a> can be a very strong baseline and, when paired with query or document rewriting, can potentially even be <em>good enough</em> for your application.</p>
+
+<p>Other traditional techniques supported by Apache Lucene/ElasticSearch<a data-type="indexterm" data-primary="Apache Lucene/ElasticSearch" id="id1575"/> include term frequency-inverse document frequency (Tf-IDf), divergence from independence (DFI), divergence from randomness (DFR), information based (IB), Dirichlet similarity, and Jelinek Mercer similarity. Each of these measures has several tunable parameters. For more insight on these techniques and how to select the parameter values, check out <a href="https://oreil.ly/zyke4">“Tweaking the Base Score”</a>.</p>
+</div></aside>
+
+<p>Embedding-based retrieval methods are not always suitable when you would like all documents containing a specific word or phrase to be retrieved. Therefore it is customary to combine keyword-based methods with embedding methods, called hybrid search<a data-type="indexterm" data-primary="hybrid search" id="id1576"/><a data-type="indexterm" data-primary="search systems" data-secondary="hybrid search" id="id1577"/>. The results from the two methods are combined and fed to the next step of the retrieval pipeline. Most vector databases support hybrid search in some shape or form.</p>
+
+<p><a data-type="xref" href="#hybrid-search">Figure 12-2</a> shows the retrieval stage in action, using hybrid search.</p>
+
+<figure><div id="hybrid-search" class="figure">
+<img src="assets/dllm_1202.png" alt="Hybrid-Search" width="600" height="349"/>
+<h6><span class="label">Figure 12-2. </span>Hybrid search</h6>
+</div></figure>
+
+<p>I also highly recommend metadata filters<a data-type="indexterm" data-primary="metadata filters" id="id1578"/> for improving retrieval. The more metadata you gather during the data representation and storage phase, the better the retrieval results. For example, if you have performed topic modeling of your data store in advance, you can restrict your search results to a subset of topics, with the filters being applied either using a hardcoded set of rules or determined by an LLM.</p>
+
+<p>Next, let’s discuss promising recent advances in retrieval.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Generative retrieval"><div class="sect3" id="id211">
+<h3>Generative retrieval</h3>
+
+<p>What if the LLM could identify the right documents(s) that need to be retrieved<a data-type="indexterm" data-primary="generative retrieval" id="xi_generativeretrieval1224680"/> in response to a query, thus removing the need for retrieval techniques? This is called generative retrieval.</p>
+
+<p>Generative retrieval is implemented by assigning identifiers to documents called docIDs<a data-type="indexterm" data-primary="docIDs, generative retrieval" id="id1579"/>, and teaching the LLM the association between documents and docIDs. A document can be associated with one or more docIDs. Typical docIDs can be:</p>
+<dl>
+<dt>Single tokens</dt>
+<dd>
+<p>Each document can be represented by a new token in the vocabulary. This means that, during inference, the model needs to output only a single token for each document it wants to retrieve. <a href="https://oreil.ly/7JYOM">Pradeep et al.</a> use a T5 model where the encoder vocabulary is the standard T5 vocabulary but the decoder vocabulary contains the docIDs. This approach is feasible only with a small document corpus.</p>
+</dd>
+<dt>Prefix/subset tokens</dt>
+<dd>
+<p><a href="https://oreil.ly/1p1C8">Tay et al.</a> use the first 64 tokens of a document as the docID, while <a href="https://oreil.ly/lg3g3">Wang et al.</a> use 64 randomly selected contiguous tokens from the document.</p>
+</dd>
+<dt>Cluster tokens</dt>
+<dd>
+<p>You can also perform hierarchical clustering of your document corpus based on its semantics (using embeddings, for example), and the docID can be a concatenation of the cluster IDs at each level of the hierarchy.</p>
+</dd>
+<dt>Salient keyword tokens</dt>
+<dd>
+<p>The docIDs can also contain salient keywords representing the topics and themes contained in the document. For example, a document about the Transformer architecture can be represented by the docID “transformer_self-attention_architecture.”</p>
+</dd>
+</dl>
+
+<p>One way to teach the LLM the association between documents and docIDs is by fine-tuning the model. This is referred to as training-based indexing<a data-type="indexterm" data-primary="index-based retrieval, RAG" id="id1580"/>. However, fine-tuning needs a lot of resources and is not suitable in scenarios in which new documents are frequently added to the corpus.</p>
+
+<p><a href="https://oreil.ly/K5TAB">Askari et al.</a> show that we can use few-shot learning<a data-type="indexterm" data-primary="few-shot learning" data-secondary="generative retrieval without model training" id="id1581"/><a data-type="indexterm" data-primary="prompting" data-secondary="few-shot" id="id1582"/> to build a generative retrieval system without needing to train the model. First, for each document in the corpus, pseudo queries are generated using a language model. The pseudo queries are the queries whose answers are present in the document. These pseudo queries are then fed to a language model in a few-shot setting and asked to generate docIDs.
+<a data-type="xref" href="#generative-retrieval">Figure 12-3</a> shows training-free generative retrieval in action.</p>
+
+<figure><div id="generative-retrieval" class="figure">
+<img src="assets/dllm_1203.png" alt="Generative-Retrieval" width="600" height="107"/>
+<h6><span class="label">Figure 12-3. </span>Generative retrieval</h6>
+</div></figure>
+
+<p>During inference, the model is provided with a query similar to the setup in <a data-type="xref" href="#generative-retrieval">Figure 12-3</a> and asked to generate the correct docID(s) that are relevant to the query. Constrained beam search<a data-type="indexterm" data-primary="beam search" id="id1583"/><a data-type="indexterm" data-primary="search systems" data-secondary="beam search" id="id1584"/> is used to ensure that the docID generated by the model corresponds to a valid docID in the corpus.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>You can also use generative retrieval to retrieve documents based on their metadata. For example, the model could ask to retrieve Apple’s 2024 annual report. The model can be made to generate the right identifier by either fine-tuning the model or using few-shot learning, as shown in this section.</p>
+</div>
+
+<p>Ultimately, generative retrieval is suitable only if your document corpus is relatively small, there is limited redundancy within the corpus, or the documents belong to a set of well-defined categories (annual reports of all public companies in the US, for instance)<a data-type="indexterm" data-startref="xi_generativeretrieval1224680" id="id1585"/>.</p>
+
+<p>Next, let’s discuss tightly-coupled retrievers, another new topic in the retrieval space.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Tightly-coupled retrievers"><div class="sect3" id="id212">
+<h3>Tightly-coupled retrievers</h3>
+
+<p>As seen in <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>, in embedding-based retrieval<a data-type="indexterm" data-primary="tightly-coupled retrievers" id="id1586"/>, the embedding model is typically independent of the language model to which the retrieval results are fed. We will refer to them<a data-type="indexterm" data-primary="loosely-coupled retrievers" id="id1587"/> as <em>loosely-coupled</em> retrievers.</p>
+
+<p>In contrast, a <em>tightly-coupled</em> retriever is trained such that it learns from LLM feedback; the model learns to retrieve text that best positions the LLM to generate the correct output for a given query. Tightly-coupled retrievers can be trained together with the generator LLM as part of a single architecture, or they can be trained separately using feedback from the trained LLM.</p>
+
+<p>An example of the latter is<a data-type="indexterm" data-primary="LLM-Embedder" id="id1588"/> <a href="https://oreil.ly/Q__8M">Zhang et al.’s LLM-Embedder</a>, a unified embedding model that can support a variety of retrieval needs in a single model, ranging from knowledge retrieval to retrieving optimal few-shot examples. The model is trained from two types of signals: a contrastive learning<a data-type="indexterm" data-primary="contrastive learning" id="id1589"/> setup typically used to train embedding models (presented in <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>) and LLM feedback. A retrieval candidate receives a larger reward from LLM feedback if it improves the performance of the LLM in answering the query.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1590">
+<h1>Exercise</h1>
+<p>Use the <a href="https://oreil.ly/aBwoX">LLM-Embedder</a> as the embedding model for the RAG case study provided in the <a href="https://oreil.ly/llm-playbooks">GitHub repo</a>. How does the LLM-Embedder compare to other embedding models we have worked with so far?</p>
+</div></aside>
+
+<p>Tightly-coupled retrievers are another tool in your toolkit for improving retrieval. They are by no means a necessary step in the RAG pipeline. As always, experimentation will show how much of a lift (if any) they provide for your application.</p>
+
+<p>Finally, let’s discuss GraphRAG, an up-and-coming retrieval paradigm that leverages knowledge graphs for better retrieval.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="GraphRAG"><div class="sect3" id="id213">
+<h3>GraphRAG</h3>
+
+<p>A key limitation of the retrieval approaches<a data-type="indexterm" data-primary="GraphRAG" id="id1591"/><a data-type="indexterm" data-primary="Microsoft GraphRAG" id="id1592"/> we have discussed so far is their inability to facilitate answering questions that require drawing connections between different parts of the document corpus, as well as questions that involve summarizing 
+<span class="keep-together">high-level</span> themes across the dataset. For example, all the retrieval techniques we discussed so far would do poorly on a query like, “What are the key topics discussed in this 
+<span class="keep-together">dataset</span>?”</p>
+
+<p>One way to address these limitations is by employing knowledge graphs. Microsoft released <a href="https://oreil.ly/V4n_S">GraphRAG</a>, a graph-based RAG system. GraphRAG works by creating a knowledge graph from the underlying data corpus by extraction entities and relationships. The graph is then used to perform hierarchical semantic clustering, with summaries generated for each cluster. These summaries enable answering of thematic questions like, “What are the key topics discussed in this 
+<span class="keep-together">dataset</span>?”</p>
+
+<p>GraphRAG requires a lot of initial compute to prepare the knowledge graph. This can be prohibitive for larger datasets. While it is easy to extract entities, extracting relevant relationships is harder<a data-type="indexterm" data-startref="xi_RAGpipelineretrieve1221713" id="id1593"/><a data-type="indexterm" data-startref="xi_retrievestageRAGpipeline1221713" id="id1594"/>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1595">
+<h1>Exercise</h1>
+<p>Run GraphRAG indexing over a small subset of the Canadian parliamentary dataset. Examine the entities and relationships extracted.  Is the quality satisfactory? Are there missing or spurious relationships?</p>
+</div></aside>
+
+<p>Now that we have explored the retrieval stage of the RAG pipeline, let’s move on to the rerank stage.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Rerank"><div class="sect2" id="id214">
+<h2>Rerank</h2>
+
+<p>The retrieval process<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="rerank" id="xi_RAGpipelinererank1231822"/><a data-type="indexterm" data-primary="rerank stage, RAG pipeline" id="xi_rerankstageRAGpipeline1231822"/> can be broken into a two-stage or multi-stage process, where the initial stage retrieves a list of documents relevant to the query, followed by one or more <em>reranking</em> stages that take the documents and sort them by relevance. The reranker is generally a more complex model than the retriever and thus is run only on the retrieved results (or else we would have just used the reranker as the retriever).</p>
+
+<p>The reranker is usually a language model fine-tuned on the specific use case. You can use BERT-like models for building a relevance classifier, where given a query and a document, the model outputs the probability of the document being relevant to answering the query.
+These models<a data-type="indexterm" data-primary="cross-encoders" id="id1596"/> are called <em>cross-encoders</em>, as in these models the query and document are encoded together, as opposed to embedding-based retrieval models we have discussed, called bi-encoders, where the query and document are encoded as separate vectors.</p>
+
+<p>The  input for a BERT model acting as a cross-encoder is of the format:</p>
+
+<pre data-type="programlisting" data-code-language="python"><code class="p">[</code><code class="n">CLS</code><code class="p">]</code> <code class="n">query_text</code> <code class="p">[</code><code class="n">SEP</code><code class="p">]</code> <code class="n">document_text</code> <code class="p">[</code><code class="n">SEP</code><code class="p">]</code></pre>
+
+<p>The Sentence Transformers library provides access to cross-encoders, which can be used as rerankers in the RAG pipeline:</p>
+
+<pre data-type="programlisting" data-code-language="python"><code class="kn">from</code> <code class="nn">sentence_transformers</code> <code class="kn">import</code> <code class="n">CrossEncoder</code>
+<code class="n">model</code> <code class="o">=</code> <code class="n">CrossEncoder</code><code class="p">(</code><code class="s2">"cross-encoder/ms-marco-MiniLM-L-12-v2"</code><code class="p">,</code> <code class="n">num_labels</code><code class="o">=</code><code class="mi">1</code><code class="p">)</code>
+
+<code class="n">query</code> <code class="o">=</code> <code class="s1">'When was the Apple iPhone 15 launched?'</code>
+<code class="n">documents</code> <code class="o">=</code> <code class="p">[</code><code class="s1">'Apple iPhone 15 launched with great fanfare in New York'</code><code class="p">,</code>
+<code class="s1">'He was foolish enough to believe that gifting an iPhone would</code><code class="w"/>
+  <code class="n">save</code> <code class="n">the</code> <code class="n">relationship</code><code class="s1">',</code><code class="w"/>
+<code class="s1">'On September 22, 2023, I lined up at the Central Park store for the launch of</code><code class="w"/>
+  <code class="n">the</code> <code class="n">iPhone</code> <code class="mi">15</code><code class="s1">']</code><code class="w"/>
+
+<code class="n">ranks</code> <code class="o">=</code> <code class="n">model</code><code class="o">.</code><code class="n">rank</code><code class="p">(</code><code class="n">query</code><code class="p">,</code> <code class="n">documents</code><code class="p">)</code>
+<code class="k">for</code> <code class="n">rank</code> <code class="ow">in</code> <code class="n">ranks</code><code class="p">:</code>
+   <code class="nb">print</code><code class="p">(</code><code class="n">rank</code><code class="p">[</code><code class="s1">'score'</code><code class="p">],</code> <code class="n">documents</code><code class="p">[</code><code class="n">rank</code><code class="p">[</code><code class="s1">'corpus_id'</code><code class="p">]])</code></pre>
+
+<p>Because we have set <code>num_labels = 1</code>, the model will treat it as a regression task, using the sigmoid activation function to output a score between 0 and 1.</p>
+
+<p>These days, more advanced models<a data-type="indexterm" data-primary="Contextualized Late Interaction over BERT (ColBERT)" id="id1597"/><a data-type="indexterm" data-primary="ColBERT (Contextualized Late Interaction over BERT)" id="id1598"/> like <a href="https://oreil.ly/N3fOv">Contextualized Late Interaction over BERT (ColBERT)</a> are used for reranking. As opposed to the cross-encoder setup we just discussed, ColBERT-style models allow for pre-computation of document representations, leading to faster inference.</p>
+
+<p>In ColBERT, the query and documents are encoded separately using BERT, generating token-level embedding vectors for each token in the query and documents. For each token in the query, the corresponding embedding is compared to the embeddings of each of the token embeddings of the document, generating similarity scores. The maximum similarity scores for each query token are summed, resulting in the final relevance score. This type of architecture<a data-type="indexterm" data-primary="late interaction architecture" id="id1599"/><a data-type="indexterm" data-primary="architectures" data-secondary="late interaction" id="id1600"/> is called <em>late interaction</em>, since the query and document are not encoded together but interact together only later in 
+<span class="keep-together">the process</span>. Late interaction saves time compared to traditional cross-encoders, as document embeddings can be created and stored in advance.</p>
+
+<p><a data-type="xref" href="#cross-encoders">Figure 12-4</a> depicts a ColBERT model in action, illustrating the late interaction between query and documents.</p>
+
+<figure><div id="cross-encoders" class="figure">
+<img src="assets/dllm_1204.png" alt="cross-encodersl" width="600" height="612"/>
+<h6><span class="label">Figure 12-4. </span>ColBERT</h6>
+</div></figure>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1601">
+<h1>Exercise</h1>
+<p>Compare the performance of bi-encoders like the all-mpnet-base-v2 model and cross encoders like <a href="https://oreil.ly/we84L">jina-colbert-v2</a> by generating embeddings for the iPhone <a href="https://oreil.ly/ur7vc">Wikipedia page</a>. Try asking a variety of queries. On which type of queries do you see a marked improvement with cross-encoders?</p>
+</div></aside>
+
+<p>Next, let’s explore a few advanced reranking techniques.</p>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" class="less_space pagebreak-before" data-pdf-bookmark="Query likelihood model (QLM)"><div class="sect3" id="id215">
+<h3>Query likelihood model (QLM)</h3>
+
+<p>A QLM<a data-type="indexterm" data-primary="query likelihood model (QLM)" id="id1602"/><a data-type="indexterm" data-primary="QLM (query likelihood model)" id="id1603"/> estimates the probability of generating the query given a candidate document as input. You can treat an LLM as a QLM, utilizing its zero-shot<a data-type="indexterm" data-primary="zero-shot prompting" id="id1604"/><a data-type="indexterm" data-primary="prompting" data-secondary="zero-shot" id="id1605"/> capabilities to rank candidate documents based on the query token probabilities. Alternatively, you can fine-tune an LLM on query generation tasks to improve its suitability as a QLM.</p>
+
+<p>A typical prompt for a QLM would look like: “Generate a question that is most relevant to the given document
+&lt;document content&gt;”.</p>
+
+<p>After getting the top-k documents relevant to a query from the retrieval stage, each document is fed to the LLM with this prompt. The likelihood of the query tokens is then calculated using the model logits. The documents are then sorted by likelihood, providing a relevance ranking.</p>
+<div data-type="warning" epub:type="warning"><h6>Warning</h6>
+<p><a href="https://oreil.ly/QnWWh">Zhuang et al.</a> show that an instruction-tuned model that doesn’t contain query generation tasks in its instruction-tuning training set loses its capability to be an effective zero-shot QLM. This is yet another case of instruction-tuned models exhibiting degraded performance compared to base models, on tasks they have not been trained on.</p>
+</div>
+
+<p>Note that to calculate the probability of the query tokens, we need access to the model logits<a data-type="indexterm" data-primary="models" data-secondary="logits access issue" id="id1606"/>. Most proprietary model providers including OpenAI do not yet provide full access to the model logits as of this book’s writing. Thus, the LLM-as-a-QLM approach can be implemented only using open source models.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1607">
+<h1>Exercise</h1>
+<p>Pick any relatively smaller open source LLM (~3B parameters) and test its suitability as a QLM. For the Canadian parliamentary dataset provided in the book’s <a href="https://oreil.ly/llm-playbooks">GitHub repo</a>, rank candidate retrieval documents using QLM. How effective is it?</p>
+</div></aside>
+
+<p>In the interest of reducing latency, you would ideally like the QLM to be as small a model as possible. However, smaller models are less effective QLMs. Effectively fine-tuning a smaller LLM for query generation might be the sweet spot.</p>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" class="less_space pagebreak-before" data-pdf-bookmark="LLM distillation for ranking"><div class="sect3" id="id216">
+<h3>LLM distillation for ranking</h3>
+
+<p>Earlier in the chapter, we saw how encoder-only models<a data-type="indexterm" data-primary="distillation" data-secondary="for ranking" data-secondary-sortas="ranking" id="xi_distillationforranking1239055"/> like BERT could serve as rerankers. More recently, decoder<a data-type="indexterm" data-primary="decoder models" data-secondary="ranking documents" id="id1608"/><a data-type="indexterm" data-primary="models" data-secondary="decoder" id="id1609"/> LLMs are also being trained to directly rank candidate documents in three ways:</p>
+<dl>
+<dt>Pointwise ranking</dt>
+<dd>
+<p>Each candidate document is fed separately to the LLM. The LLM provides a Boolean judgment on its relevance. Alternatively, it can also provide a numerical score, although this is much less reliable.</p>
+</dd>
+<dt>Pairwise ranking</dt>
+<dd>
+<p>For each candidate document pair, the LLM indicates which document is more relevant. To get a complete ranking, N<sup>2</sup> such comparisons need to be made.</p>
+</dd>
+<dt>Listwise ranking</dt>
+<dd>
+<p>All the candidate documents are tagged with identifiers and fed to the LLM, and the LLM is asked to generate a ranked list of identifiers according to decreasing order of relevance of corresponding documents.</p>
+</dd>
+</dl>
+
+<p>In general, pointwise ranking is the easiest to use but may not be the <a href="https://oreil.ly/DvmtC">most effective</a>. Listwise ranking might need a large context window, while pairwise ranking needs lots of comparisons. Pairwise ranking is the most effective of these techniques, since it involves direct comparison. <a data-type="xref" href="#llm-rerankers">Figure 12-5</a> shows how pointwise, pairwise, and listwise rankings work.</p>
+
+<p>Examples of ranking LLMs include <a href="https://oreil.ly/6XoOG">RankGPT</a>, <a href="https://oreil.ly/00Dan">RankVicuna</a>, and <a href="https://oreil.ly/AAbUE">RankZephyr</a>.</p>
+
+<p>These models are trained by distilling from larger LLMs, a technique we first learned in <a data-type="xref" href="ch09.html#ch09">Chapter 9</a>. For example, the process for training RankVicuna is:</p>
+
+<ul>
+<li>
+<p>Queries in the training set are fed through a first-level retriever like BM25 to generate a list of candidate documents.</p>
+</li>
+<li>
+<p>This list is passed to a larger LLM, which generates a rank-ordered list of candidates.</p>
+</li>
+<li>
+<p>The query and the rank-ordered list are used to fine-tune the smaller LLM.</p>
+</li>
+</ul>
+
+<p>The creators<a data-type="indexterm" data-primary="RankVicuna" id="id1610"/> of <a href="https://oreil.ly/cFLSc">RankVicuna</a> show that as the effectiveness of the first-level retrieval increases, the possible performance gains from RankVicuna decreases due to diminished returns. They also reported that augmenting the dataset by shuffling the input order of the candidate documents improved model 
+<span class="keep-together">performance</span>.</p>
+
+<figure><div id="llm-rerankers" class="figure">
+<img src="assets/dllm_1205.png" alt="llm-rerankers" width="600" height="783"/>
+<h6><span class="label">Figure 12-5. </span>Decoder LLM rerankers</h6>
+</div></figure>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1611">
+<h1>Exercise</h1>
+<p>For the Canadian parliamentary question-answering assistant example available on the book’s <a href="https://oreil.ly/llm-playbooks">GitHub repo</a>, use RankVicuna at the reranking step. Modify the default prompt template and see if it affects the performance.</p>
+</div></aside>
+<div data-type="tip"><h6>Tip</h6>
+<p>You can combine the results of the retrieve and the rerank stages to get the final relevance ranking<a data-type="indexterm" data-primary="relevance ranking for candidate documents" id="id1612"/><a data-type="indexterm" data-primary="retrieve stage, RAG pipeline" id="id1613"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="retrieve" id="id1614"/> of candidate documents. This is needed to enforce keyword weighting, for example. You can also weight your relevance ranking by metadata like published date (more recent documents are weighted more)<a data-type="indexterm" data-startref="xi_RAGpipelinererank1231822" id="id1615"/><a data-type="indexterm" data-startref="xi_distillationforranking1239055" id="id1616"/><a data-type="indexterm" data-startref="xi_rerankstageRAGpipeline1231822" id="id1617"/>.</p>
+</div>
+
+<p>Now that we have discussed the rerank stage, let’s move on to the refine step of the RAG pipeline.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Refine"><div class="sect2" id="id217">
+<h2>Refine</h2>
+
+<p>Once the candidate texts<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="refine" id="xi_RAGpipelinerefine1243525"/><a data-type="indexterm" data-primary="refine stage, RAG pipeline" id="xi_refinestageRAGpipeline1243525"/> relevant to the given query are retrieved and selected, they can be fed to the LLM. However, the LLM context window is limited, so we might want to reduce the length of the retrieved texts. We might also want to rephrase it so that it is more amenable to being processed by the LLM. Another possible operation could be to filter out some of the retrieved texts based on certain rules. All of these are conducted during the <em>refine</em> stage. In this section, we will discuss two such techniques, summarization and chain-of-note. Let’s start with discussing how we can summarize the retrieved texts.</p>
+<div data-type="tip"><h6>Tip</h6>
+<p>The refine stage can be a standalone stage, or it can be paired with the final generate stage, where the final response is provided immediately after refining the retrieved documents, as part of the same prompt or prompt chain.</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Summarization"><div class="sect3" id="id218">
+<h3>Summarization</h3>
+
+<p>Summarization<a data-type="indexterm" data-primary="summarization, refine stage of RAG" id="xi_summarizationrefinestageofRAG1244414"/> is useful if the retrieval chunks are relatively large. It can be either extractive or abstractive. Extractive summaries<a data-type="indexterm" data-primary="extractive summaries" id="id1618"/> extract key sentences from the original text without modifying it. Abstractive summaries<a data-type="indexterm" data-primary="abstractive summaries" id="xi_abstractivesummaries12446165"/> are generated from scratch, drawing on content from the original text. The summarizer can also act as a quality filter; it can output an empty summary if the document is irrelevant to the query. Summaries should be relevant, concise, and faithful to the original text.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>These summaries are not meant for human consumption but instead meant to be consumed by the LLM. Therefore, they do not always share the same objectives as traditional summarizers. The primary objective here is to generate a summary that helps the LLM output the correct answer.</p>
+</div>
+
+<p>Should you choose extractive or abstractive summarization? Extractive summaries are almost always faithful as they preserve the meaning of the original text. 
+<span class="keep-together">Abstractive</span> summaries come with the risk of hallucinations<a data-type="indexterm" data-primary="hallucinations" data-secondary="and abstractive summaries" data-secondary-sortas="abstractive summaries" id="id1619"/>. On the other hand, abstractive summaries can potentially be more relevant because of their ability to combine information from different locations within a document and across 
+<span class="keep-together">documents</span>.</p>
+
+<p>While you can leverage the LLM’s zero-shot capabilities for both extractive and abstractive summarization, it is more effective (albeit expensive) to fine-tune<a data-type="indexterm" data-primary="fine-tuning models" data-secondary="summarization" id="id1620"/> them so that the summaries generated are specifically optimized to enable the LLM to generate the correct answer. We will call these tightly-coupled summarizers<a data-type="indexterm" data-primary="tightly-coupled summarizers" id="xi_tightlycoupledsummarizers12455321"/>.</p>
+
+<p><a href="https://oreil.ly/XCpyr">Xu et al.</a> introduce techniques for training both extractive and abstractive summarizers. Let’s go through them in detail.</p>
+
+<p>For extractive summarization, we would like to extract a subset of sentences from the retrieved document as its summary. This is done by generating embeddings for the input query and for each sentence in the retrieved document. The top-k sentences that are most similar to the input query in the embedding space are selected as the summary. The embedding distance is a measure of how effective the document sentence is in enabling the LLM to generate the correct output.</p>
+
+<p>The extractive summarizer is trained with contrastive learning<a data-type="indexterm" data-primary="contrastive learning" id="id1621"/>, which we discussed in <a data-type="xref" href="ch11.html#chapter_llm_interfaces">Chapter 11</a>. Each training example in contrastive learning is a triplet: the anchor sentence, positive example similar to the anchor sentence, and negative examples dissimilar to the anchor sentence. To generate the training examples, for each sentence in the retrieved document, we prefix it to the input query and calculate the likelihood of gold truth output tokens being generated. The sentence with the highest likelihood is taken as the positive example. For negative examples, we choose up to five sentences whose likelihood is below a threshold. This dataset is then used to train the model.</p>
+
+<p>For abstractive summarization, we can distill a larger LLM, i.e., use the outputs from it to fine-tune a smaller LLM.</p>
+
+<p>To generate the training dataset, we can construct some prompt templates and use them with a larger LLM to generate zero-shot summaries of our retrieved documents. Note that we are generating a single summary of all the retrieved documents. Similar to the extractive summarization technique, for each generated summary, we prefix it to the input text and calculate the likelihood of the correct output tokens. We choose the summary with the highest likelihood to be part of our training set.</p>
+
+<p>During inference, if prefixing any given summary has a lower likelihood of generating the correct output than not prefixing any summary at all, then we deem the text represented by the summary to be irrelevant, and an empty summary is generated. This allows us to filter out irrelevant documents.</p>
+
+<p><a data-type="xref" href="#abstractive-summarization">Figure 12-6</a> depicts the workflow of a tightly-coupled abstractive summarizer during training.</p>
+
+<figure><div id="abstractive-summarization" class="figure">
+<img src="assets/dllm_1206.png" alt="abstractive-summarization" width="325" height="800"/>
+<h6><span class="label">Figure 12-6. </span>Abstractive summarization</h6>
+</div></figure>
+<div data-type="tip"><h6>Tip</h6>
+<p>If you are planning to change your target LLM, you might want to retrain the summary models. While the summarizers can transfer across models, there is still a slight performance degradation.</p>
+</div>
+
+<p>Tightly-coupled summarizers, while expensive to train initially, can be an effective means of removing irrelevant information from the retrieved text while rephrasing it in a form that reduces ambiguity for the LLM<a data-type="indexterm" data-startref="xi_summarizationrefinestageofRAG1244414" id="id1622"/><a data-type="indexterm" data-startref="xi_abstractivesummaries12446165" id="id1623"/><a data-type="indexterm" data-startref="xi_tightlycoupledsummarizers12455321" id="id1624"/>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1625">
+<h1>Exercise</h1>
+<p>Use the examples provided in the book’s <a href="https://oreil.ly/llm-playbooks">GitHub repo</a> to generate extractive and abstractive summaries of the retrieved documents in the Canadian parliamentary question-answering assistant task. Do the summaries succeed in removing noise? Compare this to a generic summarizer like ChatGPT. How does ChatGPT summarization compare?</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+
+
+
+
+<section data-type="sect3" data-pdf-bookmark="Chain-of-note"><div class="sect3" id="id219">
+<h3>Chain-of-note</h3>
+
+<p>Another way to rephrase<a data-type="indexterm" data-primary="chain-of-note (CoN), rephrasing retrieved text" id="xi_chainofnoteCoNrephrasingretrievedtext1249024"/><a data-type="indexterm" data-primary="CoN (chain-of-note), rephrasing retrieved text" id="xi_CoNchainofnoterephrasingretrievedtext1249024"/> the retrieved text is to generate <em>notes</em>.</p>
+
+<p>It would be detrimental if the retrieved text contains irrelevant content that might mislead the model. In essence, the LLM has to contend with three types of scenarios:</p>
+
+<ul>
+<li>
+<p>The retrieved documents contain the answer to the user query, and the LLM can use it to generate the correct output.</p>
+</li>
+<li>
+<p>The retrieved documents do not contain the answer to the user query, but they provide valuable context that the LLM can then combine with its internal knowledge to come up with the answer.</p>
+</li>
+<li>
+<p>The retrieved documents are irrelevant to the user query and should be ignored.</p>
+</li>
+</ul>
+
+<p>LLMs are not very good at distinguishing between relevant and irrelevant context. One way to address this is by generating notes for each retrieved document that contains a summary of the retrieved document along with indicating whether it contains the answer to the user query or only contains relevant context but not the answer outright, or is irrelevant. This technique is called chain-of-note (CoN), introduced by <a href="https://oreil.ly/hPkKm">Yu et al.</a></p>
+
+<p>Here is an example of how these notes look:</p>
+<blockquote>
+<p><em>Prompt:</em> Who succeeded Brian Mulroney as the prime minister of Canada in 1993?</p>
+
+<p>Doc 1: Kim Campbell took over the reins of leadership in Canada in 1993, marking her entry into history as the country’s first female Prime Minister in 1993. Her tenure, however, was short-lived, as she led the Progressive Conservative Party into a challenging federal election later that year.</p>
+
+<p>Doc 2: Following Brian Mulroney’s tenure, Canada witnessed the historic appointment of its first female Prime Minister, marking a groundbreaking shift in the nation’s political landscape.</p></blockquote>
+
+<p>While the first text says Kim Campbell became the prime minister in 1993, it is not apparent whether she immediately succeeded Brian Mulroney or if there was an intervening prime minister. However, the second text makes it clear that it is indeed Kim Campbell, as the text mentions that Brian Mulroney was succeeded by a female prime minister.</p>
+
+<p>The corresponding note generated by the model is the following:</p>
+<blockquote>
+<p><em>LLM:</em> The first statement mentions that Kim Campbell took over the leadership in Canada in 1993, and the second statement refers to the period following Brian Mulroney’s tenure, leading to the appointment of Canada’s first female prime minister. This sequence implies that Kim Campbell’s assumption of the prime minister role directly followed Brian Mulroney’s tenure, making her his successor.</p></blockquote>
+
+<p>Using the note as context, the LLM can then generate the correct answer.</p>
+
+<p>The true value of chain-of-note becomes apparent when the context contains irrelevant or insufficient information. The generated note can help the LLM output “I don’t know.”</p>
+
+<p>Consider this query:</p>
+<blockquote>
+<p><em>Prompt:</em> Did the Green Party of Canada support the proposed 2023 Public Transit bill?</p></blockquote>
+
+<p>and the retrieved documents are:</p>
+<blockquote>
+<p>Doc 1: The Green Party of Canada has historically emphasized the importance of sustainable transportation as a key component of their environmental platform, advocating for policies that promote green infrastructure.</p>
+
+<p>Doc 2: The proposed 2023 Public Transit bill garnered widespread attention and popularity, reflecting a growing public consensus on the importance of sustainable transportation solutions.</p></blockquote>
+
+<p>The retrieved documents do not contain the answer to the query.
+The corresponding note generated is:</p>
+<blockquote>
+<p><em>LLM:</em> While the first passage indicates the party’s historical emphasis on sustainable transportation, and the second passage mentions the bill’s popularity, neither confirms the party’s support or opposition to the 2023 bill.</p></blockquote>
+
+<p>Using this note, the LLM can generate “unknown” when the retrieved documents do not contain the answer to the query.</p>
+
+<p>An example of a CoN prompt can be:</p>
+<blockquote>
+<p><em>Prompt:</em> You are provided a query along with {K} passages that potentially contain information that can be used to answer the query. Write notes summarizing the key points from these passages. Discuss the relevance of each of these passages to the given question and state whether the answer to the query can be deduced from the content in these passages.</p></blockquote>
+
+<p>Again, we can train tightly-coupled<a data-type="indexterm" data-primary="tightly-coupled CoN models" id="id1626"/> CoN models to make it more effective. This can be done by fine-tuning an LLM to elicit CoN behavior.</p>
+
+<p>To generate the fine-tuning dataset, you can prompt an LLM to generate candidate notes for example queries. Human evaluation can then filter out incorrect or poor-quality notes. The final dataset consists of the CoN prompt, the input query, and the retrieved documents as the input, and the corresponding note and the query answer as the output. An LLM can then be fine-tuned on this dataset.</p>
+
+<p>The authors (Yu et al.) introduce a weighted loss scheme during training. The note can be much longer than the answer, and thus equally weighting the loss across all tokens will lead to the note getting significantly more importance during training. This harms model convergence. The weighted loss scheme involves calculating loss across answer tokens 50% of the time.</p>
+
+<p>Using a CoN step is very useful, especially if the retrieval results are known to contain a lot of noise or there is a higher possibility of no relevant documents available to service the query. CoN behavior is harder for smaller models, thus a sufficiently larger model should be used<a data-type="indexterm" data-startref="xi_RAGpipelinerefine1243525" id="id1627"/><a data-type="indexterm" data-startref="xi_chainofnoteCoNrephrasingretrievedtext1249024" id="id1628"/><a data-type="indexterm" data-startref="xi_refinestageRAGpipeline1243525" id="id1629"/><a data-type="indexterm" data-startref="xi_CoNchainofnoterephrasingretrievedtext1249024" id="id1630"/>.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1631">
+<h1>Exercise</h1>
+<p>For the Canadian parliamentary RAG example in the GitHub repo, pose questions to the RAG system where the answers are known not to exist within the Wikipedia corpus. Use CoN prompting on ChatGPT or a similarly larger LLM to generate notes. Do the notes convey the absence of relevant information? Does the LLM acknowledge it cannot answer the question?</p>
+</div></aside>
+
+<p>Now that we have discussed the refine step of the RAG pipeline, let’s move to the insert step.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Insert"><div class="sect2" id="id220">
+<h2>Insert</h2>
+
+<p>Once we have determined the content to be fed to the LLM<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="insert" id="id1632"/><a data-type="indexterm" data-primary="insert stage, RAG pipeline" id="id1633"/> that is going to generate the final response to a query, whether the original retrieved documents or their summaries or notes, we  need to decide how we are going to arrange it inside the prompt.</p>
+
+<p>The standard approach is to stuff all the content, or at least as much as can fit, into the context window. An alternative is to feed each retrieved document/summary/note prefixed to the input separately to the LLM, and then combine the outputs.</p>
+
+<p><a href="https://oreil.ly/LFR8r">Liu et al.</a> show that language models are more adept at recalling information present at the beginning and the end of the context window as compared to the middle. We can exploit this knowledge to reorder the retrieved documents in the prompt.</p>
+
+<p>Let’s say we retrieved 10 documents for the given query. The documents are ordered according to their relevance: Doc1, Doc2,…Doc10. These documents can now be arranged in the prompt in the following order:</p>
+<blockquote>
+<p>Doc1, Doc3, Doc5, Doc7, Doc9, Doc10, Doc8, Doc6, Doc4, Doc2</p></blockquote>
+
+<p>Thus the least relevant documents exist in the middle of the context window, where they are more likely to be ignored by the model due to current long context recall limitations.</p>
+
+<p>Alternative approaches include arranging the documents in order of relevance, for example:</p>
+<blockquote>
+<p>Doc1, Doc2, Doc3, Doc4, Doc5, Doc6, Doc7, Doc8, Doc9, Doc10</p></blockquote>
+
+<p>Or in reverse order of relevance, like:</p>
+<blockquote>
+<p>Doc10, Doc9, Doc8, Doc7, Doc6, Doc5, Doc4, Doc3, Doc2, Doc1</p></blockquote>
+
+<p>These ordering schemes are useful only if the input context is very long (upwards of 5,000 tokens).</p>
+
+<p>Finally, let’s discuss the generate step in the RAG pipeline.</p>
+</div></section>
+
+
+
+
+
+
+
+
+<section data-type="sect2" data-pdf-bookmark="Generate"><div class="sect2" id="id221">
+<h2>Generate</h2>
+
+<p>The LLM generates the final response<a data-type="indexterm" data-primary="RAG pipeline" data-secondary="generate" id="xi_RAGpipelinegenerate1259637"/><a data-type="indexterm" data-primary="generate stage, RAG pipeline" id="xi_generatestageRAGpipeline1259637"/> to the given query during this step.
+The standard approach is to generate the output all at once. However, you could also interleave the generation and the retrieval<a data-type="indexterm" data-primary="retrieve stage, RAG pipeline" id="id1634"/><a data-type="indexterm" data-primary="RAG pipeline" data-secondary="retrieve" id="id1635"/> process, by generating some output and retrieving more context, and generating some more output, and retrieving more context, and so on.</p>
+
+<p>This approach can be useful in maintaining coherence<a data-type="indexterm" data-primary="coherence metric" id="id1636"/> in long-form text generation. The generated text determines what needs to be retrieved next. This process is called active retrieval<a data-type="indexterm" data-primary="active retrieval" id="id1637"/>.</p>
+
+<p>How do we decide when to stop generating and start a new retrieval step? We could:</p>
+
+<ul>
+<li>
+<p>Retrieve after every N tokens are generated.</p>
+</li>
+<li>
+<p>Retrieve after each textual unit is generated. (A textual unit can be a sentence, paragraph, section, etc.)</p>
+</li>
+<li>
+<p>Retrieve when currently available context is deemed insufficient for generation.</p>
+</li>
+</ul>
+
+<p>There are several ways to implement the latter. One of them is Forward-Looking Active REtrieval-augmented generation (FLARE)<a data-type="indexterm" data-primary="Forward-Looking Active REtrieval-augmented generation (FLARE)" id="id1638"/>. The authors of <a href="https://oreil.ly/eZRdy">FLARE</a> introduce two methods for active retrieval: FLARE-Instruct and FLARE-Direct.</p>
+
+<p>In FLARE-Instruct<a data-type="indexterm" data-primary="FLARE-Instruct" id="id1639"/>, the LLM is prompted to generate queries in a specific syntax whenever it needs additional information to continue coherent generation.</p>
+
+<p>In FLARE-Direct<a data-type="indexterm" data-primary="FLARE-Direct" id="id1640"/>, the LLM generates a candidate-next sentence. If any of the tokens in the generated sentence have probability lower than a threshold, then the retrieval process is activated. If not, then the candidate sentence is accepted as a valid continuation and the generation process continues. If retrieval is to take place, the generated sentence can be used as the query, by masking the low-probability tokens (since they might confuse the retriever if they are irrelevant/incorrect). You can also rephrase the sentence as a question about the low-probability token(s).</p>
+
+<p>Let’s look at an example using FLARE-Instruct:</p>
+<blockquote>
+<p><em>Prompt:</em> Write an article about Peruth Chemutai, the Ugandan Olympics medal winner.</p></blockquote>
+<blockquote>
+<p><em>FLARE-Instruct:</em> Peruth Chemutai [Search(birthdate of Peruth Chemutai)] is a Ugandan long-distance runner who specializes in the 3000 meters steeplechase. She gained international recognition after [Search(what medals did Peruth Chemutai win)] winning the gold medal in the women’s 3000 meters steeplechase at the 2020 Summer Olympics, becoming the first Ugandan woman to win an Olympic gold medal.</p>
+
+<p>Early Life</p>
+
+<p>Chemutai was born in the [Search(birthplace of Peruth Chemutai)], a region known for [Search(what is the birthplace of Peruth Chemutai known for?)].’</p></blockquote>
+
+<p>This is a contrived example, as the true benefits of FLARE can be better appreciated on lengthier outputs. As seen in the output, the model generates search queries that can be used to retrieve factually correct information from data sources.</p>
+
+<p>For the same query, using FLARE-Direct, the model generates the candidate article:</p>
+<blockquote>
+<p><em>FLARE-Direct:</em> Peruth Chemutai (
+<span class="underline">born July 10, 1999</span>) is a Ugandan long-distance runner who specializes in the 
+<span class="underline">3000 meters steeplechase</span>. She gained international recognition after winning the gold medal in the women’s 3000 meters steeplechase at the 2020 Summer Olympics, becoming the first Ugandan woman to win an Olympic gold medal.</p>
+
+<p>Early Life</p>
+
+<p>Chemutai was born in the 
+<span class="underline">Bukwo District</span>, Uganda, a region known for its challenging terrain and passionate long-distance runners.</p></blockquote>
+
+<p>The underlined tokens are low-probability tokens, which can be refilled by retrieving relevant text. We can either mask the low-probability tokens and use them as the retrieval query or generate standalone queries like, “When was Peruth Chemutai born?” based on the masked tokens.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1641">
+<h1>Exercise</h1>
+<p>Use FLARE-Direct to generate Wikipedia documents!
+Let’s see if we can create Wikipedia documents by interleaving generation and on-demand retrieval. Ask any open source LLM to generate a Wikipedia page of the Bollywood movie <em>Kabhie Kabhie</em> using FLARE-Direct. Does it effectively use retrieval?</p>
+</div></aside>
+
+<p>A crucial aspect of generation includes adding appropriate citations<a data-type="indexterm" data-primary="citations, adding to ground-truth sources" id="id1642"/><a data-type="indexterm" data-primary="ground truth" data-secondary="citations added to sources" id="id1643"/> to ground-truth sources. The LLM can be fine-tuned to make it provide citations along with the answer in response to user queries. One such model<a data-type="indexterm" data-primary="Cohere Command-R model" id="id1644"/> is <a href="https://oreil.ly/v0KUs">Cohere’s Command-R</a> model.</p>
+
+<p>As we can see, the RAG pipeline for knowledge retrieval can be rather lengthy. However, for a lot of RAG applications, latency is a key consideration. This increases the importance of smaller language models or faster, non-LLM-based approaches.</p>
+
+<p>Let’s put it all together by revisiting the RAG pipeline diagram first introduced at the beginning of the chapter<a data-type="indexterm" data-startref="xi_RAGpipeline128731" id="id1645"/><a data-type="indexterm" data-startref="xi_RAGpipelinegenerate1259637" id="id1646"/><a data-type="indexterm" data-startref="xi_generatestageRAGpipeline1259637" id="id1647"/>. <a data-type="xref" href="#RAG-pipeline2">Figure 12-7</a> depicts the workflow of a comprehensive RAG pipeline.</p>
+
+<figure><div id="RAG-pipeline2" class="figure">
+<img src="assets/dllm_1207.png" alt="RAG-pipeline" width="600" height="381"/>
+<h6><span class="label">Figure 12-7. </span>Comprehensive RAG pipeline</h6>
+</div></figure>
+
+<p>So far, we have focused on using RAG for knowledge retrieval. Let’s now discuss a few other use cases.</p>
+</div></section>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="RAG for Memory Management"><div class="sect1" id="id222">
+<h1>RAG for Memory Management</h1>
+
+<p>An underrated application of RAG is expanding the context window<a data-type="indexterm" data-primary="context window" data-secondary="expanding memory with RAG" id="xi_contextwindowexpandingmemorywithRAG1266765"/> of an LLM<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="memory management" id="xi_retrievalaugmentedgenerationRAGmemorymanagement1266775"/><a data-type="indexterm" data-primary="memory management" data-secondary="expanding with RAG" id="xi_memorymanagementexpandingwithRAG1266775"/>. To recap, an LLM prompt typically contains the following types of (optional) content:</p>
+<dl>
+<dt>The pre-prompt or <em>system prompt</em></dt>
+<dd>
+<p>These are the overarching instructions<a data-type="indexterm" data-primary="prompting" data-secondary="types of content in prompt" id="id1648"/> provided to the LLM included at the beginning of every query. Depending on your customization needs, the system prompt could occupy a significant part of the context window.</p>
+</dd>
+<dt>The input prompt</dt>
+<dd>
+<p>This includes the current input and the instruction, optional few-shot training examples, and additional context, possibly fetched using retrieval.</p>
+</dd>
+<dt>Conversational history</dt>
+<dd>
+<p>This includes the history of conversations/interaction between the user and the LLM. Including this in the context window enables the user to have a long, coherent conversation with the LLM.</p>
+</dd>
+<dt>Scratchpad</dt>
+<dd>
+<p>This includes intermediate output generated by the LLM (discussed in <a data-type="xref" href="ch08.html#ch8">Chapter 8</a>), which can be referred to by the LLM when generating future output. Scratchpad content is an artifact of certain prompting techniques like CoT.</p>
+</dd>
+</dl>
+
+<p>In many cases, the LLM’s limited context window is simply insufficient to incorporate all this data. Moreover, we might like to make the conversational history available to the model through perpetuity, which means it keeps growing across time. Making all the conversational history available to the LLM is a key aspect in enabling 
+<span class="keep-together">personalization</span>.</p>
+
+<p>It’s RAG to the rescue! RAG can be employed in facilitating LLM memory management by swapping in and out relevant content in the prompt as suitable. This is reminiscent of how memory management occurs in operating systems. Let’s explore this abstraction further.</p>
+
+<p>In an OS, memory is organized in a hierarchy, with fast (and expensive) memory
+being directly accessible to a processor, and higher levels of the hierarchy containing larger and slower (but relatively inexpensive) memory. When the processor needs to access some data, it tries to access it from the lowest level in the memory hierarchy. If the data is not present there, it searches the next level in the hierarchy. If present, it swaps the required data into the lower level and swaps out data that is not currently needed. This way, the OS can support a fast main memory that is directly accessible by the processor and a much larger virtual memory that can be swapped in whenever needed.</p>
+
+<p>This is a very simplified explanation of OS memory management. For a more detailed explanation, check out Tony’s <a href="https://oreil.ly/vcciM"> “Operating System — Hierarchy of Memory”</a>.</p>
+
+<p><a data-type="xref" href="#os-hierarchy">Figure 12-8</a> shows the memory hierarchy of a typical OS.</p>
+
+<figure><div id="os-hierarchy" class="figure">
+<img src="assets/dllm_1208.png" alt="os-hierarchy" width="600" height="464"/>
+<h6><span class="label">Figure 12-8. </span>Typical OS memory hierarchy</h6>
+</div></figure>
+
+<p>Similarly in LLMs, the context window is analogous to the main memory as it is directly accessible to the LLM. However, we can expand the context window indefinitely by implementing a memory system analogous to the OS virtual memory. This helps in personalizing LLMs, providing them with the full access to a user’s conversational history and their implicit and explicit preferences<a data-type="indexterm" data-startref="xi_contextwindowexpandingmemorywithRAG1266765" id="id1649"/>.</p>
+
+<p>Examples of libraries supporting memory management for LLMs include <a href="https://oreil.ly/1p8Vu">Letta (formerly MemGPT)</a> and <a href="https://oreil.ly/dgJaZ">Mem0</a>.</p>
+<div data-type="note" epub:type="note"><h6>Note</h6>
+<p>An alternative or complement to swapping memory in and out is to recursively summarize<a data-type="indexterm" data-primary="summarization, refine stage of RAG" id="id1650"/> the conversational history. However, summarization is a lossy process and may not be able to preserve the semantics of the text. Valuable nuances like the tone of the writer can be lost during summarization<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGmemorymanagement1266775" id="id1651"/><a data-type="indexterm" data-startref="xi_memorymanagementexpandingwithRAG1266775" id="id1652"/>.</p>
+</div>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1653">
+<h1>Exercise</h1>
+<p>Use the <a href="https://oreil.ly/dgJaZ">Mem0</a> playground to carry out a very long conversation with an LLM that overshoots the context window. At various points of the conversation, refer to things or topics that one of your (hypothetical) friends likes. Ask the LLM to help choose a birthday gift for your friend that is related to their interests. Is the LLM able to recall information from the conversation pertaining to your friend? Can you generate a refined version of the conversation that makes it easier to retrieve this information?</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="RAG for Selecting In-Context Training Examples"><div class="sect1" id="id223">
+<h1>RAG for Selecting In-Context Training Examples</h1>
+
+<p>As mentioned at the beginning of the chapter, another application of RAG is to dynamically select training<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="selecting in-context training examples" id="id1654"/><a data-type="indexterm" data-primary="in-context training" id="id1655"/> examples for few-shot learning<a data-type="indexterm" data-primary="few-shot learning" data-secondary="in-context training and RAG" id="id1656"/><a data-type="indexterm" data-primary="prompting" data-secondary="few-shot" id="id1657"/> by retrieving the optimal examples from a data store containing a list of training examples. For a given input, the retrieved few-shot examples are supposed to maximize the LLM’s chance of generating the correct answer to a user query.</p>
+
+<p>A simple method is to generate embeddings of the input and retrieve examples whose embeddings are most similar to the input embedding. While this technique is a promising start, we can do much better.</p>
+
+<p><a href="https://oreil.ly/r8735">Wang et al.</a> introduce a method called LLM Retriever (LLM-R) that trains a model using LLM feedback to retrieve few-shot training examples whose inclusion will increase the probability of the LLM generating the correct answer. <a data-type="xref" href="#llm-r">Figure 12-9</a> illustrates the LLM-R technique.</p>
+
+<figure><div id="llm-r" class="figure">
+<img src="assets/dllm_1209.png" alt="llm-r" width="600" height="309"/>
+<h6><span class="label">Figure 12-9. </span>LLM-R workflow</h6>
+</div></figure>
+
+<p>For each input query in the training set<a data-type="indexterm" data-primary="LLM-R (LLM Retriever)" id="id1658"/>, we retrieve the top-k few-shot examples by using a retrieval model like BM25. We then rerank the examples by using LLM feedback. Each example is prefixed to the input and the probability of the ground-truth output tokens is calculated. The examples are then ranked by decreasing order of their log-probabilities. The ranked examples are then used to train a reward model, which is distilled to train the final retrieval model.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="RAG for Model Training"><div class="sect1" id="id224">
+<h1>RAG for Model Training</h1>
+
+<p>So far, all the RAG applications<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="for model training" data-secondary-sortas="model training" id="xi_retrievalaugmentedgenerationRAGformodeltraining1273233"/><a data-type="indexterm" data-primary="models" data-secondary="RAG training" id="xi_modelsRAGtraining1273233"/><a data-type="indexterm" data-primary="pre-training of data" data-secondary="using with RAG" id="xi_pretrainingofdatausingwithRAG1273233"/><a data-type="indexterm" data-primary="fine-tuning models" data-secondary="and RAG" data-secondary-sortas="RAG" id="xi_finetuningmodelsandRAG1273233"/> we have explored are applied during LLM inference. Can we use RAG during model pre-training and fine-tuning as well? Yes, we can!
+This is an underrated area of study, and I expect to see more LLMs leveraging this in the coming years. Let’s look at an example in detail.</p>
+
+<p>Retrieval-Augmented Language Model (REALM)<a data-type="indexterm" data-primary="Retrieval-Augmented Language Model (REALM)" id="id1659"/><a data-type="indexterm" data-primary="REALM (Retrieval-Augmented Language Model)" id="id1660"/> is one of the pioneering works in the RAG space. REALM integrates the retrieval and generation tasks into a single model. <a data-type="xref" href="#realm">Figure 12-10</a> shows the REALM framework for pre-training and fine-tuning.</p>
+
+<figure><div id="realm" class="figure">
+<img src="assets/dllm_1210.png" alt="realm" width="600" height="475"/>
+<h6><span class="label">Figure 12-10. </span>REALM architecture</h6>
+</div></figure>
+
+<p>The REALM architecture is composed of two components: a knowledge retriever and a knowledge-augmented encoder, which is a BERT-like encoder-only model<a data-type="indexterm" data-primary="encoder-only models" id="id1661"/><a data-type="indexterm" data-primary="architectures" data-secondary="REALM" id="id1662"/><a data-type="indexterm" data-primary="models" data-secondary="encoder-only" id="id1663"/>.
+Both components are differentiable and thus trained together.</p>
+
+<p>The knowledge retriever is used to generate embeddings for all documents in the external knowledge base. Retrieval is performed by finding documents with maximum embedding similarity to the input. During the masked-language modeling pre-training phase, the retriever loss function encourages it to fetch text that helps predict the masked tokens. The masked tokens are then predicted by attending to both the input text and the retrieved text. The retrieved text is supposed to contain relevant context that makes predicting the masked tokens much easier.</p>
+
+<p>REALM also employs these strategies to optimize training:</p>
+
+<ul>
+<li>
+<p>Named entities or dates are masked so that the model can learn to predict them using retrieved context.</p>
+</li>
+<li>
+<p>Not all masked tokens need external knowledge for their prediction. To accommodate this, an empty document is always added to the retrieved documents.</p>
+</li>
+<li>
+<p>The retrieved documents ideally contain the context required to predict the masked token, and not the token itself. Therefore, trivial retrievals that contain the masked token in the retrieved text are not included<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGformodeltraining1273233" id="id1664"/><a data-type="indexterm" data-startref="xi_modelsRAGtraining1273233" id="id1665"/><a data-type="indexterm" data-startref="xi_pretrainingofdatausingwithRAG1273233" id="id1666"/><a data-type="indexterm" data-startref="xi_finetuningmodelsandRAG1273233" id="id1667"/>.</p>
+</li>
+</ul>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Limitations of RAG"><div class="sect1" id="id225">
+<h1>Limitations of RAG</h1>
+
+<p>While RAG<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="limitations" id="xi_retrievalaugmentedgenerationRAGlimitations1276110"/> is a powerful paradigm that expands the usefulness of LLMs and reduces hallucinations, it doesn’t resolve all the limitations of LLMs. Some pitfalls of using RAG include:</p>
+
+<ul>
+<li>
+<p>Relying on retrieval of text snippets can cause the LLM to depend on surface-level information to answer queries, rather than a deeper understanding of the problem space.</p>
+</li>
+<li>
+<p>Retrieval becomes the limiting factor of the pipeline. If the retrieval process fails to extract suitable candidate text, the LLM’s powerful capabilities will all be for nothing.</p>
+</li>
+<li>
+<p>Sometimes the retrieval process can extract documents that are contradictory to the knowledge contained in the LLM’s parametric memory. Without access to the ground truth<a data-type="indexterm" data-primary="ground truth" data-secondary="and RAG limitations" data-secondary-sortas="RAG limitations" id="id1668"/>, it is difficult for the LLM to resolve these contradictions.</p>
+</li>
+</ul>
+<aside data-type="sidebar" epub:type="sidebar" class="less_space pagebreak-before"><div class="sidebar" id="id1669">
+<h1>How Do LLMs Deal with Contradictory Information?</h1>
+<p>Sometimes the knowledge captured in the LLM’s internal representations can be contradictory<a data-type="indexterm" data-primary="contradictory information, LMM’s approach to" id="id1670"/> to the content retrieved during the RAG. This can happen due to a multitude of reasons: outdated or incorrect content in the LLM’s training datasets, errors in the user-provided context, or retrieval of incorrect or irrelevant documents during RAG. In these cases, we want the LLM to be able to ignore the incorrect content. This is extremely challenging because of the LLM’s lack of access to the ground truth.</p>
+
+<p><a href="https://oreil.ly/7AOZl">Liu et al.</a> introduced a benchmark called Robustness against External CounterfactuAL knowLedge (RECALL)<a data-type="indexterm" data-primary="Robustness against External CounterfactuAL knowLedge (RECALL)" id="id1671"/><a data-type="indexterm" data-primary="benchmarking" data-secondary="RECALL to test robustness" id="id1672"/>. This benchmark tests the robustness of LLMs in the presence of counterfactual information in the prompt. Liu et al. note there is some evidence that when LLMs are fed information that is logically inconsistent, they tend to rely on their internal representations more. However, if the inconsistency is more factual, then the models tend to prefer the information in the prompts.</p>
+
+<p>A significant finding in their paper is that the models’ confidence in its outputs sees a notable drop when dealing with contradictory information. Thus, we can use the LLM output probabilities to guide further specialized processing<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGlimitations1276110" id="id1673"/>.</p>
+</div></aside>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="RAG Versus Long Context"><div class="sect1" id="id226">
+<h1>RAG Versus Long Context</h1>
+
+<p>As discussed in <a data-type="xref" href="ch05.html#chapter_utilizing_llms">Chapter 5</a>, one of the limitations of LLMs<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="versus long context" data-secondary-sortas="long context" id="xi_retrievalaugmentedgenerationRAGversuslongcontext1278075"/><a data-type="indexterm" data-primary="long-context models" id="xi_longcontextmodels1278075"/><a data-type="indexterm" data-primary="models" data-secondary="long-context" id="xi_modelslongcontext1278075"/> is the limited effective context window<a data-type="indexterm" data-primary="context window" data-secondary="long context challenge" id="xi_contextwindowlongcontextchallenge12780115"/> available to them. However, this is one of the areas where rapid advances have been made recently. Context windows of at most a few thousand tokens were standard until early 2023, after which companies like <a href="https://oreil.ly/ucbD-">Anthropic</a> announced<a data-type="indexterm" data-primary="Anthropic" data-secondary="long context support" id="id1674"/> support for context windows spanning over 100,000 tokens. In early 2024, Google<a data-type="indexterm" data-primary="Google Gemini" id="id1675"/><a data-type="indexterm" data-primary="Gemini" id="id1676"/> announced <a href="https://oreil.ly/rp7pi">Gemini 1.5 Pro</a>, with support for one million tokens of context.</p>
+
+<p>To assess the impact on LLM performance as the context size increases, several needle-in-a-haystack tests<a data-type="indexterm" data-primary="needle-in-a-haystack tests" id="id1677"/> have been devised. One such implementation by <a href="https://oreil.ly/M8Jc9">Greg Kamradt</a> facilitates<a data-type="indexterm" data-primary="Kamradt, Greg" id="id1678"/> adding a random fact or statement (the needle) to the middle of the context (the haystack) and then asking the LLM questions for which the needle is the answer.</p>
+
+<p>However, it is wise to take these tests with a grain of salt as they often evaluate only the information recall capabilities of an LLM. Moreover, very few problems in the real world are needle-in-the-haystack problems; LLMs are probably not the right tool to solve them anyway. Cheaper and faster retrieval models could adequately perform most needle retrieval tasks.</p>
+
+<p>In many needle-in-a-haystack tests, random sentences or paragraphs are added to the context window as needles, with the rest of the content in the context window being orthogonal to the needle. But this does not mirror the situation in the real world, where most co-occurring text is related in some way. Related text can often act as distractors, preventing the LLM from drawing the right conclusions. In fact, it is one of the reasons for developing rigorous rerank and refine steps in the RAG pipeline!</p>
+
+<p>Long-context models can be useful for analyzing very long documents and also can reduce the complexity of the rerank and refine steps. I recommend empirically calculating the trade-offs where feasible.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1679">
+<h1>Exercise</h1>
+<p>Implement your own test for evaluating long-context efficacy. Extract text from all the Wikipedia pages on various <a href="https://oreil.ly/Q9IRP">rail systems</a> operating in Greater Tokyo. Devise a few questions that inquire about route information. The text containing the answer to the question will be the needle. Insert the needle into the context, and from the extracted text, insert 200 tokens of text (approximated to the closest sentence boundary) before and after the needle. Check if the LLM can answer the question by generating them 10 separate times. Insert 200 more tokens from the extracted text to the beginning and end of the prompt and iterate until the maximum context length is reached. How is performance on the task impacted as the context size increases? Try this for multiple models.</p>
+
+<p>Additionally, remove the rerank and refine steps from the RAG pipeline code in the book’s <a href="https://oreil.ly/llm-playbooks">GitHub repo</a> and directly feed the results of the retrieval step to an LLM supporting long context (100K tokens or more). Do you see the performance increasing or decreasing?</p>
+</div></aside>
+
+<p>Finally, cost is also an important consideration for the long context versus retrieval debate. No doubt, the cost for long-context models will drop significantly in the future, but retrieval will still be relatively cheaper. Forgoing retrieval completely in favor of using long-context models is akin to buying a laptop and storing all your files in RAM instead of disk<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGversuslongcontext1278075" id="id1680"/><a data-type="indexterm" data-startref="xi_longcontextmodels1278075" id="id1681"/><a data-type="indexterm" data-startref="xi_contextwindowlongcontextchallenge12780115" id="id1682"/><a data-type="indexterm" data-startref="xi_modelslongcontext1278075" id="id1683"/>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="RAG Versus Fine-Tuning"><div class="sect1" id="id227">
+<h1>RAG Versus Fine-Tuning</h1>
+
+<p>The debate around using RAG versus fine-tuning<a data-type="indexterm" data-primary="retrieval-augmented generation (RAG)" data-secondary="versus fine-tuning" data-secondary-sortas="fine-tuning" id="xi_retrievalaugmentedgenerationRAGversusfinetuning1280147"/><a data-type="indexterm" data-primary="fine-tuning models" data-secondary="and RAG" data-secondary-sortas="RAG" id="xi_finetuningmodelsandRAG1280147"/> boils down to the more fundamental question: what aspects of the task can I perform using the LLM versus relying on external sources?</p>
+
+<p>In cases where external knowledge is required to solve a task, both retrieval and fine-tuning can be used. Retrieval can be used to integrate the knowledge on demand, with the drawback being that the LLM is only exposed to surface-level information and is not provided the chance to learn from connections between the data. On the other end, continued pre-training or fine-tuning can also be used to integrate external knowledge, albeit with an expensive training step.</p>
+
+<p><a href="https://oreil.ly/Agodo">Ovadia et al.</a> compared RAG and fine-tuning on tasks requiring external knowledge. They showed that RAG consistently outperformed fine-tuning for knowledge-intensive tasks. As shown earlier in this chapter, LLMs need a lot of samples to memorize a concept or fact. Thus, fine-tuning effectiveness can be improved by repetition or augmentation of the fine-tuning dataset.</p>
+
+<p>Even for knowledge-intensive tasks, RAG versus fine-tuning need not be an either-or decision. If you are working on a specialized domain or need your outputs in a certain style or format, you can fine-tune your LLM on domain- and task-specific data, and use RAG with this fine-tuned model for your downstream applications. In a large proportion of use cases, RAG should be sufficient, and fine-tuning shouldn’t be the first choice of solution.</p>
+<aside data-type="sidebar" epub:type="sidebar"><div class="sidebar" id="id1684">
+<h1>Exercise</h1>
+<p>Take the Canadian parliamentary discussions dataset and fine-tune any open source LLM for multiple epochs. Check if the LLM is able to answer questions about the fine-tuning dataset. If not, continue fine-tuning (with more repetition or data augmentation) until it does so. Also analyze the impact of catastrophic forgetting as a result of this fine-tuning. In what ways does the LLM become worse? How is generalization performance affected due to the excessive memorization?</p>
+
+<p>Performing this exercise will underscore the advantages of RAG over fine-tuning for knowledge-intensive tasks.</p>
+</div></aside>
+
+<p>RAG and fine-tuning can be complementary. Earlier in this chapter, we saw how each step of the RAG pipeline can be optimized using fine-tuning. Similarly, we also saw how RAG can be used to optimize the fine-tuning process. Thus, both retrieval and fine-tuning are powerful parts of your LLM toolkit, and I hope that these chapters have sufficiently prepared you to implement and deploy them in the wild<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAGversusfinetuning1280147" id="id1685"/><a data-type="indexterm" data-startref="xi_finetuningmodelsandRAG1280147" id="id1686"/>.</p>
+</div></section>
+
+
+
+
+
+
+<section data-type="sect1" data-pdf-bookmark="Summary"><div class="sect1" id="id228">
+<h1>Summary</h1>
+
+<p>In this chapter, we conducted a deep dive into the RAG pipeline, exploring in detail the <em>rewrite-retrieve-rerank-refine-insert-generate</em> pipeline. We highlighted the effectiveness of RAG in various scenarios, including integration of external knowledge, retrieval of past conversational history, dynamic selection of few-shot learning examples, and tool selection<a data-type="indexterm" data-startref="xi_retrievalaugmentedgenerationRAG12475" id="id1687"/>. We also explored the limitations of RAG and scenarios where RAG may not be effective.</p>
+
+<p>In the final chapter, we will explore how we can utilize all the concepts we learned so far to architect and package LLM-driven products that bring value to end users. Effective product design has become all the more important in the age of LLMs, given that a successful LLM product leverages the LLM the best it can for the capabilities it excels at, while at the same time limiting end-user exposure to LLM limitations by means of clever product design. We will also look at several LLM design patterns that put together all the concepts we learned in reusable, debuggable abstractions.</p>
+</div></section>
+</div></section></div>
+</div>
+</body></html>
