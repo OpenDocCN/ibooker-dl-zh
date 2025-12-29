@@ -542,3 +542,80 @@
   id: totrans-64
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PRE12]` [PRE13] *JavaScript*    [PRE14]py    注意以下变更：    *   我们将动态的 `context`
+    和 `question` 变量实现到我们的提示中，这使得我们可以定义一个模型可以使用的 `ChatPromptTemplate` 来生成响应。           *   我们定义了一个
+    `ChatOpenAI` 接口来作为我们的 LLM。温度设置为 0 以消除模型输出中的创造性。           *   我们创建了一个链来组合提示和 LLM。提醒：`|`
+    操作符（或 JS 中的 `pipe` 方法）将 `prompt` 的输出用作 `llm` 的输入。           *   我们通过传递 `context`
+    变量（我们检索到的相关文档）和用户的提问来调用链，以生成最终的输出。              我们可以将这个检索逻辑封装在一个单独的函数中：    *Python*    [PRE15]py
+    `"""``)`  `llm` `=` `ChatOpenAI``(``model``=``"gpt-3.5-turbo"``,` `temperature``=``0``)`  `@chain`
+    `def` `qa``(``input``):`     `# 获取相关文档`      `docs` `=` `retriever``.``get_relevant_documents``(``input``)`     `#
+    格式化提示`     `formatted` `=` `prompt``.``invoke``({``"context"``:` `docs``,` `"question"``:`
+    `input``})`     `# 生成答案`     `answer` `=` `llm``.``invoke``(``formatted``)`     `return`
+    `answer`  `# 运行` `qa``.``invoke``(``"Who are the key figures in the ancient greek
+    history of philosophy?"``)` [PRE16]py   [PRE17]`py [PRE18]py[PRE19]``py # 查询转换    基本RAG系统的一个主要问题是它过于依赖用户查询的质量来生成准确的输出。在生产环境中，用户可能以不完整、模糊或措辞不佳的方式构建他们的查询，从而导致模型产生幻觉。    *查询转换*
+    是一种策略的子集，旨在修改用户的输入以回答第一个 RAG 问题：我们如何处理用户输入质量的变异性？[图 3-5](#ch03_figure_5_1736545666780682)
+    展示了查询转换策略的范围，从那些使用户的输入更抽象或更具体以生成准确的 LLM 输出的策略。下一节从中间策略开始。  ![问题图的描述自动生成](assets/lelc_0305.png)  ######
+    图 3-5\. 基于抽象级别的各种转换用户查询的方法    ## 重写-检索-阅读    微软研究团队提出的重写-检索-阅读策略简单地提示 LLM 在执行检索之前重写用户的查询。[2](ch03.html#id572)
+    为了说明，让我们回到上一节中构建的链，这次使用措辞不佳的用户查询：    *Python*    [PRE20]py    *JavaScript*    [PRE21]py    *输出*（记住：如果您重新运行它，您的输出可能与这个不同）：    [PRE22]py    模型未能回答问题，因为它被用户查询中提供的不相关信息所分散。    现在，让我们实现重写-检索-阅读提示：    *Python*    [PRE23]py    *JavaScript*    [PRE24]py    *输出:*    [PRE25]py    注意，我们已经让
+    LLM 将用户最初的分散查询重写为一个更清晰的查询，并且是那个更集中的查询被传递给检索器以获取最相关的文档。注意：这项技术可以与任何检索方法一起使用，无论是我们这里使用的向量存储，还是例如网络搜索工具。这种方法的一个缺点是它将额外的延迟引入到您的链中，因为我们现在需要连续进行两次
+    LLM 调用。    ## 多查询检索    单个用户的查询可能不足以捕捉回答查询所需信息的全部范围。多查询检索策略通过指示 LLM 根据用户的初始查询生成多个查询来解决此问题，并行地从数据源检索每个查询，然后将检索到的结果作为提示上下文来生成最终的模型输出。[图
+    3-6](#ch03_figure_6_1736545666780704) 展示了这一点。  ![文档图的描述自动生成，置信度中等](assets/lelc_0306.png)  ######
+    图 3-6\. 多查询检索策略的演示    这种策略特别适用于需要从多个角度提供全面答案的用例。    下面是一个多查询检索的代码示例：    *Python*    [PRE26]py    *JavaScript*    [PRE27]py    注意，提示模板被设计成根据用户的初始查询生成问题的变体。    接下来，我们获取生成的查询列表，并行检索每个查询的最相关文档，然后将它们组合以获取所有检索到的相关文档的唯一并集：    *Python*    [PRE28]py    *JavaScript*    [PRE29]py    由于我们使用多个（相关）查询从相同的检索器检索文档，因此其中一些很可能重复。在将它们用作回答问题的上下文之前，我们需要去重，以结束每个的唯一实例。在这里，我们通过使用它们的（字符串）内容作为字典（或
+    JS 中的对象）中的键来去重文档，因为字典只能为每个键包含一个条目。在迭代完所有文档后，我们只需获取所有字典值，现在它们不再有重复。    注意我们同样使用了
+    `.batch`，它并行运行所有生成的查询，并返回一个结果列表——在这种情况下，一个文档列表的列表，然后我们将其展平并去重，如前所述。    最后一步是构建一个提示，包括用户的问题和组合检索到的相关文档，以及一个模型接口来生成预测：    *Python*    [PRE30]py
+    `"""``)`  `@chain` `def` `multi_query_qa``(``input``):`     `# 获取相关文档`      `docs`
+    `=` `retrieval_chain``.``invoke``(``input``)`     `# 格式化提示`     `formatted` `=`
+    `prompt``.``invoke``({``"context"``:` `docs``,` `"question"``:` `input``})`     `#
+    生成答案`     `answer` `=` `llm``.``invoke``(``formatted``)`     `return` `answer`  `#
+    运行` `multi_query_qa``.``invoke``(``"""Who are some key figures in the ancient
+    greek   history of philosophy?"""``)` [PRE31]py   [PRE32]`py[PRE33][PRE34] 从 langchain.prompts
+    导入 ChatPromptTemplate 从 langchain_openai 导入 ChatOpenAI  prompt_rag_fusion = ChatPromptTemplate.from_template("""您是一个有帮助的   助手，根据单个输入   查询生成多个搜索查询。
+    \n `生成与以下查询相关的多个搜索查询:` `{question}` `\n` [PRE35] [PRE36][PRE37][PRE38] 从 ''@langchain/core/prompts''
+    导入 {ChatPromptTemplate} 从 ''@langchain/openai'' 导入 {ChatOpenAI} 从 ''@langchain/core/runnables''
+    导入 {RunnableLambda}  const perspectivesPrompt = ChatPromptTemplate.fromTemplate(`您是一个有帮助的   助手，根据单个输入   查询生成多个搜索查询。
+    \n  生成与以下查询相关的多个搜索查询: {question} \n  输出（4 个查询）:`)  const queryGen = perspectivesPrompt.pipe(llm).pipe(message
+    => {   return message.content.split(''\n'') }) [PRE39] def reciprocal_rank_fusion(results:
+    list[list], k=60):     """在多个排序文档列表上执行倒数排名融合，并可选参数 k 用于 RRF 公式  """          #
+    初始化一个字典来保存每个文档的融合分数     # 文档将通过其内容作为键来确保唯一性     fused_scores = {}     documents
+    = {}      # 遍历每个排序文档列表     for docs in results:         # 遍历列表中的每个文档及其排名（列表中的位置）         for
+    rank, doc in enumerate(docs):             # 使用文档内容作为唯一性的键             doc_str
+    = doc.page_content             # 如果文档尚未被看到，             # - 初始化分数为 0             #
+    - 保存它以供以后使用             if doc_str not in fused_scores:                 fused_scores[doc_str]
+    = 0                 documents[doc_str] = doc             # 使用 RRF 公式更新文档的分数：             #
+    1 / (rank + k)             fused_scores[doc_str] += 1 / (rank + k)      # 根据文档的融合分数按降序排序文档，以获取最终的重新排序结果     reranked_doc_strs
+    = sorted(         fused_scores, key=lambda d: fused_scores[d], reverse=True     )     #
+    获取每个 doc_str 对应的文档     return [         documents[doc_str]         for doc_str
+    in reranked_doc_strs     ]  retrieval_chain = generate_queries | retriever.batch
+    | reciprocal_rank_fusion [PRE40] function reciprocalRankFusion(results, k = 60)
+    {   // 初始化一个字典来保存每个文档的融合分数   // 文档将通过其内容作为键来确保唯一性   const fusedScores = {}   const
+    documents = {}    results.forEach(docs => {     docs.forEach((doc, rank) => {       //
+    使用文档内容作为唯一性的键       const key = doc.pageContent       // 如果文档尚未被看到，       // -
+    初始化分数为 0       // - 保存它以供以后使用       if (!(key in fusedScores)) {         fusedScores[key]
+    = 0         documents[key] = 0       }       // 使用 RRF 公式更新文档的分数：       // 1 /
+    (rank + k)       fusedScores[key] += 1 / (rank + k)     })   })    // 根据文档的融合分数按降序排序文档，以获取最终的重新排序结果   const
+    sorted = Object.entries(fusedScores).sort((a, b) => b[1] - a[1])   // 获取每个键对应的文档   return
+    sorted.map(([key]) => documents[key]) }  const retrievalChain = queryGen   .pipe(retriever.batch.bind(retriever))   .pipe(reciprocalRankFusion)
+    [PRE41] prompt = ChatPromptTemplate.from_template("""根据以下上下文回答以下问题：   {context}
+    `问题:` `{question}` [PRE42] [PRE43]`` [PRE44] const rewritePrompt = ChatPromptTemplate.fromTemplate(`根据以下上下文回答以下问题：   {context}  问题:
+    {question} `)  const llm = new ChatOpenAI({temperature: 0})  const multiQueryQa
+    = RunnableLambda.from(async input => {   // 从之前定义的 hyde 检索链中获取相关文档   const docs
+    = await retrievalChain.invoke(input)   // 格式化提示   const formatted = await prompt.invoke({context:
+    docs, question: input})   // 生成答案   const answer = await llm.invoke(formatted)   return
+    answer })  await multiQueryQa.invoke(`Who are some key figures in the ancient
+    greek   history of philosophy?`) [PRE45]` [PRE46][PRE47][PRE48][PRE49][PRE50]
+    从 langchain.prompts 导入 ChatPromptTemplate 从 langchain_core.output_parsers 导入 StrOutputParser
+    从 langchain_openai 导入 ChatOpenAI  prompt_hyde = ChatPromptTemplate.from_template("""请写一段话来回答以下问题。   \n
+    问题: {question} \n 文章:""")  generate_doc = (     prompt_hyde | ChatOpenAI(temperature=0)
+    | StrOutputParser()  ) [PRE51] 从 ''@langchain/openai'' 导入 {ChatOpenAI} 从 ''@langchain/core/prompts''
+    导入 {ChatPromptTemplate} 从 ''@langchain/core/runnables'' 导入 {RunnableLambda}  const
+    prompt = ChatPromptTemplate.fromTemplate(`请写一段话来回答以下问题   问题: {question} 文章:`)  const
+    llm = new ChatOpenAI({temperature: 0})  const generateDoc = prompt.pipe(llm).pipe(msg
+    => msg.content) [PRE52] retrieval_chain `=` generate_doc `|` retriever  [PRE53]
+    const retrievalChain = generateDoc.pipe(retriever) [PRE54] prompt = ChatPromptTemplate.from_template("""根据以下上下文回答以下问题：   {context}
+    `问题:` `{question}` [PRE55] [PRE56]`` [PRE57] const prompt = ChatPromptTemplate.fromTemplate(`根据以下上下文回答以下问题：   {context}  问题:
+    {question} `)  const llm = new ChatOpenAI({temperature: 0})  const qa = RunnableLambda.from(async
+    input => {   // 从之前定义的 hyde 检索链中获取相关文档   const docs = await retrievalChain.invoke(input)   //
+    格式化提示   const formatted = await prompt.invoke({context: docs, question: input})   //
+    生成答案   const answer = await llm.invoke(formatted)   return answer })  await qa.invoke(`Who
+    are some key figures in the ancient greek history of   philosophy?`) [PRE58]`
+    [PRE59][PRE60][PRE61][PRE62][PRE63]  [PRE64]`py[PRE65]```'
