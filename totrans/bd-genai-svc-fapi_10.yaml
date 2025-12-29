@@ -709,3 +709,192 @@
   id: totrans-76
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PRE2] # entities.py  from datetime import UTC, datetime from sqlalchemy import
+    ForeignKey from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column,
+    relationship  class Base(DeclarativeBase): ![1](assets/1.png)     pass  class
+    Conversation(Base): ![2](assets/2.png)     __tablename__ = "conversations"      id:
+    Mapped[int] = mapped_column(primary_key=True)     title: Mapped[str] = mapped_column()
+    ![3](assets/3.png)     model_type: Mapped[str] = mapped_column(index=True) ![4](assets/4.png)     created_at:
+    Mapped[datetime] = mapped_column(default=datetime.now(UTC))     updated_at: Mapped[datetime]
+    = mapped_column(         default=datetime.now(UTC), onupdate=datetime.now(UTC)
+    ![5](assets/5.png)     )      messages: Mapped[list["Message"]] = relationship(         "Message",
+    back_populates="conversation", cascade="all, delete-orphan" ![6](assets/6.png)     )   class
+    Message(Base): ![7](assets/7.png)     __tablename__ = "messages"      id: Mapped[int]
+    = mapped_column(primary_key=True)     conversation_id: Mapped[int] = mapped_column(         ForeignKey("conversations.id",
+    ondelete="CASCADE"), index=True ![6](assets/6.png)     )     prompt_content: Mapped[str]
+    = mapped_column()     response_content: Mapped[str] = mapped_column()     prompt_tokens:
+    Mapped[int | None] = mapped_column()     response_tokens: Mapped[int | None] =
+    mapped_column()     total_tokens: Mapped[int | None] = mapped_column()     is_success:
+    Mapped[bool | None] = mapped_column()     status_code: Mapped[int | None] = mapped_column()
+    ![8](assets/8.png) ![9](assets/9.png)     created_at: Mapped[datetime] = mapped_column(default=datetime.now(UTC))     updated_at:
+    Mapped[datetime] = mapped_column(         default=datetime.now(UTC), onupdate=datetime.now(UTC)     )      conversation:
+    Mapped["Conversation"] = relationship(         "Conversation", back_populates="messages"     )
+    [PRE3] # database.py  from sqlalchemy.ext.asyncio import create_async_engine from
+    entities import Base  database_url = ( ![1](assets/1.png)     "postgresql+psycopg://fastapi:mysecretpassword@localhost:5432/backend_db"
+    ) engine = create_async_engine(database_url, echo=True) ![2](assets/2.png)  async
+    def init_db() -> None:     async with engine.begin() as conn:         await conn.run_sync(Base.metadata.drop_all)         await
+    conn.run_sync(Base.metadata.create_all) ![3](assets/3.png)  # main.py  from contextlib
+    import asynccontextmanager from fastapi import FastAPI from database import engine,
+    init_db  @asynccontextmanager async def lifespan(_: FastAPI):     await init_db()     #
+    other startup operations within the lifespan     ...     yield     await engine.dispose()
+    ![4](assets/4.png)  app = FastAPI(lifespan=lifespan) [PRE4] # database.py  from
+    typing import Annotated from fastapi import Depends from sqlalchemy.ext.asyncio
+    import AsyncSession, async_sessionmaker from database import engine  async_session
+    = async_sessionmaker(     bind=engine, class_=AsyncSession, autocommit=False,
+    autoflush=False ![1](assets/1.png) ) async def get_db_session(): ![2](assets/2.png)     try:         async
+    with async_session() as session: ![3](assets/3.png)             yield session
+    ![4](assets/4.png)     except:         await session.rollback() ![5](assets/5.png)         raise     finally:         await
+    session.close() ![6](assets/6.png)  DBSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+    ![7](assets/7.png) [PRE5] # schemas.py  from datetime import datetime from pydantic
+    import BaseModel, ConfigDict  class ConversationBase(BaseModel):     model_config
+    = ConfigDict(from_attributes=True) ![1](assets/1.png)      title: str     model_type:
+    str  class ConversationCreate(ConversationBase): ![2](assets/2.png)     pass  class
+    ConversationUpdate(ConversationBase): ![2](assets/2.png)     pass  class ConversationOut(ConversationBase):
+    ![2](assets/2.png)     id: int     created_at: datetime     updated_at: datetime
+    [PRE6] # main.py  from typing import Annotated from database import DBSessionDep
+    from entities import Conversation from fastapi import Depends, FastAPI, HTTPException,
+    status from schemas import ConversationCreate, ConversationOut, ConversationUpdate
+    from sqlalchemy import select  ...  async def get_conversation(     conversation_id:
+    int, session: DBSessionDep ![1](assets/1.png) ) -> Conversation:     async with
+    session.begin(): ![2](assets/2.png)         result = await session.execute(             select(Conversation).where(Conversation.id
+    == conversation_id)         )         conversation = result.scalars().first()     if
+    not conversation:         raise HTTPException(             status_code=status.HTTP_404_NOT_FOUND,             detail="Conversation
+    not found",         )     return conversation  GetConversationDep = Annotated[Conversation,
+    Depends(get_conversation)]  @app.get("/conversations") async def list_conversations_controller(     session:
+    DBSessionDep, skip: int = 0, take: int = 100 ) -> list[ConversationOut]:     async
+    with session.begin():         result = await session.execute(             select(Conversation).offset(skip).limit(take)
+    ![3](assets/3.png)         )     return [         ConversationOut.model_validate(conversation)         for
+    conversation in result.scalars().all()     ]  @app.get("/conversations/{id}")
+    async def get_conversation_controller(     conversation: GetConversationDep, )
+    -> ConversationOut:     return ConversationOut.model_validate(conversation) ![4](assets/4.png)  @app.post("/conversations",
+    status_code=status.HTTP_201_CREATED) async def create_conversation_controller(     conversation:
+    ConversationCreate, session: DBSessionDep ) -> ConversationOut:     new_conversation
+    = Conversation(**conversation.model_dump())     async with session.begin():         session.add(new_conversation)         await
+    session.commit() ![5](assets/5.png)         await session.refresh(new_conversation)     return
+    ConversationOut.model_validate(new_conversation)  @app.put("/conversations/{id}",
+    status_code=status.HTTP_202_ACCEPTED) async def update_conversation_controller(     updated_conversation:
+    ConversationUpdate,     conversation: GetConversationDep,     session: DBSessionDep,
+    ) -> ConversationOut:     for key, value in updated_conversation.model_dump().items():         setattr(conversation,
+    key, value)     async with session.begin():         await session.commit() ![5](assets/5.png)         await
+    session.refresh(conversation)     return ConversationOut.model_validate(conversation)  @app.delete("/conversations/{id}",
+    status_code=status.HTTP_204_NO_CONTENT) async def delete_conversation_controller(     conversation:
+    GetConversationDep, session: DBSessionDep ) -> None:     async with session.begin():         await
+    session.delete(conversation)         await session.commit() ![5](assets/5.png)
+    [PRE7] # repositories/interfaces.py  from abc import ABC, abstractmethod from
+    typing import Any  class Repository(ABC): ![1](assets/1.png)     @abstractmethod     async
+    def list(self) -> list[Any]:         pass      @abstractmethod     async def get(self,
+    uid: int) -> Any:         pass      @abstractmethod     async def create(self,
+    record: Any) -> Any:         pass      @abstractmethod     async def update(self,
+    uid: int, record: Any) -> Any:         pass      @abstractmethod     async def
+    delete(self, uid: int) -> None:         pass [PRE8] # repositories/conversations.py  from
+    entities import Conversation from repositories.interfaces import Repository from
+    schemas import ConversationCreate, ConversationUpdate from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession  class ConversationRepository(Repository):
+    ![1](assets/1.png)     def __init__(self, session: AsyncSession) -> None:         self.session
+    = session      async def list(self, skip: int, take: int) -> list[Conversation]:         async
+    with self.session.begin():             result = await self.session.execute(                 select(Conversation).offset(skip).limit(take)             )         return
+    [r for r in result.scalars().all()]      async def get(self, conversation_id:
+    int) -> Conversation | None:         async with self.session.begin():             result
+    = await self.session.execute(                 select(Conversation).where(Conversation.id
+    == conversation_id)             )         return result.scalars().first()      async
+    def create(self, conversation: ConversationCreate) -> Conversation:         new_conversation
+    = Conversation(**conversation.model_dump())         async with self.session.begin():             self.session.add(new_conversation)             await
+    self.session.commit()             await self.session.refresh(new_conversation)         return
+    new_conversation      async def update(         self, conversation_id: int, updated_conversation:
+    ConversationUpdate     ) -> Conversation | None:         conversation = await
+    self.get(conversation_id)         if not conversation:             return None         for
+    key, value in updated_conversation.model_dump().items():             setattr(conversation,
+    key, value)         async with self.session.begin():             await self.session.commit()             await
+    self.session.refresh(conversation)         return conversation      async def
+    delete(self, conversation_id: int) -> None:         conversation = await self.get(conversation_id)         if
+    not conversation:             return         async with self.session.begin():             await
+    self.session.delete(conversation)             await self.session.commit() [PRE9]
+    # routers/conversations.py  from typing import Annotated from fastapi import APIRouter,
+    Depends, FastAPI, HTTPException, status ...  # Other imports from repositories
+    import ConversationRepository  ...  # Other controllers and dependency implementations  router
+    = APIRouter(prefix="/conversations") ![1](assets/1.png)  async def get_conversation(     conversation_id:
+    int, session: SessionDep ) -> Conversation:     conversation = await ConversationRepository(session).get(conversation_id)
+    ![2](assets/2.png)     if not conversation:         raise HTTPException(             status_code=status.HTTP_404_NOT_FOUND,             detail="Conversation
+    not found",         )     return conversation  GetConversationDep = Annotated[Conversation,
+    Depends(get_conversation)]  @router.get("") async def list_conversations_controller(     session:
+    SessionDep, skip: int = 0, take: int = 100 ) -> list[ConversationOut]:     conversations
+    = await ConversationRepository(session).list(skip, take)     return [ConversationOut.model_validate(c)
+    for c in conversations]   @router.get("/{id}") async def get_conversation_controller(     conversation:
+    GetConversationDep, ) -> ConversationOut:     return ConversationOut.model_validate(conversation)
+    ![2](assets/2.png)   @router.post("", status_code=status.HTTP_201_CREATED) async
+    def create_conversation_controller(     conversation: ConversationCreate, session:
+    SessionDep ) -> ConversationOut:     new_conversation = await ConversationRepository(session).create(         conversation     )
+    ![2](assets/2.png)     return ConversationOut.model_validate(new_conversation)   @router.put("/{id}",
+    status_code=status.HTTP_202_ACCEPTED) async def update_conversation_controller(     conversation:
+    GetConversationDep,     updated_conversation: ConversationUpdate,     session:
+    SessionDep, ) -> ConversationOut:     updated_conversation = await ConversationRepository(session).update(
+    ![2](assets/2.png)         conversation.id, updated_conversation     )     return
+    ConversationOut.model_validate(updated_conversation)   @router.delete("/{id}",
+    status_code=status.HTTP_204_NO_CONTENT) async def delete_conversation_controller(     conversation:
+    GetConversationDep, session: SessionDep ) -> None:     await ConversationRepository(session).delete(conversation.id)   #
+    main.py  from routers.conversations import router as conversations_router  app.include_router(conversations_router)
+    ![1](assets/1.png) [PRE10] # services/conversations.py  from entities import Message
+    from repositories.conversations import ConversationRepository from sqlalchemy
+    import select  class ConversationService(ConversationRepository):     async def
+    list_messages(self, conversation_id: int) -> list[Message]:         result = await
+    self.session.execute(             select(Message).where(Message.conversation_id
+    == conversation_id)         )         return [m for m in result.scalars().all()]  #
+    routers/conversations.py  from database import DBSessionDep from entities import
+    Message from fastapi import APIRouter from schemas import MessageOut from services.conversations
+    import ConversationService  router = APIRouter(prefix="/conversations")  @router.get("/{conversation_id}/messages")
+    ![1](assets/1.png) async def list_conversation_messages_controller(     conversation:
+    GetConversationDep,     session: DBSessionDep, ) -> list[Message]:     messages
+    = await ConversationService(session).list_messages(conversation.id)     return
+    [MessageOut.model_validate(m) for m in messages] [PRE11]`  [PRE12]*# Gestione
+    delle modifiche agli schemi di database    Avrai notato che nell''[Esempio 7-3](#sqlalchemy_engine)
+    stai cancellando e ricreando le tabelle del database ogni volta che avvii il server
+    FastAPI. Questo è accettabile per i flussi di lavoro di sviluppo durante la fase
+    di prototipazione, ma non lo è affatto quando devi distribuire i tuoi servizi
+    in produzione con utenti attivi. Non puoi resettare il database da zero ogni volta
+    che aggiorni lo schema del database.    Inoltre, probabilmente avrai bisogno di
+    un modo per ripristinare le modifiche se qualcosa si rompe o se decidi di fare
+    un rollback di alcune funzionalità. Per ottenere questo risultato, puoi utilizzare
+    uno strumento di migrazione del database come Alembic, progettato per funzionare
+    perfettamente con l''ORM SQLAlchemy.    Alembic ti permette di controllare la
+    versione degli schemi del tuo database nello stesso modo in cui strumenti come
+    Git ti aiutano a controllare la versione del tuo codice. Sono estremamente utili
+    quando lavori in un team con più ambienti applicativi e hai bisogno di tenere
+    traccia delle modifiche o di ripristinare gli aggiornamenti se necessario.    Per
+    iniziare, devi prima installare `alembic` tramite `pip` e poi inizializzarlo eseguendo
+    l''[Esempio 7-11](#alembic_init) nella root del tuo progetto FastAPI.    #####
+    Esempio 7-11\. Inizializzazione di un ambiente Alembic    [PRE13]py    Alembic
+    creerà il suo ambiente all''interno della cartella `alembic` con diversi file
+    e una cartella `versions`, come mostrato nell''[Esempio 7-12](#alembic_dir).    #####
+    Esempio 7-12\. Ambiente Alembic nella directory principale del progetto    [PRE14]py    [![1](assets/1.png)](#co_integrating_databases_into_ai_services_CO11-1)      Un
+    file di ambiente per specificare lo schema di destinazione e le connessioni al
+    database      [![2](assets/2.png)](#co_integrating_databases_into_ai_services_CO11-2)      Una
+    directory per contenere i file *di migrazione*, che specificano le istruzioni
+    su come aggiornare o ripristinare lo schema del database.      Una volta generato
+    l''ambiente Alembic, apri e modifica il file *env.py* che si trova nella directory
+    `alembic`, come mostrato nell''[Esempio 7-13](#alembic_env), in modo da ottenere
+    l''accesso all''oggetto metadati SQLAlchemy che contiene le informazioni sullo
+    schema di destinazione.    ##### Esempio 7-13\. Collegare l''ambiente Alembic
+    con i modelli SQLAlchemy    [PRE15]py    Con Alembic collegato ai tuoi modelli
+    SQLAlchemy, Alembic può ora generare automaticamente i file di migrazione confrontando
+    lo schema attuale del tuo database con i tuoi modelli SQLAlchemy:    [PRE16]py   [PRE17]`
+    [PRE18] # main.py  from itertools import tee from database import DBSessionDep
+    from entities import Message from fastapi import BackgroundTasks, Depends from
+    fastapi.responses import StreamingResponse from repositories.conversations import
+    Conversation from repositories.messages import MessageRepository from sqlalchemy.ext.asyncio
+    import AsyncSession  async def store_message( ![1](assets/1.png)     prompt_content:
+    str,     response_content: str,     conversation_id: int,     session: AsyncSession,
+    ) -> None:     message = Message(         conversation_id=conversation_id,         prompt_content=prompt_content,         response_content=response_content,     )     await
+    MessageRepository(session).create(message)  @app.get("/text/generate/stream")
+    async def stream_llm_controller(     prompt: str,     background_task: BackgroundTasks,     session:
+    DBSessionDep,     conversation: Conversation = Depends(get_conversation), ![2](assets/2.png)
+    ) -> StreamingResponse:     # Invoke LLM and obtain the response stream     ...     stream_1,
+    stream_2 = tee(response_stream) ![3](assets/3.png)     background_task.add_task(         store_message,
+    prompt, "".join(stream_1), conversation.id, session     ) ![4](assets/4.png)     return
+    StreamingResponse(stream_2) [PRE19] from entities import Conversation from openai
+    import AsyncClient from repositories.conversations import ConversationRepository
+    from sqlalchemy.ext.asyncio import AsyncSession  async_client = AsyncClient(...)  async
+    def create_conversation(     initial_prompt: str, session: AsyncSession ) -> Conversation:     completion
+    = await async_client.chat.completions.create(         messages=[             {                 "role":
+    "system",                 "content": "Suggest a title for the conversation "                            "based
+    on the user prompt",             },             {                 "role": "user",                 "content":
+    initial_prompt,             },         ],         model="gpt-'
