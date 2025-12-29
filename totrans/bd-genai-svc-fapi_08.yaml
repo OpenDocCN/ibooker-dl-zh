@@ -1400,3 +1400,74 @@
   id: totrans-176
   prefs: []
   type: TYPE_NORMAL
+  zh: '[PRE4] 导入 os 模块，从 fastapi 模块导入 FastAPI、Body，从 openai 模块导入 OpenAI、AsyncOpenAI。创建
+    FastAPI 应用实例 app，同步客户端 sync_client 和异步客户端 async_client。@app.post("/sync") 定义了一个同步生成文本的函数
+    sync_generate_text，它接收一个提示字符串 prompt，并使用 OpenAI 的同步客户端创建聊天完成，返回完成的选择的第一个消息的内容。@app.post("/async")
+    定义了一个异步生成文本的函数 async_generate_text，它同样接收一个提示字符串 prompt，并使用 OpenAI 的异步客户端创建聊天完成，返回完成的选择的第一个消息的内容。[PRE5]`  [PRE6]`
+    ## FastAPI 的事件循环和线程池    FastAPI 能够处理同步和异步的阻塞操作，通过在其 *线程池* 中执行同步处理程序，以确保阻塞操作不会中断事件循环中的任务执行。    正如我在
+    [第二章](ch02.html#ch02) 中所说的，FastAPI 通过 Starlette 框架与 ASGI 框架一起工作。如果不是这样，服务器将以同步方式执行，因此您需要等待每个进程完成才能服务下一个请求。然而，使用
+    ASGI，FastAPI 服务器支持通过多线程（通过线程池）和异步编程（通过事件循环）来并行处理多个请求，从而避免阻塞主服务器进程。    FastAPI
+    通过在应用程序启动时创建线程集合来创建线程池，以减少在运行时创建线程的负担。[4](ch05.html#id822)。随后，它将后台任务和同步工作负载委托给线程池，以避免事件循环被同步处理程序中的阻塞操作所阻塞。事件循环也被称为
+    FastAPI 服务器的线程主循环，负责处理请求。    正如我之前所说的，事件循环是每个基于 `asyncio` 的应用程序的核心组件，包括实现并发的 FastAPI。事件循环执行异步活动和回调，包括执行网络
+    I/O 操作和执行子进程。在 FastAPI 中，事件循环还负责协调异步请求的处理。    如果可能的话，您应该在事件循环中（通过异步编程）执行处理程序，因为这可能比在线程池中（通过多线程）执行更有效。这是因为线程池中的每个线程在执行任何代码字节之前都必须获取
+    GIL，这需要一定的计算开销。    想象一下，多个用户同时使用你的 FastAPI 服务的 OpenAI GPT-3.5 同步和异步处理程序（如 [示例
+    5-4](#openai_clients) 所示）。FastAPI 将在事件循环中执行异步处理程序的请求，因为该处理程序使用了一个非阻塞的 OpenAI 客户端。另一方面，FastAPI
+    必须将同步处理程序的请求委托给线程池，以保护事件循环免受阻塞。由于将请求（到线程）和在线程池中从一个线程切换到另一个线程都需要更多的工作，因此同步请求的完成时间将比它们的异步对应物晚。    ######
+    注意    请记住，所有这些工作——处理同步和异步处理程序的请求——都是在同一进程的 FastAPI Python 单个 CPU 内部执行的。    这是为了将
+    CPU 等待 OpenAI API 响应的空闲时间降到最低。    性能差异在 [图 5-5](#multithreading_vs_async) 中显示。  ![bgai
+    0505](assets/bgai_0505.png)  ###### 图 5-5\. 多线程和 Async IO 如何处理 I/O 阻塞操作    [图
+    5-5](#multithreading_vs_async) 显示，对于受 I/O 限制的工作负载，异步实现更快，如果您需要并发，则应首选此方法。然而，即使必须与同步的
+    OpenAI 客户端一起工作，FastAPI 仍然能够很好地服务多个并发请求。只需简单地将同步 API 调用发送到线程池中的线程即可实现用户层面的并发。这就是为什么
+    FastAPI 的官方文档告诉您不要过于担心将您的处理程序函数声明为 `async def` 或 `def`。    然而，请注意，当您使用 `async
+    def` 声明处理程序时，FastAPI 信任您只执行非阻塞操作。当您打破这种信任并在 `async` 路由中执行阻塞操作时，事件循环将被阻塞，并且无法继续执行活动，直到阻塞操作完成。    ##
+    服务器主进程的阻塞    当您使用 `async` 关键字定义您的函数时，请确保在函数内部也使用 `await` 关键字，并且您使用的任何包的依赖项都不是同步的。    如果处理程序的实现是同步的，请避免将路由处理程序函数声明为
+    `async`。否则，相关的路由处理程序请求将阻塞主服务器处理其他请求，直到阻塞操作完成。无论阻塞操作是关于 I/O 还是计算。因此，任何数据库或人工智能模型的调用都可能导致阻塞，如果您不小心的话。    这是一个很容易犯的错误。例如，您可以在声明的异步处理程序中使用同步依赖项，如
+    [示例 5-5](#blocking_main_thread) 所示。    ##### 示例 5-5\. FastAPI 中异步处理程序的错误实现    [PRE7]    [![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO4-1)      阻塞
+    I/O 操作以获取 ChatGPT API 的响应。由于路由处理程序被标记为异步，FastAPI 信任我们不执行阻塞操作，但由于我们执行了，请求将阻塞事件循环（服务器的主线程）。其他请求现在将阻塞，直到当前请求被处理。      [![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO4-2)      一个简单的同步路由处理程序，具有阻塞操作，但没有利用异步功能。同步请求被委托给线程池以在后台执行，这样就不会阻塞主服务器。      [![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO4-3)      一个非阻塞的异步路由。      请求不会阻塞主线程，也不需要转移到线程池。因此，FastAPI
+    的事件循环可以非常快速地使用 OpenAI async 客户端处理请求。    现在，您应该对在您的 FastAPI 服务中实现需要执行 I/O 阻塞任务的新功能感到更加自在了。    为了帮助您巩固对
+    I/O 并发概念的理解，在接下来的几节中，您将构建几个新的功能，这些功能将使用您的 FastAPI 服务中的并发。这些功能包括：    与 Web 交谈      构建和集成一个网络爬虫模块，允许您通过提供
+    HTTP URL 来向您的自托管 LLM 提问网站内容。      与文档交谈      构建和集成一个 RAG 模块来处理数据库中的文档。向量数据库以支持高效相似性搜索的方式存储数据。然后，您可以使用语义搜索，它包括对查询的理解，来使用您的
+    LLM 与上传的文档进行交互。      这两个项目都将使您获得与网站、数据库和文件系统等外部系统进行异步交互的实践经验。    ## 项目：与 Web 交谈（Web
+    Scraper）    企业通常在其内部托管一系列网页，用于手册、流程和其他文档，形式为 HTML 页面。对于较长的页面，您的用户可能希望在提出问题时提供
+    URL，并期望 LLM 恢复并读取内容。这就是集成网络爬虫可能很有用的地方。    为您的自托管 LLM 创建网络爬虫有多种方法。根据您的用例，您可以使用以下方法的组合：    *   将网页作为
+    HTML 恢复，并将原始的 HTML 内容（或内部文本）发送到您的 LLM 以分析所需格式的内容。           *   使用 *网络爬虫框架*，如
+    `BeautifulSoup` 和 `ScraPy`，在恢复网页后分析网页内容。           *   使用 *无头浏览器*，如 Selenium 和
+    Microsoft Playwright，在页面节点之间动态导航并分析内容。无头浏览器非常适合导航单页应用程序（SPA）。              ######
+    注意    您或您的用户应避免使用由 LLM 驱动的网络爬虫进行非法目的。在从 URL 提取内容之前，请确保您有授权：    *   检查每个网站的条款和条件，特别是如果涉及网络爬虫。           *   当可能时使用
+    API。           *   如果不确定，请直接向网站所有者请求许可。              对于这个迷你项目，我们将仅恢复 HTML 页面的内部文本并将其发送到我们的
+    LLM，因为生产就绪的爬虫实现可能成为一本独立的书籍。    构建简单的异步爬虫的过程如下：    1.  开发一个函数，使用正则表达式在用户的提示中匹配
+    URL 模式。           2.  如果找到，则对提供的 URL 列表执行循环，并异步地恢复页面。我们将使用名为 `aiohttp` 的异步 HTTP
+    库而不是 `requests`，因为 `requests` 只能执行同步网络请求。           3.  开发一个解析函数，从恢复的 HTML 中提取文本内容。           4.  分析的页面内容与用户的原始提示一起发送到
+    LLM。              [L[''示例 5-6](#web_scraper)](#web_scraper) 展示了如何实现上述步骤。    ######
+    注意    要运行此示例，需要安装一些额外的依赖项：    [PRE8]   [PRE9] # scraper.py  import asyncio import
+    re  import aiohttp from bs4 import BeautifulSoup from loguru import logger  def
+    extract_urls(text: str) -> list[str]:     url_pattern = r"(?P<url>https?:\/\/[^\s]+)"
+    ![1](assets/1.png)     urls = re.findall(url_pattern, text) ![2](assets/2.png)     return
+    urls   def parse_inner_text(html_string: str) -> str:     soup = BeautifulSoup(html_string,
+    "lxml")     if content := soup.find("div", id="bodyContent"): ![3](assets/3.png)         return
+    content.get_text()     logger.warning("Could not parse the HTML content")     return
+    ""   async def fetch(session: aiohttp.ClientSession, url: str) -> str:     async
+    with session.get(url) as response: ![4](assets/4.png)         html_string = await
+    response.text()         return parse_inner_text(html_string)   async def fetch_all(urls:
+    list[str]) -> str:     async with aiohttp.ClientSession() as session: ![5](assets/5.png)         results
+    = await asyncio.gather(             *[fetch(session, url) for url in urls], return_exceptions=True         )     success_results
+    = [result for result in results if isinstance(result, str)]     if len(results)
+    != len(success_results): ![6](assets/6.png)         logger.warning("Some URLs
+    could not be fetched")     return " ".join(success_results) [PRE10] # dependencies.py  from
+    fastapi import Body from loguru import logger  from schemas import TextModelRequest
+    from scraper import extract_urls, fetch_all  async def get_urls_content(body:
+    TextModelRequest = Body(...)) -> str: ![1](assets/1.png)     urls = extract_urls(body.prompt)     if
+    urls:         try:             urls_content = await fetch_all(urls)             return
+    urls_content         except Exception as e:             logger.warning(f"Failed
+    to fetch one or several URls - Error: {e}")     return ""  # main.py  from fastapi
+    import Body, Depends, Request from dependencies import construct_prompt from schemas
+    import TextModelResponse  @app.post("/generate/text", response_model_exclude_defaults=True)
+    ![2](assets/2.png) async def serve_text_to_text_controller(     request: Request,     body:
+    TextModelRequest = Body(...),     urls_content: str = Depends(get_urls_content)
+    ![3](assets/3.png) ) -> TextModelResponse:     ... # rest of controller logic     prompt
+    = body.prompt + " " + urls_content     output = generate_text(models["text"],
+    prompt, body.temperature)     return TextModelResponse(content=output, ip=request.client.host)
+    [PRE11]`  [PRE12] ## 项目：与文档交谈（RAG）    在这个项目中，我们将向您的 GenAI 服务中插入一个 RAG 模块，让您体验与数据库和文件系统等外部系统进行异步交互。    您可能想知道
+    RAG 模块的目的及其必要性。RAG 是一种技术，用于通过使用针对高知识密集型活动定制的自定义数据源来增加 LLM 提示的上下文。[5](ch05.html#id830)。这是一种有效的技术，可以在不进行复杂且昂贵的
+    LLM 训练的情况下，基于数据中的事实来建立 LLM 的响应。    组织机构渴望使用自己的 LLM 实现 RAG，因为它允许员工通过 LLM 访问内部巨大的知识库。通过
+    RAG，企业期望内部知识库、系统和程序'
