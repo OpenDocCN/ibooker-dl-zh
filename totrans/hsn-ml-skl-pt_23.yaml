@@ -1,0 +1,458 @@
+- en: Appendix B. Mixed Precision and Quantization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'By default, PyTorch uses 32-bit floats to represent model parameters: that’s
+    4 bytes per parameter. If your model has 1 billion parameters, then you need at
+    least 4 GB of RAM just to hold the model. At inference time you also need enough
+    RAM to store the activations, and at training time you need enough RAM to store
+    all the intermediate activations as well (for the backward pass), and to store
+    the optimizer parameters (e.g., Adam needs two additional parameters for each
+    model parameter—that’s an extra 8 GB). This is a lot of RAM, and it’s also plenty
+    of time spent transferring data between the CPU and the GPU, not to mention storage
+    space, download time, and energy consumption.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: So how can we reduce the model’s size? A simple option is to use a reduced precision
+    float representation—typically 16-bit floats instead of 32-bit floats. If you
+    train a 32-bit model then shrink it to 16-bits after training, its size will be
+    halved, with little impact on its quality. Great!
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, if you try to train the model using 16-bit floats, you may run into
+    convergence issues, as we will see. So a common strategy is *mixed-precision training*
+    (MPT), where we keep the weights and weight updates at 32-bit precision during
+    training, but the rest of the computations use 16-bit precision. After training,
+    we shrink the weights down to 16-bits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, to shrink the model even further, you can use *quantization*: the
+    parameters are discretized and represented as 8-bit integers, or even 4-bit integers
+    or less. This is harder, and it degrades the model’s quality a bit more, but it
+    reduces the model size by a factor of 4 or more, and speeds it up significantly.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In this appendix, we will cover reduced precision, mixed-precision training,
+    and quantization. But to fully understand these, we must first discuss common
+    number representations in machine learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Common Number Representations
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: By default, PyTorch represents weights and activations using 32-bit floats based
+    on the *IEEE Standard for Floating-Point Arithmetic* (IEEE 754), which specifies
+    how floating-point numbers are represented in memory. It’s a flexible and efficient
+    format which can represent tiny values and huge values, as well as special values
+    such as ±0,⁠^([1](app02.html#id4346)) ±infinity, and NaN (i.e., Not a Number).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The float32 data type (fp32 for short) can hold numbers as small as ±1.4e^(–45)
+    and as large as ±3.4e^(38). It is represented at the top of [Figure B-1](#number_representations_diagram).
+    The first bit determines the *sign* *S*: 0 means positive, 1 means negative. The
+    next 8 bits hold the *exponent* *E*, ranging from 0 to 255\. And the last 23 bits
+    represent the *fraction* *F*, ranging from 0 to 2^(23) – 1\. Here is how to compute
+    the value:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If *E* is between 1 and 254, then the number is called *normalized*: this is
+    the most common scenario. In this case, the value *v* can be computed using *v*
+    = (–1)^(*S*)⋅2^(*E*–127)⋅(1 + *F*⋅2^(–23)). The last term (1 + *F*⋅2^(–23)) corresponds
+    to the most significant digits, so it’s called the *significand*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'If *E* = 0 and *F* > 0, then the number is called *subnormal*: it is useful
+    to represent the tiniest values.⁠^([2](app02.html#id4353)) In this case, *v* =
+    (–1)^(*S*)⋅2^(*E*+1–127)⋅(0 + *F*⋅2^(–23)) = (–1)^(*S*)⋅*F*⋅2^(–149).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If *E* = 0 and *F* = 0, then *v* = ±0.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If *E* = 255 and *F* > 0, then *v* = NaN.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If *E* = 255 and *F* = 0, then *v* = ±infinity.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The other floating-point formats represented in [Figure B-1](#number_representations_diagram)
+    differ only by the number of bits used for the exponent and the fraction. For
+    example float16 uses 5 bits for the exponent (i.e., it ranges from 0 to 31) and
+    10 bits for the fraction (ranging from 0 to 1,023), while float8 uses 4 bits for
+    the exponent (from 0 to 15) and 3 bits for the fraction, so it’s often denoted
+    fp8 E4M3.⁠^([3](app02.html#id4362)) The equations to compute the value are adjusted
+    accordingly, for example normalized float16 values are computed using *v* = (–1)^(*S*)⋅2^(*E*–15)⋅(1
+    + *F*⋅2^(–10)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![Diagram illustrating common number representations in machine learning, focusing
+    on the bit structure of various floating-point and integer formats such as float32,
+    float16, float8, and int8, with their respective ranges and components.](assets/hmls_ab01.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure B-1\. Common number representations in machine learning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The bfloat16 and bfloat8 formats were proposed by Google Brain (hence the *b*),
+    and they offer a wider range for the values, at the cost of a significantly reduced
+    precision. We will come back to that.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Integers are often represented using 64 bits, with values ranging from 0 to
+    2^(64) – 1 (about 1.8e^(19)) for unsigned integers, or –2^32 to 2^32 – 1 (about
+    ±4.3e⁹) for signed integers. Integers are also frequently represented using 32
+    bits, 16 bits, or 8 bits depending on the use case. In [Figure B-1](#number_representations_diagram),
+    I only represented the integer types frequently used for quantization, such as
+    8-bit integers (which can be unsigned or signed).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'When quantizing down to 4 bits, we usually pack 2 weights per byte, and when
+    quantizing down to 2 bits, we pack 4 weights per byte. It’s even possible to quantize
+    down to ternary values, where each weight can only be equal to –1, 0, or +1\.
+    In this case, it’s common to store five weights per byte. For example, the byte
+    178 can be written as 20121 in base 3 (since 178 = 2⋅3⁴ + 0⋅3³ + 1⋅3² + 2⋅3¹ +
+    1⋅3⁰), and if we subtract 1 from each digit, we get 1, –1, 0, 1, 0: these are
+    the 5 ternary weights stored in this single byte. Since 3⁵ = 243, which is less
+    than 256, we can fit five ternary values into one byte. This format only uses
+    1.6 bits per weight on average, which is 20 times less than using 32-bit floats!'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'It’s technically possible to quantize weights down to a single bit each, storing
+    8 weights per byte: each bit represents a weight equal to either –1 or +1 (or
+    sometimes 0 or 1). However, it’s very difficult to get reasonable accuracy using
+    such severe quantization.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As you can see, PyTorch’s default weight representation (32-bit floats) takes
+    up a *lot* of space compared to other representations: there is room for us to
+    shrink our models quite a bit! Let’s start by reducing the precision from 32 bits
+    down to 16 bits.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reduced Precision Models
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'If you have a 32-bit PyTorch model, you can convert all of its parameters to
+    16-bit floats—which is called *half-precision*—by calling the model’s `half()`
+    method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: This is a quick and easy way to halve the size of a trained model, usually without
+    much impact on its quality. Moreover, since many GPUs have 16-bit float optimizations,
+    and since there will be less data to transfer between the CPU and the GPU, the
+    model will typically run almost twice as fast.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When downloading a pretrained model using the Transformers library’s `from_pretrained()`
+    method, you can set `dtype="auto"` to let the library choose the optimal float
+    representation for your hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To use the model, you now need to feed it 16-bit inputs, and it will output
+    16-bit outputs as well:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'But what if you want to build and train a 16-bit model right from the start?
+    In this case, you can set `dtype=torch.float16` whenever you create a tensor or
+    a module with parameters, for example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If you prefer to avoid repeating `dtype=torch.float16` everywhere, then you
+    can instead set the default data type to `torch.float16` using `torch.set_default_dtype(torch.float16)`.
+    Be careful: this will apply to *all* tensors and modules created after that.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, the reduced precision can cause some issues during training. Indeed,
+    16-bit floats have a limited *dynamic range* (i.e., the ratio between the largest
+    and smallest positive representable values): the smallest positive representable
+    value is about 0.00000006 (i.e., 6.0e^(–8)), while the largest is 65,504 (i.e.,
+    ~6.5e⁴). This implies that any gradient update smaller than ~6.0e^(–8) will *underflow*,
+    meaning it will be rounded down to zero, and thus ignored. And conversely, any
+    value larger than ~6.5e⁴ will *overflow*, meaning it will be rounded up to infinity,
+    causing training to fail (once some weights are infinite, the loss will be infinite
+    or NaN).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To avoid underflows, one solution is to scale up the loss by a large factor
+    (e.g., multiply it by 256): this will automatically scale up the gradients by
+    the same factor during the backward pass, which will prevent them from being smaller
+    than the smallest 16-bit representable value. However, you must scale the gradients
+    back down before performing an optimizer step, and at this point you may get an
+    underflow. Also, if you scale up the loss too much, you will run into overflows.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you can’t find a good scaling factor that avoids both underflows and overflows,
+    you can try to use `torch.bfloat16` rather than `torch.float16`, since bloat16
+    has more bits for the exponent: the smallest value is ~9.2e^(–41), while the largest
+    is ~3.4e^(38), so there’s less risk of any significant gradient updates being
+    ignored, or reasonable values being rounded up to infinity.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, bfloat16 has historically had less hardware support (although this
+    is improving), and it offers fewer bits for the fraction, which can cause some
+    gradient updates to be ignored when the corresponding parameter values are much
+    larger, causing training to stall. For example, if the gradient update is 4.5e^(–2)
+    (i.e., 0.045) and the corresponding parameter value is equal to 1.23e² (i.e.,
+    123), then the sum should be 1.23045e² (i.e., 123.045) but bfloat16 does not have
+    enough fraction bits to store all these digits, so it must round the result to
+    1.23e² (i.e., 123): as you can see, the gradient update is completely ignored.
+    With regular 16-bit floats, the result would be 123.0625, which is not exactly
+    right due to floating-point precision errors, but at least the parameter makes
+    a step in the right direction. That said, if the gradient update was a bit smaller
+    (e.g., 0.03), it would be ignored even in regular 16-bit float precision.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: So if you try float16 and bfloat16 but you still encounter convergence issues
+    during training, then you can try *mixed-precision training* instead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mixed-Precision Training
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: '[*Mixed-precision training* (MPT)](https://homl.info/mpt) was proposed by Baidu
+    and Nvidia researchers in 2017,⁠^([4](app02.html#id4388)) to address the issues
+    often observed with 16-bit training. Here’s how it works:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: MPT stores a primary copy of the model parameters as 32-bit floats, and at each
+    training iteration, it creates a 16-bit copy of these model parameters (see step
+    1 in [Figure B-2](#mpt_diagram)), and uses them for the forward pass (step 2).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The loss is then scaled up by a large factor (step 3) to avoid underflows, as
+    we discussed earlier.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Lastly, we switch back to 32-bit precision to scale the gradients back down:
+    this greater precision avoids the risk of underflow. Next we use the gradients
+    to perform one optimizer step, improving the primary parameters (step 5). Performing
+    the actual optimizer step in 32-bit precision ensures that small weight updates
+    are not ignored when applied to much larger parameter values, since 32-bit floats
+    have a very large fraction (23 bits).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '![Diagram illustrating mixed-precision training, showing the process of copying
+    32-bit parameters to 16-bit, performing forward and backward passes, scaling losses,
+    and completing with an optimizer step.](assets/hmls_ab02.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure B-2\. Mixed-precision training
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: MPT offers almost all of the benefits of 16-bit training, without the instabilities.
+    However, the model parameters take 50% more space than in 32-bit training because
+    of the 16-bit copy at each training iteration, so how is this any better? Well,
+    during training, most of the RAM is used to store the activations, not the model
+    parameters, so in practice MPT requires just a bit more than half the RAM used
+    by regular 32-bit training. And it typically runs twice as fast. Moreover, once
+    training is finished, we no longer need 32-bit parameters, we can convert them
+    to 16 bits, and we get a pure 16-bit model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'MPT does not always accelerate training: it depends on the model, the batch
+    size, and the hardware. That said, most large transformers are trained using MPT.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Rather than finding the best scaling factor by trial and error, you can run
+    training in 32-bit precision for a little while (assuming you have enough RAM)
+    and measure the gradient statistics to find the optimal scaling factor for your
+    task: it should be large enough to avoid underflows, and small enough to avoid
+    overflows.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Alternatively, your training script can adapt the factor dynamically during
+    training: if some gradients are infinite or NaN, this means that an overflow occurred
+    so the factor must be reduced (e.g., halved) and the training step must be skipped,
+    but if no overflow is detected then the scaling factor can be gradually increased
+    (e.g., doubled every 2,000 training steps). PyTorch provides a `torch.amp.GradScaler`
+    class that implements this approach, and also scales down the learning rate appropriately.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: PyTorch also provides a `torch.autocast()` function that returns a context within
+    which many operations will automatically run in 16-bit precision. This includes
+    operations that typically benefit the most from 16-bit precision, such as matrix
+    multiplication and convolutions, but it does not include operations like reductions
+    (e.g., `torch.sum()`) since running these in half precision offers no significant
+    benefit and can damage precision.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s update our training function to run the forward pass within an autocast
+    context and use a `GradScaler` to dynamically scale the loss:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: When fine-tuning a transformer using the Hugging Face Transformers library,
+    you can set `fp16=True` or `bf16=True` in the `TrainingArguments` to activate
+    mixed-precision training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reducing precision down to 16-bits often works great, but can we shrink our
+    models even further? Yes, we can, using quantization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quantization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Quantization means mapping continuous values to discrete ones. In deep learning,
+    this typically involves converting parameters, and often activations as well,
+    from floats to integers—usually 32-bit floats to 8-bit integers. More generally,
+    the goal is to shrink and speed up our model by reducing the number of bits used
+    in parameters, and often in activations as well. Moreover, some embedded devices
+    (e.g., ARM Cortex-M0) do not support floating-point operations at all (in part
+    to reduce their cost and energy consumption), so models have to be quantized entirely
+    (both weights and activations) before you can use them on the device. Modern smartphones
+    do support floating point operations but still benefit significantly from quantization:
+    int8 operations are 2 to 4 times faster and use 5 to 10 times less energy than
+    FP32.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The simplest approach is *linear quantization*, so we’ll discuss it now. We
+    will discuss a few nonlinear quantization methods later in this appendix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Linear Quantization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Linear quantization dates back to digital signal processing in the 1950s, but
+    it has become particularly important in machine learning over the past decade
+    since models have become gigantic, and yet we wish to run them on mobile phones
+    and other limited devices. It has two variants: asymmetric and symmetric. In *asymmetric
+    linear quantization*, float values are simply mapped linearly to unsigned bytes
+    with values ranging from 0 to 255 (or more generally from 0 to 2^(*n*) – 1 when
+    quantizing to *n*-bit integers). For example, if the weights range between *a*
+    = –0.1 and *b* = 0.6, then the float –0.1 will be mapped to the byte 0, the float
+    0.0 to integer 36, 0.1 to 72, …​, 0.6 to 255, and more generally, the float tensor
+    **w** will be mapped to the integer tensor **q** using [Equation B-1](#asymmetric_linear_quantization_equation).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Equation B-1\. Asymmetric linear quantization
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: $StartLayout 1st Row 1st Column q Subscript i 2nd Column equals round left-parenthesis
+    StartFraction w Subscript i Baseline Over s EndFraction right-parenthesis plus
+    z 2nd Row 1st Column with s 2nd Column equals StartFraction b minus a Over 2 Superscript
+    n Baseline minus 1 EndFraction and z equals minus round left-parenthesis StartFraction
+    a Over s EndFraction right-parenthesis 3rd Row 1st Column where a 2nd Column equals
+    min Underscript i Endscripts w Subscript i Baseline and b equals max Underscript
+    i Endscripts w Subscript i Baseline EndLayout$
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this equation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*w*[*i*] is the *i*^(th) float in the original tensor **w**.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*q*[i] is the *i*^(th) integer in the quantized tensor **q**. It is clamped
+    between 0 and 2^(*n*) – 1 (e.g., 255 for 8-bit quantization).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*s* is the *quantization scale*. Note that some authors define it as 1 / *s*
+    and adapt the equation accordingly (i.e., they multiply rather than divide).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*z* is the *quantization bias* or *zero point*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*a* is the minimum value of **w**, and *b* is the maximum value of **w**.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The range [*a*, *b*] is known for weights, since their values do not change
+    after training. However, the range of activation values depends on the inputs
+    we feed to the model. As a result, for each activation that we want to quantize
+    (e.g., the inputs of each layer), we will either have to compute *a* and *b* on
+    the fly for each new input batch (this is called *dynamic quantization*) or run
+    a calibration dataset once through the model to determine the typical range of
+    activation values, then use this range to quantize the activations of all subsequent
+    batches (this is called *static quantization*). Static quantization is a faster
+    but less precise.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To approximately recover the original value *w*[*i*] from a quantized value
+    *q*[*i*], we can compute *w*[*i*] ≈ s × (*q*[*i*] – *z*). This is called *dequantization*.
+    For example, if *q*[*i*] = 72, then we get *w*[*i*] ≈ 0.0988, which is indeed
+    close to 0.1\. The difference between the dequantized value (0.0988) and the original
+    value (0.1) is called the *quantization noise*: with 8-bit quantization, the quantization
+    noise usually leads to a slightly degraded accuracy. With 6-bit, 4-bit, or less,
+    the quantization noise can hurt even more, especially since it has a cumulative
+    effect: the deeper the network, the stronger the impact.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Equation B-1](#asymmetric_linear_quantization_equation) guarantees that any
+    float equal to 0.0 can be quantized and dequantized back to 0.0 exactly: indeed,
+    if *w*[*i*] = 0.0 then *q*[*i*] = *z*, and dequantizing *q*[*i*] gives back *w*[*i*]
+    = *s* × (*z* – *z*) = 0.0\. This is particularly useful for sparse models where
+    many weights are equal to zero. It is also important when using activations like
+    ReLU which produce many zero activations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In PyTorch, the `torch.quantize_per_tensor()` function lets you create a quantized
+    tensor: this is a special kind of tensor that contains the quantized values (i.e.,
+    integers), as well as the *quantization parameters* (i.e., the scale and zero
+    point). Let’s use this function to quantize a tensor, then dequantize it. In this
+    example we will use the data type `torch.quint8`, which uses 8-bit unsigned integers:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4][PRE5]`` `>>>` `qw` `=` `torch``.``quantize_per_tensor``(``w``,` `scale``=``s``,`
+    `zero_point``=``z``,` `dtype``=``torch``.``quint8``)` [PRE6] `tensor([ 0.0988,
+    -0.0988,  0.6012,  0.0000], size=(4,), dtype=torch.quint8,`  `quantization_scheme=torch.per_tensor_affine,
+    scale=0.002745098201557994,`  `zero_point=36)` `>>>` `qw``.``dequantize``()`  `#
+    back to 32-bit floats (close to the original tensor)` `` `tensor([ 0.0988, -0.0988,  0.6012,  0.0000])`
+    `` [PRE7]` [PRE8][PRE9]'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]` [PRE11] [PRE12]`py [PRE13]py [PRE14]`py  [PRE15]'
+  prefs: []
+  type: TYPE_NORMAL

@@ -1,0 +1,2135 @@
+- en: Chapter 9\. Inference Optimization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'New models come and go, but one thing will always remain relevant: making them
+    better, cheaper, and faster. Up until now, the book has discussed various techniques
+    for making models better. This chapter focuses on making them faster and cheaper.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: No matter how good your model is, if it’s too slow, your users might lose patience,
+    or worse, its predictions might become useless—imagine a next-day stock price
+    prediction model that takes two days to compute each outcome. If your model is
+    too expensive, its return on investment won’t be worth it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference optimization can be done at the model, hardware, and service levels.
+    At the model level, you can reduce a trained model’s size or develop more efficient
+    architectures, such as one without the computation bottlenecks in the attention
+    mechanism often used in transformer models. At the hardware level, you can design
+    more powerful hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The inference service runs the model on the given hardware to accommodate user
+    requests. It can incorporate techniques that optimize models for specific hardware.
+    It also needs to consider usage and traffic patterns to efficiently allocate resources
+    to reduce latency and cost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because of this, inference optimization is an interdisciplinary field that often
+    sees collaboration among model researchers, application developers, system engineers,
+    compiler designers, hardware architects, and even data center operators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter discusses bottlenecks for AI inference and techniques to overcome
+    them. It’ll focus mostly on optimization at the model and service levels, with
+    an overview of AI accelerators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter also covers performance metrics and trade-offs. Sometimes, a technique
+    that speeds up a model can also reduce its cost. For example, reducing a model’s
+    precision makes it smaller and faster. But often, optimization requires trade-offs.
+    For example, the best hardware might make your model run faster but at a higher
+    cost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given the growing availability of open source models, more teams are building
+    their own inference services. However, even if you don’t implement these inference
+    optimization techniques, understanding these techniques will help you evaluate
+    inference services and frameworks. If your application’s latency and cost are
+    hurting you, read on. This chapter might help you diagnose the causes and potential
+    solutions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Inference Optimization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'There are two distinct phases in an AI model’s lifecycle: training and inference.
+    Training refers to the process of building a model. Inference refers to the process
+    of using a model to compute an output for a given input.^([1](ch09.html#id1597))
+    Unless you train or finetune a model, you’ll mostly need to care about inference.^([2](ch09.html#id1598))'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This section starts with an overview of inference that introduces a shared vocabulary
+    to discuss the rest of the chapter. If you’re already familiar with these concepts,
+    feel free to skip to the section of interest.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference Overview
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In production, the component that runs model inference is called an inference
+    server. It hosts the available models and has access to the necessary hardware.
+    Based on requests from applications (e.g., user prompts), it allocates resources
+    to execute the appropriate models and returns the responses to users. An inference
+    server is part of a broader inference service, which is also responsible for receiving,
+    routing, and possibly preprocessing requests before they reach the inference server.
+    A visualization of a simple inference service is shown in [Figure 9-1](#ch09_figure_1_1730130962952524).
+  prefs: []
+  type: TYPE_NORMAL
+- en: .
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a computer hardware system'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0901.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-1\. A simple inference service.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Model APIs like those provided by OpenAI and Google are inference services.
+    If you use one of these services, you won’t be implementing most of the techniques
+    discussed in this chapter. However, if you host a model yourself, you’ll be responsible
+    for building, optimizing, and maintaining its inference service.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computational bottlenecks
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Optimization is about identifying bottlenecks and addressing them. For example,
+    to optimize traffic, city planners might identify congestion points and take measures
+    to alleviate congestion. Similarly, an inference server should be designed to
+    address the computational bottlenecks of the inference workloads it serves. There
+    are two main computational bottlenecks, *compute-bound* and *memory bandwidth-bound*:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compute-bound
+  prefs: []
+  type: TYPE_NORMAL
+- en: This refers to tasks whose time-to-complete is determined by the computation
+    needed for the tasks. For example, password decryption is typically compute-bound
+    due to the intensive mathematical calculations required to break encryption algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Memory bandwidth-bound
+  prefs: []
+  type: TYPE_NORMAL
+- en: These tasks are constrained by the data transfer rate within the system, such
+    as the speed of data movement between memory and processors. For example, if you
+    store your data in the CPU memory and train a model on GPUs, you have to move
+    data from the CPU to the GPU, which can take a long time. This can be shortened
+    as bandwidth-bound. In literature, memory bandwidth-bound is often referred to
+    as memory-bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The concepts of compute-bound or memory bandwidth-bound were introduced in the
+    paper “Roofline” ([Williams et al., 2009](https://oreil.ly/M_aGR)).^([4](ch09.html#id1606))
+    Mathematically, an operation can be classified as compute-bound or memory bandwidth-bound
+    based on its [*arithmetic intensity*](https://oreil.ly/K3j6t), which is the number
+    of arithmetic operations per byte of memory access. Profiling tools like NVIDIA
+    Nsight will show you a roofline chart to tell you whether your workload is compute-bound
+    or memory bandwidth-bound, as shown in [Figure 9-2](#ch09_figure_2_1730130962952613).
+    This chart is a *roofline* chart because it resembles a roof. Roofline charts
+    are common in hardware performance analyses.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different optimization techniques aim to mitigate different bottlenecks. For
+    example, a compute-bound workload might be sped up by spreading it out to more
+    chips or by leveraging chips with more computational power (e.g., a higher FLOP/s
+    number). A memory bandwidth-bound workload might be sped up by leveraging chips
+    with higher bandwidth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A graph with a line and a point'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0902.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-2\. The roofline chart can help you visualize whether an operation
+    is compute-bound or memory bandwidth-bound. This graph is on a log scale.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Different model architectures and workloads result in different computational
+    bottlenecks. For example, inference for image generators like Stable Diffusion
+    is typically compute-bound, whereas inference for autoregression language models
+    is typically memory bandwidth-bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'As an illustration, let’s look into language model inference. Recall from [Chapter 2](ch02.html#ch02_understanding_foundation_models_1730147895571359)
+    that inference for a transformer-based language model consists of two steps, prefilling
+    and decoding:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Prefill
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model processes the input tokens in parallel.^([5](ch09.html#id1607)) How
+    many tokens can be processed at once is limited by the number of operations your
+    hardware can execute in a given time. Therefore, prefilling is *compute-bound*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decode
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model generates one output token at a time. At a high level, this step typically
+    involves loading large matrices (e.g., model weights) into GPUs, which is limited
+    by how quickly your hardware can load data into memory. Decoding is, therefore,
+    *memory bandwidth-bound*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 9-3](#ch09_figure_3_1730130962952638) visualizes prefilling and decoding.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a computer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0903.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Figure 9-3\. Autoregressive language models follow two steps for inference:
+    prefill and decode. `<eos>` denotes the end of the sequence token.'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Because prefill and decode have different computational profiles, they are often
+    decoupled in production with separate machines. This technique will be discussed
+    [“Inference Service Optimization”](#ch09_inference_service_optimization_1730130963008735).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The factors that affect the amount of prefilling and decoding computation in
+    an LLM inference server, and therefore its bottlenecks, include context length,
+    output length, and request batching strategies. Long context typically results
+    in a memory bandwidth-bound workload, but clever optimization techniques, such
+    as those discussed later in this chapter, can remove this bottleneck.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As of this writing, due to the prevalence of the transformer architecture and
+    the limitations of the existing accelerator technologies, many AI and data workloads
+    are memory bandwidth-bound. However, future software and hardware advancements
+    will be able to make AI and data workloads compute-bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Online and batch inference APIs
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Many providers offer two types of inference APIs, online and batch:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Online APIs optimize for latency. Requests are processed as soon as they arrive.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Batch APIs optimize for cost. If your application doesn’t have strict latency
+    requirements, you can send them to batch APIs for more efficient processing. Higher
+    latency allows a broader range of optimization techniques, including batching
+    requests together and using cheaper hardware. For example, as of this writing,
+    both Google Gemini and OpenAI offer batch APIs at a 50% cost reduction and significantly
+    higher turnaround time, i.e., in the order of hours instead of seconds or minutes.^([6](ch09.html#id1612))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Online APIs might still batch requests together as long as it doesn’t significantly
+    impact latency, as discussed in [“Batching”](#ch09_batching_1730130963008799).
+    The only real difference is that an online API focuses on lower latency, whereas
+    a batch API focuses on higher throughput.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Customer-facing use cases, such as chatbots and code generation, typically
+    require lower latency, and, therefore, tend to use online APIs. Use cases with
+    less stringent latency requirements, which are ideal for batch APIs, include the
+    following:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Synthetic data generation
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Periodic reporting, such as summarizing Slack messages, sentiment analysis of
+    brand mentions on social media, and analyzing customer support tickets
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Onboarding new customers who require processing of all their uploaded documents
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Migrating to a new model that requires reprocessing of all the data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Generating personalized recommendations or newsletters for a large customer
+    base
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Knowledge base updates by reindexing an organization’s data
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: APIs usually return complete responses by default. However, with autoregressive
+    decoding, it can take a long time for a model to complete a response, and users
+    are impatient. Many online APIs offer *streaming mode*, which returns each token
+    as it’s generated. This reduces the time the users have to wait until the first
+    token. The downside of this approach is that you can’t score a response before
+    showing it to users, increasing the risk of users seeing bad responses. However,
+    you can still retrospectively update or remove a response as soon as the risk
+    is detected.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'A batch API for foundation models differs from batch inference for traditional
+    ML. In traditional ML:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Online inference means that predictions are computed *after* requests have arrived.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Batch inference means that predictions are precomputed *before* requests have
+    arrived.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Precompution is possible for use cases with finite and predictable inputs like
+    recommendation systems, where recommendations can be generated for all users in
+    advance. These precomputed predictions are fetched when requests arrive, e.g.,
+    when a user visits the website. However, with foundation model use cases where
+    the inputs are open-ended, it’s hard to predict all user prompts.^([7](ch09.html#id1619))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference Performance Metrics
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Before jumping into optimization, it’s important to understand what metrics
+    to optimize for. From the user perspective, the central axis is latency (response
+    quality is a property of the model itself, not of the inference service). However,
+    application developers must also consider throughput and utilization as they determine
+    the cost of their applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Latency, TTFT, and TPOT
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Latency measures the time from when users send a query until they receive the
+    complete response. For autoregressive generation, especially in the streaming
+    mode, the overall latency can be broken into several metrics:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Time to first token
+  prefs: []
+  type: TYPE_NORMAL
+- en: TTFT measures how quickly the first token is generated after users send a query.
+    It corresponds to the duration of the prefill step and depends on the input’s
+    length. Users might have different expectations for TTFT for different applications.
+    For example, for conversational chatbots, the TTFT should be instantaneous.^([8](ch09.html#id1620))
+    However, users might be willing to wait longer to summarize long documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Time per output token
+  prefs: []
+  type: TYPE_NORMAL
+- en: TPOT measures how quickly each output token is generated after the first token.
+    If each token takes 100 ms, a response of 1,000 tokens will take 100 s.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the streaming mode, where users read each token as it’s generated, TPOT should
+    be faster than human reading speed but doesn’t have to be much faster. A very
+    fast reader can read 120 ms/token, so a TPOT of around 120 ms, or 6–8 tokens/second,
+    is sufficient for most use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Time between tokens and inter-token latency
+  prefs: []
+  type: TYPE_NORMAL
+- en: Variations of this metric include *time between tokens (TBT)* and i*nter-token
+    latency (ITL)*.^([9](ch09.html#id1623)) Both measure the time between output tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The total latency will equal `TTFT + TPOT` × `(number of output tokens).`
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two applications with the same total latency can offer different user experiences
+    with different TTFT and TPOT. Would your users prefer instant first tokens with
+    a longer wait between tokens, or would they rather wait slightly longer for the
+    first tokens but enjoy faster token generation afterward? User studies will be
+    necessary to determine the optimal user experience. Reducing TTFT at the cost
+    of higher TPOT is possible by shifting more compute instances from decoding to
+    prefilling and vice versa.^([10](ch09.html#id1624))
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s important to note that the TTFT and TPOT values observed by users might
+    differ from those observed by models, especially in scenarios involving CoT (chain-of-thought)
+    or agentic queries where models generate intermediate steps not shown to users.
+    Some teams use the metric *time to publish* to make it explicit that it measures
+    time to the first token users see.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Consider the scenario where, after a user sends a query, the model performs
+    the following steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate a plan, which consists of a sequence of actions. This plan isn’t shown
+    to the user.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Take actions and log their outputs. These outputs aren’t shown to the user.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Based on these outputs, generate a final response to show the user.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: From the model’s perspective, the first token is generated in step 1\. This
+    is when the model internally begins its token generation process. The user, however,
+    only sees the first token of the final output generated in step 3\. Thus, from
+    their perspective, TTFT is much longer.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because latency is a distribution, the average can be misleading. Imagine you
+    have 10 requests whose TTFT values are 100 ms, 102 ms, 100 ms, 100 ms, 99 ms,
+    104 ms, 110 ms, 90 ms, 3,000 ms, 95 ms. The average TTFT value is 390 ms, which
+    makes your inference service seem slower than it is. There might have been a network
+    error that slowed down one request or a particularly long prompt that took a much
+    longer time to prefill. Either way, you should investigate. With a large volume
+    of requests, outliers that skew the average latency are almost inevitable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It’s more helpful to look at latency in percentiles, as they tell you something
+    about a certain percentage of your requests. The most common percentile is the
+    50th percentile, abbreviated as p50 (median). If the median is 100 ms, half of
+    the requests take longer than 100 ms to generate the first token, and half take
+    less than 100 ms. Percentiles also help you discover outliers, which might be
+    symptoms of something wrong. Typically, the percentiles you’ll want to look at
+    are p90, p95, and p99\. It’s also helpful to plot TTFT values against inputs’
+    lengths.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Throughput and goodput
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Throughput measures the number of output tokens per second an inference service
+    can generate across all users and requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Some teams count both input and output tokens in throughput calculation. However,
+    since processing input tokens (prefilling) and generating output tokens (decoding)
+    have different computational bottlenecks and are often decoupled in modern inference
+    servers, input and output throughput should be counted separately. When throughput
+    is used without any modifier, it usually refers to output tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Throughput is typically measured as tokens/s (TPS). If you serve multiple users,
+    tokens/s/user is also used to evaluate how the system scales with more users.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Throughput can also be measured as the number of *completed* requests during
+    a given time. Many applications use requests per second (RPS). However, for applications
+    built on top of foundation models, a request might take seconds to complete, so
+    many people use completed requests per minute (RPM) instead. Tracking this metric
+    is useful for understanding how an inference service handles concurrent requests.
+    Some providers might throttle your service if you send too many concurrent requests
+    at the same time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Throughput is directly linked to compute cost. A higher throughput typically
+    means lower cost. If your system costs $2/h in compute and its throughput is 100
+    tokens/s, it costs around $5.556 per 1M output tokens. If each request generates
+    200 output tokens on average, the cost for decoding 1K requests would be $1.11.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The prefill cost can be similarly calculated. If your hardware costs $2 per
+    hour and it can prefill 100 requests per minute, the cost for prefilling 1K requests
+    would be $0.33.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The total cost per request is the sum of the prefilling and decoding costs.
+    In this example, the total cost for 1K requests would be $1.11 + $0.33 = $1.44.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s considered good throughput depends on the model, the hardware, and the
+    workload. Smaller models and higher-end chips typically result in higher throughput.
+    Workloads with consistent input and output lengths are easier to optimize than
+    workloads with variable lengths.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even for similarly sized models, hardware, and workloads, direct throughput
+    comparisons might be only approximate because token count depends on what constitutes
+    a token, and different models have different tokenizers. It’s better to compare
+    the efficiency of inference servers using metrics such as cost per request.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Just like most other software applications, AI applications have the latency/throughput
+    trade-off. Techniques like batching can improve throughput but reduce latency.
+    According to the LinkedIn AI team in their reflection after a year of deploying
+    generative AI products ([LinkedIn, 2024](https://www.linkedin.com/blog/engineering/generative-ai/musings-on-building-a-generative-ai-product?_l=en_US)),
+    it’s not uncommon to double or triple the throughput if you’re willing to sacrifice
+    TTFT and TPOT.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Due to this trade-off, focusing on an inference service based solely on its
+    throughput and cost can lead to a bad user experience. Instead, some teams focus
+    on [*goodput*](https://en.wikipedia.org/wiki/Goodput), a metric adapted from networking
+    for LLM applications. Goodput measures the number of requests per second that
+    satisfies the SLO, software-level objective.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Imagine that your application has the following objectives: TTFT of at most
+    200 ms and TPOT of at most 100 ms. Let’s say that your inference service can complete
+    100 requests per minute. However, out of these 100 requests, only 30 satisfy the
+    SLO. Then, the goodput of this service is 30 requests per minute. A visualization
+    of this is shown in [Figure 9-4](#ch09_figure_4_1730130962952660).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A graph showing different colored bars'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0904.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-4\. If an inference service can complete 10 RPS but only 3 satisfy
+    the SLO, then its goodput is 3 RPS.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Utilization, MFU, and MBU
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Utilization metrics measure how efficiently a resource is being used. It typically
+    quantifies the proportion of the resource actively being used compared to its
+    total available capacity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A common but often misunderstood metric is *GPU utilization*, and NVIDIA is
+    partially to blame for this misunderstanding. The official NVIDIA tool for monitoring
+    GPU usage is [`nvidia-smi`](https://oreil.ly/ludJ2)—SMI stands for System Management
+    Interface. One metric this tool shows is GPU utilization, which represents the
+    percentage of time during which the GPU is actively processing tasks. For example,
+    if you run inference on a GPU cluster for 10 hours, and the GPUs are actively
+    processing tasks for 5 of those hours, your GPU utilization would be 50%.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, actively processing tasks doesn’t mean doing so efficiently. For simplicity,
+    consider a tiny GPU capable of doing 100 operations per second. In `nvidia-smi`’s
+    definition of utilization, this GPU can report 100% utilization even if it’s only
+    doing one operation per second.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you pay for a machine that can do 100 operations and use it for only 1 operation,
+    you’re wasting money. `nvidia-smi`’s GPU optimization metric is, therefore, not
+    very useful. A utilization metric you might care about, out of all the operations
+    a machine is capable of computing, is how many it’s doing in a given time. This
+    metric is called *MFU (Model FLOP/s Utilization)*, which distinguishes it from
+    the NVIDIA GPU utilization metric.
+  prefs: []
+  type: TYPE_NORMAL
+- en: MFU is the ratio of the observed throughput (tokens/s) relative to the theoretical
+    maximum throughput of a system operating at peak FLOP/s. If at the peak FLOP/s
+    advertised by the chip maker, the chip can generate 100 tokens/s, but when used
+    for your inference service, it can generate only 20 tokens/s, your MFU is 20%.^([11](ch09.html#id1637))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Similarly, because memory bandwidth is expensive, you might also want to know
+    how efficiently your hardware’s bandwidth is utilized. *MBU (Model Bandwidth Utilization)*
+    measures the percentage of achievable memory bandwidth used. If the chip’s peak
+    bandwidth is 1 TB/s and your inference uses only 500 GB/s, your MBU is 50%.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Computing the memory bandwidth being used for LLM inference is straightforward:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'MBU is computed as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For example, if you use a 7B-parameter model in FP16 (two bytes per parameter)
+    and achieve 100 tokens/s, the bandwidth used is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: This underscores the importance of quantization (discussed in [Chapter 7](ch07.html#ch07)).
+    Fewer bytes per parameter mean your model consumes less valuable bandwidth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If this is done on an A100-80GB GPU with a theoretical 2 TB/s of memory bandwidth,
+    the MBU is:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: The relationships between throughput (tokens/s) and MBU and between throughput
+    and MFU are linear, so some people might use throughput to refer to MBU and MFU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s considered a good MFU and MBU depends on the model, hardware, and workload.
+    Compute-bound workloads typically have higher MFU and lower MBU, while bandwidth-bound
+    workloads often show lower MFU and higher MBU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because training can benefit from more efficient optimization (e.g., better
+    batching), thanks to having more predictable workloads, MFU for training is typically
+    higher than MFU for inference. For inference, since prefill is compute-bound and
+    decode is memory bandwidth-bound, MFU during prefilling is typically higher than
+    MFU during decoding. For model training, as of this writing, an MFU above 50%
+    is generally considered good, but it can be hard to achieve on specific hardware.^([12](ch09.html#id1638))
+    [Table 9-1](#ch09_table_1_1730130962971021) shows MFU for several models and accelerators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Table 9-1\. MFU examples from “PaLM: Scaling Language Modeling with Pathways”
+    (Chowdhery et al., 2022).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Model | Number of parameters (in billions) | Accelerator chips | Model FLOP/s
+    utilization |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| GPT-3 | 175B | V100 | 21.3% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Gopher | 280B | 4096 TPU v3 | 32.5% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Megatron-Turing NLG | 530B | 2240 A100 | 30.2% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| PaLM | 540B | 6144 TPU v4 | 46.2% |'
+  prefs: []
+  type: TYPE_TB
+- en: '[Figure 9-5](#ch09_figure_5_1730130962952692) shows the MBU for the inference
+    process using Llama 2-70B in FP16 on different hardware. The decline is likely
+    due to the higher computational load per second with more users, shifting the
+    workload from being bandwidth-bound to compute-bound.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A graph of a number of users'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0905.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-5\. Bandwidth utilization for Llama 2-70B in FP16 across three different
+    chips shows a decrease in MBU as the number of concurrent users increases. Image
+    from “LLM Training and Inference with Intel Gaudi 2 AI Accelerators” ([Databricks,
+    2024](https://oreil.ly/tOOOD)).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Utilization metrics are helpful to track your system’s efficiency. Higher utilization
+    rates for similar workloads on the same hardware generally mean that your services
+    are becoming more efficient. However, *the goal isn’t to get the chips with the
+    highest utilization*. What you really care about is how to get your jobs done
+    faster and cheaper. A higher utilization rate means nothing if the cost and latency
+    both increase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: AI Accelerators
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: How fast and cheap software can run depends on the hardware it runs on. While
+    there are optimization techniques that work across hardware, understanding hardware
+    allows for deeper optimization. This section looks at hardware from an inference
+    perspective, but it can be applied to training as well.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The development of AI models and hardware has always been intertwined. The lack
+    of sufficiently powerful computers was one of the contributing factors to the
+    first AI winter in the 1970s.^([13](ch09.html#id1649))
+  prefs: []
+  type: TYPE_NORMAL
+- en: The revival of interest in deep learning in 2012 was also closely tied to compute.
+    One commonly acknowledged reason for the popularity of AlexNet ([Krizhevsky et
+    al., 2012](https://oreil.ly/Yv4V7)) is that it was the first paper to successfully
+    use [GPUs](https://en.wikipedia.org/wiki/Graphics_processing_unit), graphics processing
+    units, to train neural networks.^([14](ch09.html#id1650)) Before GPUs, if you
+    wanted to train a model at AlexNet’s scale, you’d have to use thousands of CPUs,
+    like the one [Google released just a few months before AlexNet](https://oreil.ly/Xpwco).
+    Compared to thousands of CPUs, a couple of GPUs were a lot more accessible to
+    PhD students and researchers, setting off the deep learning research boom.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What’s an accelerator?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: An accelerator is a chip designed to accelerate a specific type of computational
+    workload. An AI accelerator is designed for AI workloads. The dominant type of
+    AI accelerator is GPUs, and the biggest economic driver during the AI boom in
+    the early 2020s is undoubtedly NVIDIA.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main difference between CPUs and GPUs is that CPUs are designed for general-purpose
+    usage, whereas GPUs are designed for parallel processing:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPUs have a few powerful cores, typically up to 64 cores for high-end consumer
+    machines. While many CPU cores can handle multi-threaded workloads effectively,
+    they excel at tasks requiring high single-thread performance, such as running
+    an operating system, managing I/O (input/output) operations, or handling complex,
+    sequential processes.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: GPUs have thousands of smaller, less powerful cores optimized for tasks that
+    can be broken down into many smaller, independent calculations, such as graphics
+    rendering and machine learning. The operation that constitutes most ML workloads
+    is matrix multiplication, which is highly parallelizable.^([15](ch09.html#id1651))
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: While the pursuit of efficient parallel processing increases computational capabilities,
+    it imposes challenges on memory design and power consumption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The success of NVIDIA GPUs has inspired many accelerators designed to speed
+    up AI workloads, including [Advanced Micro Devices (AMD)’s newer generations of
+    GPUs](https://en.wikipedia.org/wiki/List_of_AMD_graphics_processing_units), Google’s
+    TPU ([Tensor Processing Unit](https://en.wikipedia.org/wiki/Tensor_Processing_Unit)),
+    [Intel’s Habana Gaudi](https://oreil.ly/oDQOk), [Graphcore’s Intelligent Processing
+    Unit](https://oreil.ly/6ySTY) (IPU), [Groq’s Language Processing Unit](https://oreil.ly/R7gXn)
+    (LPU), [Cerebras’ Wafer-Scale](https://oreil.ly/ACIty) [Quant Processing Unit](https://en.wikipedia.org/wiki/List_of_quantum_processors)
+    (QPU), and many more being introduced.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While many chips can handle both training and inference, one big theme emerging
+    is specialized chips for inference. A survey by [Desislavov et al. (2023)](https://oreil.ly/qSpMK)
+    shares that inference can exceed the cost of training in commonly used systems,
+    and that inference accounts for up to 90% of the machine learning costs for deployed
+    AI systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As discussed in [Chapter 7](ch07.html#ch07), training demands much more memory
+    due to backpropagation and is generally more difficult to perform in lower precision.
+    Furthermore, training usually emphasizes throughput, whereas inference aims to
+    minimize latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Consequently, chips designed for inference are often optimized for lower precision
+    and faster memory access, rather than large memory capacity. Examples of such
+    chips include the Apple [Neural Engine](https://en.wikipedia.org/wiki/Neural_Engine),
+    [AWS Inferentia](https://oreil.ly/42LSB), and [MTIA](https://oreil.ly/XH2bh) (Meta
+    Training and Inference Accelerator). Chips designed for edge computing, like [Google’s
+    Edge TPU](https://oreil.ly/m8daG) and the [NVIDIA Jetson Xavier](https://oreil.ly/PRZSQ),
+    are also typically geared toward inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are also chips specialized for different model architectures, such as
+    chips specialized for the transformer.^([16](ch09.html#id1652)) Many chips are
+    designed for data centers, with more and more being designed for consumer devices
+    (such as phones and laptops).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Different hardware architectures have different memory layouts and specialized
+    compute units that evolve over time. These units are optimized for specific data
+    types, such as scalars, vectors, or tensors, as shown in [Figure 9-6](#ch09_figure_6_1730130962952710).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a computer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0906.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-6\. Different compute primitives. Image inspired by [Chen et al. (2018)](https://arxiv.org/abs/1802.04799).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A chip might have a mixture of different compute units optimized for various
+    data types. For example, GPUs traditionally supported vector operations, but many
+    modern GPUs now include tensor cores optimized for matrix and tensor computations.
+    TPUs, on the other hand, are designed with tensor operations as their primary
+    compute primitive. To efficiently operate a model on a hardware architecture,
+    its memory layout and compute primitives need to be taken into account.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A chip’s specifications contain many details that can be useful when evaluating
+    this chip for each specific use case. However, the main characteristics that matter
+    across use cases are computational capabilities, memory size and bandwidth, and
+    power consumption. I’ll use GPUs as examples to illustrate these characteristics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Computational capabilities
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Computational capabilities are typically measured by the number of operations
+    a chip can perform in a given time. The most common metric is *FLOP/s*, often
+    written as FLOPS, which measures the *peak* number of floating-point operations
+    per second. In reality, however, it’s very unlikely that an application can achieve
+    this peak FLOP/s. The ratio between the actual FLOP/s and the theoretical FLOP/s
+    is one *utilization* metric.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The number of operations a chip can perform in a second depends on the numerical
+    precision—the higher the precision, the fewer operations the chip can execute.
+    Think about how adding two 32-bit numbers generally requires twice the computation
+    of adding two 16-bit numbers. The number of 32-bit operations a chip can perform
+    in a given time is not exactly half that of 16-bit operations because of different
+    chips’ optimization. For an overview of numerical precision, revisit [“Numerical
+    Representations”](ch07.html#ch07b_numerical_representations_1730159634259493).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Table 9-2](#ch09_table_2_1730130962971057) shows the FLOP/s specs for different
+    precision formats for [NVIDIA H100 SXM chips](https://oreil.ly/bNAOG).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 9-2\. FLOP/s specs for NVIDIA H100 SXM chips.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Numerical precision | teraFLOP/s (trillion FLOP/s) with sparsity |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| TF32 Tensor Core^([a](ch09.html#id1658)) | 989 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| BFLOAT16 Tensor Core | 1,979 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| FP16 Tensor Core | 1,979 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| FP8 Tensor Core | 3,958 |'
+  prefs: []
+  type: TYPE_TB
+- en: '| ^([a](ch09.html#id1658-marker)) Recall from [Chapter 7](ch07.html#ch07) that
+    TF32 is a 19-bit, not 32-bit, format. |'
+  prefs: []
+  type: TYPE_TB
+- en: Memory size and bandwidth
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Because a GPU has many cores working in parallel, data often needs to be moved
+    from the memory to these cores, and, therefore, data transfer speed is important.
+    Data transfer is crucial when working with AI models that involve large weight
+    matrices and training data. These large amounts of data need to be moved quickly
+    to keep the cores efficiently occupied. Therefore, GPU memory needs to have higher
+    bandwidth and lower latency than CPU memory, and thus, GPU memory requires more
+    advanced memory technologies. This is one of the factors that makes GPU memory
+    more expensive than CPU memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To be more specific, CPUs typically use [DDR SDRAM](https://en.wikipedia.org/wiki/DDR_SDRAM)
+    (Double Data Rate Synchronous Dynamic Random-Access Memory), which has a 2D structure.
+    GPUs, particularly high-end ones, often use [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory)
+    (high-bandwidth memory), which has a 3D stacked structure.^([17](ch09.html#id1661))
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An accelerator’s memory is measured by its *size and bandwidth*. These numbers
+    need to be evaluated within the system an accelerator is part of. An accelerator,
+    such as a GPU, typically interacts with three levels of memory, as visualized
+    in [Figure 9-7](#ch09_figure_7_1730130962952731):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPU memory (DRAM)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accelerators are usually deployed alongside CPUs, giving them access to the
+    CPU memory (also known as system memory, host memory, or just CPU DRAM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: CPU memory usually has the lowest bandwidth among these memory types, with data
+    transfer speeds ranging from 25 GB/s to 50 GB/s. CPU memory size varies. Average
+    laptops might have around 16–64 GB, whereas high-end workstations can have one
+    TB or more.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GPU high-bandwidth memory (HBM)
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the memory dedicated to the GPU, located close to the GPU for faster
+    access than CPU memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: HBM provides significantly higher bandwidth, with data transfer speeds typically
+    ranging from 256 GB/s to over 1.5 TB/s. This speed is essential for efficiently
+    handling large data transfers and high-throughput tasks. A consumer GPU has around
+    24–80 GB of HBM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: GPU on-chip SRAM
+  prefs: []
+  type: TYPE_NORMAL
+- en: Integrated directly into the chip, this memory is used to store frequently accessed
+    data and instructions for nearly instant access. It includes L1 and L2 caches
+    made of SRAM, and, in some architectures, L3 caches as well. These caches are
+    part of the broader on-chip memory, which also includes other components like
+    register files and shared memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: RAM has extremely high data transfer speeds, often exceeding 10 TB/s. The size
+    of GPU SRAM is small, typically 40 MB or under.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A colorful pyramid with multiple layers'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0907.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-7\. The memory hierarchy of an AI accelerator. The numbers are for
+    reference only. The actual numbers vary for each chip.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A lot of GPU optimization is about how to make the most out of this memory hierarchy.
+    However, as of this writing, popular frameworks such as PyTorch and TensorFlow
+    don’t yet allow fine-grained control of memory access. This has led many AI researchers
+    and engineers to become interested in GPU programming languages such as [CUDA](https://en.wikipedia.org/wiki/CUDA)
+    (originally Compute Unified Device Architecture), [OpenAI’s Triton](https://github.com/triton-lang/triton),
+    and [ROCm](https://github.com/ROCm/ROCm) (Radeon Open Compute). The latter is
+    AMD’s open source alternative to NVIDIA’s proprietary CUDA.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Power consumption
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Chips rely on transistors to perform computation. Each computation is done by
+    transistors switching on and off, which requires energy. A GPU can have billions
+    of transistors—an NVIDIA A100 has [54 billion](https://oreil.ly/5vRsP) transistors,
+    while an NVIDIA H100 has [80 billion](https://en.wikipedia.org/wiki/Hopper_(microarchitecture)).
+    When an accelerator is used efficiently, billions of transistors rapidly switch
+    states, consuming a substantial amount of energy and generating a nontrivial amount
+    of heat. This heat requires cooling systems, which also consume electricity, adding
+    to data centers’ overall energy consumption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chip energy consumption threatens to have a staggering impact on the [environment](https://oreil.ly/RqY-3),
+    increasing the pressure on companies to invest in technologies for [green data
+    centers](https://en.wikipedia.org/wiki/Green_data_center). An NVIDIA H100 running
+    at its peak for a year consumes approximately 7,000 kWh. For comparison, the average
+    US household’s annual electricity consumption is 10,000 kWh. That’s why electricity
+    is a bottleneck to scaling up compute.^([18](ch09.html#id1669))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accelerators typically specify their power consumption under *maximum power
+    draw* or a proxy metric *TDP (thermal design power):*
+  prefs: []
+  type: TYPE_NORMAL
+- en: Maximum power draw indicates the peak power that the chip could draw under full
+    load.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '*TDP* represents the maximum heat a cooling system needs to dissipate when
+    the chip operates under typical workloads. While it’s not an exact measure of
+    power consumption, it’s an indication of the expected power draw. For CPUs and
+    GPUs, the maximum power draw can be roughly 1.1 to 1.5 times the TDP, though the
+    exact relationship varies depending on the specific architecture and workload.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If you opt for cloud providers, you won’t need to worry about cooling or electricity.
+    However, these numbers can still be of interest to understand the impact of accelerators
+    on the environment and the overall electricity demand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference Optimization
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Inference optimization can be done at the model, hardware, or service level.
+    To illustrate their differences, consider archery. Model-level optimization is
+    like crafting better arrows. Hardware-level optimization is like training a stronger
+    and better archer. Service-level optimization is like refining the entire shooting
+    process, including the bow and aiming conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ideally, optimizing a model for speed and cost shouldn’t change the model’s
+    quality. However, many techniques might cause model degradation. [Figure 9-8](#ch09_figure_8_1730130962952759)
+    shows the same Llama models’ performance on different benchmarks, served by different
+    inference service providers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A graph of different types of numbers'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0908.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-8\. An inference service provider might use optimization techniques
+    that can alter a model’s behavior, causing different providers to have slight
+    model quality variations. The experiment was conducted by [Cerebras (2024)](https://oreil.ly/5hFSF).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since hardware design is outside the scope of this book, I’ll discuss techniques
+    at the model and service levels. While the techniques are discussed separately,
+    keep in mind that, in production, optimization typically involves techniques at
+    more than one level.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model Optimization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Model-level optimization aims to make the model more efficient, often by modifying
+    the model itself, which can alter its behavior. As of this writing, many foundation
+    models follow the transformer architecture and include an autoregressive language
+    model component. These models have three characteristics that make inference resource-intensive:
+    model size, autoregressive decoding, and the attention mechanism. Let’s discuss
+    approaches to address these challenges.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model compression
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Model compression involves techniques that reduce a model’s size. Making a
+    model smaller can also make it faster. This book has already discussed two model
+    compression techniques: quantization and distillation. Quantization, reducing
+    the precision of a model to reduce its memory footprint and increase its throughput,
+    is discussed in [Chapter 7](ch07.html#ch07). Model distillation, training a small
+    model to mimic the behavior of the large model, is discussed in [Chapter 8](ch08.html#ch08_dataset_engineering_1730130932019888).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model distillation suggests that it’s possible to capture a large model’s behaviors
+    using fewer parameters. Could it be that within the large model, there exists
+    a subset of parameters capable of capturing the entire model’s behavior? This
+    is the core concept behind pruning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pruning, in the context of neural networks, has two meanings. One is to remove
+    entire nodes of a neural network, which means changing its architecture and reducing
+    its number of parameters. Another is to find parameters least useful to predictions
+    and set them to zero. In this case, pruning doesn’t reduce the total number of
+    parameters, only the number of non-zero parameters. This makes the model more
+    sparse, which both reduces the model’s storage space and speeds up computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pruned models can be used as-is or be further finetuned to adjust the remaining
+    parameters and restore any performance degradation caused by the pruning process.
+    Pruning can help discover promising model architectures ([Liu et al., 2018](https://arxiv.org/abs/1810.05270)).
+    These pruned architectures, smaller than the pre-pruned architectures, can also
+    be trained from scratch ([Zhu et al., 2017](https://arxiv.org/abs/1710.01878)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the literature, there have been many encouraging pruning results. For example,
+    [Frankle and Carbin (2019)](https://oreil.ly/qwlHE) showed that pruning techniques
+    can reduce the non-zero parameter counts of certain trained networks by over 90%,
+    decreasing memory footprints and improving speed without compromising accuracy.
+    However, in practice, as of this writing, pruning is less common. It’s harder
+    to do, as it requires an understanding of the original model’s architecture, and
+    the performance boost it can bring is often much less than that of other approaches.
+    Pruning also results in sparse models, and not all hardware architectures are
+    designed to take advantage of the resulting sparsity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Weight-only quantization is by far the most popular approach since it’s easy
+    to use, works out of the box for many models, and is extremely effective.* Reducing
+    a model’s precision from 32 bits to 16 bits reduces its memory footprint by half.
+    However, we’re close to the limit of quantization—we can’t go lower than 1 bit
+    per value. Distillation is also common because it can result in a smaller model
+    whose behavior is comparative to that of a much larger one for your needs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Overcoming the autoregressive decoding bottleneck
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As discussed in [Chapter 2](ch02.html#ch02_understanding_foundation_models_1730147895571359),
+    autoregressive language models generate one token after another. If it takes 100
+    ms to generate one token, a response of 100 tokens will take 10 s.^([19](ch09.html#id1683))
+    This process is not just slow, it’s also expensive. Across model API providers,
+    an output token costs approximately two to four times an input token. In an experiment,
+    Anyscale found that a single output token can have the same impact on latency
+    as 100 input tokens ([Kadous et al., 2023](https://oreil.ly/QYdG8)). Improving
+    the autoregressive generation process by a small percentage can significantly
+    improve user experience.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As the space is rapidly evolving, new techniques are being developed to overcome
+    this seemingly impossible bottleneck. Perhaps one day, there will be architectures
+    that don’t have this bottleneck. The techniques covered here are to illustrate
+    what the solution might look like, but the techniques are still evolving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Speculative decoding
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Speculative decoding (also called speculative sampling) uses a faster but less
+    powerful model to generate a sequence of tokens, which are then verified by the
+    target model. The target model is the model you want to use. The faster model
+    is called the draft or proposal model because it proposes the draft output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Imagine the input tokens are *x*[1], *x*[2], …, *x*[*t*]:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The draft model generates a sequence of *K* tokens: *x*[*t* + 1], *x*[*t* +
+    2], …, *x*[*t* + *K*].'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The target model verifies these *K* generated tokens in parallel.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The target model *accepts* the longest subsequence of draft tokens, from left
+    to right, which the target model agrees to use.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Let’s say the target model accepts *j* draft tokens, *x*[*t* + 1], *x*[*t* +
+    2], …, *x*[*t* + *j*]. The target model then generates one extra token, *x*[*t*
+    + *j* + 1].
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The process returns to step 1, with the draft model generating *K* tokens conditioned
+    on *x*[1], *x*[2], …, *x*[*t*], *x*[*t* + 1], *x*[*t* + 2], …, *x*[*t* + *j*].
+    The process is visualized in [Figure 9-9](#ch09_figure_9_1730130962952786).
+  prefs: []
+  type: TYPE_NORMAL
+- en: If no draft token is accepted, this loop produces only one token generated by
+    the target model. If all draft tokens are accepted, this loop produces *K* + 1
+    tokens, with *K* generated by the draft model and one by the target model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of words'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0909.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-9\. A draft model generates a sequence of K tokens, and the main model
+    accepts the longest subsequence that it agrees with. The image is from “Blockwise
+    Parallel Decoding for Deep Autoregressive Models” ([Stern et al., 2018](https://arxiv.org/abs/1811.03115)).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'If all draft sequences are rejected, the target model must generate the entire
+    response in addition to verifying it, potentially leading to increased latency.
+    However, this can be avoided because of these three insights:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The time it takes for the target model to verify a sequence of tokens is less
+    than the time it takes to generate it, because verification is parallelizable,
+    while generation is sequential. Speculative decoding effectively turns the computation
+    profile of decoding into that of prefilling.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In an output token sequence, some tokens are easier to predict than others.
+    It’s possible to find a weaker draft model capable of getting these easier-to-predict
+    tokens right, leading to a high acceptance rate of the draft tokens.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Decoding is memory bandwidth-bound, which means that during the coding process,
+    there are typically idle FLOPs that can be used for free verification.^([20](ch09.html#id1684))
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Acceptance rates are domain-dependent. For texts that follow specific structures
+    like code, the acceptance rate is typically higher. Larger values of *K* mean
+    fewer verifying calls for the target model but a low acceptance rate of the draft
+    tokens. The draft model can be of any architecture, though ideally it should share
+    the same vocabulary and tokenizer as the target model. You can train a custom
+    draft model or use an existing weaker model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, to speed up the decoding process of Chinchilla-70B, DeepMind trained
+    a 4B-parameter draft model of the same architecture ([Chen et al., 2023](https://arxiv.org/abs/2302.01318)).
+    The draft model can generate a token eight times faster than the target model
+    (1.8 ms/token compared to 14.1 ms/token). This reduces the overall response latency
+    by more than half without compromising response quality. A similar speed-up was
+    achieved for T5-XXL ([Laviathan et al., 2022](https://arxiv.org/abs/2211.17192)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: This approach has gained traction because it’s relatively easy to implement
+    and doesn’t change a model’s quality. For example, it’s possible to do so in [50
+    lines of code in PyTorch](https://oreil.ly/IaPOB). It’s been incorporated into
+    popular inference frameworks such as [vLLM](https://oreil.ly/uzg1s), [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM),
+    and [llama.cpp](https://github.com/ggerganov/llama.cpp/pull/2926).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference with reference
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Often, a response needs to reference tokens from the input. For example, if
+    you ask your model a question about an attached document, the model might repeat
+    a chunk of text verbatim from the document. Another example is if you ask the
+    model to fix bugs in a piece of code, the model might reuse the majority of the
+    original code with minor changes. Instead of making the model generate these repeated
+    tokens, what if we copy these tokens from the input to speed up the generation?
+    This is the core idea behind inference with reference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference with reference is similar to speculative decoding, but instead of
+    using a model to generate draft tokens, it selects draft tokens from the input.
+    The key challenge is to develop an algorithm to identify the most relevant text
+    span from the context at each decoding step. The simplest option is to find a
+    text span that matches the current tokens.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unlike speculative decoding, inference with reference doesn’t require an extra
+    model. However, it’s useful only in generation scenarios where there’s a significant
+    overlap between contexts and outputs, such as in retrieval systems, coding, or
+    multi-turn conversations. In “Inference with Reference: Lossless Acceleration
+    of Large Language Models” ([Yang et al., 2023](https://arxiv.org/abs/2304.04487)),
+    this technique helps achieve two times generation speedup in such use cases.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Examples of how inference with reference works are shown in [Figure 9-10](#ch09_figure_10_1730130962952808).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A screenshot of a diagram'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0910.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-10\. Two examples of inference with reference. The text spans that
+    are successfully copied from the input are in red and green. Image from Yang et
+    al. (2023). The image is licensed under CC BY 4.0.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Parallel decoding
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Instead of making autoregressive generation faster with draft tokens, some techniques
+    aim to break the sequential dependency. Given an existing sequence of tokens *x*[1],
+    *x*[2],…,*x*[*t*], these techniques attempt to generate *x*[*t* + 1], *x*[*t*
+    + 2],…,*x*[*t* + *k*] simultaneously. This means that the model generates *x*[*t*
+    + 2] before it knows that the token before it is *x*[*t* + 1].
+  prefs: []
+  type: TYPE_NORMAL
+- en: This can work because the knowledge of the existing sequence often is sufficient
+    to predict the next few tokens. For example, given “the cat sits”, without knowing
+    that the next token is “on”, “under”, or “behind”, you might still predict that
+    the word after it is “the”.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The parallel tokens can be generated by the same decoder, as in Lookahead decoding
+    ([Fu et al., 2024](https://arxiv.org/abs/2402.02057)), or by different decoding
+    heads, as in Medusa ([Cai et al., 2024](https://arxiv.org/abs/2401.10774)). In
+    Medusa, the original model is extended with multiple decoding heads, and each
+    head is a small neural network layer that is then trained to predict a future
+    token at a specific position. If the original model is trained to predict the
+    next token *x*[*t* + 1], the *k*^(*th*) head will predict the token *x*[*t* +
+    *k* + 1]. These heads are trained together with the original model, but the original
+    model is frozen. NVIDIA claimed Medusa helped boost Llama 3.1 token generation
+    by up to 1.9× on their HGX H200 GPUs ([Eassa et al., 2024](https://oreil.ly/FWYf5)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, because these tokens aren’t generated sequentially, they need to be
+    verified to make sure that they fit together. An essential part of parallel decoding
+    is verification and integration. Lookahead decoding uses the [Jacobi method](https://en.wikipedia.org/wiki/Jacobi_method)^([21](ch09.html#id1694))
+    to verify the generated tokens, which works as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: K future tokens are generated in parallel.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: These *K* tokens are verified for coherence and consistency with the context.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If one or more tokens fail verification, instead of aggregating all *K* future
+    tokens, the model regenerates or adjusts only these failed tokens.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: The model keeps refining the generated tokens until they all pass verification
+    and are integrated into the final output. This family of parallel decoding algorithms
+    is also called Jacobi decoding.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On the other hand, Medusa uses a tree-based attention mechanism to verify and
+    integrate tokens. Each Medusa head produces several options for each position.
+    These options are then organized into a tree-like structure to select the most
+    promising combination. The process is visualized in [Figure 9-11](#ch09_figure_11_1730130962952823).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a model'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0911.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-11\. In Medusa (Cai et al., 2024), each head predicts several options
+    for a token position. The most promising sequence from these options is selected.
+    Image adapted from the paper, which is licensed under CC BY 4.0.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: While the perspective of being able to circumvent sequential dependency is appealing,
+    parallel decoding is not intuitive, and some techniques, like Medusa, can be challenging
+    to implement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention mechanism optimization
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Recall from [Chapter 2](ch02.html#ch02_understanding_foundation_models_1730147895571359)
+    that generating the next token requires the key and value vectors for all previous
+    tokens. This means that the following applies:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generating token *x*[*t*] requires the key and value vectors for tokens *x*[1],
+    *x*[2], …, *x*[*t* – 1].
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Generating token *x*[*t* + 1] requires the key and value vectors for tokens
+    *x*[1], *x*[2], …,*x*[*t* – 1], *x*[*t*].
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: When generating token *x*[*t* + 1], instead of computing the key and value vectors
+    for tokens *x*[1], *x*[2], …, *x*[*t* – 1] again, you reuse these vectors from
+    the previous step. This means that you’ll need to compute the key and value vectors
+    for only the most recent token, *x*[*t*]. The cache that stores key and value
+    vectors for reuse is called the KV cache. The newly computed key and value vectors
+    are then added to the KV cache, which is visualized in [Figure 9-12](#ch09_figure_12_1730130962952844).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a graph'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0912.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-12\. To avoid recomputing the key and value vectors at each decoding
+    step, use a KV cache to store these vectors to reuse.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: A KV cache is used only during inference, not training. During training, because
+    all tokens in a sequence are known in advance, next token generation can be computed
+    all at once instead of sequentially, as during inference. Therefore, there’s no
+    need for a KV cache.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because generating a token requires computing the attention scores with all
+    previous tokens, the number of attention computations grows exponentially with
+    sequence length.^([22](ch09.html#id1700)) The KV cache size, on the other hand,
+    grows linearly with sequence length.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The KV cache size also grows with larger batch sizes. A Google paper calculated
+    that for a 500B+ model with multi-head attention, batch size 512, and context
+    length 2048, the KV cache totals 3TB [(Pope et al., 2022)](https://arxiv.org/abs/2211.05102).
+    This is three times the size of that model’s weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The KV cache size is ultimately limited by the available hardware storage, creating
+    a bottleneck for running applications with long context. A large cache size also
+    takes time to load into memory, which can be an issue for applications with strict
+    latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The computation and memory requirements of the attention mechanism are one of
+    the reasons why it’s so hard to have longer context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Many techniques have been developed to make the attention mechanism more efficient.
+    In general, they fall into three buckets: redesigning the attention mechanism,
+    optimizing the KV cache, and writing kernels for attention computation.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Redesigning the attention mechanism
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: These techniques involve altering how the attention mechanism works. Even though
+    these techniques help optimize inference, because they change a model’s architecture
+    directly, they can be applied only during training or finetuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: For example, when generating a new token, instead of attending to all previous
+    tokens, *local windowed attention* attends only to a fixed size window of nearby
+    tokens ([Beltagy et al., 2020](https://arxiv.org/abs/2004.05150v2)). This reduces
+    the effective sequence length to a fixed size window, reducing both the KV cache
+    and the attention computation. If the average sequence length is 10,000 tokens,
+    attending to a window size of 1,000 tokens reduces the KV cache size by 10 times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Local windowed attention can be interleaved with global attention, with local
+    attention capturing nearby context; the global attention captures task-specific
+    information across the document.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both *cross-layer attention* ([Brandon et al., 2024](https://arxiv.org/abs/2405.12981?ref=research.character.ai))
+    and *multi-query attention* ([Shazeer, 2019](https://arxiv.org/abs/1911.02150?ref=research.character.ai))
+    reduce the memory footprint of the KV cache by reducing the number of key-value
+    pairs. Cross-layer attention shares key and value vectors across adjacent layers.
+    Having three layers sharing the same key-value vectors means reducing the KV cache
+    three times. On the other hand, multi-query attention shares key-value vectors
+    across query heads.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Grouped-query attention* ([Ainslie et al., 2023](https://arxiv.org/abs/2305.13245))
+    is a generalization of multi-query attention. Instead of using only one set of
+    key-value pairs for all query heads, its grouped-query attention puts query heads
+    into smaller groups and shares key-value pairs only among query heads in the same
+    group. This allows for a more flexible balance between the number of query heads
+    and the number of key-value pairs.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Character.AI, an AI chatbot application, shares that their average conversation
+    has a dialogue history of [180 messages](https://oreil.ly/nLt6A) (2024). Given
+    the typically long sequences, the primary bottleneck for inference throughput
+    is the KV cache size. Three attention mechanism designs—multi-query attention,
+    interleaving local attention and global attention, and cross-layer attention—help
+    them *reduce KV cache by over 20 times*. More importantly, this significant KV
+    cache reduction means that memory is no longer a bottleneck for them for serving
+    large batch sizes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizing the KV cache size
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: The way the KV cache is managed is critical in mitigating the memory bottleneck
+    during inference and enabling a larger batch size, especially for applications
+    with long context. Many techniques are actively being developed to reduce and
+    manage the KV cache.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the fastest growing inference frameworks, [vLLM](https://github.com/vllm-project/vllm),
+    gained popularity for introducing PagedAttention, which optimizes memory management
+    by dividing the KV cache into non-contiguous blocks, reducing fragmentation, and
+    enabling flexible memory sharing to improve LLM serving efficiency ([Kwon et al.,
+    2023](https://arxiv.org/abs/2309.06180)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Other techniques include KV cache quantization ([Hooper et al., 2024](https://arxiv.org/abs/2401.18079);
+    [Kang et al., 2024](https://arxiv.org/abs/2403.05527)), adaptive KV cache compression
+    ([Ge et al., 2023](https://arxiv.org/abs/2310.01801)), and selective KV cache
+    ([Liu et al., 2024](https://oreil.ly/ixtBl)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing kernels for attention computation
+  prefs:
+  - PREF_H4
+  type: TYPE_NORMAL
+- en: Instead of changing the mechanism design or optimizing the storage, this approach
+    looks into how attention scores are computed and finds ways to make this computation
+    more efficient. This approach is the most effective when it takes into account
+    the hardware executing the computation. The code optimized for a specific chip
+    is called a kernel. Kernel writing will be discussed further in the next section.
+  prefs: []
+  type: TYPE_NORMAL
+- en: One of the most well-known kernels optimized for attention computation is [FlashAttention](https://github.com/Dao-AILab/flash-attention)
+    (Dao et al., 2022). This kernel fused together many operations commonly used in
+    a transformer-based model to make them run faster, as shown in [Figure 9-13](#ch09_figure_13_1730130962952862).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A graph of a graph with text'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0913.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-13\. FlashAttention is a kernel that fuses together several common
+    operators. Adapted from an original image licensed under BSD 3-Clause.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Kernels and compilers
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Kernels are specialized pieces of code optimized for specific hardware accelerators,
+    such as GPUs or TPUs. They are typically written to perform computationally intensive
+    routines that need to be executed repeatedly, often in parallel, to maximize the
+    performance of these accelerators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Common AI operations, including matrix multiplication, attention computation,
+    and convolution operation, all have specialized kernels to make their computation
+    more efficient on different hardware.^([23](ch09.html#id1716))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Writing kernels requires a deep understanding of the underlying hardware architecture.
+    This includes knowledge about how the memory hierarchy is structured (such as
+    caches, global memory, shared memory, and registers) and how data is accessed
+    and moved between these different levels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Moreover, kernels are typically written in lower-level programming languages
+    like CUDA (for NVIDIA GPUs), Triton (a language developed by OpenAI for writing
+    custom kernels), and ROCm (for AMD GPUs). These languages allow fine-grained control
+    over thread management and memory access but are also harder to learn than the
+    languages that most AI engineers are familiar with, like Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Due to this entry barrier, writing kernels used to be a dark art practiced by
+    a few. Chip makers like NVIDIA and AMD employ optimization engineers to write
+    kernels to make their hardware efficient for AI workloads, whereas AI frameworks
+    like PyTorch and TensorFlow employ kernel engineers to optimize their frameworks
+    on different accelerators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'However, with the rising demand for inference optimization and the ubiquity
+    of accelerators, more AI engineers have taken an interest in writing kernels.
+    There are many great online tutorials for kernel writing. Here, I’ll cover four
+    common techniques often used to speed up computation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vectorization
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given a loop or a nested loop, instead of processing one data element at a time,
+    simultaneously execute multiple data elements that are contiguous in memory. This
+    reduces latency by minimizing data I/O operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Parallelization
+  prefs: []
+  type: TYPE_NORMAL
+- en: Divide an input array (or n-dimensional array) into independent chunks that
+    can be processed simultaneously on different cores or threads, speeding up the
+    computation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop tiling
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimize the data accessing order in a loop for the hardware’s memory layout
+    and cache. This optimization is hardware-dependent. An efficient CPU tiling pattern
+    may not work well on GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Operator fusion
+  prefs: []
+  type: TYPE_NORMAL
+- en: Combine multiple operators into a single pass to avoid redundant memory access.
+    For example, if two loops operate over the same array, they can be fused into
+    one, reducing the number of times data is read and written.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While vectorization, parallelization, and loop tiling can be applied broadly
+    across different models, operator fusion requires a deeper understanding of a
+    model’s specific operators and architecture. As a result, operator fusion demands
+    more attention from optimization engineers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Kernels are optimized for a hardware architecture. This means that whenever
+    a new hardware architecture is introduced, new kernels need to be developed. For
+    example, [FlashAttention](https://github.com/Dao-AILab/flash-attention) (Dao et
+    al., 2022) was originally developed primarily for NVIDIA A100 GPUs. Later on,
+    FlashAttention-3 was introduced for H100 GPUs ([Shah et al., 2024](https://arxiv.org/abs/2407.08608)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: A model script specifies a series of operations that need to be performed to
+    execute that model. To run this code on a piece of hardware, such as a GPU, it
+    has to be converted into a language compatible with that hardware. This process
+    is called *lowering*. A tool that *lowers* code to run a specific hardware is
+    called a compiler. Compilers bridge ML models and the hardware they run on. During
+    the lowering process, whenever possible, these operations are converted into specialized
+    kernels to run faster on the target hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compilers can be standalone tools, such as [Apache TVM](https://github.com/apache/tvm)
+    and [MLIR](https://mlir.llvm.org) (Multi-Level Intermediate Representation) or
+    integrated into ML and inference frameworks, like [`torch.compile`](https://oreil.ly/6bjVM)
+    (a feature in PyTorch), [XLA](https://en.wikipedia.org/wiki/Accelerated_Linear_Algebra)
+    (Accelerated Linear Algebra, originally developed by TensorFlow, with an open
+    source version called [OpenXLA](https://github.com/openxla/xla)), and the compiler
+    built into the [TensorRT](https://github.com/NVIDIA/TensorRT), which is optimized
+    for NVIDIA GPUs. AI companies might have their own compilers, with their proprietary
+    kernels designed to speed up their own workloads.^([24](ch09.html#id1729))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference Service Optimization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Most service-level optimization techniques focus on resource management. Given
+    a fixed amount of resources (compute and memory) and dynamic workloads (inference
+    requests from users that may involve different models), the goal is to efficiently
+    allocate resources to these workloads to optimize for latency and cost. Unlike
+    many model-level techniques, service-level techniques don’t modify models and
+    shouldn’t change the output quality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Batching
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: One of the easiest ways to reduce your cost is batching. In production, your
+    inference service might receive multiple requests simultaneously. Instead of processing
+    each request separately, batching the requests that arrive around the same time
+    together can significantly reduce the service’s throughput. If processing each
+    request separately is like everyone driving their own car, batching is like putting
+    them together on a bus. A bus can move more people, but it can also make each
+    person’s journey longer. However, if you do it intelligently, the impact on latency
+    can be minimal.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The three main techniques for batching are: static batching, dynamic batching,
+    and continuous batching.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The simplest batching technique is *static batching*. The service groups a fixed
+    number of inputs together in a batch. It’s like a bus that waits until every seat
+    is filled before departing. The drawback of static batching is that all requests
+    have to wait until the batch is full to be executed. Thus the first request in
+    a batch is delayed until the batch’s last request arrives, no matter how late
+    the last request is.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Dynamic batching*, on the other hand, sets a maximum time window for each
+    batch. If the batch size is four and the window is 100 ms, the server processes
+    the batch either when it has four requests or when 100 ms has passed, whichever
+    happens first. It’s like a bus that leaves on a fixed schedule or when it’s full.
+    This approach keeps latency under control, so earlier requests aren’t held up
+    by later ones. The downside is that batches may not always be full when processed,
+    possibly leading to wasted compute. Static batching and dynamic batching are visualized
+    in [Figure 9-15](#ch09_figure_15_1730130962952896).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A screenshot of a computer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0915.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-15\. Dynamic batching keeps the latency manageable but might be less
+    compute-efficient.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In naive batching implementations, all batch requests have to be completed before
+    their responses are returned. For LLMs, some requests might take much longer than
+    others. If one request in a batch generates only 10 response tokens and another
+    request generates 1,000 response tokens, the short response has to wait until
+    the long response is completed before being returned to the user. This results
+    in unnecessary latency for short requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Continuous batching* allows responses in a batch to be returned to users as
+    soon as they are completed. It works by selectively batching operations that don’t
+    cause the generation of one response to hold up another, as introduced in the
+    paper Orca ([Yu et al., 2022](https://oreil.ly/SJ7Mb)). After a request in a batch
+    is completed and its response returned, the service can add another request into
+    the batch in its place, making the batching continuous. It’s like a bus that,
+    after dropping off one passenger, can immediately pick up another passenger to
+    maximize its occupancy rate. Continuous batching, also called [*in-flight batching*](https://oreil.ly/DlIPs),
+    is visualized in [Figure 9-16](#ch09_figure_16_1730130962952915).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A screenshot of a diagram'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0916.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-16\. With continuous batching, completed responses can be returned
+    immediately to users, and new requests can be processed in their place.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Decoupling prefill and decode
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'LLM inference consists of two steps: prefill and decode. Because prefill is
+    compute-bound and decode is memory bandwidth-bound, using the same machine to
+    perform both can cause them to inefficiently compete for resources and significantly
+    slow down both TTFT and TPOT. Imagine a GPU that is already handling prefilling
+    and decoding near its peak computational capacity. It might be able to handle
+    another low computational job like decoding. However, adding a new query to this
+    GPU means introducing a prefilling job along with a decoding job. This one prefilling
+    job can drain computational resources from existing decoding jobs, slowing down
+    TPOT for these requests.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: One common optimization technique for inference servers is to disaggregate prefill
+    and decode. “DistServe” ([Zhong et al., 2024](https://arxiv.org/html/2401.09670v1))
+    and “Inference Without Interference” ([Hu et al., 2024](https://arxiv.org/abs/2401.11181))
+    show that for various popular LLMs and applications, assigning prefill and decode
+    operations to different instances (e.g., different GPUs) can significantly improve
+    the volume of processed requests while adhering to latency requirements. Even
+    though decoupling requires transferring intermediate states from prefill instances
+    to decode instances, the paper shows communication overhead is not substantial
+    in modern GPU clusters with high-bandwidth connections such as [NVLink](https://en.wikipedia.org/wiki/NVLink)
+    within a node.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ratio of prefill instances to decode instances depends on many factors,
+    such as the workload characteristics (e.g., longer input lengths require more
+    prefill compute) and latency requirements (e.g., whether you want lower TTFT or
+    TPOT). For example, if input sequences are usually long and you want to prioritize
+    TTFT, this ratio can be between 2:1 and 4:1\. If input sequences are short and
+    you want to prioritize TPOT, this ratio can be 1:2 to 1:1.^([25](ch09.html#id1741))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Prompt caching
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Many prompts in an application have overlapping text segments. A prompt cache
+    stores these overlapping segments for reuse, so you only need to process them
+    once. A common overlapping text segment in different prompts is the system prompt.
+    Without a prompt cache, your model needs to process the system prompt with every
+    query. With a prompt cache, the system prompt needs to be processed just once
+    for the first query.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Prompt caching is useful for queries that involve long documents. For example,
+    if many of your user queries are related to the same long document (such as a
+    book or a codebase), this long document can be cached for reuse across queries.
+    It’s also useful for long conversations when the processing of earlier messages
+    can be cached and reused when predicting future messages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A prompt cache is visualized in [Figure 9-17](#ch09_figure_17_1730130962952933).
+    It’s also called a context cache or prefix cache.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A screenshot of a computer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0917.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-17\. With a prompt cache, overlapping segments in different prompts
+    can be cached and reused.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: For applications with long system prompts, prompt caching can significantly
+    reduce both latency and cost. If your system prompt is 1,000 tokens, and your
+    application generates one million model API calls daily, a prompt cache will save
+    you from processing approximately one billion repetitive input tokens a day! However,
+    this isn’t entirely free. Like the KV cache, prompt cache size can be quite large
+    and take up memory space. Unless you use a model API with this functionality,
+    implementing prompt caching can require significant engineering effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since its introduction in November 2023 by [Gim et al.](https://oreil.ly/Pd6Pk),
+    the prompt cache has been rapidly incorporated into model APIs. As of this writing,
+    Google Gemini offers this [functionality](https://oreil.ly/pIHkL), with cached
+    input tokens given a 75% discount compared to regular input tokens, but you’ll
+    have to pay extra for cache storage (as of writing, $1.00/one million tokens per
+    hour). Anthropic offers [prompt caching](https://oreil.ly/8rtsF) that promises
+    up to 90% cost savings (the longer the cached context, the higher the savings)
+    and up to 75% latency reduction. The impact of prompt caching on the cost and
+    latency of different scenarios is shown in [Table 9-3](#ch09_table_3_1730130962971081).^([26](ch09.html#id1747))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 9-3\. Cost and latency reduced by prompt caching. Information from Anthropic
+    (2024).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Use case | Latency w/o caching (time to first token) | Latency with caching
+    (time to first token) | Cost reduction |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Chat with a book (100,000-token cached prompt) | 11.5 s | 2.4 s (–79%) |
+    –90% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Many-shot prompting (10,000-token prompt) | 1.6 s | 1.1 s (–31%) | –86% |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multi-turn conversation (10-turn convo with a long system prompt) | ~10 s
+    | ~2.5 s (–75%) | –53% |'
+  prefs: []
+  type: TYPE_TB
+- en: Parallelism
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Accelerators are designed for parallel processing, and parallelism strategies
+    are the backbone of high-performance computing. Many new parallelization strategies
+    are being developed. This section covers only a few of them for reference. Two
+    families of parallelization strategies that can be applied across all models are
+    data parallelism and model parallelism. A family of strategies applied specifically
+    for LLMs is context and sequence parallelism. An optimization technique might
+    involve multiple parallelism strategies.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Replica parallelism* is the most straightforward strategy to implement. It
+    simply creates multiple replicas of the model you want to serve.^([27](ch09.html#id1749))
+    More replicas allow you to handle more requests at the same time, potentially
+    at the cost of using more chips. Trying to fit models of different sizes onto
+    different chips is a bin-packing problem, which can get complicated with more
+    models, more replicas, and more chips.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s say you have a mixture of models of different sizes (e.g., 8B, 13B, 34B,
+    and 70B parameters) and access to GPUs of different memory capabilities (e.g.,
+    24 GB, 40 GB, 48 GB, and 80 GB). For simplicity, assume that all models are in
+    the same precision, 8 bits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you have a fixed number of chips, you need to decide how many replicas to
+    create for each model and what GPUs to use for each replica to maximize your metrics.
+    For example, should you place three 13B models on a 40 GB GPU, or should you reserve
+    this GPU for one 34B model?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: If you have a fixed number of model replicas, you need to decide what chips
+    to acquire to minimize the cost. This situation, however, rarely occurs.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Often, your model is so big that it can’t fit into one machine. *Model parallelism*
+    refers to the practice of splitting the same model across multiple machines. Fitting
+    models onto chips can become an even more complicated problem with model parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are several ways to split a model. The most common approach for inference
+    is *tensor parallelism*, also known as *intra-operator parallelism*. Inference
+    involves a sequence of operators on multidimensional tensors, such as matrix multiplication.
+    In this approach, tensors involved in an operator are partitioned across multiple
+    devices, effectively breaking up this operator into smaller pieces to be executed
+    in parallel, thus speeding up the computation. For example, when multiplying two
+    matrices, you can split one of the matrices columnwise, as shown in [Figure 9-18](#ch09_figure_18_1730130962952949).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tensor parallelism provides two benefits. First, it makes it possible to serve
+    large models that don’t fit on single machines. Second, it reduces latency. The
+    latency benefit, however, might be reduced due to extra communication overhead.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a grid with squares and a few squares'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated with medium confidence](assets/aien_0918.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-18\. Tensor parallelism for matrix multiplication.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Another way to split a model is *pipeline parallelism*, which involves dividing
+    a model’s computation into distinct stages and assigning each stage to a different
+    device. As data flows through the model, each stage processes one part while others
+    process subsequent parts, enabling overlapping computations. [Figure 9-19](#ch09_figure_19_1730130962952966)
+    shows what pipeline parallelism looks like on four machines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![A diagram of a layer'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Description automatically generated](assets/aien_0919.png)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Figure 9-19\. Pipeline parallelism enables model splits to be executed in parallel.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Figure 9-19](#ch09_figure_19_1730130962952966) shows a batch can be split
+    into smaller micro-batches. After a micro-batch is processed on one machine, its
+    output is passed onto the next part of the model on the next machine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: While pipeline parallelism enables serving large models on multiple machines,
+    it increases the total latency for each request due to extra communication between
+    pipeline stages. Therefore, for applications with strict latency requirements,
+    pipeline parallelism is typically avoided in favor of replica parallelism. However,
+    pipeline parallelism is commonly used in training since it can help increase throughput.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two techniques that are less common but might warrant a quick mention to illustrate
+    the diversity of techniques are *context parallelism* and *sequence parallelism*.
+    They were both developed to make long input sequence processing more efficient,
+    including context parallelism and sequence parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [*context parallelism*](https://oreil.ly/On2-B), the input sequence itself
+    is split across different devices to be processed separately. For example, the
+    first half of the input is processed on machine 1 and the second half on machine
+    2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *sequence parallelism*, operators needed for the entire input are split across
+    machines. For example, if the input requires both attention and feedforward computation,
+    attention might be processed on machine 1 while feedforward is processed on machine
+    2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: A model’s usability depends heavily on its inference cost and latency. Cheaper
+    inference makes AI-powered decisions more affordable, while faster inference enables
+    the integration of AI into more applications. Given the massive potential impact
+    of inference optimization, it has attracted many talented individuals who continually
+    come up with innovative approaches.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before we start making things more efficient, we need to understand how efficiency
+    is measured. This chapter started with common efficiency metrics for latency,
+    throughput, and utilization. For language model-based inference, latency can be
+    broken into time to first token (TTFT), which is influenced by the prefilling
+    phase, and time per output token (TPOT), which is influenced by the decoding phase.
+    Throughput metrics are directly related to cost. There’s a trade-off between latency
+    and throughput. You can potentially reduce cost if you’re okay with increased
+    latency, and reducing latency often involves increasing cost.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How efficiently a model can run depends on the hardware it is run on. For this
+    reason, this chapter also provided a quick overview of AI hardware and what it
+    takes to optimize models on different accelerators.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The chapter then continued with different techniques for inference optimization.
+    Given the availability of model APIs, most application developers will use these
+    APIs with their built-in optimization instead of implementing these techniques
+    themselves. While these techniques might not be relevant to all application developers,
+    I believe that understanding what techniques are possible can be helpful for evaluating
+    the efficiency of model APIs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This chapter also focused on optimization at the model level and the inference
+    service level. Model-level optimization often requires changing the model itself,
+    which can lead to changes in the model behaviors. Inference service-level optimization,
+    on the other hand, typically keeps the model intact and only changes how it’s
+    served.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model-level techniques include model-agnostic techniques like quantization and
+    distillation. Different model architectures require their own optimization. For
+    example, because a key bottleneck of transformer models is in the attention mechanism,
+    many optimization techniques involve making attention more efficient, including
+    KV cache management and writing attention kernels. A big bottleneck for an autoregressive
+    language model is in its autoregressive decoding process, and consequently, many
+    techniques have been developed to address it, too.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference service-level techniques include various batching and parallelism
+    strategies. There are also techniques developed especially for autoregressive
+    language models, including prefilling/decoding decoupling and prompt caching.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The choice of optimization techniques depends on your workloads. For example,
+    KV caching is significantly more important for workloads with long contexts than
+    those with short contexts. Prompt caching, on the other hand, is crucial for workloads
+    involving long, overlapping prompt segments or multi-turn conversations. The choice
+    also depends on your performance requirements. For instance, if low latency is
+    a higher priority than cost, you might want to scale up replica parallelism. While
+    more replicas require additional machines, each machine handles fewer requests,
+    allowing it to allocate more resources per request and, thus, improve response
+    time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, across various use cases, the most impactful techniques are typically
+    quantization (which generally works well across models), tensor parallelism (which
+    both reduces latency and enables serving larger models), replica parallelism (which
+    is relatively straightforward to implement), and attention mechanism optimization
+    (which can significantly accelerate transformer models).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inference optimization concludes the list of model adaptation techniques covered
+    in this book. The next chapter will explore how to integrate these techniques
+    into a cohesive system.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch09.html#id1597-marker)) As discussed in [Chapter 7](ch07.html#ch07),
+    inference involves the forward pass while training involves both the forward and
+    backward passes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch09.html#id1598-marker)) A friend, Mark Saroufim, pointed me to an interesting
+    relationship between a model’s training cost and inference cost. Imagine you’re
+    a model provider. Let *T* be the total training cost, *p* be the cost you’re charging
+    per inference, and *N* be the number of inference calls you can sell. Developing
+    a model only makes sense if the money you can recover from inference for a model
+    is more than its training cost, i.e., *T* <= *p* × *N*. The more a model is used
+    in production, the more model providers can reduce inference cost. However, this
+    doesn’t apply for third-party API providers who sell inference calls on top of
+    open source models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch09.html#id1605-marker)) Anecdotally, I find that people coming from
+    a system background (e.g., optimization engineers and GPU engineers) use *memory-bound*
+    to refer to *bandwidth-bound*, and people coming from an AI background (e.g.,
+    ML and AI engineers) use to memory-bound to refer to memory capacity-bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch09.html#id1606-marker)) The Roofline paper uses the term memory-bound
+    to refer to memory-bandwidth bound.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch09.html#id1607-marker)) Prefilling effectively populates the initial
+    KV cache for the transformer model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch09.html#id1612-marker)) If you run an inference service, separating
+    your inference APIs into online and batch can help you prioritize latency for
+    requests where latency matters the most. Let’s say that your inference server
+    can serve only a maximum of X requests/second without latency degradation, you
+    have to serve Y requests/second, and Y is larger than X. In an ideal world, users
+    with less-urgent requests can send their requests to the batch API, so that your
+    service can focus on processing the online API requests first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch09.html#id1619-marker)) As discussed in [“Prompt caching”](#ch09_prompt_caching_1730130963008914),
+    it’s common to know in advance the system prompt of an application. It’s just
+    the exact user queries that are hard to predict.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([8](ch09.html#id1620-marker)) In the early days of chatbots, some people complained
+    about chatbots responding too fast, which seemed unnatural. See [“Lufthansa Delays
+    Chatbot’s Responses to Make It More ‘Human’”](https://oreil.ly/jD5Pj) (Ry Crozier,
+    iTnews, May 2017). However, as people become more familiar with chatbots, this
+    is no longer the case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch09.html#id1623-marker)) Time between tokens (TBT) is used by [LinkedIn](https://www.linkedin.com/blog/engineering/generative-ai/musings-on-building-a-generative-ai-product?_l=en_US)
+    and inter-token latency (ITL) is used by [NVIDIA](https://oreil.ly/zHsb8).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([10](ch09.html#id1624-marker)) An experiment by Anyscale shows that 100 input
+    tokens have approximately the same impact on the overall latency as a single output
+    token.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([11](ch09.html#id1637-marker)) People have cared about FLOP/s utilization
+    for a long time, but the term MFU was introduced in the PaLM paper ([Chowdhery
+    et al., 2022](https://arxiv.org/abs/2204.02311)).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([12](ch09.html#id1638-marker)) Chip makers might also be doing what I call
+    *peak FLOP/s hacking*. This might run experiments in certain conditions, such
+    as using sparse matrices with specific shapes, to increase their peak FLOP/s.
+    Higher peak FLOP/s numbers make their chips more attractive, but it can be harder
+    for users to achieve high MFU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([13](ch09.html#id1649-marker)) In the 1960s, computers could run only one-layer
+    neural networks, which had very limited capabilities. In their famous 1969 book
+    [*Perceptrons: An Introduction to Computational Geometry*](https://en.wikipedia.org/wiki/Perceptrons_(book))
+    (MIT Press), two AI pioneers, Marvin Minsky and Seymour Papert, argued that neural
+    networks with hidden layers would still be able to do little. Their exact quote
+    was: “Virtually nothing is known about the computational capabilities of this
+    latter kind of machine. We believe that it can do little more than can a low order
+    perceptron*.*” There wasn’t sufficient compute power to dispute their argument,
+    which was then cited by many people as a key reason for the drying up of AI funding
+    in the 1970s.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([14](ch09.html#id1650-marker)) There have been discussions on whether to [rename
+    the GPU](https://oreil.ly/mRNCP) since it’s used for a lot more than graphics
+    (Jon Peddie, “Chasing Pixels,” July 2018). Jensen Huang, NVIDIA’s CEO, said in
+    an [interview](https://oreil.ly/iK0tN) (*Stratechery*, March 2022) that once the
+    GPU took off and they added more capabilities to it, they considered renaming
+    it to something more general like GPGPU (general-purpose GPU) or XGU. They decided
+    against renaming because they assumed that people who buy GPUs will be smart enough
+    to know what a GPU is good for beyond its name.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([15](ch09.html#id1651-marker)) Matrix multiplication, affectionately known
+    as matmul, is estimated to account for more than 90% of all floating point operations
+    in a neural network, according to [“Data Movement Is All You Need: A Case Study
+    on Optimizing Transformers”](https://arxiv.org/abs/2007.00072) (Ivanov et al.,
+    *arXiv*, v3, November 2021) and [“Scalable MatMul-free Language Modeling”](https://arxiv.org/abs/1802.04799)
+    (Zhu et al., *arXiv*, June 2024).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([16](ch09.html#id1652-marker)) While a chip can be developed to run one model
+    architecture, a model architecture can be developed to make the most out of a
+    chip, too. For example, the transformer was originally designed by Google to [run
+    fast on TPUs](https://oreil.ly/y45q6) and only later optimized on GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([17](ch09.html#id1661-marker)) Lower-end to mid-range GPUs might use [GDDR](https://en.wikipedia.org/wiki/GDDR_SDRAM)
+    (Graphics Double Data Rate) memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([18](ch09.html#id1669-marker)) A main challenge in building data centers with
+    tens of thousands of GPUs is finding a location that can guarantee the necessary
+    electricity. Building large-scale data centers requires navigating electricity
+    supply, speed, and geopolitical constraints. For example, remote regions might
+    provide cheaper electricity but can increase network latency, making the data
+    centers less appealing for use cases with stringent latency requirements like
+    inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([19](ch09.html#id1683-marker)) Each token generation step necessitates the
+    transfer of the entire model’s parameters from the accelerator’s high-bandwidth
+    memory to its compute units. This makes this operation bandwidth-heavy. Because
+    the model can produce only one token at a time, the process consumes only a small
+    number of FLOP/s, resulting in computational inefficiency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([20](ch09.html#id1684-marker)) This also means that if your MFU is already
+    maxed out, speculative decoding makes less sense.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([21](ch09.html#id1694-marker)) The Jacobi method is an iterative algorithm
+    where multiple parts of a solution can be updated simultaneously and independently.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([22](ch09.html#id1700-marker)) The number of attention computations for an
+    autoregressive model is *O*(*n*²).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([23](ch09.html#id1716-marker)) Convolution operations are often used in image
+    generation models like Stable Diffusion.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([24](ch09.html#id1729-marker)) Many companies consider their kernels their
+    trade secrets. Having kernels that allow them to run models faster and cheaper
+    than their competitors is a competitive advantage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([25](ch09.html#id1741-marker)) Talks mentioning the prefill to decode instance
+    ratio include [“Llama Inference at Meta”](https://oreil.ly/eMQ_P) (Meta, 2024).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([26](ch09.html#id1747-marker)) While llama.cpp also has [prompt caching](https://github.com/ggerganov/llama.cpp/blob/master/examples/main/README.md#prompt-caching),
+    it seems to cache only whole prompts and work for queries in the same chat session,
+    as of this writing. Its documentation is limited, but my guess from reading the
+    code is that in a long conversation, it caches the previous messages and processes
+    only the newest message.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([27](ch09.html#id1749-marker)) During training, the same technique is called
+    data parallelism.
+  prefs: []
+  type: TYPE_NORMAL

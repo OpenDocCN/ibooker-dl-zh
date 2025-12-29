@@ -1,0 +1,2653 @@
+- en: Chapter 6\. Learning Spatial Organization Patterns Within Cells
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'In this chapter, we shift focus from classifying high-level cell states—such
+    as distinguishing cancerous from healthy tissue—to something more low level and
+    foundational: understanding the *spatial organization inside individual cells*.
+    Specifically, we’ll train a deep learning model to analyze microscopy images and
+    learn where exactly in the cell different proteins are located, a task known as
+    *protein localization*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protein localization plays a crucial role in cell biology. A protein’s position
+    within the cell—for example, whether it’s in the nucleus or the mitochondria—often
+    determines its function. Mislocalization of proteins is implicated in many diseases,
+    even when the protein’s structure is normal (i.e., not mutated or altered). Thanks
+    to modern fluorescence microscopy, we can observe a protein’s location in a cell
+    directly, but the resulting images are often high dimensional, noisy, and hard
+    to interpret at scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Unlike earlier chapters, the goal here isn’t to strictly optimize a metric
+    like accuracy, recall, or precision on a specific classification or regression
+    task. Instead, we’ll train a model to learn a *latent representation* of protein
+    localization directly from raw microscopy images. You can think of a *latent space*
+    as the model’s internal map—a compressed representation where proteins with similar
+    localization patterns are grouped together, even without explicit labels. This
+    approach falls under *representation learning*: the goal is to uncover meaningful
+    structure in the data that reflects biological patterns.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why focus on representation learning instead of just training a classifier for
+    a specific task of interest? In many biological settings, and especially in protein
+    localization, we don’t have clean, comprehensive labels. Instead of forcing the
+    model to solve a narrow, predefined task, we want it to learn a *rich internal
+    representation* of the data that captures spatial patterns and similarities between
+    proteins. These representations can be reused for clustering, visualization, identifying
+    unknown cellular compartments, or understanding how protein localization changes
+    across cell types or conditions. This is analogous to how large language models
+    learn general-purpose representations of words or sentences, which can then be
+    reused for many downstream tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Our approach to modeling protein localization in this chapter is based on *cytoself*,
+    a self-supervised deep learning method published in *Nature Methods* in 2022.^([1](ch06.html#id943))
+    The model combines image reconstruction (rebuilding the microscopy input image)
+    with a secondary task—predicting the protein’s identity—to learn a rich and interpretable
+    embedding space that reflects biological localization patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike in previous chapters, the model’s primary output isn’t a classification
+    label or regression score. Instead, for a given microscopy image of a fluorescently
+    tagged protein, it produces an *embedding*—a position in the latent space—that
+    captures the spatial characteristics of the protein’s localization. These embeddings
+    can then be visualized, clustered, or compared to known annotations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is the most advanced chapter in the book. You’ll work with a large, real-world
+    microscopy dataset and implement a custom vector-quantized variational autoencoder
+    (VQ-VAE) from scratch. The chapter takes you deep into self-supervised learning,
+    large-scale image processing, and the spatial organization of cells—and reproduces
+    core results from a recent deep learning biology paper.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: More than in any previous chapter, we strongly recommend keeping the companion
+    Colab notebook open as you read. You may need to scale down the model to fit within
+    memory limits, but actively running the code will solidify your understanding
+    and give you room to explore.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To run the full-scale model, we recommend using a powerful GPU such as an A100\.
+    These are available through platforms like Google Colab Pro, Kaggle Notebooks
+    (with upgrades), Google Cloud Platform (GCP), or AWS EC2.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Biology Primer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: The cell was first observed in 1665 by the British scientist [Robert Hooke](https://oreil.ly/6JmDd),
+    who used a microscope to describe its structure in cork tissue. Since then, microscopy
+    has become one of biology’s most essential tools. Modern microscopes allow researchers
+    to visualize living cells in astonishing detail—and increasingly, to capture this
+    data at massive scale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Microscopy is now central to many areas of biomedical research. For example,
+    pharmaceutical companies routinely screen the effects of drug candidates by imaging
+    thousands of treated cells and then use machine learning models to assess cellular
+    responses in an automated way. Does a cell look alive or dead? Does its observable
+    structure change in response to a particular drug compound? Do the cells divide
+    more or less rapidly as a result of a treatment?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Despite its power to capture biological detail, microscopy data can be challenging
+    to analyze. Cells vary naturally in size, shape, and appearance, and the imaging
+    and sample preparation process itself introduces noise and artifacts. Furthermore,
+    unlike genomes, which can to some extent be compared to a universal “reference”
+    genome, cells don’t come with a “baseline cell” or a standardized coordinate system,
+    which can make analysis difficult. And microscopy can challenge computational
+    resources: high-resolution microscopy produces large volumes of data that can
+    strain both memory and compute.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Traditionally, microscopy image analysis relied on manually defined, hand-engineered
+    features. For example, in drug screening experiments, scientists might measure
+    whether a compound causes cells to shrink, swell, or change shape—signs that the
+    drug is affecting cell health or behavior. To do so, researchers would extract
+    properties such as cell size, shape, brightness, or texture using classical image
+    processing techniques, including thresholding, edge detection, and morphological
+    operations (which manipulate shapes in the image to clean up noise, fill gaps,
+    or separate touching cells). These features were then fed into relatively simple
+    models such as logistic regression or decision trees to predict cellular outcomes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'This earlier approach to microscopy image analysis required domain expertise
+    to decide which features mattered, and they often missed subtle patterns not obvious
+    to the human eye. Deep learning changed this: modern convolutional neural networks
+    (CNNs) can learn to extract meaningful features directly from raw pixels, capturing
+    complex visual cues without relying on handcrafted rules.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: These advances in image analysis have opened the door to exploring deeper biological
+    questions—including how proteins are spatially organized within cells.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Spatial Organization Within the Cell
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Cells aren’t just sacks of molecules; they’re intricately organized. Subcellular
+    compartments evolved billions of years ago and represent one of the most fundamental
+    principles of biology: *specialization through spatial organization*. Instead
+    of letting everything float freely in an undifferentiated soup, cells developed
+    internal structures that separate and coordinate different functions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: All three domains of life—bacteria, archaea, and eukaryotes—show signs of this
+    spatial complexity. In eukaryotic cells (the kinds of cells found in humans, plants,
+    fungi, and more), this organization is especially pronounced. These cells contain
+    membrane-bound compartments called *organelles*, each with a specialized job,
+    as shown in [Figure 6-1](#organelle-image).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0601.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-1\. A visual representation of the complex organization within a eukaryotic
+    cell. The different organelles compartmentalize the cell into regions where different
+    specialized functions are performed (illustration from the National Institutes
+    of Health).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'We won’t dive into full organelle flashcards here (no need to relive high school
+    biology trauma), but here’s a quick recap of the structures that will be most
+    relevant in this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Plasma membrane
+  prefs: []
+  type: TYPE_NORMAL
+- en: A lipid bilayer that wraps the cell, protecting its internal environment and
+    controlling what enters and exits.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nucleus
+  prefs: []
+  type: TYPE_NORMAL
+- en: The command center of the cell. It’s enclosed in its own membrane and houses
+    the DNA—the genetic blueprint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cytoplasm
+  prefs: []
+  type: TYPE_NORMAL
+- en: The gel-like substance that fills the cell. This is where most cellular activity
+    happens, and it’s home to many other organelles.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mitochondria
+  prefs: []
+  type: TYPE_NORMAL
+- en: Often called the “powerhouses” of the cell. They generate energy in the form
+    of ATP. Evolutionarily, they were once free-living bacteria that formed a mutually
+    beneficial partnership with early cells.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Endoplasmic reticulum (ER)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Comes in two flavors. The *rough ER* is studded with ribosomes (protein-making
+    factories) and helps synthesize proteins. The *smooth ER* handles lipids and detoxification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Golgi apparatus
+  prefs: []
+  type: TYPE_NORMAL
+- en: The cell’s shipping center. It modifies, packages, and routes proteins and lipids
+    to their final destinations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With that background on cellular compartments in place, let’s turn to protein
+    localization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Protein Localization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Every protein begins its life in the same way: it’s transcribed from a gene
+    into messenger RNA (mRNA) in the nucleus, and then it is translated into a chain
+    of amino acids by ribosomes in the cytoplasm. But from there, things get much
+    more spatially complex.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once a protein is made, it doesn’t just float around randomly. It gets shipped
+    to a specific destination inside the cell, guided by a sort of molecular postal
+    code. Some proteins are sent to the nucleus, others to the mitochondria, the cell
+    membrane, or the ER. This process is known as *protein localization*, and it’s
+    critical for proper cellular function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A protein’s location is often just as important as its molecular structure.
+    Even a perfectly formed protein can’t function if it’s in the wrong place. For
+    example, the protein DNA polymerase needs to be inside the nucleus to carry out
+    its function of replicating DNA. If it ends up in the cytoplasm, it’s effectively
+    useless. On the other hand, some proteins aren’t confined to a specific location.
+    For instance, the protein actin is found throughout the cell, where it helps maintain
+    its shape and enable movement.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mislocalization—when a protein ends up in the wrong compartment—is a key driver
+    of disease. For example, in amyotrophic lateral sclerosis (ALS), the protein TDP-43
+    accumulates in the cytoplasm of neurons, even though its normal location is in
+    the nucleus.^([2](ch06.html#id946)) The protein isn’t mutated, misfolded, or present
+    in abnormal quantities—it’s simply in the wrong place. And that alone is enough
+    to disrupt cellular function and trigger disease.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another example is the tumor suppressor BRCA1, which normally helps repair DNA
+    in the nucleus. In some breast and ovarian cancers, BRCA1 is mislocalized to the
+    cytoplasm, where it can no longer perform its repair function, even though the
+    protein itself may be entirely structurally normal.^([3](ch06.html#id947))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Protein Localization
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Once a protein is made, how does it end up in the right part of the cell? The
+    answer lies in short amino acid sequences, which are like molecular zip codes
+    embedded within the protein. These address tags are recognized by the cell’s transport
+    machinery and guide proteins to their proper destinations: the nucleus, mitochondria,
+    plasma membrane, and so on.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The rules of this system are still only partially understood. Many proteins
+    localize to multiple compartments. Some are misdirected under stress or disease
+    conditions. And some just seem to defy categorization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even in healthy cells, we don’t yet have a complete map of where all human proteins
+    go—or how those localizations change across cell types, developmental stages,
+    or environmental conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Mapping the protein localization landscape in detail is one of the big open
+    challenges in cell biology. Understanding protein localization at scale could:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reveal new, previously unknown subcellular compartments
+  prefs: []
+  type: TYPE_NORMAL
+- en: It may be surprising, but we’re still discovering fundamental structures inside
+    cells. In recent years, researchers have identified the *exclusome* (a cytoplasmic
+    DNA compartment in mammalian cells), *paraspeckles* and *nuclear speckles* (membraneless
+    nuclear bodies involved in RNA processing), and even new entire organelles. The
+    most recent example is the *nitroplast*, a nitrogen-fixing organelle discovered
+    in marine algae as recently as 2024.^([4](ch06.html#id948)) These findings show
+    how much more there is to uncover about the cell’s internal architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Help assign functions to poorly annotated proteins
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a protein consistently localizes to mitochondria, you could hypothesize that
+    it plays a role in energy metabolism or apoptosis (programmed cell death), which
+    are key functions of the mitochondria. For example, the cytoself model we study
+    in this chapter grouped several previously uncharacterized proteins with known
+    mitochondrial proteins, leading researchers to propose their involvement in oxidative
+    phosphorylation—the process by which cells generate ATP within the mitochondrial
+    matrix.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Detect early cellular changes that mark disease
+  prefs: []
+  type: TYPE_NORMAL
+- en: Shifts in protein localization can serve as early warning signs of various diseases.
+    For example, we previously mentioned that in ALS, the protein TDP-43 moves from
+    the nucleus to the cytoplasm, but remarkably, this change has been observed in
+    presymptomatic individuals carrying disease-linked mutations.^([5](ch06.html#id949))
+    More broadly, large-scale profiling of localization patterns could help detect
+    early cellular dysfunction across a wide range of conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therapies that correct protein mislocalization
+  prefs: []
+  type: TYPE_NORMAL
+- en: In diseases where a protein is physically functional but simply ends up in the
+    wrong place, one therapeutic strategy is to restore its proper localization using
+    engineered localization signals. For example, researchers have used nuclear localization
+    signals to redirect tumor suppressors like p53 or BRCA1 back to the nucleus, where
+    they can resume their normal function.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Better therapeutic targeting
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another approach is to guide drugs, proteins, or nanoparticles to specific subcellular
+    compartments, such as the lysosome or mitochondria, to maximize their effectiveness
+    and minimize side effects. This strategy is used in emerging nanomedicine platforms.^([6](ch06.html#id950))
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imagine being able to say not just *what* a protein does but *where* it does
+    it—and how its journey changes as a cell divides, differentiates, or begins to
+    break down in disease.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ideally, that gives you a sense of how exciting the protein localization space
+    is. Now let’s dive into how machine learning can help us explore it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Machine Learning Primer
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'The model we’ll be building in this chapter—the cytoself from the Kobayashi
+    paper mentioned earlier—is based on a type of neural network called a *vector-quantized
+    variational autoencoder (VQ-VAE)*. If you haven’t seen this type of model before,
+    don’t worry: we’ll walk through the key ideas that lead up to this model so you
+    understand not just *what* we’re building but *why* it works.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Why use a VQ-VAE? Unlike most models, which map images into a continuous feature
+    space, a VQ-VAE forces the model to describe each image using a limited set of
+    learned visual patterns, called a *codebook*. You can think of this like a tile
+    set or a visual vocabulary, where each pattern gets reused across many inputs.
+    This encourages the model to represent each protein image using discrete building
+    blocks, making it easier to group proteins by similar localization and uncover
+    shared visual motifs. In other words, instead of inventing new coordinates for
+    every input, the model says, “This protein looks like a mix of tile #7 and tile
+    #241.”'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This kind of representation is especially useful in biology, where we’re trying
+    to *discover* structure in the data, not just reconstruct it. The discreteness
+    also makes the model more interpretable and allows downstream tools (like clustering
+    or dimensionality reduction) to work more effectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Autoencoders (AEs)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Let’s start by unpacking the last and arguably most important part of the VQ-VAE
+    acronym: the AE, *autoencoder*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'An autoencoder is a type of neural network trained to reconstruct its input.
+    It does this in two steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An *encoder* compresses the input into a lower-dimensional representation.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: A *decoder* then attempts to reconstruct the original input from that compressed
+    version.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: In the simplest case, both the encoder and decoder might consist of fully connected
+    linear layers. The internal representation, known as the bottleneck, typically
+    has fewer neurons than the input, forcing the model to compress the data, as illustrated
+    in [Figure 6-2](#autoencoder-diagram) (diagram taken from “Introduction to Autoencoders”).^([7](ch06.html#id956))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0602.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-2\. An autoencoder learns a compressed internal representation of its
+    input by forcing it through a low-dimensional “bottleneck.” The network is trained
+    to reconstruct the original input as closely as possible from this bottleneck
+    representation.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The bottleneck forces the model to distill the most important patterns in the
+    data, while discarding irrelevant details. This is a form of dimensionality reduction,
+    similar in spirit to techniques like principal component analysis (PCA). But unlike
+    PCA, autoencoders can learn nonlinear transformations and scale to large, complex
+    datasets, making them especially powerful for data like microscopy images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'One important detail: in a standard autoencoder, the internal representation—the
+    activations of the neurons in the bottleneck layer—are *continuous*. That means
+    each neuron in the bottleneck can take on any real number (like 1.27, –3.14, etc.),
+    so the representation of each input lives in a continuous space. This gives the
+    model a lot of flexibility, but it can also make the latent space less structured
+    and harder to interpret. Two inputs that look quite similar might map to distant
+    points in the latent space, and it can be difficult to understand what each dimension
+    represents.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Later, we’ll see how VQ-VAEs address this by introducing a fixed set of allowed
+    *codes*. Instead of letting the encoder output arbitrary values, it’s forced to
+    pick from a dictionary of discrete latent vectors—a design that makes the representation
+    more structured, compressible, and interpretable. Of course, this comes with a
+    trade-off: the model gives up some of the expressivity of continuous representations
+    in exchange for a more constrained and interpretable latent space.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Cytoself uses a ResNet-style CNN as its encoder. If you’d like a refresher on
+    CNNs and ResNets, see the previous chapter’s explanation of these topics.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Variational Autoencoders (VAEs)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we’ve introduced regular autoencoders, let’s look at a variation that
+    adds a twist—and opens the door to powerful generative capabilities. The *V* in
+    *VAE* stands for *variational*. In a *variational autoencoder*, we no longer compress
+    each input (like a microscopy image) into a single point in the latent space.
+    Instead, the model learns to represent each input as a *probability distribution*
+    over the latent space. That’s a bit of a mouthful, so let’s break it down step-by-step.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In a standard autoencoder:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The encoder takes an input and produces a fixed set of numbers: one activation
+    for each neuron in the bottleneck layer we described earlier.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These numbers describe a single point in latent space.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The decoder then uses that point to reconstruct the input.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In a variational autoencoder:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The encoder outputs two numbers per latent dimension: a *mean* and a *standard
+    deviation*.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These define a normal distribution—a bell curve—for each coordinate in the latent
+    space.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Instead of feeding a fixed number to the decoder, the model samples a value
+    from each distribution.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'To make this concrete:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a standard autoencoder, a given input might be compressed to a single point
+    in the latent space, for example, `[1.3, -0.7, 1.9]` for a bottleneck layer with
+    three neurons. This exact vector is passed *directly* to the decoder to reconstruct
+    the input.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'In a variational autoencoder, the encoder instead outputs two separate vectors:'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: One for the means (e.g., `[1.3, -0.7, 1.9]`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: And one for the standard deviations (e.g., `[0.2, 0.5, 0.1]`)
+  prefs:
+  - PREF_IND
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'This is often done using a shared hidden layer followed by two parallel linear
+    layers: one predicts the means, the other the standard deviations. So, in this
+    example, the encoder outputs six values in total: three means and three standard
+    deviations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Together, these describe a 3D Gaussian distribution: not a single point, but
+    a cloud of likely values. During training, the model randomly samples a vector
+    from this distribution; for example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Something like `1.1` from a distribution centered at `1.3 ± 0.2`
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`-0.5` from `-0.7 ± 0.5`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`1.7` from `1.9 ± 0.1`'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The sampled vector—in this case, `[1.1, -0.5, 1.7]`—is what actually gets passed
+    to the decoder for reconstruction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Why add randomness?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'At first, introducing randomness might sound like unnecessary fuzziness: why
+    not just stick with a fixed encoding? But this design choice has several powerful
+    benefits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It smooths the latent space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because the model samples slightly different encodings for the same input, it
+    learns to decode nearby points into similar outputs. This forces the latent space
+    to be smooth, continuous, and meaningful—with small movements in the space leading
+    to small, realistic changes in the output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It groups similar inputs together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inputs that are alike produce similar distributions, so their samples overlap
+    in the latent space. This naturally pulls similar data points closer together,
+    helping the model learn structure in the dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It prevents overfitting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By introducing controlled randomness during training, the model can’t just memorize
+    exact input-output pairs. It has to learn patterns that hold across perturbations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: It enables generation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once trained, the model can generate new, realistic-looking outputs by simply
+    sampling from the latent space, even in regions that weren’t seen during training.
+    This makes VAEs useful not just for reconstruction, but for creative or exploratory
+    tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Continuous latent space
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: We can visualize this difference in how latent spaces are structured in VAEs
+    versus standard autoencoders using the diagram in [Figure 6-3](#latent-space-structure)
+    (based on a figure by Saul Dobilas).^([8](ch06.html#id961))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0603.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-3\. An intuitive way to think about regularized continuous latent spaces.
+    In a standard autoencoder, points are mapped discretely and may not generalize
+    meaningfully. In a VAE, points are sampled from smooth distributions, enabling
+    meaningful interpolation and generative sampling.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This diagram highlights how VAEs encourage a smooth and continuous latent space,
+    enabling interpolation and generation, a key distinction from regular autoencoders.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You might wonder: can’t you use a regular autoencoder for grouping similar
+    inputs together and for generative sampling?'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In theory, yes; similar inputs often *do* end up close together in the latent
+    space, and you *can* try sampling from it. But there’s no guarantee that the space
+    will be smooth, continuous, or meaningful. Some regions may decode into nonsense,
+    and small changes in latent space might lead to big, unpredictable jumps in the
+    output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: VAEs solve this by explicitly *shaping the latent space*. They use probability
+    distributions and regularization to encourage the model to use the space in a
+    more structured and consistent way.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There’s just one more concept to cover before we can understand this chapter’s
+    architecture: *vector quantization*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vector-Quantized Variational Autoencoders (VQ-VAEs)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The *VQ* in *VQ-VAE* stands for *vector quantization*, a classical technique
+    borrowed from signal processing and data compression. At its core, vector quantization
+    means taking a continuous input, such as a floating-point vector, and snapping
+    it to the nearest match from a fixed set of allowed vectors. This set is called
+    a *codebook*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To make this concrete:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Imagine our codebook contains just two vectors: `[2, 0.5]` and `[1, -3]`.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Now suppose the encoder outputs `[1.8, 0.3]`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Instead of passing this continuous vector to the decoder, the VQ-VAE finds the
+    nearest codebook entry—in this case, `[2, 0.5]` —and *replaces* the encoder output
+    with that vector.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This “snapping” process is called *quantization*. You can think of it like rounding
+    a continuous input to the closest available option. The decoder never sees the
+    raw encoder output, only the snapped codebook vector.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This makes VQ-VAEs different from variational autoencoders or standard autoencoders:
+    rather than learning a continuous latent space, the model learns a *discrete vocabulary
+    of embeddings* and uses that to represent everything it sees. By compressing the
+    encoder output to a finite set of discrete vectors, the model encourages robustness,
+    interpretability, and reusability in its representations, all of which are particularly
+    helpful for downstream tasks like clustering or biological discovery.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where does the codebook come from?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: The codebook in a VQ-VAE is *learned during training*. Just like the weights
+    in the encoder and decoder, the vectors in the codebook start out random and are
+    gradually refined through backpropagation. Over time, the vectors adapt to represent
+    recurring, meaningful patterns in the data, so the model gets better at snapping
+    encoder outputs to useful representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: How large should the codebook be?
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'There’s no one-size-fits-all answer: the optimal number of vectors depends
+    on your data and goals. A *larger codebook* (e.g., 1,024+ entries) allows finer
+    distinctions between inputs. A *smaller codebook* (e.g., 64–128) forces the model
+    to reuse patterns more often, which can help with generalization and interpretability.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In biological imaging tasks like protein localization, codebook sizes typically
+    range from 128 to 512, depending on the number of proteins, the resolution of
+    localization patterns, and the desired balance between expressiveness and interpretability.
+    Cytoself, for instance, uses two codebooks of 2,048 entries, each made up of 64D
+    vectors—one for the global representation and one for the local—giving the model
+    rich capacity to represent complex spatial patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dissecting a VQ-VAE Diagram
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we’ve covered the key building blocks—autoencoders, variational inference,
+    and vector quantization—we’re ready to interpret the original VQ-VAE diagram,
+    shown in [Figure 6-4](#vqvae-original).^([9](ch06.html#id975))
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0604.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-4\. Illustration of the major components in a VQ-VAE, based on van
+    den Oord et al. (2017).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Here’s a step-by-step breakdown of what’s happening in the above VQ-VAE diagram:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 1\. Input image (dog photo on the far left)
+  prefs: []
+  type: TYPE_NORMAL
+- en: The process begins with a raw input image; here, the input is a photo of a dog.
+    In our case, this would be a microscopy image showing protein localization. The
+    image is passed into a CNN encoder, which extracts meaningful features and transforms
+    the image into a compressed latent representation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This representation is shown as the *cube labeled `z[e](x)`* (the variable `z`
+    is often used to denote embeddings). It’s a 3D tensor because CNNs process images
+    into pseudoimages called feature maps, which highlight specific parts of the input.
+    This cube holds the distilled, continuous version of the input, and it’s what
+    will be quantized next using the codebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 2\. Quantization step (dot to the right of the left cube)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Each vector in the cube `z[e](x)`—the continuous encoder output—is passed to
+    the *vector quantization step*. This step compares each D-dimensional vector (D
+    = 64 for cytoself) in the grid to every entry in a learned *codebook* (`e[1]`,
+    `e[2]`, …, `e[k]`), shown at the top of the diagram.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model then *replaces* that vector with the nearest codebook vector, snapping
+    it to the closest match. This creates a new tensor called `z[q](x)`, the quantized
+    version of the encoder output, where every original vector has been replaced by
+    a discrete one from the codebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 3\. Decoder (cube on the right)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once quantized, the decoder input `z[q](x)` (right cube) is passed into the
+    *decoder* (“CNN” arrow), which is another CNN. Its job is to take the snapped,
+    discrete representation and *reconstruct the original image* as closely as possible.
+    In this diagram, the decoder output is shown as a second image of the dog, visually
+    similar to the input. For us in this chapter, this would be a reconstructed microscopy
+    image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The closer the reconstruction is to the original (i.e., the lower the reconstruction
+    loss), the better the model has learned to encode meaningful information in its
+    quantized representation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 4\. Codebook embedding space (far right)
+  prefs: []
+  type: TYPE_NORMAL
+- en: The panel on the far right shows a *zoomed-in view of the embedding space*,
+    the set of vectors in the codebook. The central dot (with border and arrow) represents
+    the encoder’s original output vector, `z[e](x)`, which sits somewhere in continuous
+    space. The model snaps it to the closest codebook vector, here shown as `e[2]`.
+    That snapped value becomes the quantized output `z[q](x)`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The arrow indicates the *training signal*: during learning, the encoder is
+    nudged to produce outputs that are closer to the codebook entries they get snapped
+    to. This improves the efficiency of quantization over time and ensures that codebook
+    entries are actually used.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is starting to get into VQ-VAE training strategy, so let’s now cover this
+    topic explicitly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a VQ-VAE
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Now that we’ve broadly seen how a VQ-VAE is structured, let’s look at how it’s
+    trained.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Training a VQ-VAE involves optimizing more than just the *reconstruction loss*,
+    that is, how closely the output image matches the original input. The model also
+    needs to *refine the codebook vectors* over time and ensure that the encoder learns
+    representations that snap cleanly to those vectors. This creates an interesting
+    balance between three components:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The quality of the encoder’s representations
+  prefs: []
+  type: TYPE_NORMAL
+- en: How well does the encoder capture the meaningful signals in the input data?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The usefulness and coverage of the codebook
+  prefs: []
+  type: TYPE_NORMAL
+- en: Does the codebook provide enough diversity to represent a wide range of inputs,
+    and are all entries being used effectively?
+  prefs: []
+  type: TYPE_NORMAL
+- en: The decoder’s ability to reconstruct from quantized codes
+  prefs: []
+  type: TYPE_NORMAL
+- en: How accurately can the decoder recover the original input using only the compressed,
+    discrete representations?
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are a few unique challenges in training VQ-VAEs to be aware of:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quantization error
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the nearest codebook vector is a poor match, some detail is lost during quantization,
+    and the reconstruction suffers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The key is to make sure your codebook is large enough and your encoder is flexible
+    enough to produce embeddings that land near useful entries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Codebook collapse
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If only a few codebook vectors are used repeatedly while others are ignored,
+    the model wastes capacity. Preventing this requires some extra care during training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Commitment loss
+  prefs: []
+  type: TYPE_NORMAL
+- en: This loss term encourages the encoder to commit to a chosen codebook vector
+    by penalizing large differences between the encoder output and its nearest codebook
+    entry. It keeps the encoder from drifting too far away from the codebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Entropy penalty
+  prefs: []
+  type: TYPE_NORMAL
+- en: This encourages the model to use a wider range of codebook entries more evenly,
+    increasing the diversity of representations and reducing collapse.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Despite these challenges, the VQ-VAE is a powerful architecture, especially
+    when you want a model that produces discrete, interpretable representations while
+    still learning directly from data.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If this feels a bit complex, you’re not alone—engaging with modern deep learning
+    models can be challenging at first. But hands-on practice is the best way to build
+    intuition and fluency. In the next section, you’ll start building and training
+    a VQ-VAE yourself, applying everything we’ve covered so far.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Constructing the Dataset
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: All models need good data. In this section, we’ll take a closer look at how
+    to prepare a cell imaging dataset to learn about protein localization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Data Requirements
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A high-quality dataset is crucial for successfully applying deep learning. Fortunately,
+    there are several excellent protein localization resources available. One of the
+    best is [OpenCell](https://oreil.ly/km_v9), which provides standardized, high-resolution
+    images of human proteins inside cells, such as that shown in [Figure 6-5](#actb-opencell-screenshot).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because all images were taken using a single, consistent imaging pipeline, they
+    are particularly well suited for machine learning. This consistency ensures that
+    the model focuses on learning biological variation in protein localization, rather
+    than being distracted by irrelevant differences in imaging conditions or processing
+    pipelines.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Want to explore the dataset yourself? Head to [OpenCell](https://opencell.sf.czbiohub.org),
+    which has a beautifully designed interface that makes browsing the data fast and
+    intuitive.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The model we’ll build in this chapter relies entirely on imaging data; it doesn’t
+    use any labels or annotations during training. This is a major strength: it learns
+    localization patterns directly from raw microscopy images, without any manual
+    supervision. While OpenCell does provide localization annotations, we’ll only
+    use them at the end to sanity-check our results. Overreliance on curated labels
+    can introduce bias and limit scalability, as manual annotation is both expensive
+    and subjective. This is where self-supervised learning shines—it enables models
+    to uncover meaningful patterns without needing predefined labels.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0605.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-5\. Example entry for the protein ACTB (beta-actin) from the OpenCell
+    database. Each protein has a detailed summary page that includes its identifiers
+    (e.g., UniProt ID), sequence information, expression levels (how many copies of
+    the gene and protein are present in the cell), and subcellular localization annotations.
+    On the right, you can see a fluorescence microscopy image showing ACTB localization
+    (gray) alongside nuclear staining (blue). These multichannel images, together
+    with protein-specific metadata, form the basis of the dataset used in this chapter.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Sourcing the Data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Preparing images for deep learning can be a challenge in itself, especially
+    when it comes to format, consistency, and scale. We saw this previously in [Chapter 5](ch05.html#detecting-skin-cancer-in-medical-images),
+    where careful preprocessing was essential. Fortunately, the cytoself authors have
+    released a preprocessed version of the dataset they used in their paper, so we
+    don’t have to start from scratch here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The dataset contains 1,311 fluorescently tagged proteins, each imaged in roughly
+    18 different fields of view. From each field of view, about 45 individual crops
+    are extracted, each typically containing around three cells. This yields roughly
+    800 image crops per protein, totaling more than 1,048,800 images in the full dataset.
+    Each image includes two channels:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The green *protein channel*, showing the location of the fluorescently tagged
+    protein of interest. This is the only channel used for training in this chapter.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A *nuclear stain* using Hoechst, a blue fluorescent dye that binds strongly
+    to DNA. This highlights the nuclei of the cells and provides spatial context,
+    for example, helping to identify whether a protein is nuclear, cytoplasmic, or
+    membrane bound.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'From the nuclear stain, a third representation is computed: the *distance-to-nucleus
+    map*. This is not a separate imaging channel, but a spatial map derived from the
+    Hoechst signal that gives the model more information about relative positioning:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pixels inside the nucleus are assigned positive values, representing the shortest
+    distance to the nuclear boundary.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Pixels outside the nucleus are assigned negative values, also based on shortest
+    distance to the nuclear edge.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To simplify the task, we will use only the tagged protein channel for model
+    training. The other channel (Hoechst) and the derived distance map provide useful
+    spatial context but are not required for this self-supervised learning setup.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In addition to the image data, the dataset includes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Protein annotations: Such as gene names and unique IDs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Curated localization labels: Manually assigned organelle or compartment categories'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These curated labels are *not* used during training. Instead, they’re only used
+    afterward to evaluate whether the model has learned biologically meaningful representations
+    on its own.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This dataset is significantly larger than those used in previous chapters, introducing
+    new challenges in terms of memory usage, data loading speed, and training efficiency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make sure you have enough disk space and access to a capable GPU. For example,
+    use an A100 available through Colab Pro+, or be prepared to scale down the model
+    or batch size to make training feasible.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Getting a Glimpse of the Dataset
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: For more complex datasets, it’s common to wrap the data loading and preprocessing
+    logic in a custom `Dataset` class, as we have done in earlier chapters in this
+    book. This helps make the data easier to explore and use in training.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s first use the utility function `get_dataset` to start inspecting a few
+    of the image frames in the dataset; see [Figure 6-6](#random-frames-plot). Sampling
+    a handful of frames quickly reveals just how much variation there is in patterns
+    and intensity across the dataset:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This diversity is expected: each image corresponds to a different tagged protein,
+    and many proteins aren’t restricted to a single cellular compartment. Instead,
+    they localize to multiple regions of the cell, often with varying abundance. This
+    adds another layer of complexity to the learning task.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Interestingly, this heterogeneity isn’t just seen across different proteins.
+    It also appears *within the same protein*, across different cells. Even when the
+    protein and the imaging setup are held constant, localization patterns can vary
+    from cell to cell.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0606.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-6\. Plot of a random subset of frames. The protein symbols and their
+    primary localization(s) are given for each frame (number indicates additional
+    secondary localizations measured).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: To illustrate this, we’ll load a dataset containing all image frames for a single
+    protein, ACTB (beta-actin), and plot a few random samples. In [Figure 6-7](#sele-prot-random-frames-plot),
+    you’ll see that even for this single protein, there is substantial variation in
+    signal strength, shape, and localization simply due to the nature of biological
+    variability—remember that all frames were captured under identical experimental
+    conditions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0607.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-7\. Random subset of 16 image frames showing the localization of the
+    protein ACTB (beta-actin), a cytoskeletal protein annotated as localizing to the
+    *membrane*, *cytoskeleton*, and *cytoplasm*. Even though these frames all represent
+    the same protein under identical experimental conditions, they display considerable
+    variation in shape, brightness, and localization pattern, highlighting the inherent
+    biological variability across cells.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Let’s now take a closer look at just a single frame in [Figure 6-8](#sele-prot-closeup-plot),
+    which will give us a better sense of what the model will be processing during
+    training. The figure is deliberately shown large so that you can see the individual
+    pixels clearly. Try to think of the image not just as a picture, but as a matrix
+    of numbers: white pixels have values close to 255, black pixels are near 0, and
+    all the shades of gray are values in between:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0608.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6-8\. Close-up view of a single image frame for the protein ACTB. The
+    pixelated appearance reflects the raw input that the model will see: a 2D matrix
+    of intensity values. Bright regions correspond to high fluorescence signal (values
+    near 255), and dark regions correspond to low signal (values near 0). This is
+    the actual numerical input used to learn spatial localization patterns. Despite
+    the images looking noisy or unclear to the human eye, the model must learn to
+    extract consistent patterns from them.'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Implementing a DatasetBuilder Class
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Here, we’ve implemented a helper class called `DatasetBuilder`, which handles
+    dataset setup and caching behind the scenes:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: During initialization, we provide the path to where the data is stored. This
+    allows the `DatasetBuilder` to create linked instances of `Images` and `Labels`.
+    You can also see that the `DatasetBuilder` has a single public method, `.build`,
+    which returns a `dict[str, Dataset]` where every key is a dataset split and the
+    value corresponds to a dataset. This method gives you the option to subset the
+    dataset to a limited number of randomly selected proteins (`n_proteins`) and/or
+    a maximum number of frames (`max_frames`).
+  prefs: []
+  type: TYPE_NORMAL
+- en: It also splits the dataset into different sets for the learning stage. The sets
+    can be provided with the `splits` parameter where the names and fractional sizes
+    can be requested. Finally, it is possible to request with the `exclusive_by` parameter
+    that across splits, fields of view or proteins are never shared (with `fov_id`
+    or `protein_id`, respectively). The former ensures that during learning, we do
+    not inadvertently bleed information between splits, as two frames could otherwise
+    capture an overlapping zone in a field of view. Not having the same proteins in
+    the training and evaluation sets ensures that more general representations are
+    learned, as was done in the original paper. Here we use `fov_id`, as we will restrict
+    our dataset to a smaller number of proteins for faster training. Implementation-wise,
+    we first randomly split the dataset by unique fields of view, and then, as we
+    build the splits, we mask frames not to appear across splits. You will also have
+    noticed that we are encoding the original protein IDs to consecutive integers,
+    which, as you will see later, is required by the loss function during the training
+    loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a first dataset instance
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'We’ll now look at using the `DatasetBuilder` to create instances of `Dataset`
+    splits:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: We now have a dataset. Having a dataset builder provides flexibility that makes
+    it easy to explore, debug, and prototype with small slices of the dataset before
+    scaling up to the full training set.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Accessing the dataset internals
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'Behind the scenes, the `Dataset` class contains two main components: `Images`
+    and `Labels`. These handle the raw microscopy image data and the metadata annotations,
+    respectively.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You don’t need to dive into their implementations to follow along in this chapter,
+    but if you’re curious, the full source code is available. The lower-level methods
+    let you load specific proteins, subsample data, or query for localization annotations—helpful
+    tools for deeper biological exploration or interactive experimentation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you read the earlier chapters, this modular data structure should feel familiar.
+    We assemble data from different blocks, use memory mapping for large arrays, and
+    wrap everything into Python classes for convenience and speed. There are of course
+    a lot of improvements that you can make to allow for even faster access to larger
+    datasets, and [TensorStore](https://oreil.ly/m29ho) certainly ticks a lot of boxes
+    here.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we’ve examined how the data is structured and loaded, let’s move on
+    to training our first model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a Prototype Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we’ll build a simplified version of the cytoself model we introduced
+    earlier. The aim is to distill the core architectural ideas into a somewhat compressed
+    prototype that is easy to understand, train, and modify. The code implementation
+    here is adapted in part from the official [Haiku VQ-VAE repository](https://oreil.ly/KF0A0)
+    and the [VQ-VAE Flax implementation](https://oreil.ly/z-ZXk) from Arnaud Aillaud.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We intentionally omit some of the more complex features from the original work,
+    such as split quantization, hierarchical vector quantization, and multiresolution
+    training, in order to keep the code accessible and focused on the key mechanisms.
+    This also makes it easier to tinker and explore your own architectural experiments.
+    Check out the final section of this chapter for more information on possible extensions
+    to the model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defining the LocalizationModel
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'The following code defines the core model we’ll use throughout this chapter:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This model is defined with the main components we already introduced:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encoder
+  prefs: []
+  type: TYPE_NORMAL
+- en: Maps the input image into a latent space
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vector quantizer
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discretizes this latent space using a learned codebook
+  prefs: []
+  type: TYPE_NORMAL
+- en: Decoder
+  prefs: []
+  type: TYPE_NORMAL
+- en: Reconstructs the input image from the quantized representation
+  prefs: []
+  type: TYPE_NORMAL
+- en: These are all wired together in the model’s `setup` method. You’ll also notice
+    an additional component, the `ClassificationHead`, which we’ll come back to later.
+    For now, just know that it’s used to mitigate the previously mentioned codebook
+    collapse, a failure mode where the model uses only a small fraction of the codebook
+    entries, reducing the representational power of the latent space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the following sections, we’ll walk through each part of the model, starting
+    with the `Encoder`, which is responsible for extracting latent features from the
+    input microscopy images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The Encoder: Processing Input Images'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The `Encoder` is the first part of our model and is responsible for converting
+    raw input images into a continuous latent representation. Its main job is to process
+    the input into a form that the `VectorQuantizer` can work with—a spatial feature
+    map with rich, expressive features per pixel. This latent representation will
+    later be discretized by the `VectorQuantizer`, so it needs to be of the right
+    shape and dimensionality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The encoder is built from three convolutional layers followed by two residual
+    blocks:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first two conv layers downsample the image by a factor of 4 overall (each
+    has a stride length of 2), reducing spatial resolution while increasing feature
+    dimensionality.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The third conv layer preserves spatial resolution but deepens the feature map.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The two `ResnetBlock`s further refine the features with normalization, nonlinearity,
+    and skip connections.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Together, this forms the pipeline that turns a 100 × 100 grayscale image into
+    a smaller grid of `latent_dim`-dimensional feature vectors, ready for quantization:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: As you can see, the only parameter we are passing into the `Encoder` is `latent_dim`.
+    This controls how many channels the network will output; in other words, how expressive
+    each spatial location in the latent space is. In the context of our full model,
+    this is set to `embedding_dim`, which ensures that the output from the encoder
+    matches the dimensionality expected by the `VectorQuantizer`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the context of a `LocalizationModel` model instantiation, it is set to `self.embedding_dim`,
+    since the `Encoder` has to encode raw input images into a form that is compatible
+    with the quantization step afterwards; in other words, it needs to have a compatible
+    shape. In the context of the VQ-VAE, this is directly related to the quantized
+    latent space dimensions, as it will need to return encoded images that are shaped
+    correctly for the quantization process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `ResnetBlock` uses *group normalization* and the *swish* activation function,
+    a choice inspired by more recent diffusion models (like *stable diffusion*). As
+    a quick reminder, the key idea with residual blocks is that the output is refined
+    by residual learning: instead of trying to learn a full transformation of the
+    input from scratch, the network learns a correction on top of the input. This
+    typically helps with gradient flow and generalization.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the end of the encoder, we are left with a spatial feature map with shape
+    `[batch_size, height, width, latent_dim]`, which will then be passed into the
+    `VectorQuantizer`. This completes the encoding stage of the VQ-VAE architecture.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can change up various parts of this encoder—convolution kernels, number
+    of layers, activation functions, stride length, and so on. For simplicity, we
+    don’t expose them as parameters to `Encoder` here, but these are all hyperparameters
+    that you can try tuning to optimize performance.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The VectorQuantizer: Discretizing the Embeddings'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The `VectorQuantizer` is the heart of a VQ-VAE—it’s where we turn continuous
+    embeddings into discrete codes. This step forces the model to commit to a limited
+    vocabulary of learned feature vectors, improving compression and encouraging meaningful,
+    reusable representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s break down the key components of the `VectorQuantizer` module:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Following are the key parts of the `VectorQuantizer` class:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Codebook
+  prefs: []
+  type: TYPE_NORMAL
+- en: A learnable matrix of shape `(embedding_dim, num_embeddings)`, initialized with
+    `lecun_uniform`. Each column is a codebook vector—essentially, a prototype that
+    the model can match against. This matrix is what defines the discrete latent space.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quantization
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `quantize()` function replaces each encoded input vector with the nearest
+    codebook vector, based on Euclidean distance. This forces the model to express
+    its understanding of each input frame using a fixed vocabulary of learned visual
+    patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Losses
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`codebook_loss`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encourages codebook vectors to move toward the encoder output. This updates
+    the codebook.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`commitment_loss`'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Encourages the encoder output to commit to a chosen codebook vector rather than
+    fluctuate. This updates the encoder. The two losses are combined to maintain a
+    balance between encoder stability and codebook usage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Straight-through estimator (STE)
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Quantization is nondifferentiable: you can’t backpropagate through a hard lookup
+    operation. The STE solves this by copying the quantized vector for the forward
+    pass, but passing gradients as if the quantization didn’t happen. It’s a standard
+    trick that allows training to proceed via approximate gradients.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Perplexity
+  prefs: []
+  type: TYPE_NORMAL
+- en: A metric that tells us how many codebook vectors the model is using. High perplexity
+    (close to `num_embeddings`) means the model is spreading its attention across
+    many entries. Low perplexity means collapse—only a few vectors are being used,
+    which limits the model’s capacity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can see that the parameters for this module are `num_embeddings`, `embedding_dim`,
+    and `commitment_cost`, which define the structure of the discrete latent space:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Number of embeddings
+  prefs: []
+  type: TYPE_NORMAL
+- en: Determines how many discrete vectors the model has to choose from. A higher
+    number allows for more fine-grained and diverse representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Embedding dimension (also called latent dimension)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Defines the richness of each vector. For example, if it’s 64, each codebook
+    entry has 64 values. Higher-dimensional embeddings can capture more nuanced patterns,
+    but they require more data and computation to train effectively.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Commitment cost
+  prefs: []
+  type: TYPE_NORMAL
+- en: A weighting factor used in the loss function to penalize encoder outputs that
+    deviate from their selected codebook vectors. If this value is too low, the encoder
+    may ignore the codebook. If it’s too high, the encoder may be overly constrained
+    and learn less expressive representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here is the main work the `VectorQuantizer` does during the forward pass, via
+    its `__call__` method:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This function performs four key operations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Quantization: It quantizes the input by replacing each encoded vector with
+    the nearest entry from the codebook.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Loss computation: It calculates two loss terms: one to pull codebook entries
+    toward encoder outputs (`codebook_loss`) and another to encourage the encoder
+    to stay near a codebook entry (`commitment_loss`).'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Perplexity: It calculates the codebook perplexity to assess how well the model
+    is utilizing the full range of codebook entries.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'STE: It enables backpropagation through the nondifferentiable quantization
+    step.'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Let’s walk through the quantization step in more detail:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'In `quantize`, the goal is to replace each input vector with its nearest neighbor
+    in the codebook. This is done in a few steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Flatten the input so that we can process all spatial positions as a list of
+    vectors.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Compute distances between each input vector and all codebook vectors using Euclidean
+    distance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Find the nearest codebook vector for each input location (`argmin` over distances).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Gather the corresponding codebook entries using the indices.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Reshape the quantized result back to the original input shape.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The distances are computed using `calculate_distances`, which implements the
+    squared Euclidean distance between a flattened input vector `x` and codebook vector
+    `y`. This is based on the identity:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: <mrow><msup><mrow><mo>∥</mo><mi>x</mi><mo>-</mo><mi>y</mi><mo>∥</mo></mrow>
+    <mn>2</mn></msup> <mo>=</mo> <msup><mrow><mo>∥</mo><mi>x</mi><mo>∥</mo></mrow>
+    <mn>2</mn></msup> <mo>-</mo> <mn>2</mn> <mrow><mo>〈</mo> <mi>x</mi> <mo lspace="0%"
+    rspace="0%">,</mo> <mi>y</mi> <mo>〉</mo></mrow> <mo>+</mo> <msup><mrow><mo>∥</mo><mi>y</mi><mo>∥</mo></mrow>
+    <mn>2</mn></msup></mrow>
+  prefs: []
+  type: TYPE_NORMAL
+- en: This formulation efficiently computes the distances using matrix operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In summary, during the forward pass, the `VectorQuantizer` finds the best-matching
+    codebook vector for each encoded input, replaces it, and enables gradients to
+    flow using the STE. The result is a discretized latent representation that is
+    both more structured and interpretable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calculating VQ-VAE–specific losses
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'With the quantized embeddings in hand, most of the hard work is done. But we
+    still need to evaluate how well the original inputs are captured. In other words,
+    we need to calculate the *VQ-VAE–specific* losses:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'There are two components here:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Codebook loss
+  prefs: []
+  type: TYPE_NORMAL
+- en: This term measures how far the quantized vectors are from the original encoder
+    outputs. We want this difference to be small. Ideally, the quantized version should
+    be nearly identical to what the encoder originally produced. The key detail is
+    that `inputs` are wrapped in `lax.stop_gradient`. This prevents gradients from
+    flowing back into the encoder so that only the codebook is updated to better match
+    the encoder output.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Commitment loss
+  prefs: []
+  type: TYPE_NORMAL
+- en: This encourages the encoder to produce outputs that are close to some entry
+    in the codebook. It helps avoid drifting too far from quantized values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Here, `quantized` is wrapped in `lax.stop_gradient`. The gradient flows only
+    to the encoder and not the codebook, encouraging it to “commit” to one of the
+    existing codebook vectors. The `self.commitment_cost` parameter scales this loss
+    to control how strongly the encoder is pulled toward existing codebook entries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These two losses play complementary roles: one pulls the codebook toward the
+    encoder outputs and the other pulls the encoder toward the codebook. Together,
+    they ensure that both parts of the model co-adapt and stabilize over time, leading
+    to a high-quality quantized latent space.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using perplexity to measure codebook use
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'After quantization, we want to understand how well the model is using its codebook.
+    Is it relying on just a few entries, or is it spreading its attention across many?
+    That’s what the *perplexity* metric captures:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Let’s break this down:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `encoding_indices` gives the index of the selected codebook entry for each
+    input.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We one-hot encode these indices to count how often each codebook vector is used.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Taking the average of this one-hot matrix gives a frequency distribution over
+    the codebook entries.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: We then compute the entropy of this distribution, and we exponentiate it to
+    get the perplexity.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The result is a number between 1 and `num_embeddings`, indicating how many codebook
+    entries are effectively in use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using the straight-through estimator
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: 'The final operation in the `__call__` method of the `VectorQuantizer` is the
+    computation of the STE:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: In a typical neural network, gradients are computed via backpropagation through
+    a series of differentiable operations. However, *quantization isn’t differentiable*.
+    It involves snapping continuous values to the nearest discrete codebook entry,
+    and you can’t take a gradient through that. This poses a challenge for gradient-based
+    optimization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To solve this, we use the STE trick. It works like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Forward pass
+  prefs: []
+  type: TYPE_NORMAL
+- en: The output of this expression is quantized, so the decoder receives the discrete
+    codebook entries.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Backward pass
+  prefs: []
+  type: TYPE_NORMAL
+- en: Because `quantized - inputs` is wrapped with `stop_gradient`, it *has no effect
+    on the gradients*. During backpropagation, only `inputs` contributes to the gradient.
+    In other words, the gradient of the STE output with respect to the encoder input
+    is treated as if the quantization step never happened.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This means that while the model behaves as if quantized during inference and
+    reconstruction, the encoder receives useful gradients during training—treating
+    quantization as if it were an identity function. Using the STE is essential for
+    training models with discrete bottlenecks, like VQ-VAEs. It allows us to maintain
+    the representational advantages of a discrete latent space, while still optimizing
+    with gradient descent, the foundation of modern deep learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This covers the core of the VQ-VAE and the most complex aspect of this chapter.
+    All that’s left now is the decoder—the final piece that turns the quantized latent
+    codes back into a reconstructed image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Decoder: Decoding the Discretized Embeddings Back to Images'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: The `Decoder` is the final stage of our VQ-VAE model. Conceptually, it mirrors
+    the `Encoder`, but instead of compressing the image, it transforms the quantized
+    latent representation back into the original image space. Its job is to turn the
+    discrete, low-resolution feature map back into a full-resolution grayscale image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s the code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'And here is the structure:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Two `ResnetBlock`s refine the latent representation.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Two `Upsample` layers then increase the spatial resolution step-by-step.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The final output has shape `[batch_size, height, width, 1]`, a single-channel
+    image.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'The `Upsample` module works like this:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: It uses bilinear interpolation to resize the feature maps to a larger spatial
+    size (e.g., doubling width and height).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Then, it applies a 3 × 3 convolution to learn a transformation of the upsampled
+    features.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'As a reminder, *bilinear interpolation* resizes images by estimating new pixel
+    values based on the four nearest neighbors. It performs linear interpolation twice:
+    first along one axis (e.g., left to right) and then along the other (top to bottom).
+    For example, when upsampling a 2 × 2 image to 3 × 3, the new center pixel is computed
+    as a weighted average of the four corner values, creating smooth transitions.
+    This avoids the blocky appearance of nearest-neighbor resizing, which simply assigns
+    each new pixel the value of the single closest original pixel, leading to sharp,
+    jagged edges.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'ClassificationHead: A Simple but Crucial Module'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'There is one final component in our model that we need to discuss: the `ClassificationHead`.
+    This module performs a seemingly simple task—predicting protein IDs—but it turns
+    out to be one of the most important parts of the architecture. The original Kobayashi
+    paper discovered that this model block, which they called *FcBlock*, was actually
+    crucial in guiding the model to learn general protein localization patterns.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In essence, the `ClassificationHead` takes the quantized embeddings and tries
+    to classify which protein the input microscopy image contained. This is implemented
+    as a small, fully connected network (hence, “Fc”), with one or two dense layers,
+    ReLU activations, and dropout:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'The parameters include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`num_classes`: The number of protein IDs in the dataset'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`dropout_rate`: Helps regularize the model and prevent overfitting'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`layers`: Whether to use a one- or two-layer classifier'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'Despite its simplicity, this block had the largest impact on performance in
+    the original cytoself paper. It acts as a form of auxiliary task: the model is
+    explicitly asked to predict the protein identity from its embedding; a task that
+    is possible only if the embeddings encode useful spatial features.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This changes the role of the embeddings: instead of only trying to minimize
+    reconstruction loss, the model is now encouraged to organize the latent space
+    in a way that helps with protein discrimination. This helps prevent codebook collapse
+    and leads to much better localization-specific features.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'Interestingly, this auxiliary protein classification task is hard for the model—and
+    that makes intuitive sense. Many proteins are part of the same complex and share
+    the same localization, making their image frames visually indistinguishable. But
+    that’s the point: by attempting this difficult task, the model is pushed to extract
+    subtle, generalizable cues related to localization, even if it doesn’t achieve
+    perfect classification.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Later in the chapter, you’ll see the difference when this component is removed.
+    It also demonstrates a broader lesson: *adding the right auxiliary task can transform
+    a model’s ability to learn*. You can control how strongly this auxiliary task
+    influences training via the `classification_weight` parameter.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We now have a model. Let’s train it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Setting Up Model Training
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: We will now train the `LocalizationModel` model we’ve built. To begin, we’ll
+    use a smaller number of image frames to allow for faster iteration and debugging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The main training loop is defined in the `train` function. It sets up the training
+    state, splits the data into batches, and iterates over the dataset for a number
+    of epochs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: The first thing to notice is that training proceeds in epochs, which form the
+    main loop. As a reminder, an *epoch* is a full pass through the entire training
+    set; every training example is seen once. Before we enter the loop for the first
+    time, we initialize the training state so that we have a starting point. Then,
+    the training begins with the first epoch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Before diving into the training logic, let’s briefly look at how the dataset
+    is fed into the model. A key part of this is the `Dataset.get_batches` method,
+    which handles how image examples are served during training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: You can see that we first select either the *training* or the *test* set of
+    image frames, split them into batches of a preset size, and shuffle their indices.
+    The protein labels for each frame are then encoded as integers so that they can
+    be used with the `optax.softmax_cross_entropy_with_integer_labels` loss function.
+    Finally, each batch yields the image data, the integer-encoded protein labels,
+    and the corresponding frame IDs (which can be useful for analysis or visualization).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Once the data is batched, it’s passed into two key functions: `train_step`
+    for updating the model and `eval_step` for monitoring performance. Let’s take
+    a closer look at `train_step`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: Within the `train_step` function, the inner `calculate_loss` defines how the
+    model’s loss is computed. This function is the core of the training step. It determines
+    how well the model is performing and guides the weight updates to minimize the
+    loss.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, we call `state.apply_fn`, which runs the `__call__` method of the `LocalizationModel`
+    model. This returns the reconstruction (`x_recon`), the codebook-related losses
+    (`codebook_loss` and `commitment_loss`), the classification logits, and the `perplexity`
+    of the quantization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We then compute two additional losses:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`recon_loss`: How different the reconstructed image is from the original, using
+    squared error'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`classification_loss`: How well the model predicts the protein ID from the
+    image embedding, using cross-entropy'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: These losses are assembled into `loss_components`, and then they are combined
+    into a `total_loss` that drives training. Notably, the classification loss is
+    multiplied by a `classification_weight`, allowing us to control how much it contributes
+    to learning. Setting it to zero *ablates* (removes) the classification task, something
+    we will test later in the chapter.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Finally, we calculate evaluation metrics to track how training is progressing.
+    These include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '`perplexity`: How effectively the model is using the codebook'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '`accuracy`: How effectively the model is predicting the protein IDs'
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: All of this is used to compute gradients via `jax.value_and_grad` and then update
+    the model with `state.apply_gradients`. This design cleanly separates different
+    objectives (reconstruction, quantization, classification) and lets you experiment
+    with different trade-offs by adjusting loss weights.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After each epoch, we store the metrics collected across batches. These include
+    reconstruction loss, codebook and commitment losses, classification accuracy,
+    and perplexity. The metrics are averaged across batches to give a summary per
+    epoch, allowing us to monitor model progress and convergence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The `eval_step` is essentially the same as the `train_step`, with one key difference:
+    it does not update the model weights. Instead, it runs the model in inference
+    mode and is used to assess how well the current model performs on a held-out test
+    set. This gives us an unbiased signal of generalization performance.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: We’ve now covered the model, dataset, and training logic. It’s finally time
+    to give it a spin and see what it can learn.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training with a Small Image Set
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Let’s see the model in action. We’ll start by training it on a small subset
+    of the data: 50 proteins, split into 80% training data, 10% validation data, and
+    10% test data, using a fixed random seed for reproducibility.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We define our model architecture by setting the `embedding_dim`, `num_embeddings`,
+    `commitment_cost`, `dropout_rate`, and `classification_head_layers`. Then, we
+    specify the training parameters: number of `epochs`, `batch_size`, `learning_rate`,
+    and `classification_weight`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'Now we can start training:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: After training, we now have a `LocalizationModel` model that has learned to
+    compress, quantize, and reconstruct protein localization patterns, while also
+    performing auxiliary classification. But how well has it actually learned? Let’s
+    find out. We’ll start by visually inspecting its reconstructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inspecting Image Reconstruction
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'Before diving deeper, let’s do a quick sanity check: can the `LocalizationModel`
+    model we just trained reconstruct the input images at all? If it has learned any
+    meaningful representation of the input data, its reconstructions should at least
+    vaguely resemble the original frames. We will evaluate this on the validation
+    set of the dataset, that is, on frames that were never seen during training.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Indeed, the model captures some of the structural features present in the inputs
+    (see [Figure 6-9](#recon-plot)). The reconstructions are far from perfect—blurry
+    and low resolution—but that’s OK. Remember, our goal isn’t to generate photorealistic
+    images, it’s to learn discrete representations that encode spatial localization
+    patterns. Reconstruction is just a training objective to help guide that process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0609.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-9\. Reconstructed images of random proteins from the small-scale model.
+    Each pair shows an input image (left) and its reconstruction (right). While blurry,
+    the reconstructions often capture core structural features—a sign that the model
+    is learning to encode localization-relevant information. Protein is indicated
+    per panel (number indicates additional secondary localizations measured).
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Examining Evaluation Metrics Over Epochs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Let’s now look more closely at how training progressed by examining the loss
+    curves (see [Figure 6-10](#losses-plot)). The left panel shows the four individual
+    loss components used during training, while the right panel displays total training
+    and test loss across epochs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0610.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-10\. Training dynamics represented by individual loss components on
+    the training set (left) and total training versus validation loss over epochs
+    (right). All loss components decrease over time. While training loss continues
+    to improve steadily, validation loss plateaus early, suggesting the model generalizes
+    reasonably well but gains from further training may be limited.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'As expected, all loss components steadily decrease over time—especially the
+    classification loss, which dominates the total due to its larger magnitude. This
+    makes sense: distinguishing between 50 proteins based solely on their localization
+    patterns is a challenging task. Remember that we can always adjust the classification
+    loss’s relative weight using the `classification_weight` parameter later.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Meanwhile, validation loss closely tracks training loss throughout, with only
+    a slight and stable gap between them. There’s no clear sign of overfitting, which
+    is encouraging given the small dataset.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, let’s inspect how the codebook is being used—by looking at the evolution
+    of its *perplexity* over time. In VQ-VAEs, perplexity measures how many codebook
+    entries are effectively being used during vector quantization. If the model relies
+    on just a handful of embeddings (e.g., 10 out of 512), the perplexity will be
+    low. If it spreads usage more evenly across many entries, the perplexity rises,
+    approaching the total number of codebook vectors available. In [Figure 6-11](#plot-perplexity)
+    we see the evolution of perplexity:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0611.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-11\. Perplexity increases over epochs on both the training and validation
+    sets. A rising perplexity indicates that the model is using more of the available
+    codebook entries, rather than collapsing onto a small subset. The close alignment
+    between training and validation perplexity suggests that this richer, more diverse
+    representation generalizes well beyond the training data.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As you can see in [Figure 6-11](#plot-perplexity), perplexity steadily increases
+    across epochs for both the training and validation sets. This is a strong signal
+    that the model is learning to encode diverse spatial patterns using a broad vocabulary
+    of codebook entries. Instead of relying on a narrow set of common features, it’s
+    finding more nuanced ways to represent the variation in protein localization—effectively
+    condensing complex microscopy images into compact, expressive codes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Training a Model Without a Classification Task
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Next, we’ll train the exact same model on the same data, but this time with
+    the classification weight set to 0\. This simulates removing the auxiliary protein
+    ID classification task, in other words, disabling the `ClassificationHead`. Note
+    that we are using the same random seed to provide the closest possible comparison.
+    This lets us see how much that component helps guide the model’s learning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As a general design principle, it’s helpful to structure your code so that model
+    components can be ablated (i.e., effectively removed) by setting their weight
+    to zero via a config or flag—rather than rewriting or commenting out parts of
+    the architecture. This makes it much easier to test hypotheses, compare model
+    variants, and run controlled experiments. It’s a simple practice that promotes
+    modular, reproducible research.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Let’s give it a go:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: This time around, the model performs much worse, and its perplexity collapses
+    (down to ~30, previously ~350), as shown in [Figure 6-12](#alt-plot-perplexity).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE24]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0612.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-12\. Perplexity over epochs collapses without the `ClassificationHead`
+    in the model architecture, suggesting that the auxiliary protein identification
+    task plays a critical role in encouraging a diverse and informative representation.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Perhaps counterintuitively, this model’s reconstructed microscopy images actually
+    look a bit *better* in [Figure 6-13](#alt-recon-plot).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE25]'
+  prefs: []
+  type: TYPE_PRE
+- en: At first glance, this might seem like an improvement, but it actually reveals
+    a critical trade-off in the model’s objectives.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Without the auxiliary classification task (i.e., without the `ClassificationHead`),
+    the model can focus more of its efforts on minimizing the reconstruction loss.
+    This encourages it to memorize the input data as precisely as possible, often
+    by collapsing to a small number of frequently used codebook entries. That’s why
+    the reconstructions look sharper: the model has overfit to pixel-level detail
+    rather than learning generalizable representations.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: But VQ-VAEs aren’t just about pretty reconstructions. They’re about learning
+    discrete, structured representations of the input. With the classification task
+    enabled, the model is forced to organize its internal representations in a way
+    that’s useful for predicting protein identity. This encourages it to capture high-level
+    biological features, such as localization patterns, at the cost of slightly blurrier
+    reconstructions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This same observation was highlighted in the original cytoself paper: adding
+    classification-like objectives improves the quality of the latent space by pushing
+    the model to encode meaningful, discriminative features. In fact, cytoself showed
+    that models trained only to reconstruct images were far less effective at clustering
+    localizations or identifying complexes, even when their reconstructions looked
+    visually fine.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0613.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-13\. Reconstructed images appear slightly more faithful to the input
+    when the `ClassificationHead` is removed—likely because the model can focus its
+    efforts on the reconstruction task, resulting in less blurring.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Understanding the Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'What has the model actually learned about spatial organization within cells?
+    To answer this question, we need to take a closer look at the model’s *latent
+    space*: the internal representation it builds from the input images. In particular,
+    since our model uses a codebook, we can analyze *which* entries get used and *how
+    often* for each protein. This gives us a kind of *feature spectrum* or a summary
+    of how each protein maps onto the learned visual vocabulary.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding Localization Clustering
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: A natural question is whether the model can distinguish between different subcellular
+    compartments. One way to test this is to apply the uniform manifold approximation
+    and projection (UMAP) dimensionality reduction technique to the learned embeddings.
+    UMAP projects high-dimensional data into two dimensions while preserving local
+    structure, making it easier to visualize complex relationships.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'There are other dimensionality reduction techniques, such as *t-SNE* and *PCA*,
+    but *UMAP* is especially well suited for this task. Unlike PCA, it can capture
+    complex nonlinear relationships. UMAP is similar to t-SNE in many ways, but with
+    a key advantage: it tends to preserve both local *and* global structure more effectively.
+    This makes it especially useful for visualizing patterns across diverse datasets
+    like this one.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: UMAP has become a go-to tool in fields like proteomics and genomics—not just
+    for its performance, but also because it works well out of the box, with minimal
+    hyperparameter tuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If the model has learned meaningful spatial features, we’d expect image frames
+    from similar cellular compartments—like the mitochondria, nucleus, or ER—to cluster
+    together in the UMAP space. To visualize this, we need to extract the model’s
+    internal representation of each image.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The function `get_frame_encoding_index_histogram` does this by calculating
+    a codebook usage histogram for each frame:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE26]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'For each batch of images, we use the model to obtain the encoding indices:
+    the discrete codebook entries selected for each spatial patch in each frame. These
+    are returned by the `pluck_encodings` helper function. Each frame’s output is
+    then flattened and passed to `np.histogram`, which counts how often each codebook
+    entry is used.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The result is a histogram vector per frame—one value per codebook entry—describing
+    how frequently that entry was activated. These vectors can be thought of as discrete
+    fingerprints of each image, which we can then reduce to 2D with UMAP for visualization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Why proceed in batches? Batching during the embedding extraction—just like during
+    training—helps manage memory and computation. It ensures that we don’t load the
+    entire dataset into memory at once. Note that the batch size used here doesn’t
+    have to match the training batch size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'We’ll generate projections for two versions of our model: one with the `ClassificationHead`
+    enabled and one without. By plotting both side-by-side, we can observe how the
+    presence of the `ClassificationHead` affects the structure of the learned embedding
+    space. We continue using the validation dataset to evaluate our model. The resulting
+    visualization is shown in [Figure 6-14](#projections-plot):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE27]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0614.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-14\. UMAP projections of the model with (left) and without (right)
+    the `ClassificationHead`. The model on the left learns clearer, more meaningful
+    structure—with frames from the same subcellular compartment (e.g., vesicles, chromatin,
+    nucleolus) forming tighter clusters. Without the `ClassificationHead`, the structure
+    is less distinct, and compartments are harder to separate. Around 1% of frames
+    with a single predominant localization are highlighted with larger markers to
+    intuitively annotate clusters.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can see that, once the embeddings are labeled with ground-truth localization
+    categories, the model has clearly learned to distinguish different subcellular
+    compartments based on raw pixel patterns. In the UMAP plot on the left (with the
+    `ClassificationHead`), compartments like chromatin, mitochondria, and nucleolus
+    form fairly tight, distinct clusters—indicating that the model has learned consistent
+    visual features for these structures. Vesicles sometimes form a separate group
+    but often show overlap with ER and cytoplasmic frames, likely reflecting their
+    more diffuse and variable appearance in the raw images.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Removing the `ClassificationHead` has a clear visual impact. In the righthand
+    UMAP, the model still produces structured embeddings, but the clusters are less
+    distinct. Localizations such as cytoplasm, ER, and vesicles are more intermixed,
+    suggesting that without the auxiliary classification task, the model learns a
+    weaker or more entangled representation of subcellular identity. This comparison
+    highlights how architectural choices—even auxiliary objectives—can meaningfully
+    shape the structure of learned representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since we want to compare how the presence or absence of the `ClassificationHead`
+    affects the learned embeddings, it’s important that both UMAP visualizations are
+    directly comparable. By default, techniques like UMAP involve some randomness
+    in initialization and optimization, which can lead to inconsistent visual layouts
+    across runs. To address this, we use an *aligned UMAP*, a variant of UMAP that
+    tracks shared data points across embeddings to ensure consistent alignment and
+    make visual comparisons meaningful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While these UMAP plots are useful for qualitative interpretation, it’s also
+    possible to quantify clustering quality more formally; for example, by comparing
+    the average distances between embeddings from the *same* localization versus those
+    from *different* localizations. If the model has learned a meaningful embedding
+    space, we’d expect intra-class distances (within a localization category) to be
+    small, and inter-class distances to be larger. This basic intuition underpins
+    several clustering quality metrics and was used by Kobayashi et al. to evaluate
+    their model quantitatively. In this chapter, we’ll focus on visual exploration,
+    but you can always extend the code to include such metrics if you would like to.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inspecting Feature Spectrums
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: To better understand what our model has learned, we can analyze how it uses
+    its codebook across different proteins. Remember, each image is encoded using
+    entries from a learned set of code vectors (the codebook). Over time, some entries
+    may become specialized, for instance, consistently firing for mitochondrial proteins,
+    or for nuclear-localized ones.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'A *feature spectrum* is a simple but powerful way to summarize this behavior.
+    For each protein, we:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Collect all its image frames.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Count how often each codebook entry is used across those frames.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Aggregate these counts into a histogram. This is the protein’s feature spectrum.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each feature spectrum essentially acts like a “fingerprint” of how the model
+    encodes that protein’s spatial patterns.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To explore how specialized the codebook has become, we compare these spectra
+    across proteins. If certain codebook entries are consistently used for similar
+    proteins (e.g., those localized to the ER), we expect those spectra to be correlated.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The following function computes a Pearson correlation matrix across all protein
+    spectra and then applies hierarchical clustering to group similar patterns. This
+    reveals which sets of codebook entries (features) tend to be co-used and may correspond
+    to broader localization categories:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE28]'
+  prefs: []
+  type: TYPE_PRE
+- en: We first compute how correlated the spectra are across all proteins using Pearson
+    correlation. Then, we build a tree (dendrogram) from that correlation matrix and
+    cluster it to find groups of related proteins based on how similarly they use
+    the codebook. These clusters often reflect shared localization patterns or functional
+    relationships.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The resulting heatmap in [Figure 6-15](#corr-heatmap) gives us a bird’s-eye
+    view of which parts of the codebook are used together and by which proteins:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE29]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0615.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: 'Figure 6-15\. Correlation heatmap between codebook entries, based on how often
+    they co-occur across proteins. Each axis shows the index of a vector quantization
+    (vq) codebook entry (not all 512 indices are written out due to space constraints).
+    The shading indicates the Pearson correlation between code usage patterns across
+    proteins: lighter denotes strong positive correlation, and darker strong negative
+    correlation. The dendrogram here clusters codebook entries into groups that represent
+    shared spatial features learned by the model.'
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We can now take a deep dive into what the model’s feature spectra actually represent.
+    Recall that for each protein, we computed a histogram of how often each codebook
+    entry is used—essentially, a fingerprint of localization patterns learned by the
+    model. Then, we computed the Pearson correlation between these fingerprints across
+    proteins to see which codebook entries tend to be used together.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The resulting plot in [Figure 6-15](#corr-heatmap) shows a correlation heatmap
+    between all 512 codebook entries, with the color scale ranging from –1 (strong
+    anticorrelation, darker) to +1 (strong correlation, lighter). Codebook entries
+    that are frequently used together—for example, to describe a specific organelle—appear
+    as bright blocks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The dendrogram at the top reflects a hierarchical clustering of these correlations.
+    Based on this structure, the clustering procedure has grouped the codebook entries
+    into eight broader encoding clusters, each of which represents a recurring spatial
+    motif captured by the model. The color bar just below the dendrogram indicates
+    these groupings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here’s what this heatmap tells us:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Diagonal blocks
+  prefs: []
+  type: TYPE_NORMAL
+- en: The visible lighter blocks along the diagonal show groups of codebook entries
+    that are highly correlated, suggesting that they work together to represent similar
+    spatial features across proteins.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Off-diagonal near-zero correlations
+  prefs: []
+  type: TYPE_NORMAL
+- en: The lack of strong off-diagonal structure implies that these clusters are relatively
+    distinct. The model has learned specialized regions of the codebook for different
+    spatial contexts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unsupervised insight
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crucially, this entire structure emerged without any localization labels. It
+    reflects how the model has self-organized its representation space purely from
+    image similarity.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is a powerful window into the internal structure of the learned representations,
+    revealing that even individual quantized codes fall into larger functional groups
+    that track meaningful biological variation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To take this analysis a step further, we can examine how these codebook entries
+    are used across known subcellular compartments. If the model has learned meaningful
+    localization features, we should see that certain codebook vectors are enriched
+    for specific compartments or structures like chromatin, vesicles, or ER.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This is shown in [Figure 6-16](#stacked-histograms), where we average the feature
+    spectra across all proteins within each localization class. Even though the model
+    was never told anything about localization labels during training, we can now
+    see clear signatures that align with known biology:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE30]'
+  prefs: []
+  type: TYPE_PRE
+- en: Although this is our initial, relatively simple model trained on a small subset
+    of proteins, we already see some evidence that it is learning meaningful biological
+    structure. Each row in the figure represents the average codebook usage (feature
+    spectrum) for a given localization class. For instance, `nucleolus` (first row)
+    shows peaks mostly within group VIII, suggesting that only a few specific codebook
+    entries are consistently used to represent that compartment. This kind of narrow,
+    high-signal spectrum is typical for highly structured and easily distinguishable
+    compartments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In contrast, `mitochondria` (third row), `er` (fourth row), and especially
+    `cytoplasm` (fifth row) display broader, more distributed activation across various
+    groups—perhaps reflecting their more heterogeneous or variable visual features,
+    or simply lacking in learned separation due to our limited dataset. Still, each
+    compartment has its own distinctive fingerprint: for instance, `mitochondria`
+    shows much higher peaks in group VI. Interestingly, while `nucleoplasm` is spatially
+    adjacent to `nucleolus` in the cell, it exhibits a markedly different activation
+    pattern—whereas `nucleoplasm` appears much more similar to `chromatin`, possibly
+    due to less structural separation or shared staining characteristics.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![](assets/dlfb_0616.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-16\. Stacked histograms of codebook usage for different protein localization
+    classes. Each row shows the average feature spectrum for a specific subcellular
+    compartment (e.g., ER, nucleoplasm). Vertical groupings (I–VIII) reflect clusters
+    of related codebook entries, as defined in the correlation heatmap shown previously.
+    Despite never being trained with localization labels, the model has learned to
+    associate certain codebook vectors with specific biological structures, revealing
+    meaningful and interpretable signatures.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: We’ve only scratched the surface using a small dataset and a simple architecture.
+    In the next section, we’ll scale up both the model and the data to see how far
+    this approach can go.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Improving the Model
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: We’ve seen that even a relatively simple model with a small dataset of 50 proteins
+    can learn meaningful representations of protein localization. The next step is
+    to scale up the dataset to push performance further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Scaling Up the Data
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'We now increase the number of proteins and their corresponding imaging frames
+    significantly (from 50 to 500). This presents new challenges, especially in terms
+    of training time and resource management. To make this process more manageable,
+    we’ll save the final training state so that it can be reloaded for further inspection
+    and evaluation:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE31]'
+  prefs: []
+  type: TYPE_PRE
+- en: 'This model takes considerably longer to train, but the payoff is a more expressive
+    and well-structured representation space. [Figure 6-17](#large-stacked-histograms)
+    shows the aggregated codebook usage (feature spectra) across different localization
+    classes, showing clearer localization signatures across a broader range of proteins
+    (this plot also includes an expanded number of location classes as rows):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE32]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0617.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-17\. Histograms of embedding codebook usage (feature spectra) for different
+    subcellular localizations. Each row shows the average distribution of codebook
+    features across all image frames annotated with a given localization (e.g., chromatin,
+    vesicles, nuclear membrane). Distinct localization categories exhibit unique spectral
+    “signatures”—for instance, nuclear membrane and chromatin show sharp, narrow peaks.
+    This representation provides a quantitative “signature” of protein localization
+    and allows predictions for unannotated proteins based on their similarity to known
+    spectra.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Now we’re cooking; we see more clearly differentiated spectral signatures compared
+    to the earlier, smaller model. Many compartments display sharp, concentrated peaks,
+    indicating that the model consistently relies on a small set of highly specific
+    codebook vectors for these localizations. The rows—each representing a different
+    subcellular compartment—now show more distinct and characteristic patterns. For
+    example, comparing the “before” ([Figure 6-16](#stacked-histograms)) and “after”
+    ([Figure 6-17](#large-stacked-histograms)) spectra for `mitochondria` and `er`,
+    we see that in the “after” state, the signatures are less diffuse and more sharply
+    defined, suggesting that the model has learned to focus more precisely on key
+    features for these compartments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We could speculate that compartments showing broader activation across several
+    codebook regions, such as the `er` and `cytoplasm`, do so because of their inherently
+    more variable or sprawling visual structure. These compartments tend to span large
+    regions of the cell and appear with more morphological diversity. For instance,
+    the ER forms a network that spans the cell, while cytoplasmic proteins can exhibit
+    diffuse or context-dependent patterns. These differences likely lead the model
+    to spread their representations across a wider set of features.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'These improvements to the spectra came purely from scaling up the dataset;
+    no changes were made to the model architecture. Try exploring the model side of
+    things next: increase capacity by adjusting `num_embeddings`, `embedding_dim`,
+    or `classification_``head_layers`, or experiment with your own architecture changes.
+    There’s a lot of room to get creative here.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Next, we can replot a UMAP projection to visualize the model’s learned representation
+    space (see [Figure 6-18](#large-projections-plot)):'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE33]'
+  prefs: []
+  type: TYPE_PRE
+- en: '![](assets/dlfb_0618.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 6-18\. UMAP projection of embeddings produced by the larger model and
+    dataset. The tight clustering of similar labels (e.g., nucleolus, ER, chromatin)
+    shows that the model has learned to distinguish complex spatial patterns—without
+    using labels during training.
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This projection offers a compelling view into how well the larger model has
+    learned to distinguish subcellular compartments. Each point represents an individual
+    image frame, colored by its known localization. But remember, the model was trained
+    in a self-supervised manner and never had access to these labels.
+  prefs: []
+  type: TYPE_NORMAL
+- en: First, we see more points in the plot because the dataset is larger. We also
+    observe that the separation between groups is now more distinct compared to earlier
+    runs. Compartments such as the `cytoplasm`, `vesicles`, and `nucleoplasm` now
+    form well-defined groups and are less intermixed, suggesting that the model has
+    learned highly consistent visual signatures for these localizations. In some cases—such
+    as `vesicles`—the model even appears to discover distinct subcategories, which
+    are cleanly separated in the embedding space. Previously diffuse or heterogeneous
+    categories like `cytoplasm` now exhibit more internal structure, with clearer
+    spatial separation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Going Further
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: 'This is as far as we’ll go in this chapter, but there’s much more you can explore
+    from here. The original cytoself paper introduces several architectural innovations
+    that improve both performance and biological insight:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Split quantization
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of quantizing full feature vectors, cytoself divides them into smaller
+    chunks and quantizes each independently. This improves codebook usage and the
+    richness of the learned representations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Global and local representations
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The model processes each image at two spatial scales:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A *coarse* (4 × 4 × 576) representation that captures high-level localization
+    patterns.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A *fine* (25 × 25 × 64) representation that preserves detailed spatial features.
+    Each is quantized using a separate codebook.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'These additions enabled cytoself to achieve several impressive results, all
+    in an unsupervised setting:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Predicting localization of previously uncharacterized proteins
+  prefs: []
+  type: TYPE_NORMAL
+- en: For instance, it correctly inferred that FAM241A localized to the endoplasmic
+    reticulum—a prediction that was later confirmed through colocalization experiments
+    and mass spectrometry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Distinguishing subtle subcellular differences
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The model learned to separate visually similar compartments like lysosomes
+    and endosomes. Though hard to distinguish by eye, these compartments differ in
+    function: lysosomes degrade cellular material, while endosomes serve as transport
+    vesicles en route to lysosomes.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Discovering protein complexes
+  prefs: []
+  type: TYPE_NORMAL
+- en: Perhaps most impressively, cytoself grouped proteins belonging to the same complexes,
+    such as ribosomes or the proteasome, purely from embedding similarity. By comparing
+    protein-level embeddings, the authors showed that known complex members cluster
+    tightly, even without any labels or prior knowledge. In some cases, this outperformed
+    previous supervised methods, and it even hinted at previously uncharacterized
+    complex members.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re interested in learning more, we encourage you to read the original
+    paper and explore the [OpenCell resource](https://oreil.ly/eX8XH), which hosts
+    the data and interactive tools used in the study. The paper also outlines exciting
+    future directions like 3D imaging, label-free microscopy, and cross-species generalization.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, we built a self-supervised deep learning model to learn spatial
+    organization within human cells, all without relying on any manual annotations.
+    This kind of approach is especially powerful for large-scale biological imaging,
+    where manual curation not only is expensive and time-consuming but also can introduce
+    human bias. You tackled a real-world challenge involving complex data, biological
+    nuance, and custom neural architectures, all while drawing on key ideas from across
+    the book.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This was also the final end-to-end project chapter of the book. If you made
+    it this far, congratulations. We hope this book helped you build intuition, fluency,
+    and confidence in applying deep learning to biology. Whether you’re exploring
+    new datasets, designing new models, or testing the boundaries of what today’s
+    models can (and can’t) do, we’re excited to see where you go next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Happy modeling—and keep exploring!
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([1](ch06.html#id943-marker)) Kobayashi, H., Cheveralls, K. C., Leonetti, M.
+    D., & Royer, L. A. (2022). Self-supervised deep learning encodes high-resolution
+    features of protein subcellular localization. *Nature Methods*, 19(8), 995–1003\.
+    https://doi.org/10.1038/s41592-022-01541-z
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch06.html#id946-marker)) Suk, T. R. (2020). The Role of TDP-43 Mislocalization
+    in Amyotrophic Lateral Sclerosis. *Molecular Neurode‐Generation*, 15(1), 45.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch06.html#id947-marker)) Rodriguez, J. A., Au, W. W., & Henderson, B.
+    R. (2003). Cytoplasmic mislocalization of BRCA1 caused by cancer-associated mutations
+    in the BRCT domain. *Experimental Cell Research*, 293(1), 14–21\. https://doi.org/10.1016/j.yexcr.2003.09.027
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch06.html#id948-marker)) Coale, T. H. et al. (2024). Nitrogen-fixing organelle
+    in a marine alga. *Science*, 384(6692), 217–222\. https://doi.org/10.1126/science.adk1075
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch06.html#id949-marker)) Paré, B., et al. (2015). [Early detection of
+    structural abnormalities and cytoplasmic accumulation of TDP-43 in tissue-engineered
+    skins derived from ALS patients](https://doi.org/10.1186/s40478-014-0181-z). *Acta
+    Neuropathologica Communications*, 3(1).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch06.html#id950-marker)) Ye, D., et al. (2023). Recent Advances in Nanomedicine
+    Design Strategies for Targeting Subcellular Structures,. *iScience*, 28(1), 111597.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch06.html#id956-marker)) Jordan, J. (2018, March 19). [*Introduction to
+    autoencoders*](https://oreil.ly/iLKwc). Jeremy Jordan.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '^([8](ch06.html#id961-marker)) Dobilas, S. (2025, January 22). [VAE: Variational
+    Autoencoders – How to employ neural networks to generate new images](https://oreil.ly/0SB-Q).
+    *Towards Data Science*.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([9](ch06.html#id975-marker)) Van Den Oord, Aaron, Oriol Vinyals, and Koray
+    Kavukcuoglu. 2017\. [“Neural Discrete Representation Learning”](https://oreil.ly/D-Rst).
+    arXiv.Org. November 2, 2017.
+  prefs: []
+  type: TYPE_NORMAL

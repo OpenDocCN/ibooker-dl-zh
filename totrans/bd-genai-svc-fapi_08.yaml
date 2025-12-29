@@ -1,0 +1,1035 @@
+- en: Capitolo 5\. Raggiungere la concomitanza nei carichi di lavoro dell'IA
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: 'Questo lavoro è stato tradotto utilizzando l''AI. Siamo lieti di ricevere il
+    tuo feedback e i tuoi commenti: [translation-feedback@oreilly.com](mailto:translation-feedback@oreilly.com)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In questo capitolo imparerai a conoscere il ruolo e i vantaggi della programmazione
+    asincrona per aumentare le prestazioni e la scalabilità dei tuoi servizi GenAI.
+    Imparerai a gestire le interazioni simultanee con gli utenti e a interfacciarti
+    con sistemi esterni come i database, a implementare il RAG e a leggere le pagine
+    web per arricchire il contesto delimitato dai prompt del modello. Acquisirai le
+    tecniche per gestire in modo efficace le operazionidelimitate dall'I/O e dalla
+    CPU, soprattutto quando hai a che fare con servizi esterni o gestisci attività
+    di inferenza di lunga durata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ci addentreremo anche nelle strategie per gestire in modo efficiente i compiti
+    di inferenza dell'IA generativa di lunga durata, compreso l'uso del ciclo di eventi
+    FastAPI per l'esecuzione dei compiti in background.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ottimizzare i servizi GenAI per più utenti
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: I carichi di lavoro dell'IA sono operazioni computazionalmente costose che possono
+    impedire ai tuoi servizi GenAI di servire più richieste simultanee. Nella maggior
+    parte degli scenari di produzione, più utenti utilizzeranno le tue applicazioni.
+    Pertanto, i tuoi servizi dovranno servire le richieste *in modo simultaneo*in
+    modo da poter eseguire più attività sovrapposte. Tuttavia, se ti interfacci con
+    i modelli GenAI e con sistemi esterni come i database, il filesystem o internet,
+    ci saranno operazioni che possono bloccare l'esecuzione di altre attività sul
+    tuo server.Le operazioni di lunga durata chepossono interrompere il flusso di
+    esecuzione del programma sono considerate *bloccanti*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Queste operazioni di blocco possono essere di due tipi:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ingresso/uscita (I/O) delimitato
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quando un processo deve attendere a causa di un'operazione di input/output di
+    dati, che possono provenire da un utente, da un file, da un database, da una rete
+    e così via.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calcolo delimitato
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quando un processo deve attendere a causa di un'operazione ad alta intensità
+    di calcolo sulla CPU o sulla GPU. I programmi delimitati dal calcolo spingono
+    i core della CPU o della GPU al loro limite eseguendo calcoli intensivi, spesso
+    bloccando l'esecuzione di altre attività.^([1](ch05.html#id795)) Alcuni esempi
+    sono l'elaborazione dei dati, l'inferenza o l'addestramento di modelli di intelligenza
+    artificiale, il rendering di oggetti 3D, l'esecuzione di simulazioni e così via.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Hai a disposizione alcune strategie per servire più utenti:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ottimizzazione del sistema
+  prefs: []
+  type: TYPE_NORMAL
+- en: Per le attività legate all'I/O, come il recupero di dati da un database, l'utilizzo
+    di file su disco, le richieste di rete o la lettura di pagine web.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ottimizzazione del modello
+  prefs: []
+  type: TYPE_NORMAL
+- en: Per compiti delimitati dalla memoria e dal calcolo, come il caricamento e l'inferenza
+    del modello
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sistema di accodamento
+  prefs: []
+  type: TYPE_NORMAL
+- en: Per gestire compiti di inferenza di lunga durata per evitare ritardi nelle risposte.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In questa sezione analizzeremo ogni strategia in modo più dettagliato. Per
+    aiutarti a consolidare l''apprendimento, implementeremo anche diverse funzioni
+    che sfruttano le strategie sopra citate:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Costruisci uno *scraper di pagine web* per recuperare e analizzare in massa
+    gli URL HTTP incollati nella chat, in modo da poter chiedere al tuo LLM informazioni
+    sul contenuto delle pagine web.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Aggiungi un modulo *RAG (retrieval augmented generation* ) al tuo servizio con
+    un database vettoriale self-hosted come `qdrant`, in modo da poter caricare e
+    dialogare con i tuoi documenti tramite il tuo servizio LLM.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Aggiunta di un *sistema di generazione di immagini in batch*in modo da poter
+    eseguire i carichi di lavoro di generazione di immagini come attività in background
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Prima di mostrarti come costruire le funzionalità sopra citate, dobbiamo approfondire
+    l'argomento della *concorrenza* e del *parallelismo*, perché la comprensione di
+    entrambi i concetti ti aiuterà a individuare le strategie corrette da utilizzare
+    per i tuoi casi d'uso.
+  prefs: []
+  type: TYPE_NORMAL
+- en: La*concomitanza* si riferisce alla capacità di un servizio di gestire più richieste
+    o attività contemporaneamente, senza completarne una dopo l'altra. Durante le
+    operazioni concomitanti, le tempistiche di più attività possono sovrapporsi e
+    possono iniziare e terminare in momenti diversi.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In Python, puoi implementare la concorrenza con un singolo core della CPU passando
+    da un compito all'altro su un singolo thread (tramite la programmazione asincrona)
+    o tra diversi thread (tramite il multithreading).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Con più core, puoi anche implementare un sottoinsieme della concorrenza chiamato
+    *parallelismo*, in cui i compiti vengono suddivisi tra più lavoratori indipendenti
+    (tramite il multiprocessing), ognuno dei quali esegue i compiti simultaneamente
+    sulle proprie risorse isolate e su processi separati.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nota
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Anche se si prevede di rimuovere presto il GIL da Python, al momento in cui
+    scriviamo non è possibile che più thread lavorino simultaneamente attraverso i
+    task. Pertanto, la concorrenza su un singolo core può dare un'illusione di parallelismo
+    anche se c'è un solo processo che sta facendo tutto il lavoro. Il singolo processo
+    può essere multitasking solo cambiando i thread attivi per ridurre al minimo i
+    tempi di attesa delle operazioni di blocco dell'I/O.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Il vero parallelismo si può ottenere solo con più lavoratori (in multiprocessing).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Anche se la concorrenza e il parallelismo hanno molte somiglianze, non sono
+    esattamente gli stessi concetti. La grande differenza tra loro è che la concorrenza
+    può aiutarti a gestire più attività intersecando la loro esecuzione, il che è
+    utile per le attività legate all'I/O. Il parallelismo, invece, prevede l'esecuzione
+    di più attività simultaneamente, in genere su macchine multicore, il che è più
+    utile per le attività legate alla CPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Puoi implementare la concorrenza utilizzando approcci come il threading o la
+    programmazione asincrona (ad esempio, il time slice su una macchina single-core,
+    in cui i compiti vengono interlacciati per dare l'impressione di un'esecuzione
+    simultanea).
+  prefs: []
+  type: TYPE_NORMAL
+- en: La[Figura 5-1](#concurrency_parallelism) mostra la relazione tra concurrency
+    e parallelismo.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0501](assets/bgai_0501.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figura 5-1\. Concorrenza e parallelismo
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Nella maggior parte dei sistemi scalabili, è possibile assistere sia alla concorrenza
+    che al parallelismo.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In un sistema concorrente, vedrai il proprietario del ristorante prendere le
+    ordinazioni e cucinare gli hamburger, occupandosi di volta in volta di ciascun
+    compito e passando da un'attività all'altra in modo efficace e multitasking. In
+    un sistema parallelo, vedrai diversi membri del personale prendere le ordinazioni
+    e altri cucinare gli hamburger allo stesso tempo. In questo caso, diversi lavoratori
+    si occupano di ciascun compito contemporaneamente.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Senza il multithreading o la programmazione asincrona in un processo a thread
+    singolo, il processo deve aspettare che le operazioni bloccanti finiscano prima
+    di poter avviare nuove attività. Senza il multiprocessing che implementa il parallelismo
+    su più core, le operazioni computazionalmente costose possono bloccare l'applicazione
+    dall'avvio di altre attività.
+  prefs: []
+  type: TYPE_NORMAL
+- en: La[Figura 5-2](#concurrency_parallelism_timeline) mostra la distinzione tra
+    esecuzione non concorrente, esecuzione concorrente senza parallelismo (singolo
+    core) ed esecuzione concorrente con parallelismo (più core).
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'I tre modelli di esecuzione di Python mostrati nella [Figura 5-2](#concurrency_parallelism_timeline)
+    sono i seguenti:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nessuna concomitanza (sincrona)
+  prefs: []
+  type: TYPE_NORMAL
+- en: Un singolo processo (su un solo core) esegue i compiti in modo sequenziale.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concorrente e non parallelo
+  prefs: []
+  type: TYPE_NORMAL
+- en: Più thread in un singolo processo (su un core) gestiscono i compiti in modo
+    concorrente ma non in parallelo a causa del GIL di Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concorrente e parallelo
+  prefs: []
+  type: TYPE_NORMAL
+- en: Più processi su più core eseguono i compiti in parallelo, sfruttando al massimo
+    i processori multicore per ottenere la massima efficienza.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0502](assets/bgai_0502.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figura 5-2\. Concorrenza con e senza parallelismo
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Nel multiprocesso, ogni processo ha accesso al proprio spazio di memoria e alle
+    proprie risorse per completare un'attività in modo isolato dagli altri processi.
+    Questo isolamento può rendere i processi più stabili, in quanto se un processo
+    si blocca non si ripercuoterà sugli altri, ma rende la comunicazione tra i processi
+    più complessa rispetto ai thread, che condividono lo stesso spazio di memoria,
+    come mostrato nella [Figura 5-3](#multiprocessing_resources).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0503](assets/bgai_0503.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figura 5-3\. La condivisione delle risorse nel multithreading e nel multiprocessing
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: I carichi di lavoro distribuiti spesso utilizzano un processo di gestione che
+    coordina l'esecuzione e la collaborazione di questi processi per evitare problemi
+    come la corruzione dei dati e la duplicazione del lavoro. Un buon esempio di multiprocesso
+    è quello di servire le richieste con un bilanciatore di carico che gestisce il
+    traffico verso più container, ognuno dei quali esegue un'istanza della tua applicazione.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sia il multithreading che la programmazione asincrona riducono i tempi di attesa
+    delle attività di I/O perché il processore può svolgere altre attività in attesa
+    dell'I/O. Tuttavia, non sono utili per le attività che richiedono calcoli pesanti,
+    come l'inferenza dell'intelligenza artificiale, perché il processo è impegnato
+    a calcolare alcuni risultati. Pertanto, per servire un modello GenAI self-hosted
+    di grandi dimensioni a più utenti, è necessario scalare i servizi con il multiprocessing
+    o utilizzare ottimizzazioni algoritmiche del modello (tramite server specializzati
+    nell'inferenza del modello come vLLM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Il tuo primo istinto quando lavori con modelli lenti potrebbe essere quello
+    di adottare il parallelismo creando istanze multiple del tuo servizio FastAPI
+    (multiprocessing) in una singola macchina per servire le richieste in parallelo.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sfortunatamente, più worker in esecuzione in processi separati non avranno accesso
+    a uno spazio di memoria condiviso. Di conseguenza, non puoi condividere artefatti
+    come un modello GenAI caricato in memoria tra istanze separate della tua app in
+    FastAPI. Purtroppo, sarà necessario caricare anche una nuova istanza del modello,
+    il che consumerà significativamente le tue risorse hardware. Questo perché FastAPI
+    è un server web generico che non ottimizza in modo nativo il servizio dei modelli
+    GenAI.
+  prefs: []
+  type: TYPE_NORMAL
+- en: La soluzione non è il parallelismo in sé, ma l'adozione della strategia del
+    model-serving esterno, come illustrato nel [Capitolo 3](ch03.html#ch03).
+  prefs: []
+  type: TYPE_NORMAL
+- en: L'unico caso in cui puoi trattare i carichi di lavoro dell'inferenza dell'intelligenza
+    artificiale come I/O-bound, invece che come compute-bound, è quando ti affidi
+    alle API di provider di AI di terze parti (ad esempio, OpenAI API). In questo
+    caso, stai scaricando i compiti legati al calcolo al provider del modello attraverso
+    le richieste di rete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dal tuo lato, i carichi di lavoro dell'inferenza dell'intelligenza artificiale
+    diventano vincolati all'I/O attraverso le richieste di rete, consentendo l'uso
+    della concorrenza attraverso il time slice. Il fornitore di terze parti deve preoccuparsi
+    di scalare i propri servizi per gestire le inferenze del modello - che sono delimitate
+    dal calcolo - attraverso le proprie risorse hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Puoi esternalizzare il servizio e l'inferenza di modelli GenAI più grandi, come
+    un LLM, con server specializzati come vLLM, Ray Serve o NVIDIA Triton.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Più avanti in questo capitolo, spiegherò come questi server massimizzano l'efficienza
+    delle operazioni delimitate dal calcolo durante l'inferenza del modello, riducendo
+    al contempo l'ingombro in memoria del modello durante il processo di generazione
+    dei dati.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Per aiutarti a digerire quanto discusso finora, dai un'occhiata alla tabella
+    di confronto delle strategie di concorrenza nella [Tabella 5-1](#concurrency_comparison)
+    per capire quando e perché usarle.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tabella 5-1\. Confronto tra le strategie di circolazione
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Strategia | Caratteristiche | Sfide | Casi d''uso |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Nessuna concomitanza (sincrona) |'
+  prefs: []
+  type: TYPE_TB
+- en: Codice semplice, leggibile e di facile comprensione per il debug
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Un singolo core e thread della CPU
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Potenziali lunghi tempi di attesa a causa di operazioni di blocco dell'I/O o
+    della CPU che bloccano l'esecuzione del processo.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Non può servire più utenti contemporaneamente
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applicazioni per utente singolo in cui gli utenti possono aspettare che le attività
+    vengano completate
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Servizi o applicazioni utilizzati di rado
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Async IO (asincrono) |'
+  prefs: []
+  type: TYPE_TB
+- en: Un singolo core e thread della CPU
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Il multitasking gestito da un ciclo di eventi all'interno del processo di Python
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Thread-safe, in quanto il processo Python gestisce i compiti
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Massimizza il tasso di utilizzo della CPU
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Più veloce del multithreading e del multiprocessing per le attività di I/O
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: È più difficile da implementare nel codice e può rendere più difficile il debug.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Richiede librerie e dipendenze che utilizzano le funzionalità di Async IO
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: È facile commettere errori che bloccano il processo principale (e il ciclo degli
+    eventi)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '| Applicazioni con attività di I/O bloccanti |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multithreading |'
+  prefs: []
+  type: TYPE_TB
+- en: Un singolo core della CPU ma più thread all'interno dello stesso processo
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I thread condividono dati e risorse
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Più semplice dell'IO asincrono da implementare nel codice
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Multitasking su thread orchestrato dal sistema operativo
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: È difficile bloccare le risorse per ogni thread per evitare problemi di thread-safety
+    che possono portare a bug non riproducibili e alla corruzione dei dati.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I thread possono bloccarsi l'un l'altro all'infinito (deadlock)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: L'accesso concorrente alle risorse può causare risultati incoerenti (race conditions)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A un thread possono essere negate le risorse se monopolizza i thread (starvation)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: La creazione e la distruzione di thread è computazionalmente costosa
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '| Applicazioni o servizi che hanno attività di I/O bloccanti |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multiprocesso |'
+  prefs: []
+  type: TYPE_TB
+- en: Processi multipli in esecuzione su più core della CPU
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A ogni processo viene assegnato un core della CPU e risorse isolate.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Il lavoro può essere distribuito tra i core della CPU e gestito da un processo
+    di orchestrazione utilizzando strumenti come Celery
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: La condivisione di risorse hardware e di oggetti come un modello di AI di grandi
+    dimensioni o di dati tra i processi può essere complessa e richiede meccanismi
+    di comunicazione inter-processo (IPC) o una memoria condivisa dedicata.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Difficile mantenere sincronizzati più processi isolati
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creare e distruggere processi è computazionalmente costoso
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applicazioni o servizi che hanno compiti di calcolo delimitati e bloccanti
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Attività di tipo "divide et impera" in cui l'elaborazione può essere eseguita
+    in parti isolate.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Distribuire i carichi di lavoro o le richieste di elaborazione su più core della
+    CPU
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ora che abbiamo esplorato varie strategie di concorrenza, continuiamo a migliorare
+    i tuoi servizi con la programmazione asincrona per gestire in modo efficiente
+    le operazioni legate all'I/O.In seguito ci concentreremo sull'ottimizzazione delle
+    attività legate al calcolo, in particolare l'inferenza di modelli tramite server
+    specializzati.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Ottimizzazione delle attività di I/O con la programmazione asincrona
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In questa sezione esploreremo l'uso della programmazione asincrona per evitare
+    di bloccare il processo principale del server con attività delimitate dall'I/O
+    durante i carichi di lavoro dell'intelligenza artificiale. Conoscerai anche il
+    framework `asyncio` che permette di scrivere applicazioni asincrone in Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Esecuzione sincrona contro esecuzione asincrona (Async)
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Cosa si intende per applicazione asincrona? Per rispondere a questa domanda,
+    confrontiamo i programmi sincroni e quelli asincroni.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Un'applicazione è considerata *sincrona*quando i compiti vengono eseguiti in
+    ordine sequenziale e ogni compito attende il completamento del precedente prima
+    di iniziare. Per le applicazioni che vengono eseguite di rado e che richiedono
+    solo pochi secondi per essere elaborate, il codice sincrono raramente causa problemi
+    e può rendere le implementazioni più veloci e semplici. Tuttavia, se hai bisogno
+    della concorrenza e vuoi che l'efficienza dei tuoi servizi sia massimizzata su
+    ogni core, i tuoi servizi devono lavorare in multitasking senza attendere il completamento
+    di operazioni bloccanti. È qui che l'implementazione della concorrenza *asincrona*
+    (async) può aiutarti.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vediamo alcuni esempi di funzioni sincrone e asincrone per capire quanto un
+    codice asincrono possa aumentare le prestazioni. In entrambi gli esempi, utilizzerò
+    sleeping per simulare un'operazione di blocco dell'I/O, ma puoi immaginare altre
+    operazioni di I/O eseguite in scenari reali.
+  prefs: []
+  type: TYPE_NORMAL
+- en: L['esempio 5-1](#sync_execution) mostra un esempio di codice sincrono che simula
+    un'operazione di I/O bloccante con la funzione bloccante `time.sleep()`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Esempio 5-1\. Esecuzione sincrona
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Usa `sleep()` per simulare un'operazione di blocco dell'I/O come l'invio di
+    una richiesta di rete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Chiama il sito `task()` per tre volte, in sequenza. Il ciclo simula l'invio
+    di più richieste di rete, una dopo l'altra.
+  prefs: []
+  type: TYPE_NORMAL
+- en: La chiamata a `task()` per tre volte nell'[Esempio 5-1](#sync_execution) richiede
+    15 secondi perché Python aspetta che l'operazione bloccante `sleep()` venga completata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Per sviluppare programmi asincroni in Python, puoi utilizzare il pacchetto `asyncio`
+    che fa parte della libreria standard di Python 3.5 e versioni successive. Utilizzando
+    `asyncio`, il codice asincrono è simile al codice sincrono sequenziale ma con
+    l'aggiunta delle parole chiave `async` e `await` per eseguire operazioni di I/O
+    non bloccanti.
+  prefs: []
+  type: TYPE_NORMAL
+- en: L['Esempio 5-2](#async_execution) mostra come puoi usare le parole chiave `async`
+    e `await` con `asyncio` per eseguire l'[Esempio 5-1](#sync_execution) in modo
+    asincrono.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Esempio 5-2\. Esecuzione asincrona
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implementa una coroutine `task` che cede il controllo al ciclo degli eventi
+    durante le operazioni bloccanti.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Lo sleep non bloccante di cinque secondi segnala al ciclo degli eventi di eseguire
+    un'altra attività durante l'attesa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Utilizza `asyncio.create_task` per generare istanze di task da concatenare (o
+    riunire) ed eseguirle simultaneamente utilizzando `asyncio.gather`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Crea un ciclo di eventi per programmare attività asincrone con il metodo `asyncio.run`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Il tempo di esecuzione è 1/3 rispetto all'esempio sincrono, poiché questa volta
+    il processo Python non è stato bloccato.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dopo aver eseguito l'[Esempio 5-2](#async_execution), noterai che la funzione
+    `task()` è stata chiamata tre volte in modo concomitante. D'altra parte, il codice
+    dell'[Esempio 5-1](#sync_execution) chiama la funzione `task()` tre volte in modo
+    sequenziale. La funzione async è stata eseguita all'interno del ciclo di eventi
+    di `asyncio`, che era responsabile dell'esecuzione del codice senza aspettare.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In qualsiasi codice asincrono, la parola chiave `await` segnala a Python le
+    operazioni di I/O bloccanti in modo che vengano eseguite in modo *non bloccante*
+    (cioè che possano essere eseguite senza bloccare il processo principale). Essendo
+    a conoscenza delle operazioni bloccanti, Python può andare a fare qualcos'altro
+    mentre aspetta che le operazioni bloccanti finiscano.
+  prefs: []
+  type: TYPE_NORMAL
+- en: L['esempio 5-3](#await_keyword) mostra come utilizzare le parole chiave `async`
+    e `await` per dichiarare ed eseguire funzioni asincrone.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Esempio 5-3\. Come utilizzare le parole chiave `async` e `await`
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simula un'operazione di I/O non bloccante`await`ing `asyncio.sleep()` in modo
+    che Python possa fare altre cose durante l'attesa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Devi chiamare `main()` all'interno di `asyncio.run()` per eseguirla, poiché
+    si tratta di una funzione asincrona, altrimenti non verrà eseguita e restituirà
+    un oggetto *coroutine*. Tratterò le coroutine a breve.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Se esegui il codice, la seconda istruzione verrà stampata 3 secondi dopo la
+    prima. In questo caso, dato che non ci sono altre operazioni da eseguire oltre
+    allo sleep, Python gira in idle fino al completamento dell'operazione di sleep.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nell'[Esempio 5-3](#await_keyword), ho usato lo sleep per simulare le operazioni
+    di blocco dell'I/O, come le richieste di rete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attenzione
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Puoi usare la parola chiave `await` solo all'interno di una funzione dichiarata
+    con `async def`. L'uso di `await` al di fuori di una funzione `async` solleverà
+    un `SyntaxError` in Python. Un'altra insidia comune è l'uso di codice bloccante
+    non asincrono all'interno di una funzione `async` che inavvertitamente impedirà
+    a Python di svolgere altre attività durante l'attesa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Ora hai capito che nei programmi asincroni, per evitare che il processo principale
+    venga bloccato, Python passa da una funzione all''altra non appena si verifica
+    un''operazione bloccante. Ora ti starai chiedendo:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Come fa Python a sfruttare `asyncio` per mettere in pausa e riprendere le funzioni?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Qual è il meccanismo utilizzato da `asyncio` di Python per passare da una funzione
+    all'altra senza dimenticare quelle sospese?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Come si possono mettere in pausa o riprendere le funzioni senza perdere il loro
+    stato?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Per rispondere alle domande di cui sopra, approfondiamo i meccanismi alla base
+    di `asyncio`, poiché la comprensione delle risposte a queste domande ti aiuterà
+    notevolmente a eseguire il debug del codice async nei tuoi servizi.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Il cuore di `asyncio` è costituito da un oggetto di prima classe chiamato *ciclo
+    di eventi*, responsabile della gestione efficiente degli eventi di I/O, degli
+    eventi di sistema e dei cambiamenti di contesto dell'applicazione.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[La Figura 5-4](#event_loop) mostra come il ciclo di eventi di `asyncio` intraprende
+    l''orchestrazione dei task in Python.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0504](assets/bgai_0504.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figura 5-4\. Ciclo di eventi IO asincrono
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Il ciclo degli eventi può essere paragonato a un ciclo `while True` che osserva
+    gli eventi o i messaggi emessi dalle *funzioni coroutine* all'interno del processo
+    Python e distribuisce gli eventi per passare da una funzione all'altra in attesa
+    del completamento delle operazioni di blocco I/O. Questa orchestrazione permette
+    alle altre funzioni di essere eseguite in modo asincrono senza interruzioni.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Programmazione asincrona con le API dei fornitori di modelli
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Tutti e tre gli esempi che ti ho mostrato finora sono considerati come esempi
+    "Hello World" di programmazione asincrona. Ora, analizziamo uno scenario reale
+    legato alla creazione di servizi GenAI in cui è necessario utilizzare le API di
+    un fornitore di modelli, come OpenAI, Anthropic o Mistral, poiché potrebbe essere
+    più costoso servire LLMsda soli.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inoltre, se sottoponi a stress test gli endpoint di generazione creati nel [Capitolo
+    3](ch03.html#ch03) inviando più richieste in un breve lasso di tempo, noterai
+    lunghi tempi di attesa prima che ogni richiesta venga elaborata. Questo perché
+    hai precaricato e ospitato il modello nello stesso processo Python e nello stesso
+    core della CPU su cui gira il server. Quando invii la prima richiesta, l'intero
+    server si blocca mentre il carico di lavoro dell'inferenza viene completato. Poiché
+    durante l'inferenza la CPU lavora al massimo delle sue possibilità, il processo
+    di inferenza/generazione è un'operazione delimitata dalla CPU. Tuttavia, non è
+    necessario che lo sia.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Quando utilizzi l'API di un provider, non devi più preoccuparti dei carichi
+    di lavoro dell'intelligenza artificiale legati alla CPU, poiché questi diventano
+    legati all'I/O. Pertanto, ha senso sapere come sfruttare la programmazione asincrona
+    per interagire simultaneamente con l'API del provider del modello.
+  prefs: []
+  type: TYPE_NORMAL
+- en: La buona notizia è che i proprietari delle API spesso rilasciano *client* e*kit
+    di sviluppo software* (SDK) sia sincroni che asincroni per ridurre il lavoro necessario
+    per interagire con i loro endpoint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attenzione
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Se hai bisogno di fare richieste ad altri servizi esterni, di recuperare dati
+    dai database o di ingerire contenuti dai file, aggiungerai al processo altre attività
+    bloccanti di I/O. Queste attività bloccanti possono costringere il server a rimanere
+    in attesa se non sfrutti la programmazione asincrona.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tuttavia, qualsiasi codice sincrono può essere reso asincrono utilizzando un
+    [processo o un esecutore di pool di thread](https://oreil.ly/hIDNI) per evitare
+    di eseguire l'attività all'interno del ciclo di eventi. Invece, si esegue l'attività
+    asincrona su un processo o un thread separato per evitare di bloccare il ciclo
+    di eventi.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Puoi anche verificare l'eventuale supporto asincrono controllando la documentazione
+    della libreria o il codice sorgente alla ricerca di menzioni delle parole chiave
+    `async` o `await`. Altrimenti, puoi provare a verificare se lo strumento può essere
+    utilizzato all'interno di una funzione asincrona senza sollevare un `TypeError`
+    quando usi `await` su di essa.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Se uno strumento, come ad esempio una libreria di database, ha solo un'implementazione
+    sincrona, allora non puoi implementare l'asincronia con quello strumento. La soluzione
+    sarà quella di passare lo strumento a un equivalente asincrono in modo da poterlo
+    utilizzare con leparole chiave`async` e `await`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nell'[Esempio 5-4](#openai_clients), interagisci con l'API OpenAI GPT-3.5 tramite
+    client OpenAI sia sincroni che asincroni per capire la differenza di prestazioni
+    tra i due.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Nota
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'È necessario installare la libreria `openai`:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[PRE4] import os from fastapi import FastAPI, Body from openai import OpenAI,
+    AsyncOpenAI  app = FastAPI()  sync_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    async_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))  @app.post("/sync")
+    def sync_generate_text(prompt: str = Body(...)):     completion = sync_client.chat.completions.create(         messages=[             {                 "role":
+    "user",                 "content": prompt,             }         ],         model="gpt-3.5-turbo",     )     return
+    completion.choices[0].message.content  @app.post("/async") async def async_generate_text(prompt:
+    str = Body(...)):     completion = await async_client.chat.completions.create(         messages=[             {                 "role":
+    "user",                 "content": prompt,             }         ],         model="gpt-3.5-turbo",     )     return
+    completion.choices[0].message.content [PRE5]`  [PRE6]` ## Ciclo di eventi e pool
+    di thread in FastAPI    FastAPI è in grado di gestire operazioni di blocco sia
+    asincrone che sincrone, eseguendo i gestori di sincronizzazione nel suo *pool
+    di thread* in modo che le operazioni di blocco non interrompano l''esecuzione
+    dei compiti del *ciclo degli eventi*.    Come ho detto nel [Capitolo 2](ch02.html#ch02),
+    FastAPI funziona con il framework web ASGI tramite Starlette. Se non fosse così,
+    il server verrebbe eseguito in modo sincrono, quindi dovresti aspettare che ogni
+    processo finisca prima di poter servire il successivo. Tuttavia, utilizzando ASGI,
+    il server FastAPI supporta la concorrenza sia tramite il multithreading (tramite
+    un pool di thread) che la programmazione asincrona (tramite un ciclo di eventi)
+    per servire più richieste in parallelo, evitando che il processo principale del
+    server venga bloccato.    FastAPI crea il pool di thread istanziando una collezione
+    di thread all''avvio dell''applicazione per ridurre l''onere della creazione di
+    thread in runtime.^([4](ch05.html#id822)) In seguito, delega le attività in background
+    e i carichi di lavoro sincroni al pool di thread per evitare che il ciclo degli
+    eventi venga bloccato da operazioni bloccanti all''interno dei gestori sincroni.
+    Il ciclo degli eventi è anche indicato come il thread principale del server FastAPI,
+    responsabile dell''elaborazione delle richieste.    Come ho già detto, il ciclo
+    degli eventi è il componente centrale di ogni applicazione costruita su `asyncio`,
+    compresa FastAPI che implementa la concurrency. I cicli degli eventi eseguono
+    attività asincrone e callback, tra cui l''esecuzione di operazioni di I/O di rete
+    e l''esecuzione di sottoprocessi. In FastAPI, il ciclo degli eventi è anche responsabile
+    dell''orchestrazione dell''elaborazione asincrona delle richieste.    Se possibile,
+    dovresti eseguire i gestori nel ciclo degli eventi (tramite la programmazione
+    asincrona) perché può essere ancora più efficiente che eseguirli nel pool di thread
+    (tramite il multithreading). Questo perché ogni thread nel pool di thread deve
+    acquisire il GIL prima di poter eseguire qualsiasi byte di codice e questo richiede
+    un certo sforzo computazionale.    Immagina che più utenti simultanei utilizzino
+    gli handler (endpoint) OpenAI GPT-3.5 sincroni e asincroni del tuo servizio FastAPI,
+    come mostrato nell''[Esempio 5-4](#openai_clients). FastAPI eseguirà le richieste
+    dell''handler asincrono nel ciclo degli eventi, poiché tale handler utilizza un
+    client OpenAI asincrono non bloccante. D''altra parte, FastAPI deve delegare le
+    richieste di handler sincroni al pool di thread per proteggere il loop di eventi
+    dal blocco. Poiché delegare le richieste (ai thread) e passare da un thread all''altro
+    in un pool di thread comporta un lavoro maggiore, le richieste sincrone termineranno
+    più tardi rispetto alle loro controparti asincrone.    ###### Nota    Ricorda
+    che tutto questo lavoro - l''elaborazione delle richieste di handler sincroni
+    e asincroni - viene eseguito su un singolo core della CPU all''interno dello stesso
+    processo FastAPI Python.    Questo per ridurre al minimo i tempi di inattività
+    della CPU in attesa delle risposte dell''API OpenAI.    Le differenze di prestazioni
+    sono mostrate nella [Figura 5-5](#multithreading_vs_async).  ![bgai 0505](assets/bgai_0505.png)  ######
+    Figura 5-5\. Come il multithreading e l''Async IO gestiscono le operazioni di
+    blocco dell''I/O    La[Figura 5-5](#multithreading_vs_async) mostra che con i
+    carichi di lavoro delimitati dall''I/O, le implementazioni asincrone sono più
+    veloci e dovrebbero essere il metodo da preferire se hai bisogno di concorrenza.
+    Tuttavia, FastAPI fa comunque un buon lavoro nel servire più richieste simultanee
+    anche se deve lavorare con un client OpenAI sincrono. Invia semplicemente le chiamate
+    API sincrone all''interno dei thread del pool di thread per implementare una forma
+    di concorrenza per l''utente. Ecco perché la documentazione ufficiale di FastAPI
+    ti dice di non preoccuparti troppo di dichiarare le tue funzioni handler come
+    `async def` o `def`.    Tuttavia, tieni presente che quando dichiari i gestori
+    con `async def`, FastAPI si fida di eseguire solo operazioni non bloccanti. Quando
+    rompi questa fiducia ed esegui operazioni bloccanti all''interno delle rotte `async`,
+    il ciclo dell''evento sarà bloccato e non potrà più continuare a eseguire attività
+    fino a quando l''operazione bloccante non saràterminata.    ## Blocco del server
+    principale    Se usi la parola chiave `async` quando definisci le tue funzioni,
+    assicurati di usare anche la parola chiave `await` da qualche parte all''interno
+    della funzione e che nessuna delle dipendenze del pacchetto che usi all''interno
+    della funzione sia sincrona.    Evita di dichiarare le funzioni dei gestori di
+    rotte come `async` se la loro implementazione è sincrona. In caso contrario, le
+    richieste ai gestori di rotte interessati bloccheranno il server principale dall''elaborazione
+    di altre richieste mentre il server attende il completamento dell''operazione
+    bloccante. Non importa se l''operazione bloccante è legata all''I/O o al calcolo.
+    Pertanto, qualsiasi chiamata ai database o ai modelli di intelligenza artificiale
+    può comunque causare il blocco se non stai attento.    Questo è un errore facile
+    da commettere. Ad esempio, puoi usare una dipendenza sincrona all''interno di
+    gestori che hai dichiarato asincroni, come mostrato nell''[Esempio 5-5](#blocking_main_thread).    #####
+    Esempio 5-5\. Implementazione errata dei gestori asincroni in FastAPI    [PRE7]    [![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO4-1)      Operazione
+    di I/O bloccante per ottenere la risposta dell''API ChatGPT. Poiché il gestore
+    della rotta è contrassegnato come asincrono, FastAPI si fida di noi per non eseguire
+    operazioni bloccanti, ma poiché lo siamo, la richiesta bloccherà il ciclo degli
+    eventi (thread principale del server). Altre richieste sono ora bloccate fino
+    a quando la richiesta corrente non viene elaborata.      [![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO4-2)      Un
+    semplice gestore di rotte sincrone con operazioni bloccanti che non sfrutta le
+    funzionalità asincrone. Le richieste di sincronizzazione vengono affidate al pool
+    di thread per essere eseguite in background, in modo da non bloccare il server
+    principale.      [![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO4-3)      Un
+    percorso asincrono non bloccante.      La richiesta non blocca il thread principale
+    e non deve essere trasferita al pool di thread. Di conseguenza, il ciclo di eventi
+    FastAPI può elaborare la richiesta molto più velocemente utilizzando il client
+    OpenAI async.    Ora dovresti sentirti più a tuo agio nell''implementare nuove
+    funzionalità nel tuo servizio FastAPI che richiedono l''esecuzione di compiti
+    delimitati da I/O.    Per aiutarti a consolidare la comprensione dei concetti
+    di I/O concurrency, nelle prossime sezioni costruirai diverse nuove funzionalità
+    che utilizzano la concurrency nel tuo servizio FastAPI. Queste funzionalità includono:    Parla
+    con il web      Costruisci e integra un modulo web scraper che ti permette di
+    porre domande al tuo LLM self-hosted sul contenuto di un sito web fornendo un
+    URL HTTP.      Parla con i documenti      Costruisci e integra un modulo RAG per
+    elaborare i documenti in un database vettoriale. Un database vettoriale memorizza
+    i dati in modo da supportare ricerche di similarità efficienti. Puoi quindi utilizzare
+    la ricerca semantica, che comprende il significato delle query, per interagire
+    con i documenti caricati utilizzando il tuo LLM.      Entrambi i progetti ti faranno
+    fare esperienza pratica di interazione asincrona con sistemi esterni come siti
+    web, database e filesystem.    ## Progetto: Parla con il web (Web Scraper)    Le
+    aziende spesso ospitano una serie di pagine web interne per manuali, processi
+    e altra documentazione sotto forma di pagine HTML. Per le pagine più lunghe, i
+    tuoi utenti potrebbero voler fornire degli URL quando pongono delle domande e
+    aspettarsi che LLM recuperi e legga il contenuto. È qui che può essere utile avere
+    un web scraper integrato.    Ci sono molti modi per creare un web scraper per
+    il tuo LLM self-hosted. A seconda del tuo caso d''uso, puoi utilizzare una combinazione
+    dei seguenti metodi:    *   Recupera le pagine web come HTML e invia il contenuto
+    HTML grezzo (o il testo interno) al tuo LLM per analizzare il contenuto nel formato
+    desiderato.           *   Utilizza *framework di web scraping* come `BeautifulSoup`
+    e `ScraPy` per analizzare il contenuto delle pagine web dopo averle recuperate.           *   Usa
+    i *browser web headless* come Selenium e Microsoft Playwright per navigare dinamicamente
+    tra i nodi delle pagine e analizzare i contenuti. I browser headless sono ottimi
+    per la navigazione di applicazioni a pagina singola (SPA).              ######
+    Attenzione    Tu o i tuoi utenti dovreste evitare gli strumenti di web scraping
+    alimentati da LLM per scopi illegali. Assicurati di avere l''autorizzazione prima
+    di estrarre contenuti dagli URL:    *   Esamina le condizioni d''uso di ogni sito
+    web, soprattutto se si parla di web scraping.           *   Usa le API quando
+    è possibile.           *   Se non sei sicuro, chiedi direttamente il permesso
+    ai proprietari dei siti web.              Per questo mini-progetto, ci limiteremo
+    a recuperare e inviare al nostro LLM il testo interno grezzo delle pagine HTML,
+    poiché l''implementazione di uno scraper pronto per la produzione può diventare
+    un libro a sé stante.    Il processo di costruzione di un semplice scraper asincrono
+    è il seguente:    1.  Sviluppa una funzione per abbinare i modelli di URL usando
+    la regex sui prompt degli utenti al LLM.           2.  Se viene trovata, esegue
+    un ciclo sull''elenco degli URL forniti e recupera le pagine in modo asincrono.
+    Utilizzeremo una libreria HTTP asincrona chiamata `aiohttp` invece di `requests`poiché
+    `requests` può effettuare solo richieste di rete sincrone.           3.  Sviluppa
+    una funzione di parsing per estrarre il contenuto testuale dall''HTML recuperato.           4.  Il
+    contenuto della pagina analizzata viene inviato al LLM insieme al prompt originale
+    dell''utente.              L[''esempio 5-6](#web_scraper) mostra come puoi implementare
+    i passaggi sopra citati.    ###### Nota    Per eseguire questo esempio è necessario
+    installare alcune dipendenze aggiuntive:    [PRE8]   [PRE9] # scraper.py  import
+    asyncio import re  import aiohttp from bs4 import BeautifulSoup from loguru import
+    logger  def extract_urls(text: str) -> list[str]:     url_pattern = r"(?P<url>https?:\/\/[^\s]+)"
+    ![1](assets/1.png)     urls = re.findall(url_pattern, text) ![2](assets/2.png)     return
+    urls   def parse_inner_text(html_string: str) -> str:     soup = BeautifulSoup(html_string,
+    "lxml")     if content := soup.find("div", id="bodyContent"): ![3](assets/3.png)         return
+    content.get_text()     logger.warning("Could not parse the HTML content")     return
+    ""   async def fetch(session: aiohttp.ClientSession, url: str) -> str:     async
+    with session.get(url) as response: ![4](assets/4.png)         html_string = await
+    response.text()         return parse_inner_text(html_string)   async def fetch_all(urls:
+    list[str]) -> str:     async with aiohttp.ClientSession() as session: ![5](assets/5.png)         results
+    = await asyncio.gather(             *[fetch(session, url) for url in urls], return_exceptions=True         )     success_results
+    = [result for result in results if isinstance(result, str)]     if len(results)
+    != len(success_results): ![6](assets/6.png)         logger.warning("Some URLs
+    could not be fetched")     return " ".join(success_results) [PRE10] # dependencies.py  from
+    fastapi import Body from loguru import logger  from schemas import TextModelRequest
+    from scraper import extract_urls, fetch_all  async def get_urls_content(body:
+    TextModelRequest = Body(...)) -> str: ![1](assets/1.png)     urls = extract_urls(body.prompt)     if
+    urls:         try:             urls_content = await fetch_all(urls)             return
+    urls_content         except Exception as e:             logger.warning(f"Failed
+    to fetch one or several URls - Error: {e}")     return ""  # main.py  from fastapi
+    import Body, Depends, Request from dependencies import construct_prompt from schemas
+    import TextModelResponse  @app.post("/generate/text", response_model_exclude_defaults=True)
+    ![2](assets/2.png) async def serve_text_to_text_controller(     request: Request,     body:
+    TextModelRequest = Body(...),     urls_content: str = Depends(get_urls_content)
+    ![3](assets/3.png) ) -> TextModelResponse:     ... # rest of controller logic     prompt
+    = body.prompt + " " + urls_content     output = generate_text(models["text"],
+    prompt, body.temperature)     return TextModelResponse(content=output, ip=request.client.host)
+    [PRE11]`  [PRE12] ## Progetto: Parla con i documenti (RAG)    In questo progetto,
+    inseriremo un modulo RAG nel tuo servizio GenAI per farti sperimentare l''interazione
+    asincrona con sistemi esterni come un database e un filesystem.    Potresti essere
+    curioso di sapere qual è lo scopo di un modulo RAG e la sua necessità. Il RAG
+    è semplicemente una tecnica per aumentare il contesto dei prompt di LLM con fonti
+    di dati personalizzate per attività ad alta intensità di conoscenza.^([5](ch05.html#id830))
+    Si tratta di una tecnica efficace per fondare le risposte di LLM su fatti contenuti
+    nei dati, senza dover ricorrere a una complessa e costosa messa a punto di LLM.    Le
+    organizzazioni sono ansiose di implementare il RAG con il proprio LLM, poiché
+    consente ai dipendenti di accedere alle enormi basi di conoscenza interne attraverso
+    il LLM. Con il RAG, le aziende si aspettano che le basi di conoscenza interne,
+    i sistemi e le procedure siano accessibili e prontamente disponibili a chiunque
+    ne abbia bisogno per rispondere alle domande, proprio quando ne ha bisogno. Si
+    prevede che questa accessibilità alle informazioni aziendali aumenti la produttività,
+    riduca i costi e i tempi di ricerca delle informazioni e incrementi i profitti
+    di qualsiasi azienda.    Tuttavia, le LLMs sono suscettibili di generare risposte
+    che non aderiscono alle istruzioni fornite dall''utente. In altre parole, le LLMs
+    possono *allucinare*risposte con informazioni o dati che non si basano su fatti
+    o realtà.    Queste allucinazioni possono verificarsi a causa del fatto che il
+    modello si basa su schemi presenti nei dati su cui è stato addestrato piuttosto
+    che sull''accesso diretto a dati esterni, aggiornati e reali. Le LLM possono manifestare
+    allucinazioni con risposte sicure ma errate o insensate, storie inventate o affermazioni
+    prive di una base di verità.    Pertanto, per i compiti più complessi e ad alta
+    intensità di conoscenza, vorrai che il tuo LLM acceda a fonti di conoscenza esterne
+    per completare i compiti. Questo permette una maggiore coerenza fattuale e migliora
+    l''affidabilità delle risposte generate.[La Figura 5-7](#rag) mostra il processo
+    completo.  ![bgai 0507](assets/bgai_0507.png)  ###### Figura 5-7\. RAG    In questo
+    progetto costruirai un semplice modulo RAG per il tuo servizio LLM in modo che
+    gli utenti possano caricare e parlare dei loro documenti.    ###### Nota    C''è
+    molto da sapere sul RAG, tanto da riempire diversi libri di testo e ogni giorno
+    vengono pubblicati nuovi articoli su nuove tecniche e algoritmi.    Ti consiglio
+    di consultare altre pubblicazioni su LLMs per conoscere il processo RAG e le tecniche
+    RAG avanzate.    La pipeline di RAG consiste nelle seguenti fasi:    1.  *Estrazione*
+    di documenti da un filesystem per caricare il contenuto testuale in pezzi sulla
+    memoria.           2.  *Trasformazione* dei contenuti testuali pulendoli, dividendoli
+    e preparandoli per essere passati in un modello di embedding per produrre vettori
+    di embedding che rappresentano il significato semantico di un brano.           3.  *Memorizzazione*
+    dei vettori di incorporamento insieme ai metadati, come la fonte e il chunk di
+    testo, in un archivio vettoriale come Qdrant.           4.  *Recupero* di vettori
+    di incorporamento semanticamente rilevanti eseguendo una ricerca semantica sulla
+    query dell''utente al LLM. I pezzi di testo originali - memorizzati come metadati
+    dei vettori recuperati - vengono poi utilizzati per aumentare (cioè migliorare
+    il contesto) il prompt iniziale fornito al LLM.           5.  *Generazione* della
+    risposta del LLM che bypassa sia la query che i chunk recuperati (cioè il contesto)
+    al LLM per ottenere una risposta.              Puoi vedere la pipeline completa
+    nella [Figura 5-8](#rag_pipeline).  ![bgai 0508](assets/bgai_0508.png)  ######
+    Figura 5-8\. Pipeline RAG    Puoi prendere la pipeline mostrata nella [Figura
+    5-8](#rag_pipeline) e adattarla al tuo servizio esistente. La[Figura 5-9](#rag_module)
+    mostra l''architettura di sistema di un servizio "parla con i tuoi documenti"
+    abilitato con RAG.  ![bgai 0509](assets/bgai_0509.png)  ###### Figura 5-9\. Parla
+    con l''architettura del tuo sistema di documenti    La[Figura 5-9](#rag_module)
+    illustra il modo in cui i documenti caricati dagli utenti tramite l''interfaccia
+    Streamlit vengono memorizzati e poi recuperati per l''elaborazione e l''archiviazione
+    nel database per essere successivamente recuperati per aumentare i prompt di LLM.    Il
+    primo passo da compiere prima di implementare il sistema RAG della [Figura 5-9](#rag_module)
+    è quello di includere la funzionalità di caricamento dei file sia nel client Streamlit
+    che nell''API backend.    Utilizzando la classe `UploadFile` di FastAPI, puoi
+    accettare documenti dagli utenti in pezzi e salvarli nel filesystem o in qualsiasi
+    altra soluzione di archiviazione file, come ad esempio un archivio blob. L''elemento
+    importante da notare è che questa operazione di I/O non è bloccante grazie alla
+    programmazione asincrona, che la classe `UploadFile` di FastAPI supporta.    ######
+    Suggerimento    Poiché gli utenti possono caricare documenti di grandi dimensioni,
+    la classe `UploadFile` di FastAPI supporta il *chunking*per memorizzare i documenti
+    caricati, un pezzo alla volta.    In questo modo eviterai di intasare la memoria
+    del tuo servizio. Dovrai anche proteggere il tuo servizio impedendo agli utenti
+    di caricare documenti di dimensioni superiori a una certa soglia.    L[''esempio
+    5-8](#upload_file) mostra come implementare una funzionalità di caricamento asincrono
+    di file.    ###### Suggerimento    Dovrai installare il pacchetto `aiofiles` per
+    caricare i file in modo asincrono e `python-multipart` per ricevere i file caricati
+    dai moduli HTML:    [PRE13]py   [PRE14]`py [PRE15]py` [PRE16]py [PRE17]'
+  prefs: []
+  type: TYPE_NORMAL
