@@ -1,0 +1,8 @@
++   [人工智能智能体记忆管理指南](README.md)
++   [引言](mng-mem-ai-agt_0.md)
++   [第一章. 深入探讨智能体记忆系统](mng-mem-ai-agt_1.md)
++   [第二章：长期记忆：构建持久学习代理](mng-mem-ai-agt_2.md)
++   [第三章：代理的经济学、模型使用和选择](mng-mem-ai-agt_3.md)
++   [第四章\. 导航代理权衡：自定义构建、框架和托管解决方案](mng-mem-ai-agt_4.md)
++   [第五章\. 集体记忆：团队和组织如何通过 AI 代理共享知识](mng-mem-ai-agt_5.md)
++   [结论](mng-mem-ai-agt_6.md)

@@ -1,0 +1,7 @@
++   [人工智能平台的 Kubernetes 基础设施扩展指南](README.md)
++   [第一章。引言](scl-k8s-infra-ai-plat_0.md)
++   [第二章\. Kubernetes 上的模型开发](scl-k8s-infra-ai-plat_1.md)
++   [第三章\. 使训练可重复](scl-k8s-infra-ai-plat_2.md)
++   [第四章. 模型部署和监控](scl-k8s-infra-ai-plat_3.md)
++   [第五章\. 负责任的 AI](scl-k8s-infra-ai-plat_4.md)
++   [第六章。总结与展望](scl-k8s-infra-ai-plat_5.md)
