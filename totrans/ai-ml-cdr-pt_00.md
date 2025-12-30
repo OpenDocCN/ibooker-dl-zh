@@ -1,0 +1,33 @@
+# Foreword
+
+Dear Reader,
+
+AI is poised to transform every industry, but almost every AI application needs to be customized for its particular use. A system for reading medical records is different from one for finding defects in a factory, which is different from a product recommendation engine. For AI to reach its full potential, engineers need tools that can help them adapt to the amazing capabilities available to the millions of concrete problems we wish to solve.
+
+When I led the Google Brain team, we started to build a C++ framework for deep learning called DistBelief. We were excited about the potential of harnessing thousands of CPUs to train a neural network (for instance, using 16,000 CPUs to train a cat detector on unlabeled YouTube videos). How far deep learning has come since then! What was once cutting-edge can now be done on your laptop! And you’ll learn how to, with PyTorch, in this book. Frameworks for creating ML models to implement AI have come a long way, too.
+
+PyTorch has made significant progress. It is designed to be easy to learn as well as powerful enough to be used by researchers. Its rich features can help one build a wide range of AI tools, from simple models, to transfer learning from others, to fine tuning the most modern generative AI models.
+
+Today, millions of coders have become AI developers thanks to frameworks like PyTorch.
+
+Laurence Moroney, has been a major force in helping developers succeed with AI in TensorFlow and PyTorch. I have been privileged to work together with him in teaching several specializations with deeplearning.ai and Coursera, including an upcoming one on PyTorch.
+
+In our early days of working together, Laurence once Slacked me:
+
+*   Andrew sang a sad old song
+*   fainted through miss milliner
+*   invitation hoops
+*   fainted fainted
+*   [...]
+
+He had trained an LSTM on lyrics of traditional Irish songs and it generated these lines. But in this post-Transformer network age, we can create far more sophisticated content—from poetry, to code, to analysis of documents! In this book, he covers both and helps you be prepared for modern AI.
+
+And, if AI opens the door to fun like that, how could anyone not want to get involved? You can 1) work on exciting projects that move humanity forward, 2) advance your career, and 3) get free Irish poetry. I wish you the best in your journey learning PyTorch.
+
+With Laurence as a teacher, great adventures await you.
+
+Keep learning!
+
+Andrew Ng
+
+Founder, DeepLearning.AI

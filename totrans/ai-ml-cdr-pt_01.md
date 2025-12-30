@@ -1,0 +1,124 @@
+# Preface
+
+Welcome to *AI and ML for Coders in PyTorch*. My machine learning (ML) journey began many years ago with languages and frameworks like Lisp and Prolog. After that, my journey took me to Google, where I helped launch and grow TensorFlow. This experience informed my previous book, [*AI and Machine Learning for Coders*](https://learning.oreilly.com/library/view/ai-and-machine/9781492078180/).
+
+Since that book was published, whenever I met with the community to talk about AI, one question would come up: whether or not the questioner should invest their time in PyTorch. It was a strange question at first, but the more I heard it, the more I began to investigate.
+
+That line of thought got me to this point in my career, where PyTorch, once a rival to my work, is now something I passionately embrace. Why? Because it strikes a perfect balance between having the power and flexibility to let researchers or advanced engineers push the limits and also having the simplicity for any developer to pick it up and start their journey into ML.
+
+The goal of this book is to prepare you, as a coder, for just that—it’s accessible enough if you don’t fully understand ML yet, and also exposes you to the advanced concepts that will help you go deeper. The aim: to equip you to be an ML and AI developer without needing a PhD!
+
+I hope that you’ll find this book useful and that it will empower you with the confidence to get started on this wonderful and rewarding journey.
+
+# Who Should Read This Book
+
+If you’re interested in AI and ML, and you want to get up and running quickly with building models that learn from data, this book is for you. If you’re interested in getting started with common AI and ML concepts—computer vision, natural language processing, sequence modeling, and more—and want to see how neural networks can be trained to solve problems in these spaces, I think you’ll enjoy this book. And if you’ve heard all of the hoopla around generative AI, we roll our sleeves up and explore how that works with transformer and diffuser-based models.
+
+Most of all, if you’ve put off entering this valuable area of computer science because of perceived difficulty, in particular believing that you’ll need to dust off your old calculus books, then fear not: this book takes a code-first approach that shows you just how easy it is to get started in the world of ML and artificial intelligence using PyTorch.
+
+# Why I Wrote This Book
+
+I first got seriously involved with artificial intelligence in the spring of 1992\. A freshly minted physics graduate living in London in the midst of a terrible recession, I had been unemployed for six months. The British government started a program to train 20 people in AI technology and put out a call for applicants. I was the first participant selected. Three months later, the program failed miserably, because while there was plenty of theoretical work that could be done with AI, there was no easy way to do it practically. One could write simple inference in a language called Prolog and perform list processing in a language called Lisp, but there was no clear path to deploying them in industry. The famous “AI winter” followed.
+
+Then, in 2016, while I was working at Google on a product called Firebase, the company offered ML training to all engineers. I sat in a room with a number of other people and listened to lectures about calculus and gradient descent. I couldn’t quite match this to a practical implementation of ML, and I was suddenly transported back to 1992\. I gave feedback about this, and about how we should be educating people in ML—teaching the code first to coders. Google embraced this philosophy, as did Meta with the release of PyTorch.
+
+In particular, both emphasized high-level APIs that made it easy for developers to get started, and I realized there was a need for a book that took advantage of this and widened access to ML so that it wasn’t just for mathematicians or PhDs anymore.
+
+I believe that more people using this technology and deploying it to end users will lead to an explosion in AI and ML that will prevent another AI winter and change the world very much for the better. I’m already seeing the impact of this, from the work done by Google on diabetic retinopathy, through Penn State University, to PlantVillage building an ML model for mobile that helps farmers diagnose cassava disease, to Médecins Sans Frontières using TensorFlow models to help diagnose antibiotic resistance, and much, much more!
+
+With the advent of generative AI, and the emergence of transformers and diffusers as libraries in their own right, the next great wave of AI is upon us. PyTorch is at the heart of all of that—so it was time for me to bring my work up-to-date and show just how easy it is for you to dip your toes in the waters of AI and ML development.
+
+With that in mind, welcome to this book on AI and ML for coders in PyTorch. I can’t wait to see what you build.
+
+# Navigating This Book
+
+The book is written in two main parts. Part I (Chapters [1](ch01.html#ch01_introduction_to_pytorch_1748548870019566)–[11](ch11.html#ch11_using_convolutional_and_recurrent_methods_for_sequ_1748549734762226)) talks about how to use PyTorch to build ML models for a variety of scenarios. It takes you from first principles—building a model with a neural network containing only one neuron—through computer vision, natural language processing, and sequence modeling. Part II (Chapters [12](ch12.html#ch12_concepts_of_inference_1748549754445405)–[20](ch20.html#ch20_tuning_generative_image_models_with_lora_and_diffu_1748550104901965)) then walks you through generative AI scenarios—from understanding how transformers work in applications like ChatGPT through diffusers for image generation like Midjourney. Most chapters are standalone, so you can drop in and learn something new, or, of course, you can just read the book cover to cover.
+
+# Technology You Need to Understand
+
+The goal of the first half of the book is to help you learn how to use PyTorch to build models with a variety of architectures. The only real prerequisite to this is understanding Python, and in particular Python notation for data and array processing. You might also want to explore NumPy, a Python library for numeric calculations. If you have no familiarity with these, they are quite easy to learn, and you can probably pick up what you need as you go along (although some of the array notation might be a bit hard to grasp).
+
+# Online Resources
+
+A variety of online resources are used by, and supported in, this book. At the very least, I would recommend that you keep an eye on O’Reilly’s website for books that complement this one and for any updates and breaking changes to technologies discussed in the book. The code for this book is available on the book’s [GitHub page](https://github.com/lmoroney/PyTorch-Book-FIles), and I will keep it up to date there as the platform evolves.
+
+# Conventions Used in This Book
+
+The following typographical conventions are used in this book:
+
+*Italic*
+
+Indicates new terms, URLs, email addresses, filenames, and file extensions.
+
+`Constant width`
+
+Used for program listings, as well as within paragraphs to refer to program elements such as variable or function names, databases, data types, environment variables, statements, and keywords.
+
+**`Constant width bold`**
+
+Shows commands or other text that should be typed literally by the user.
+
+*`Constant width italic`*
+
+Shows text that should be replaced with user-supplied values or by values determined by context.
+
+###### Tip
+
+This element signifies a tip or suggestion.
+
+###### Note
+
+This element signifies a general note.
+
+# Using Code Examples
+
+Supplemental material (code examples, exercises, etc.) is available for download at [*https://github.com/lmoroney/PyTorch-Book-FIles*](https://github.com/lmoroney/PyTorch-Book-FIles).
+
+If you have a technical question or a problem using the code examples, please send email to [*support@oreilly.com*](mailto:support@oreilly.com).
+
+This book is here to help you get your job done. In general, if example code is offered with this book, you may use it in your programs and documentation. You do not need to contact us for permission unless you’re reproducing a significant portion of the code. For example, writing a program that uses several chunks of code from this book does not require permission. Selling or distributing examples from O’Reilly books does require permission. Answering a question by citing this book and quoting example code does not require permission. Incorporating a significant amount of example code from this book into your product’s documentation does require permission.
+
+We appreciate, but generally do not require, attribution. An attribution usually includes the title, author, publisher, and ISBN. For example: “*AI and ML for Coders with PyTorch*, by Laurence Moroney. Copyright 2025 Laurence Moroney, 978-1-098-19917-3.”
+
+If you feel your use of code examples falls outside fair use or the permission given above, feel free to contact us at [*permissions@oreilly.com*](mailto:permissions@oreilly.com).
+
+# O’Reilly Online Learning
+
+###### Note
+
+For more than 40 years, [*O’Reilly Media*](https://oreilly.com) has provided technology and business training, knowledge, and insight to help companies succeed.
+
+Our unique network of experts and innovators share their knowledge and expertise through books, articles, and our online learning platform. O’Reilly’s online learning platform gives you on-demand access to live training courses, in-depth learning paths, interactive coding environments, and a vast collection of text and video from O’Reilly and 200+ other publishers. For more information, visit [*https://oreilly.com*](https://oreilly.com).
+
+# How to Contact Us
+
+Please address comments and questions concerning this book to the publisher:
+
+*   O’Reilly Media, Inc.
+*   1005 Gravenstein Highway North
+*   Sebastopol, CA 95472
+*   800-889-8969 (in the United States or Canada)
+*   707-827-7019 (international or local)
+*   707-829-0104 (fax)
+*   [*support@oreilly.com*](mailto:support@oreilly.com)
+*   [*https://oreilly.com/about/contact.html*](https://oreilly.com/about/contact.html)
+
+We have a web page for this book, where we list errata, examples, and any additional information. You can access this page at [*https://oreil.ly/ai-ml-pytorch*](https://oreil.ly/ai-ml-pytorch).
+
+For news and information about our books and courses, visit [*https://oreilly.com*](https://oreilly.com).
+
+Find us on LinkedIn: [*https://linkedin.com/company/oreilly-media*](https://linkedin.com/company/oreilly-media).
+
+Watch us on YouTube: [*https://youtube.com/oreillymedia*](https://youtube.com/oreillymedia).
+
+# Acknowledgments
+
+I’d like to thank lots of people who have helped in the creation of this book.
+
+Andrew Ng, who, as well as writing the foreword for this book, also believed in my approach to teaching AI and ML, and with whom I created several specializations at Coursera, teaching millions of people how to succeed with ML and AI. Andrew also leads a team at deeplearning.ai who were terrific at helping me be a better machine learner, including Tommy Nelson, Nick Lewis, Miguel Magana, Muhammad Mubashar, and Dapinder Dosanjh.
+
+The team at O’Reilly that made this book possible: Jill Leonard, Nicole Butterfield, Aleeya Rahman, Kristen Brown, Doug McNair, Kate Dullea, Sue Klefstad, Kim Sandoval, and Angela Rufino, without whose hard work I never would have gotten it done!
+
+The amazing tech review team: Louis-François Bouchard, Pin-Yu Chen, Jialin Huang, Roya Norouzi Kandalan, Margaret Maynard-Reid, Dominic Monn, Vishwesh Ravi Shrimali, and Laura Uzcátegui.
+
+And of course, most important of all is my family, who make the most important stuff meaningful: my wife Rebecca Moroney, my daughter Claudia Moroney, and my son Christopher Moroney. Thanks to you all for making life more amazing than I ever thought it could be.

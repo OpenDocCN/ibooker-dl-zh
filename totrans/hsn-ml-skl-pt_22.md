@@ -1,0 +1,131 @@
+# Appendix A. Autodiff
+
+This appendix explains how PyTorch’s automatic differentiation (autodiff) feature works, and how it compares to other solutions.
+
+Suppose you define a function *f*(*x*, *y*) = *x*²*y* + *y* + 2, and you need its partial derivatives ∂*f*/∂*x* and ∂*f*/∂*y*, typically to perform gradient descent (or some other optimization algorithm). Your main options are manual differentiation, finite difference approximation, forward-mode autodiff, and reverse-mode autodiff. PyTorch implements reverse-mode autodiff, but to fully understand it, it’s useful to look at the other options first. So let’s go through each of them, starting with manual differentiation.
+
+# Manual Differentiation
+
+The first approach to compute derivatives is to pick up a pencil and a piece of paper and use your calculus knowledge to derive the appropriate equation. For the function *f*(*x*, *y*) just defined, it is not too hard; you just need to use five rules:
+
+*   The derivative of a constant is 0.
+
+*   The derivative of *λx* is *λ* (where *λ* is a constant).
+
+*   The derivative of *x*^λ is *λx*^(*λ*) ^– ¹, so the derivative of *x*² is 2*x*.
+
+*   The derivative of a sum of functions is the sum of these functions’ derivatives.
+
+*   The derivative of *λ* times a function is *λ* times its derivative.
+
+From these rules, you can derive [Equation A-1](#partial_derivatives_equations).
+
+##### Equation A-1\. Partial derivatives of *f*(*x*, *y*)
+
+<mtable displaystyle="true"><mtr><mtd columnalign="right"><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>f</mi></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle></mtd> <mtd columnalign="left"><mrow><mo>=</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mo>(</mo><msup><mi>x</mi> <mn>2</mn></msup> <mi>y</mi><mo>)</mo></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>+</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>y</mi></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>+</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mn>2</mn></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>=</mo> <mi>y</mi> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mo>(</mo><msup><mi>x</mi> <mn>2</mn></msup> <mo>)</mo></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>+</mo> <mn>0</mn> <mo>+</mo> <mn>0</mn> <mo>=</mo> <mn>2</mn> <mi>x</mi> <mi>y</mi></mrow></mtd></mtr> <mtr><mtd columnalign="right"><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>f</mi></mrow> <mrow><mi>∂</mi><mi>y</mi></mrow></mfrac></mstyle></mtd> <mtd columnalign="left"><mrow><mo>=</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mo>(</mo><msup><mi>x</mi> <mn>2</mn></msup> <mi>y</mi><mo>)</mo></mrow> <mrow><mi>∂</mi><mi>y</mi></mrow></mfrac></mstyle> <mo>+</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>y</mi></mrow> <mrow><mi>∂</mi><mi>y</mi></mrow></mfrac></mstyle> <mo>+</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mn>2</mn></mrow> <mrow><mi>∂</mi><mi>y</mi></mrow></mfrac></mstyle> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mn>1</mn> <mo>+</mo> <mn>0</mn> <mo>=</mo> <msup><mi>x</mi> <mn>2</mn></msup> <mo>+</mo> <mn>1</mn></mrow></mtd></mtr></mtable>
+
+This approach can become very tedious for more complex functions, and you run the risk of making mistakes. Fortunately, there are other options. Let’s look at finite difference approximation now.
+
+# Finite Difference Approximation
+
+Recall that the derivative *h*′(*x*[0]) of a function *h*(*x*) at a point *x*[0] is the slope of the function at that point. More precisely, the derivative is defined as the limit of the slope of a straight line going through this point *x*[0] and another point *x* on the function, as *x* gets infinitely close to *x*[0] (see [Equation A-2](#derivative_definition)).
+
+##### Equation A-2\. Definition of the derivative of a function *h*(*x*) at point *x*[0]
+
+<mrow><msup><mi>h</mi> <mo>'</mo></msup> <mrow><mo>(</mo> <msub><mi>x</mi> <mn>0</mn></msub> <mo>)</mo></mrow></mrow> <mrow><mo>=</mo> <munder><mo movablelimits="true" form="prefix">lim</mo> <mstyle scriptlevel="0" displaystyle="false"><mrow><mi>x</mi><mo>→</mo><msub><mi>x</mi> <mn>0</mn></msub></mrow></mstyle></munder> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>h</mi><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow><mo>-</mo><mi>h</mi><mrow><mo>(</mo><msub><mi>x</mi> <mn>0</mn></msub> <mo>)</mo></mrow></mrow> <mrow><mi>x</mi><mo>-</mo><msub><mi>x</mi> <mn>0</mn></msub></mrow></mfrac></mstyle></mrow> <mrow><mo>=</mo> <munder><mo movablelimits="true" form="prefix">lim</mo> <mstyle scriptlevel="0" displaystyle="false"><mrow><mi>ε</mi><mo>→</mo><mn>0</mn></mrow></mstyle></munder> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>h</mi><mrow><mo>(</mo><msub><mi>x</mi> <mn>0</mn></msub> <mo>+</mo><mi>ε</mi><mo>)</mo></mrow><mo>-</mo><mi>h</mi><mrow><mo>(</mo><msub><mi>x</mi> <mn>0</mn></msub> <mo>)</mo></mrow></mrow> <mi>ε</mi></mfrac></mstyle></mrow>
+
+So if we wanted to calculate the partial derivative of *f*(*x*, *y*) with regard to *x* at *x* = 3 and *y* = 4, we could compute *f*(3 + *ε*, 4) – *f*(3, 4) and divide the result by *ε*, using a very small value for *ε*. This type of numerical approximation of the derivative is called a *finite difference approximation*, and this specific equation is called *Newton’s difference quotient*. That’s exactly what the following code does:
+
+```py
+def f(x, y):
+    return x**2*y + y + 2
+
+def derivative(f, x, y, x_eps, y_eps):
+    return (f(x + x_eps, y + y_eps) - f(x, y)) / (x_eps + y_eps)
+
+df_dx = derivative(f, 3, 4, 0.00001, 0)
+df_dy = derivative(f, 3, 4, 0, 0.00001)
+```
+
+Unfortunately, the result is imprecise (and it gets worse for more complicated functions). The correct results are respectively 24 and 10, but instead we get:
+
+```py
+>>> df_dx
+24.000039999805264
+>>> df_dy
+10.000000000331966
+```
+
+Notice that to compute both partial derivatives, we have to call `f()` at least three times (we called it four times in the preceding code, but it could be optimized). If there were 1,000 parameters, we would need to call `f()` at least 1,001 times. When you are dealing with large neural networks, this makes finite difference approximation way too inefficient.
+
+However, this method is so simple to implement that it is a great tool to check that the other methods are implemented correctly. For example, if it disagrees with your manually derived function, then your function probably contains a mistake.
+
+So far, we have considered two ways to compute gradients: using manual differentiation and using finite difference approximation. Unfortunately, both are fatally flawed for training a large-scale neural network. So let’s turn to autodiff, starting with forward mode.
+
+# Forward-Mode Autodiff
+
+[Figure A-1](#symbolic_differentiation_diagram) shows how forward-mode autodiff works on an even simpler function, *g*(*x*, *y*) = 5 + *xy*. The graph for that function is represented on the left. After forward-mode autodiff, we get the graph on the right, which represents the partial derivative ∂*g*/∂*x* = 0 + (0 × *x* + *y* × 1) = *y* (we could similarly obtain the partial derivative with regard to *y*).
+
+The algorithm will go through the computation graph from the inputs to the outputs (hence the name “forward mode”). It starts by getting the partial derivatives of the leaf nodes. The constant node (5) returns the constant 0, since the derivative of a constant is always 0\. The variable *x* returns the constant 1 since ∂*x*/∂*x* = 1, and the variable *y* returns the constant 0 since ∂*y*/∂*x* = 0 (if we were looking for the partial derivative with regard to *y*, it would be the reverse).
+
+Now we have all we need to move up the graph to the multiplication node in function *g*. Calculus tells us that the derivative of the product of two functions *u* and *v* is ∂(*u* × *v*)/∂*x* = ∂*v*/∂*x* × *u* + *v* × ∂*u*/∂*x*. We can therefore construct a large part of the graph on the right, representing 0 × *x* + *y* × 1.
+
+Finally, we can go up to the addition node in function *g*. As mentioned, the derivative of a sum of functions is the sum of these functions’ derivatives, so we just need to create an addition node and connect it to the parts of the graph we have already computed. We get the correct partial derivative: ∂*g*/∂*x* = 0 + (0 × *x* + *y* × 1).
+
+![Forward-mode autodiff diagram illustrating the derivative calculation of the function g(x, y) = 5 + xy, highlighting the step-by-step computation and simplification to ∂g/∂x = y.](assets/hmls_aa01.png)
+
+###### Figure A-1\. Forward-mode autodiff
+
+However, this equation can be simplified (a lot). By applying a few pruning steps to the computation graph to get rid of all the unnecessary operations, we get a much smaller graph with just one node: ∂*g*/∂*x* = *y*. In this case simplification is fairly easy, but for a more complex function, forward-mode autodiff can produce a huge graph that may be tough to simplify and lead to suboptimal performance.
+
+Note that we started with a computation graph, and forward-mode autodiff produced another computation graph. This is called *symbolic differentiation*, and it has two nice features. First, once the computation graph of the derivative has been produced, we can use it as many times as we want to compute the derivatives of the given function for any value of *x* and *y*. Second, we can run forward-mode autodiff again on the resulting graph to get second-order derivatives if we ever need to (i.e., derivatives of derivatives). We could even compute third-order derivatives, and so on.
+
+But it is also possible to run forward-mode autodiff without constructing a graph (i.e., numerically, not symbolically) just by computing intermediate results on the fly. One way to do this is to use *dual numbers*, which are weird but fascinating numbers of the form *a* + *bε*, where *a* and *b* are real numbers, and *ε* is an infinitesimal number such that *ε*² = 0 (but *ε* ≠ 0). You can think of the dual number 42 + 24*ε* as something akin to 42.0000⋯000024 with an infinite number of 0s (but of course this is simplified just to give you some idea of what dual numbers are). A dual number is represented in memory as a pair of floats. For example, 42 + 24*ε* is represented by the pair (42.0, 24.0).
+
+Dual numbers can be added, multiplied, and so on, as shown in [Equation A-3](#dual_numbers_operations).
+
+##### Equation A-3\. A few operations with dual numbers
+
+<mtable displaystyle="true"><mtr><mtd columnalign="left"><mrow><mi>λ</mi> <mo>(</mo> <mi>a</mi> <mo>+</mo> <mi>b</mi> <mi>ε</mi> <mo>)</mo> <mo>=</mo> <mi>λ</mi> <mi>a</mi> <mo>+</mo> <mi>λ</mi> <mi>b</mi> <mi>ε</mi></mrow></mtd></mtr> <mtr><mtd columnalign="left"><mrow><mo>(</mo> <mi>a</mi> <mo>+</mo> <mi>b</mi> <mi>ε</mi> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mi>c</mi> <mo>+</mo> <mi>d</mi> <mi>ε</mi> <mo>)</mo> <mo>=</mo> <mo>(</mo> <mi>a</mi> <mo>+</mo> <mi>c</mi> <mo>)</mo> <mo>+</mo> <mo>(</mo> <mi>b</mi> <mo>+</mo> <mi>d</mi> <mo>)</mo> <mi>ε</mi></mrow></mtd></mtr> <mtr><mtd columnalign="left"><mrow><mrow><mo>(</mo> <mi>a</mi> <mo>+</mo> <mi>b</mi> <mi>ε</mi> <mo>)</mo></mrow> <mo>×</mo> <mrow><mo>(</mo> <mi>c</mi> <mo>+</mo> <mi>d</mi> <mi>ε</mi> <mo>)</mo></mrow> <mo>=</mo> <mi>a</mi> <mi>c</mi> <mo>+</mo> <mrow><mo>(</mo> <mi>a</mi> <mi>d</mi> <mo>+</mo> <mi>b</mi> <mi>c</mi> <mo>)</mo></mrow> <mi>ε</mi> <mo>+</mo> <mrow><mo>(</mo> <mi>b</mi> <mi>d</mi> <mo>)</mo></mrow> <msup><mi>ε</mi> <mn>2</mn></msup> <mo>=</mo> <mi>a</mi> <mi>c</mi> <mo>+</mo> <mrow><mo>(</mo> <mi>a</mi> <mi>d</mi> <mo>+</mo> <mi>b</mi> <mi>c</mi> <mo>)</mo></mrow> <mi>ε</mi></mrow></mtd></mtr></mtable>
+
+Most importantly, it can be shown that *h*(*a* + *bε*) = *h*(*a*) + *b* × *h*′(*a*)*ε*, so computing *h*(*a* + *ε*) gives you both *h*(*a*) and the derivative *h*′(*a*) in just one shot. [Figure A-2](#autodiff_forward_diagram) shows that the partial derivative of *f*(*x*, *y*) with regard to *x* at *x* = 3 and *y* = 4 (which I will write as ∂*f*/∂*x* (3, 4)) can be computed using dual numbers. All we need to do is compute *f*(3 + *ε*, 4); this will output a dual number whose first component is equal to *f*(3, 4) and whose second component is equal to ∂*f*/∂*x* (3, 4).
+
+![Diagram illustrating forward-mode autodiff using dual numbers to compute the partial derivative of a function \( f(x, y) = x^2y + y + 2 \) with respect to \( x \) at \( x = 3 \) and \( y = 4 \), resulting in the derivative value of 24.](assets/hmls_aa02.png)
+
+###### Figure A-2\. Forward-mode autodiff using dual numbers
+
+To compute ∂*f*/∂*y* (3, 4) we would have to go through the graph again, but this time with *x* = 3 and *y* = 4 + *ε*.
+
+So, forward-mode autodiff is much more accurate than finite difference approximation, but it suffers from the same major flaw, at least when there are many inputs and few outputs (as is the case when dealing with neural networks): if there were 1,000 parameters, it would require 1,000 passes through the graph to compute all the partial derivatives. This is where reverse-mode autodiff shines: it can compute all of them in just two passes through the graph. Let’s see how.
+
+# Reverse-Mode Autodiff
+
+Reverse-mode autodiff is the solution implemented by PyTorch. It first goes through the graph in the forward direction (i.e., from the inputs to the output) to compute the value of each node. Then it does a second pass, this time in the reverse direction (i.e., from the output to the inputs) to compute all the partial derivatives. The name “reverse mode” comes from this second pass through the graph, where gradients flow in the reverse direction. [Figure A-3](#autodiff_reverse_diagram) represents the second pass. During the first pass, all the node values were computed, starting from *x* = 3 and *y* = 4\. You can see those values at the bottom right of each node (e.g., *x* × *x* = 9). The nodes are labeled *n*[1] to *n*[7] for clarity. The output node is *n*[7]: *f*(3, 4) = *n*[7] = 42.
+
+![Diagram illustrating reverse-mode autodiff showing the computation of partial derivatives in the reverse pass from output node \( n_7 \) with labeled values and derivatives for each node.](assets/hmls_aa03.png)
+
+###### Figure A-3\. Reverse-mode autodiff
+
+The idea is to gradually go down the graph, computing the partial derivative of *f*(*x*, *y*) with regard to each consecutive node, until we reach the variable nodes. For this, reverse-mode autodiff relies heavily on the *chain rule*, shown in [Equation A-4](#chain_rule).
+
+##### Equation A-4\. Chain rule
+
+<mrow><mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>f</mi></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle> <mo>=</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><mi>f</mi></mrow> <mrow><mi>∂</mi><msub><mi>n</mi> <mi>i</mi></msub></mrow></mfrac></mstyle> <mo>×</mo> <mstyle scriptlevel="0" displaystyle="true"><mfrac><mrow><mi>∂</mi><msub><mi>n</mi> <mi>i</mi></msub></mrow> <mrow><mi>∂</mi><mi>x</mi></mrow></mfrac></mstyle></mrow>
+
+Since *n*[7] is the output node, *f* = *n*[7] so ∂*f* / ∂*n*[7] = 1.
+
+Let’s continue down the graph to *n*[5]: how much does *f* vary when *n*[5] varies? The answer is ∂*f* / ∂*n*[5] = ∂*f* / ∂*n*[7] × ∂*n*[7] / ∂*n*[5]. We already know that ∂*f* / ∂*n*[7] = 1, so all we need is ∂*n*[7] / ∂*n*[5]. Since *n*[7] simply performs the sum *n*[5] + *n*[6], we find that ∂*n*[7] / ∂*n*[5] = 1, so ∂*f* / ∂*n*[5] = 1 × 1 = 1.
+
+Now we can proceed to node *n*[4]: how much does *f* vary when *n*[4] varies? The answer is ∂*f* / ∂*n*[4] = ∂*f* / ∂*n*[5] × ∂*n*[5] / ∂*n*[4]. Since *n*[5] = *n*[4] × *n*[2], we find that ∂*n*[5] / ∂*n*[4] = *n*[2], so ∂*f* / ∂*n*[4] = 1 × *n*[2] = 4.
+
+The process continues until we reach the bottom of the graph. At that point we will have calculated all the partial derivatives of *f*(*x*, *y*) at the point *x* = 3 and *y* = 4\. In this example, we find ∂*f* / ∂*x* = 24 and ∂*f* / ∂*y* = 10\. Sounds about right!
+
+Reverse-mode autodiff is a very powerful and accurate technique, especially when there are many inputs and few outputs, since it requires only one forward pass plus one reverse pass per output to compute all the partial derivatives for all outputs with regard to all the inputs. When training neural networks, we generally want to minimize the loss, so there is a single output (the loss), and hence only two passes through the graph are needed to compute the gradients.
+
+PyTorch builds a new graph on the fly during each forward pass. Whenever you run an operation on a tensor with `requires_grad=True`, PyTorch computes the resulting tensor and sets its `grad_fn` attribute to an operation-specific object that allows PyTorch to propagate the gradients backwards through this operation. Since the graph is built on the fly, your code can be highly dynamic, containing loops and conditionals, and everything will still work fine.
+
+Reverse-mode autodiff can also handle functions that are not entirely differentiable, as long as you ask it to compute the partial derivatives at points that *are* differentiable.
+
+###### Tip
+
+Creating a tiny autodiff framework is a great exercise to truly master autodiff. Try creating one from scratch for a small set of operations. If you get stuck, check out this project’s `extra_autodiff.ipynb` notebook, which you can run on Colab at [*https://homl.info/colab-p*](https://homl.info/colab-p). You can also watch Andrej Karpathy’s excellent YouTube video where he builds the [micrograd library from scratch](https://homl.info/micrograd).

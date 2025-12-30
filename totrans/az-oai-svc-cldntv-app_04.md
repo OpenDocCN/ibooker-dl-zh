@@ -1,0 +1,839 @@
+# Chapter 3\. Implementing Cloud Native Generative AI with Azure OpenAI Service
+
+This chapter will focus on the implementation of generative AI architectures with Microsoft Azure and Azure OpenAI models, always aiming to present all available options, and minimize the required development, integration, and usage cost, while accelerating the operationalization. For that purpose, I’ve included a series of best practices and typical architectures that will allow you to choose the best building blocks for your specific scenarios.
+
+We will include the most relevant Azure OpenAI implementation approaches, based on existing features and repositories that will continue evolving, improving, and including new functionalities. I’ve included URLs to the original documentation because they are continuously updated with new features, so these links will allow you to explore any details you need. Most of them rely on official accelerators from GitHub repositories, and projects that you will be able to follow and/or fork. But before getting into the details, let’s explore some fundamental topics that will help you understand the full extent of what a generative AI with Azure OpenAI Service means.
+
+# Defining the Knowledge Scope of Azure OpenAI Service–Enabled Apps
+
+Generative AI applications on Microsoft Azure are not only for regular ChatGPT-type applications. They are advanced architectures that rely on diverse technology pieces, including the core infrastructure (servers, [GPUs](https://oreil.ly/y5mXm), etc.) required to run generative AI models, and that allow adopters to create conversational applications and search engines, develop and integrate new AI copilots into their applications, customize customer attention, etc.
+
+From an Azure OpenAI point of view, we are talking about a managed service that includes advanced functionalities that will allow you to implement *different levels of knowledge*, depending on the desired scope of your applications, and based on default capabilities and specific adjustment and customization techniques. By levels of knowledge, we mean something that goes beyond the initial scope of the LLM and its massive dataset (e.g., adding new information for an internal company application, based on its own data). Some of the options to adjust that knowledge include the following:
+
+Baseline LLM
+
+Azure OpenAI’s language models are trained on enormous datasets containing billions of words. These datasets are carefully curated to include a wide range of topics, genres, and writing styles. The size and diversity of the training data helps the models develop a broad understanding of human language. The specific details of the training data have not been disclosed, but it includes text data from a variety of sources, including books, articles, websites, and other publicly available written material. Additionally, the training process (RLHF) includes human reviewers who help annotate and curate the data, flagging and addressing potential biases or problematic content. Feedback loops with reviewers are established to continuously improve and refine the models. One of the key advantages of the enterprise-grade Azure OpenAI service is that [your data is only yours](https://oreil.ly/qA5Ok) and is not used by anyone to retrain models. The end-to-end process is explained in [OpenAI’s public paper](https://oreil.ly/2uFNS) titled “Training language models to follow instructions with human feedback,” and their official GPT model card, shown in [Figure 3-1](#fig_1_the_chatgpt_training_process_source).
+
+![](assets/aoas_0301.png)
+
+###### Figure 3-1\. The ChatGPT training process (source: adapted from an image by [OpenAI](https://oreil.ly/9Lt-2); [Creative Commons 4.0 license](https://oreil.ly/YGKJ5))
+
+Additional knowledge (grounding)
+
+You can provide the LLMs with some additional context or knowledge, making them specific to the activity scope of the developed system. This could go from setting the topic of discussion for a chatbot to specifying URLs that are related to the topics we want to include. There are different ways to implement this grounding:
+
+Fine tuning
+
+Using small knowledge bases or private data to retrain the LLM with new additional information. Available via Azure OpenAI Service, it’s a good option to adjust the knowledge scope of the LLM, but a less cost-efficient option (as we will explore in [Chapter 5](ch05.html#operationalizing_generative_ai_implementations) when we calculate the cost of the Azure OpenAI–enabled implementations). In reality, there are very few use cases that require fine-tuning, because it updates the weights of the models but does not necessarily make the model more factual with respect to the data it was fine-tuned for. Most use cases can be achieved through retrieval-augmented generation (RAG).
+
+RAG, embeddings-based retrieval
+
+Based on [Microsoft’s definition](https://oreil.ly/QlN0L), embeddings are:
+
+> representations or encodings of tokens, such as sentences, paragraphs, or documents, in a high-dimensional vector space, where each dimension corresponds to a learned feature or attribute of the language. Embeddings are the way that the model captures and stores the meaning and the relationships of the language, and the way that the model compares and contrasts different tokens or units of language. Embeddings are the bridge between the discrete and the continuous, and between the symbolic and the numeric, aspects of language for the model.
+
+RAG, index-based retrieval
+
+The ability to index existing files so we can locate them when interacting with the LLM engine. Microsoft [defines indexes](https://oreil.ly/iJSKP) as:
+
+> crawlers that extract searchable content from data sources and populate a search index using field-to-field mappings between source data and a search index. This approach is sometimes referred to as a “pull model” because the search service pulls data in without you having to write any code that adds data to an index.
+
+RAG, hybrid search
+
+As the result of combining grounding techniques, [hybrid search](https://oreil.ly/c2W8A) leverages both embedding-based retrieval in combination with index-based retrieval to unlock some of the most powerful techniques.
+
+Other grounding techniques
+
+Other techniques include contextualization (providing information about topics and/or specific URLs to define a reduced knowledge scope) and live internet results to complement the LLM information and include external sources.
+
+As you can see in [Figure 3-2](#fig_2_knowledge_scope_for_generative_ai), all these elements contribute to the creation of an extended knowledge domain from regular LLMs, based on internet and private data. The rest of this chapter will focus on different techniques to implement them with Azure OpenAI and other Microsoft services.
+
+Summarizing, any generative AI architecture or approach will depend on the knowledge domains and levels we require for the end solutions. If our application can rely on (just) the LLM, which already contains a massive amount of information, then we can implement the model with no additional building blocks. On the other hand, if we need to add specific information from other sources (including PDFs, text documents, websites, databases, etc.), then we will leverage the so-called fine-tuning and grounding techniques.
+
+Let’s now explore the available interfaces and tools for you to create new applications with Azure OpenAI Service. You will understand the key building blocks before moving into a step-by-step guide of the most relevant implementation approaches.
+
+![](assets/aoas_0302.png)
+
+###### Figure 3-2\. Knowledge scope for generative AI
+
+# Generative AI Modeling with Azure OpenAI Service
+
+One of the key adoption factors that encourages people to use Azure OpenAI is the availability of different visual and code-based interfaces that you can leverage while using the service. In this section we will explore them as well as how to use these interfaces depending on your generative AI implementation approach.
+
+###### Warning
+
+Initially, Microsoft released Azure OpenAI Service with “Gated General Availability,” meaning that any organization willing to use the service had to *complete a detailed application form* to explain the potential use cases and guarantee good usage of the platform. Microsoft’s goal was to validate that any application enabled by Azure OpenAI was always aligned with their [responsible AI approach](https://oreil.ly/QsuYY) and the [intended use](https://oreil.ly/7ojQP) of the platform. If you are getting started with Azure OpenAI Service, [check first if you still need to apply for access](https://oreil.ly/MDBhf) and prepare the required information for the [application form](https://oreil.ly/dp14y).
+
+## Azure OpenAI Service Building Blocks
+
+Before diving into the “how to,” let’s explore the available building blocks for any Azure OpenAI practitioner to prepare and deploy new solutions. Essentially, there are two primary components for the Azure OpenAI Service: the *visual interfaces* that allow users to test, customize, and deploy their generative AI models and the *development interfaces* that enable the exploitation and integration of those advanced capabilities with any application.
+
+Both elements are complementary and great assets for any kind of adopter, as they require a relatively low level of AI knowledge to make them work. For example, *citizen users* (hybrid technical-business profiles that are not very technical, but that understand the principles of generative AI and have some knowledge of prompt engineering, can use the visual playground, or leverage Microsoft Copilot Studio) and *regular developers* are great candidates for the development platforms.
+
+### Visual interfaces: Azure OpenAI Studio and Playground
+
+As with any other [Azure AI service](https://oreil.ly/TDoRH), Azure OpenAI includes the notion of a “Studio” (i.e., [Azure OpenAI Studio)](https://oreil.ly/LWQO1) that makes the interaction with generative AI models very simple, by providing an intuitive UI that facilitates service deployments and leverages existing Azure OpenAI APIs without any code required from the user perspective.
+
+Azure OpenAI Studio includes access to [all available models](https://oreil.ly/BI5Ue) (by type and geographic region), predefined prompting scenarios and examples, and several applications called *playgrounds*. The Azure OpenAI Playgrounds are different apps within Azure OpenAI Service, which include (as you can see in [Figure 3-3](#fig_3_azure_openai_studio)) a customizable ChatGPT type of instance (*Chat*), other GPT language models for nonchat scenarios (*Completion*), a playground to connect AI models with your data (*Bring your own data*), and one for image generation applications with OpenAI’s DALL·E models.
+
+![](assets/aoas_0303.png)
+
+###### Figure 3-3\. Azure OpenAI Studio
+
+You can access each playground (and their related management features) from the left panel of the studio, or visit them directly by following the URLs included here:
+
+[Chat playground](https://oreil.ly/FRU9K)
+
+This includes both the conversational Chat playground with the [features and settings](https://oreil.ly/K_fjL) required to create a private ChatGPT implementation, and the bring your own data (represented as one of the playgrounds in Azure OpenAI Studio) functionality that I will explain later in this section. The Chat playground (shown in [Figure 3-4](#fig_4_azure_openai_studio_chat_playground)) leverages the [Chat Completion API](https://oreil.ly/ZJOLp).
+
+![](assets/aoas_0304.png)
+
+###### Figure 3-4\. Azure OpenAI Studio: Chat playground
+
+As indicated in [Figure 3-4](#fig_4_azure_openai_studio_chat_playground), the main tiles and features of the Chat playground comprise the following:
+
+1\. Assistant setup
+
+This area is located on the left side of the screen and allows users to configure the chatbot’s behavior. Users can choose from templates or create their own custom system messages. This section helps users define how the chatbot should act and respond to user queries:
+
+System message
+
+A type of [meta-prompt](https://oreil.ly/OmKQO) (i.e., a prompt that sets the by-default context of the discussion) to guide the AI system’s behavior. It can be used to introduce the system, set expectations, provide feedback, or handle errors. One important thing to remember is that even if there is no token limit for this message, it will be included with every API call, so it counts against the overall [token limit/context length](https://oreil.ly/BI5Ue) of the model.
+
+Examples
+
+This area is located at the bottom-left corner of the screen. You can add examples to the bot intelligence, so it learns the proper way to answer specific questions. It’s a good option when we don’t need to fully retrain a model, for example, when you need to add a couple of topics from your company’s knowledge base and you want to define the best way to answer. From the official description: “Add examples to show the chat what responses you want. It will try to mimic any responses you add here so make sure they match the rules you laid out in the system message.”
+
+2\. Chat session
+
+This area is located in the middle of the screen and serves as the main interaction point between you and the chatbot. You can type your queries here and the chatbot will respond accordingly. The chat session allows you to test the chatbot’s performance and make adjustments to the assistant setup as needed, as well as import and export bot configurations, or get the result as a [JavaScript Object Notation (JSON) file](https://oreil.ly/LZJH4).
+
+3\. Deploy to
+
+This option allows you to deploy your chatbot to a specific platform or environment. Azure OpenAI Studio allows direct deployments to both [Azure Web Apps](https://oreil.ly/TtlXr) and [Microsoft Copilot Studio](https://oreil.ly/YV0SN). We will explore these deployment options later in this chapter.
+
+4\. Configuration
+
+This area is located in the top-right corner of the screen. It provides options for you to access deployment and session settings. Users can also clear the chat history and manage parameters related to the chatbot’s deployment:
+
+Deployment
+
+To handle session-level configurations, such as the Azure OpenAI deployment resource you want to use (e.g., you may have several for different geographic regions), as well as the memory of the session, which will impact how many interactions the system can remember when getting new questions:
+
+Deployment instance
+
+You will select one option, from the resources you have [previously deployed](https://oreil.ly/-4D4f) (if you haven’t, you will need to create one before using Azure OpenAI Studio), based on the geography and model needs you may have.
+
+Past messages included and current token count
+
+Session-level parameters you may want to adjust for the specific test you do via the Chat playground. These parameters will be gone when you finish the playground session, except if you deploy an application (we will see the deployment options in a couple of sections).
+
+Parameters
+
+This right panel includes all technical settings that will allow you to configure the expected output message, including the level of creativity versus determinism of the answer:
+
+Max response
+
+This parameter helps you set a limit on the number of tokens per model response. The max response is measured in the number of tokens, and it is shared between the question (including system message, examples, message history, and prompt/user query) and the model’s response.
+
+Temperature
+
+This parameter and the Top-p parameter are direct alternatives to control the AI model’s randomness. Lowering the temperature means that the model will produce more repetitive and deterministic responses. Increasing the temperature will result in more unexpected or creative responses. Try adjusting temperature or Top-p, but not both.
+
+[Assistants playground](https://oreil.ly/S4KFy)
+
+[Released in 2024](https://oreil.ly/MdxvG), the Assistants playground is visually similar to the Chat playground, but it includes:
+
+*   The ability to handle conversation threads, by using the “thread ID” parameter that converts the chat discussion into a stateful application that keeps context and memory. You can see the details in Azure OpenAI’s [Assistants API specification](https://oreil.ly/ErRd6).
+
+*   Other functionalities such as the API call log, the [Code Interpreter](https://oreil.ly/3jSFV), and [function calling](https://oreil.ly/2R7Pz).
+
+Keep in mind that this is a relatively new option, but the [official documentation](https://oreil.ly/HH4hH) includes the detailed steps for creation and management of assistant files. Keep an eye on and bookmark this URL to follow any news and technical resources.
+
+[Completions playground](https://oreil.ly/zJYtL)
+
+As we reviewed in [Chapter 1](ch01.html#introduction_to_generative_ai_and_azure_openai_ser), the completion skill is (along with chat and embeddings models) one of the core concepts for NLP and modern LLMs. Completion focuses on unitary interactions for all kinds of text-based requests (with no need for memory between interactions, as you may need for chat-based applications in which the model keeps the discussion context). It leverages the [Completions API](https://oreil.ly/Uczv9). As shown in [Figure 3-5](#fig_5_azure_openai_studio_completions_playground), the Completions playground allows you to type a prompt, or choose from a series of examples. It also includes the same kind of setting parameters that we reviewed in the Chat playground.
+
+![](assets/aoas_0305.png)
+
+###### Figure 3-5\. Azure OpenAI Studio: Completions playground
+
+You can generate an answer (completion), and even regenerate it to obtain a totally new output. If you choose one of the examples from the drop-down menu, you will see an automatic prompt appear and the corresponding completion, highlighted as in [Figure 3-6](#fig_6_azure_openai_studio_completions_playground_examp).
+
+![](assets/aoas_0306.png)
+
+###### Figure 3-6\. Azure OpenAI Studio: Completions playground (example)
+
+Summarizing, you may use chat for multistep scenarios where you need to maintain a sequence of interactions with the AI model, while completions can be used for specific unitary cases. As you will see later, these two playgrounds are just visual interfaces that consume existing Azure OpenAI [completion](https://oreil.ly/Uczv9) and [chat](https://oreil.ly/ZJOLp) APIs.
+
+Bring your own data playground
+
+Even if Azure OpenAI Studio shows this feature as a separate playground, it is technically part of the Chat playground. To access this functionally, you can either use the Chat playground’s Assistant setup and select the “Add your data” tab or go directly to the “Bring your own data” tile of the Studio ([Figure 3-7](#fig_7_azure_openai_studio_bring_your_own_data)). For both cases, the result will be the same.
+
+Once you reach this point, the sequence of steps is pretty simple. As you can see in [Figure 3-8](#fig_8_azure_openai_studio_bring_your_own_data_source_de), the system will allow you to select your own sources of data, to combine their knowledge with the baseline LLM. That knowledge can come from PDF files, text-based documents, slides, web files, etc. In this case, besides the Azure OpenAI resource previously deployed, the bring your own data functionality will leverage other resources such as Azure Data Lake Gen2/Azure Storage, to save the files, and Azure Cognitive Search, to index the files. Azure Cognitive Search offers a vector search functionality based on the [Embeddings API](https://oreil.ly/imKOS)) that I will explain by the end of the chapter. Finally, you can always check the [official documentation](https://oreil.ly/z_iRM) to follow the latest updates for this Azure OpenAI feature, as it is a quickly evolving one due to the continuous incorporation of new functionalities.
+
+![](assets/aoas_0307.png)
+
+###### Figure 3-7\. Azure OpenAI Studio: Bring your own data
+
+![](assets/aoas_0308.png)
+
+###### Figure 3-8\. Azure OpenAI Studio: Bring your own data source details
+
+[DALL·E playground](https://oreil.ly/r4h7Y)
+
+The last playground tile provides direct access to the generative AI DALL·E models (versions 2 and 3) from OpenAI. This is a text-to-image model that allows you to create new images from just text-based descriptions. Imagine describing a place or a scene and getting a visual representation in the form of images that are freshly created on demand. This means they didn’t exist previously and that you can integrate this capability into your solutions and combine it with the rest of the language. The DALL·E playground (shown in [Figure 3-9](#fig_9_azure_openai_studio_dall_e_playground)) leverages the [Image Generation API](https://oreil.ly/bm-7a).
+
+![](assets/aoas_0309.png)
+
+###### Figure 3-9\. Azure OpenAI Studio: DALL·E playground
+
+As shown in [Figure 3-9](#fig_9_azure_openai_studio_dall_e_playground), relevant aspects of the playground include the following:
+
+1\. Playground
+
+The DALL·E playground is visually simple—a prompt field and the results (image) below. It’s similar to the structure of the [Bing Create application](https://oreil.ly/YwDy-), but with the option to deploy the DALL·E model for your own development.
+
+2\. Settings
+
+The settings panel offers you the option to choose the number of images you want to generate and the image size.
+
+3\. Album
+
+The album section showcases all past image experiments, offering you the option to review previously created images, generate new ones, etc.
+
+Besides the different playgrounds, you can also explore the left-side *Management* panel shown in [Figure 3-10](#fig_10_azure_openai_studio_management_panels), which include options such as deployments, models, data files, quotas, and content filters.
+
+![](assets/aoas_0310.png)
+
+###### Figure 3-10\. Azure OpenAI Studio: Management panels
+
+Let’s explore the most important features:
+
+[Deployments](https://oreil.ly/PGocU)
+
+Allows you to deploy any specific model instance [available in the geographic region](https://oreil.ly/XZnCX) of your Azure OpenAI resource and to visualize those that you previously deployed ([Figure 3-11](#fig_11_azure_openai_studio_deployments)).
+
+![](assets/aoas_0311.png)
+
+###### Figure 3-11\. Azure OpenAI Studio: deployments
+
+[Content filters](https://oreil.ly/Bpsud)
+
+For responsible AI moderation. Each filter from those in [Figure 3-12](#fig_12_azure_openai_studio_content_filters) (e.g., hate, sexual, self-harm, and violence topics for both prompts and completions, with different levels of filtering) can be applied to the deployments, and those deployments will include the content filter for each chat or completion implementation. We will explore this feature in [Chapter 4](ch04.html#additional_cloud_and_ai_capabilities), as part of the responsible AI measures for generative AI implementations.
+
+![](assets/aoas_0312.png)
+
+###### Figure 3-12\. Azure OpenAI Studio: content filters
+
+[Models](https://oreil.ly/oC3Hj)
+
+This option shows the [available Azure OpenAI models](https://oreil.ly/XZnCX), related to the specific geographic region of the chosen deployment.
+
+[Data files](https://oreil.ly/2TZwW)
+
+This file management feature allows you to [prepare the dataset for fine-tuned implementations](https://oreil.ly/FDMr1). We will explore more about fine-tuning later in this chapter.
+
+[Quotas](https://oreil.ly/ONn5Q)
+
+The quota panel shows the [usage quotas](https://oreil.ly/bEN4D) related to different models and geographic regions. It also helps you [request a quota increase](https://oreil.ly/iiysu) if you need more. Alternatively, and I will explain this in [Chapter 6](ch06.html#elaborating_generative_ai_business_cases) as part of the pricing and estimation exercise, you have an option to hire dedicated capacity, by leveraging the so-called [provisioned throughput units (PTU) for Azure OpenAI](https://oreil.ly/KCC6K), which are reserved instances with performance and service availability benefits.
+
+We will explore some of these functionalities later in this chapter and in [Chapter 4](ch04.html#additional_cloud_and_ai_capabilities), as they will all be relevant, depending on the type of Azure OpenAI implementation you plan to utilize. Now, let’s see what you can do to deploy these models via Azure OpenAI Studio.
+
+### Deployment interfaces: Web apps and Microsoft Copilot agents
+
+As mentioned in this chapter, the Chat playground includes some easy-to-use deployment options. They are not available for the rest of the playgrounds, but they can simplify the preliminary deployment of Azure OpenAI models for internal testing and use purposes, without any coding required. These no-code deployments can incorporate the specific knowledge from the bring your own data functionality. There are two possibilities:
+
+Web apps with [Azure App Service](https://oreil.ly/moBFz)
+
+The first available deployment option, which you can use with or without the “bring your own data” feature activated. As we discussed in [Chapter 2](ch02.html#designing_cloud_native_architectures_for_generativ), App Service is the Azure option to deploy native web apps; it allows integrations with both external and internal systems and web development with a variety of programming languages. From Azure OpenAI Studio and its Chat playground, you can simply “Deploy to” and then configure your deployment (see [Figure 3-13](#fig_13_azure_openai_studio_web_app_deployment)).
+
+![](assets/aoas_0313.png)
+
+###### Figure 3-13\. Azure OpenAI Studio: web app deployment
+
+As shown in [Figure 3-13](#fig_13_azure_openai_studio_web_app_deployment), configuration options include the following:
+
+Choosing the web app
+
+You can create a new App Service resource directly from this feature (in that case, you will need to define the “app name” that will be part of your web app URL), or choose an existing one if you have previously deployed via [Azure portal’s App Service panel](https://oreil.ly/dPLy2).
+
+Pricing plan
+
+To select the preferred [pricing tier](https://oreil.ly/IdDXQ) for the web app.
+
+Chat history
+
+A functionality that allows the web app users to recover their [previous interactions](https://oreil.ly/-yyQg) with chat. It relies on [Cosmos DB (Azure’s NoSQL database)](https://oreil.ly/-yyQg), which obviously adds cost to the existing Azure OpenAI and App Service resources.
+
+Once you have selected all these options, you can click on Deploy. You will need to wait around 10 minutes for all the resources to be deployed, then you will be able to launch your web app from the studio, or by typing the URL *https://<appname>.azurewebsites.net**.*The look and feel will be something like the interface you see in [Figure 3-14](#fig_14_azure_openai_studio_web_app_interface).
+
+![](assets/aoas_0314.png)
+
+###### Figure 3-14\. Azure OpenAI Studio: web app interface
+
+The UI of the new app will contain a regular chatbot setup, with options to share and check previous discussions on the top-right side of the window. You can also [customize the visual aspect of the application](https://oreil.ly/BVUkG) by using the [official source code](https://oreil.ly/MeBin), and deploy it programmatically, with Azure App Service and using your preferred programming language, instead of leveraging Azure OpenAI Studio.
+
+Bots with [Microsoft Copilot Studio (formerly Power Virtual Agents [PVAs])](https://oreil.ly/YV0SN)
+
+This option is available for Chat playground implementations that include the “bring your own data” feature. That means that if you don’t add extended knowledge from PDFs or other documents, the Chat playground won’t include Microsoft Copilot Studio/PVA as a deployment option in the top-right corner in [Figure 3-15](#fig_15_azure_openai_studio_copilot_deployment).
+
+![](assets/aoas_0315.png)
+
+###### Figure 3-15\. Azure OpenAI Studio: Copilot deployment
+
+How to handle PVAs is outside of the scope of this book, but you can explore the [detailed instructions from the official documentation](https://oreil.ly/Qi9J3) that show how to use PVAs with Azure OpenAI for the *generative answers* feature. This option is available for only certain geographic regions, so you will need to validate if your deployments with Azure OpenAI models show the PVA deployment option in the Chat playground. If this is not the case, you may want to deploy new models in other regions.
+
+Summarizing, these visual interfaces can help you leverage Azure OpenAI models in a simple manner. They provide an intuitive way to launch the Azure OpenAI APIs in just a few clicks. However, you will need code-based tools to implement the other advanced architectures you will see later in this chapter. Let’s now explore those APIs and other development kits so you can leverage everything that Azure OpenAI Service has to offer.
+
+### Development interfaces: APIs and SDKs
+
+In addition to all the previously explored interfaces, one of the key enablers for integrating Azure OpenAI with existing or new applications is the ability to consume the preconfigured models as regular endpoints. From a development point of view, we can call those models by using the APIs and related software development kits (SDKs) and pass any input and configuration parameters within the code. This section covers the main pieces you need to know—the *Azure OpenAI Service REST APIs*, including the [official API reference documentation](https://oreil.ly/qH3FL), with specific details for chat, completions, embeddings, and other deployments. There is also an [official repo](https://oreil.ly/mbA1v) with the full specifications. There are general APIs that will help you with the configuration and deployment of Azure OpenAI services, while the service APIs help you consume the models to bring the AI capabilities to your generative AI applications.
+
+The main APIs you need to know and their high-level call details are as follows:
+
+[General management APIs](https://oreil.ly/xkqqk)
+
+For Azure AI service account management (including Azure OpenAI), with tasks such as account creation, deletion, listing, etc.
+
+[APIs for model-related information](https://oreil.ly/Y7VMR)
+
+To obtain the list of available Azure OpenAI models and information about their specific capabilities and the model lifecycle (including potential deprecation details).
+
+[Completions](https://oreil.ly/Uczv9)
+
+The required API for nonchat language scenarios. This and other APIs are versioned by using the “YYYY-MM-DD” date structure for `api-version`, and you will need to copy the resource name and deployment-ID from the Azure OpenAI model you previously deployed (remember the step-by-step process from the Azure portal, in [Chapter 2](ch02.html#designing_cloud_native_architectures_for_generativ)). To create a completion resource, the POST operation is:
+
+```py
+POST https://{your-resource-name}.openai.azure.com/openai/deployments/
+  {deployment-id}/***completions***?api-version={api-version}
+```
+
+The request and response dynamic follows this structure, with the prompt parameter the input for the model to generate a specific completion, and a series of [optional parameters](https://oreil.ly/Uczv9) such as `max_tokens` (the limit of tokens for the expected answer) or the number `n` of expected completions/answers.
+
+*Request*:
+
+```py
+curl https://YOUR_RESOURCE_NAME.openai.azure.com/openai/deployments/\
+  YOUR_DEPLOYMENT_NAME/completions?api-version=YYYY-MM-DD\
+  -H "Content-Type: application/json" \
+  -H "api-key: YOUR_API_KEY" \
+  -d "{
+        \"prompt\": \"The best thing in life\",
+        \"max_tokens\": 5,  
+        \"n\": 1
+      }"
+```
+
+*Response*:
+
+```py
+{
+    "id": "cmpl-4kGh7iXtjW4lc9eGhff6Hp8C7btdQ",
+    "object": "text_completion",
+    "created": 1646932609,
+    "model": "gpt-35-turbo-instruct",
+    "choices": [
+        {
+            "text": ", is eating burgers with a milkshake",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+        }
+    ]
+}
+```
+
+The answers (completions) contain the `finish_reason` parameter. `finish_reason` defines why the model stopped generating more information; for most cases this will be due to `max_tokens`, which stops the model once it reaches the limit. However, there is another option that we will explore in [Chapter 4](ch04.html#additional_cloud_and_ai_capabilities) that stops the model due to what we call *content filters*.
+
+[Chat completions](https://oreil.ly/ZJOLp)
+
+Dedicated API for chat scenarios (and the only supported one for future model versions), including the configuration parameters we previously reviewed with the Chat playground. This includes input parameters we discussed for the Azure OpenAI Playground, such as `temperature` and `max_tokens`. There is one important parameter for chat messages, known as the [ChatRole](https://oreil.ly/WLv1g). This allows you to split the interactions based on different roles:
+
+System
+
+Helps you set the behavior of the assistant.
+
+User
+
+Provides input for chat completions.
+
+Assistant
+
+Provides responses to system-instructed, user-prompted input.
+
+Function
+
+Provides function results for chat completions. We will explore this concept later in this chapter, after we cover the different Azure OpenAI APIs.
+
+The sequence for a typical chat scenario follows these steps:
+
+1\. Resource creation
+
+Using a similar structure to what you have seen in a regular completion API call (including the date as the API version). The regular POST operation for chat completion is:
+
+```py
+POST https://{your-resource-name}.openai.azure.com/openai/deployments/
+  {deployment-id}/chat/completions?api-version={api-version}
+```
+
+2\. System message
+
+This is how you set the context of the chat engine, by defining the scope of the discussion, allowed or forbidden topics, etc. The system message is also called the context prompt or *meta-prompt*. The [`messages` parameter](https://oreil.ly/vFEYS), along with the [`role` subparameter](https://oreil.ly/y5HFq), is the place where you will define your system message, using:
+
+```py
+{
+  "messages": [
+    {
+      "role": `"system"`,
+      "content": `"the context and system message to add to your chat"`
+    }
+  ]
+}
+```
+
+3\. User-assistant interaction
+
+This leverages the same `messages` parameter, with the *user* and *assistant* roles. The structure for both roles is similar to what we have discussed for the system message, and the response includes the same `finish-reason` parameter that will give you a hint about the result (i.e., if the completion has finished due to the `max_tokens` assigned to the answer, or if there is a filtering reason due to negative topic detection).
+
+[Image generation](https://oreil.ly/bm-7a)
+
+The API call to generate images based on text-to-image DALL·E models. As with the visual playground, the input parameters include the text-based prompt, and two optional inputs such as the number `n` of desired images (if you don’t include it, the system will generate only one image), and the size (by default 1024×1024, with alternative 256×256 and 512×512 options). The POST operation to create an image generation resource is:
+
+```py
+POST https://{your-resource-name}.openai.azure.com/openai/\
+  images/generations:submit?api-version={api-version}
+```
+
+Here is an example of a [curl (command-line tool for downloading and uploading files from various protocols and servers)](https://oreil.ly/xApmg) request:
+
+```py
+curl -X POST \
+  https://{your-resource-name}.openai.azure.com/openai/deployments/\
+  {deployment-id}/images/generations?api-version=2023-12-01-preview \
+  -H "Content-Type: application/json" \
+  -H "api-key: YOUR_API_KEY" \
+  -d '{
+        "prompt": "An avocado chair",
+        "size": "1024x1024",
+        "n": 3,
+        "quality": "hd",
+        "style": "vivid"
+      }'
+```
+
+The end-to-end process includes three different steps:
+
+1.  *Request*the image generation ([via POST operation](https://oreil.ly/kPf-m)), which helps you pre-generate the images based on the text-based input prompt. It returns an operation ID that you will leverage for the next step.
+
+2.  *Get*the result of the image generation ([GET operation](https://oreil.ly/lxX0B)), which allows you to recover the pre-generated images for the specific operation ID.
+
+3.  *Delete*the previously loaded images ([DELETE operation](https://oreil.ly/5UfTB)) from the server, for the specific Azure OpenAI resource, and the existing operation ID. If you don’t use this option, the images will be automatically deleted after 24 hours.
+
+[Speech to text](https://oreil.ly/hKakE)
+
+Based on the [Azure OpenAI Whisper model](https://oreil.ly/SJNcT), these APIs allow you create transcriptions from audio pieces, for a variety of languages and accents, with great performance and the possibility to combine it with other Azure OpenAI models. You can specify the input audio file, language, discussion style, output format (by default a JSON file), etc. This Azure OpenAI speech-to-text (S2T) feature has a limitation of 25 MB for the input audio file, but you can leverage the [batch transcription mode of Azure AI Speech](https://oreil.ly/NnMTz) (not Azure OpenAI, but the [Azure AI Speech services for voice ↔ text features](https://oreil.ly/-HLPL)) to transcribe bigger files. The POST operation looks similar to the previous APIs:
+
+```py
+POST https://{your-resource-name}.openai.azure.com/openai/deployments/
+  {deployment-id}/audio/transcriptions?api-version={api-version}
+```
+
+The corresponding curl request (illustrative example):
+
+```py
+curl $AZURE_OPENAI_ENDPOINT/openai/deployments/MyDeploymentName/\
+  audio/transcriptions?api-version=2023-09-01-preview \
+  -H "api-key: $AZURE_OPENAI_KEY" \
+  -H "Content-Type: multipart/form-data" \
+  -F file="@./wikipediaOcelot.wav"
+```
+
+[Embeddings](https://oreil.ly/imKOS)
+
+This API call allows you to generate embeddings from specific text inputs, from some of the architectures you will see in this chapter. The model and its specific input length will depend on [model availability](https://oreil.ly/gvAHr) at the time of your implementation. The POST operation is similar to the previous ones, and the dynamic is as simple as [requesting the embeddings](https://oreil.ly/xFJTh) for a text input and [obtaining a JSON response](https://oreil.ly/yYCuU) with the generated embeddings, for you to store (we will see several vector store/database options by the end of the chapter) and leverage them later:
+
+```py
+POST https://{your-resource-name}.openai.azure.com/openai/deployments/
+  {deployment-id}/embeddings?api-version={api-version}
+```
+
+And the corresponding curl example:
+
+```py
+curl https://YOUR_RESOURCE_NAME.openai.azure.com/openai/deployments/\
+  YOUR_DEPLOYMENT_NAME/embeddings?api-version=2023-05-15\
+  -H 'Content-Type: application/json' \
+  -H 'api-key: YOUR_API_KEY' \
+  -d '{"input": "Sample Document goes here"}'
+```
+
+[Fine-tuning](https://oreil.ly/1pqcT)
+
+As we reviewed at the beginning of this chapter, one of the implementation options includes the ability to fine-tune pre-built models with your specific, available information. We will see more details later in this chapter, but for now keep in mind that if you choose this option, there is a specific set of APIs that you can leverage to create, manage, explore, and delete new fine-tuning “jobs.” Also, you will handle your own input files for the fine-tuned models.
+
+Other relevant APIs
+
+Other relevant APIs include the following:
+
+[Bing Search](https://oreil.ly/2yZuu)
+
+The Bing Search API allows you to leverage Microsoft Bing’s search engine for your own development. You can extend the capabilities of your Azure OpenAI–enabled implementations with live search functionalities.
+
+[Form Recognizer (currently known as Azure AI Document Intelligence)](https://oreil.ly/vxtJA)
+
+This helps you transform information from forms and images into structured data. It includes advanced optical character recognition (OCR) functionalities that will support your Azure OpenAI development with specific data sources such as PDF or DOC files.
+
+[Azure AI Search (previously known as Azure Cognitive Search)](https://oreil.ly/wp6r8)
+
+One of the most important elements for RAG architectures, for both vectors and index approaches.
+
+In addition to these APIs, there is an Azure [OpenAI library for .NET developers](https://oreil.ly/9XMBN) and the [OpenAI library for Python](https://oreil.ly/-cwGH), which essentially replicates the features of the official API for a .NET development environment. It provides an interface with the rest of the Azure SDK ecosystem, and it facilitates the connection to Azure OpenAI resources or to non–Azure OpenAI endpoints.
+
+This set of visual and development interfaces are your toolkit for most of the Azure OpenAI implementations out there. They are rapidly evolving, but the links to the official documentation will help you access updated information any time. Now, before moving on to the implementation approaches, let’s take a look at a powerful feature that will enable your generative AI systems to interact with other external APIs: function calling.
+
+### Interoperability features: Function calling and “JSONization”
+
+The [Azure OpenAI function calling](https://oreil.ly/bQdsv) option is a way to leverage language models to generate API calls and structure data outputs based on a specific target format. Technically, it is one of the options within the Chat Completion API—the [function](https://oreil.ly/WLv1g) chat role. You can see [several samples](https://oreil.ly/0nhYM) on how to use this functionality, but it essentially relies on the following steps:
+
+1.  Calling the Chat Completions API, including the functions (based on the official [FunctionDefinition format](https://oreil.ly/5Q-8c)) and the user’s input
+
+2.  Using the model’s chat response to call your API or function
+
+3.  Calling the Chat Completions API again, including the response from your function, to get a final response
+
+This is a relatively new functionality, so you can expect some feature improvements over time. You can always check the [official documentation](https://oreil.ly/UAYNH) to get the latest details and advice. Additionally, you can also explore the [JSON mode](https://oreil.ly/Fi3-l) for Azure OpenAI, as it allows you to get a JSON object from the Chat Completions API answer, a powerful feature for interoperability purposes.
+
+This completes the first part of this section. You have learned about the knowledge domains, how to leverage different building blocks to improve and increase the level of knowledge of your generative AI solutions, and the availability tools you will use for implementation. Now, we will move to the next part of this chapter, in which we will explore some of the most relevant development approaches, based on the industry’s best practices. Let’s get started.
+
+## Potential Implementation Approaches
+
+There are several ways to implement generative AI applications with Azure OpenAI Service. The type of implementations you use will mostly depend on your specific use case, as well as the technical and financial context for adoption. This means there are situations where the most expensive option is not always the best, or other options may have limitations, such as when we don’t have specific data besides our website, etc. Let’s explore the primary implementation types, based on the customization levels of [Figure 3-16](#fig_16_implementation_approaches_with_azure_openai).
+
+![](assets/aoas_0316.png)
+
+###### Figure 3-16\. Implementation approaches with Azure OpenAI Service
+
+As you can see from the figure, you can customize a model by preparing a good meta-prompt, adjusting technical parameters, providing one or a few “shots” as examples to guide the model, and implementing fine-tuning and/or grounding techniques. The next sections will go into the details of how to do all of this.
+
+### Basic Azure ChatGPT instance
+
+A basic, private GPT type of instance is the simplest kind of implementation, and one of the most popular Azure OpenAI cases nowadays. When companies want to have a private “ChatGPT” for their employees, this is the answer. It keeps your own data safe and private and deploys the instance within your own cloud infrastructure. It’s one of the favorite options for internal use with employees.
+
+The deployment process is relatively simple:
+
+1.  Within your Azure OpenAI Studio, deploy a GPT-3.5 Turbo, GPT-4, GPT-4 Turbo, or GPT-4o model instance. This type of model is technically similar to what ChatGPT is, and it will deliver that level of performance. Remember to choose the specific geographic region that is closest to you.
+
+2.  Once you have created the resource, go to the visual playground. There, you will see a left menu with the option “Chat.”
+
+3.  Once there, you can prepare the [system message](https://oreil.ly/OmKQO) / meta-prompt to contextualize the chatbot by telling it something like “You are an AI assistant for company X, to answer questions from the employees” (internal use) or “You are an AI assistant for company X with website Y. If anyone asks something that is not related to this topic, say you cannot answer” (for clients).
+
+4.  You can also customize parameters such as the max length of the answers or the temperature of the messages, which is a metric between 0 and 1 to define the level of creativity of the model.
+
+5.  Once you have tested performance and you are ready to deploy the model, you can come back to the resource page (Azure portal) and find both the endpoint and the keys for that specific resource. That page contains examples of code to for calling the APIs.
+
+The end-to-end architecture ([Figure 3-17](#fig_17_simplified_azure_chatgpt_architecture)) is pretty simple—a pre-deployed model that we can directly consume from our applications, based on the existing endpoints and APIs.
+
+![](assets/aoas_0317.png)
+
+###### Figure 3-17\. Simplified Azure ChatGPT architecture
+
+This type of implementation is good enough for internal company cases where you don’t require any customization based on private data, for example, internal chatbots for employee productivity based on general internet information, or search engines for intranet sites. For the rest of the cases where there is some custom data involved, we will explore other options. Let’s dig into the first of them next.
+
+### Minimal customization with one- or few-shot learning
+
+Besides the baseline model, and system message/meta-prompt and parameters customization, there is an option to perform *one- or few-shot learning*, which means providing the LLM with examples of discussions based on the expected output for a specific topic. This is a useful and simple option for small adjustments, and it relies on a very similar architecture to the previous one, with relatively light changes. The main difference when compared to the previous approach is the inclusion of one or few examples to guide the LLM before starting to use it ([Figure 3-18](#fig_18_one_few_shot_learning_architecture)).
+
+![](assets/aoas_0318.png)
+
+###### Figure 3-18\. One/few-shot learning architecture
+
+The one-shot/few-shot learning process can be achieved in several ways:
+
+*   Via APIs (code)
+
+    *   Use the Chat Completions API with GPT-4 and other models that are designed to take input formatted in a chat-like transcript. You can provide conversational examples that are used by the model for in-context learning.
+
+    *   Use the Completions API with the GPT-3 models, which can take a string of text with no specific format rules. You can provide a set of training examples as part of the prompt to give additional context to the model.
+
+*   Via playground (visual)
+
+    *   Use the Chat playground to interact with GPT-4, GPT-4o, etc. You can add few-shot examples in the chat transcript and see how the model responds.
+
+    *   Use the Completions playground to interact with the GPT-x models. You can write your prompt with few-shot examples and see how the model completes it.
+
+Overall, all these customizations are intended to improve the performance of the model versus a regular vanilla “ChatGPT” implementation like the one we previously explored, but there are ways to retrain the model in a deeper way, like the one we will explore next.
+
+### Fine-tuned GPT models
+
+As mentioned earlier in the chapter, there are different ways to customize an LLM to adjust its knowledge scope. Most of them rely on the orchestration/combination of the LLM with other knowledge pieces, without really combining the data sources (i.e., grounding). In this case, we will focus on the only way to “retrain” an Azure OpenAI model with custom company data: the [Azure OpenAI Service fine-tuning feature](https://oreil.ly/T0GP8).
+
+This approach may have some advantages for companies with very specific and valuable data intellectual property, but its cost (you will need to add hosting cost to the regular API calls for the fine-tuning process) and technical complexity will probably lead you (and most of the adopters out there) to other kinds of grounding approaches with better performance/cost balance.
+
+Also, the fine-tuning feature relies on a very special kind of training process. It is not the regular label-based training process you can do, for example, in classification tasks with traditional AI models. We are talking about a new kind of supervised process that leverages Azure OpenAI’s prompting system to inject information based on the [JSON Lines (JSONL) file format](https://oreil.ly/SdBph).
+
+For example, with GPT-3.5 Turbo, you will leverage the system and user roles to reeducate the model:
+
+```py
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "Marv is a factual chatbot that is also sarcastic."
+    },
+    {
+      "role": "user",
+      "content": "Who wrote 'Romeo and Juliet'?"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh, just some guy named William Shakespeare. Heard of him?"
+    }
+  ]
+}
+```
+
+Other legacy models such as DaVinci require a prompt/completion format based on a question-answer logic:
+
+```py
+{"prompt": "<prompt text>", "completion": "<ideal generated text>"}
+{"prompt": "<prompt text>", "completion": "<ideal generated text>"}
+```
+
+This new way to inject data and knowledge allows us to reeducate the model in a very granular manner, but it is a complex way to do so. You can see the overall architecture in [Figure 3-19](#fig_19_azure_openai_fine_tuning_architecture), in which you will basically customize the model, based on a fine-tuning process that relies on specific organizational data.
+
+![](assets/aoas_0319.png)
+
+###### Figure 3-19\. Azure OpenAI fine-tuning architecture
+
+The steps to perform *fine-tuning* with Azure OpenAI Service are:
+
+1.  *Prepare your dataset* in JSONL format. For recent models such as GPT-3.5 Turbo, GPT-4, and GPT-4o, you will leverage the Chat Completions API structure for system and user messages.
+
+2.  Launch the *custom model wizard* from Azure OpenAI Studio, as shown in [Figure 3-20](#fig_20_azure_openai_custom_model_wizard), to train your new customized model.
+
+    ![](assets/aoas_0320.png)
+
+    ###### Figure 3-20\. Azure OpenAI: custom model wizard
+
+3.  *Select a base model* (e.g., GPT-3.5 Turbo), choosing your training data and, optionally, your validation data to evaluate model performance. Those datasets are the JSON files you previously prepared.
+
+4.  Review your choices and *launch the training* of the new customized model. Check the status of your customized model and wait for the training to finish.
+
+5.  *Deploy your customized model* for use in an application or service, via APIs.
+
+All these options can work [depending on the type of application](https://oreil.ly/cK_7b) and the intended scope of the model customization. However, there are ways to combine the LLM with internal data sources, from which you can extract knowledge, and then refer to that information from the Azure OpenAI completion and chat completion models. This is what we call [RAG](https://oreil.ly/26QYs) or grounding, and there are different ways to implement it. The next sections contain different grounding alternatives.
+
+### Embedding-based grounding
+
+As you now know from earlier chapters, embeddings are mathematical representations of text-based information as vectors in a vector space, and an alternative and/or complement to the traditional index-based approach. These embeddings are stored and managed as mathematical vectors that represent distances between topics. This means if we are looking for information about animals and we have a vectorized knowledge base that includes animal-related topics, we can recover the Top-k answers (i.e., the most relevant “K” number of pieces of information).
+
+You can use the Azure OpenAI embeddings API to generate vector representations of text that capture the semantic meaning and similarity of the text. Some possible use cases for embeddings are document search, text classification, clustering, or text similarity.
+
+The end-to-end process to create and use an embedding-based system is aligned with what you have seen thus far in this chapter. From an Azure OpenAI perspective, the steps are as follows:
+
+1.  *Select the knowledge base* that contains the information that will complement the baseline LLM knowledge domain. This may include PDF, DOC, PPT, TXT, and other file formats. In Azure, you may store that information via Azure Blob Storage or Azure Data Lake Gen2\. Keep in mind that if your files are similar to any general information that may be available on the internet (for example, public descriptions of industry concepts), you probably don’t need to ground them. However, if you have very specific files with information on how to answer questions, or perform internal tasks, those may be good candidates for embeddings generation.
+
+2.  *Choose and deploy your database/vector store*. By the end of this chapter, you will see all available options for implementation in Azure with Azure OpenAI–generated embeddings.
+
+3.  *Prepare the input dataset*. This includes two different steps:
+
+    1.  *Extract the information* from your documents. For example, you can use Azure Document Intelligence/Form Recognizer to extract text from your PDFs with the OCR feature. You can also use other non-Azure tools.
+
+    2.  *Split the information*. For this to work, it is important to keep in mind the [embeddings model token limit](https://oreil.ly/SQSGw) (e.g., 8K for Ada model version 2) to prepare the input without exceeding the limit (you can use [OpenAI’s tokenizer tool](https://oreil.ly/DDQHG) to understand the extent of what 8K means in terms of document length). This means you will need to make one API call for each of the limited-size blocks you have prepared before, or leverage [chunking techniques](https://oreil.ly/3DHfa) to split and handle larger documents.
+
+4.  *Leverage the Azure OpenAI [embeddings models](https://oreil.ly/gvAHr)*. Use the API operations you saw earlier in this chapter and get the mathematical vectors from the API response. *Store the vectors* within the chosen vector store.
+
+5.  Any time you want to find information from your knowledge base, or if you want to leverage it from any chat or search application, you will need to *generate the embeddings of the question itself*, then perform the search against the vector search. Keep in mind that you will need to leverage the same model (e.g., Ada version 2) for both your knowledge base and the question. You can send the result of the search, with the Top-k results, to the chat or search application, directly or by including it as content for the answer of the completion.
+
+This process is similar for other embeddings and conversation models (for example, those that are available via Azure AI Studio’s model catalog and Hugging Face), and the high-level architecture includes the elements you can see in [Figure 3-21](#fig_21_embedding_based_grounding_architecture): basically, the baseline Azure OpenAI model gets complemented with the internal knowledge base that contains PDFs, Word docs, etc. Instead of retraining/fine-tuning the model, we just combine it with that knowledge base so it can find similarities between the users’ questions and the information contained within the data sources.
+
+![](assets/aoas_0321.png)
+
+###### Figure 3-21\. Embedding-based grounding architecture
+
+You can find more information and code examples on [how to create embeddings](https://oreil.ly/8Duc8) from the official Microsoft documentation (in addition to the API definitions we covered earlier in this chapter).
+
+Additionally, there is [one official Microsoft accelerator](https://oreil.ly/iG5UU) for this type of implementation that you can leverage during the development phase. There are several deployment and storage options. Feel free to explore the code to see the API call details.
+
+### Document indexing/retrieval-based grounding
+
+The document indexing/retrieval-based grounding approach is an alternative to the embedding-based approach. In this case, we will not generate mathematical vectors. Instead, we will generate indexes of specific documents, so Azure OpenAI Service can find the information from those sources and include it as part of its answers. For that purpose, we will also use Azure Cognitive Search, which is a service that allows you to index, understand, and retrieve relevant data from a knowledge base or a collection of documents.
+
+The combination of both services enables powerful chatbot applications that can communicate with users in natural language and provide intuitive and personalized interactions, based on specific data from the organization. Much like the embedding-based approach, there is an official [Microsoft accelerator](https://oreil.ly/JNWAz) available for you to deploy your first proof of concept, in addition to a second one called [GPT-RAG](https://oreil.ly/Q5NK9) from the Microsoft Argentina team, with some additional functionalities for bigger implementations. You can explore both to see updated details and implementation approaches with Azure OpenAI and Azure Cognitive Search. You can also see the high-level architecture of the key building blocks in [Figure 3-22](#fig_22_retrieval_based_grounding_architecture).
+
+![](assets/aoas_0322.png)
+
+###### Figure 3-22\. Retrieval-based grounding architecture
+
+The main difference when compared to the embedding-based approach is that instead of generating embeddings for both the knowledge base and the user question, you will just perform a search against the Azure AI Search engine (or any equivalent, as we will explore in [Chapter 4](ch04.html#additional_cloud_and_ai_capabilities) for vector databases).
+
+You may see this option as something a bit simpler than the embeddings approach, and a better fit for applications where you need to find the source of information (and even provide a link to the original document as part of the answer); embeddings can potentially handle bigger datasets and deliver better performance. However, it really depends on the specific dataset and its knowledge scope and file format as well as the envisioned use case, so my recommendation is for you to try both options and evaluate the one that delivers best results from a user perspective.
+
+### Hybrid search–based grounding
+
+There are newer implementation approaches based on [hybrid search techniques](https://oreil.ly/mwZPy). Concretely, hybrid search combines vector embeddings and doc retrieval capabilities. The [hybrid search feature](https://oreil.ly/c2W8A) from Azure AI Search offers that combination, plus a [reranking technique](https://oreil.ly/S7b8p) that produces the final result, with better performance than the previously mentioned grounding techniques. Now, let’s explore some additional grounding options that can add more knowledge scope to your generative AI applications.
+
+### Other grounding techniques
+
+We have explored several fine-tuning and grounding techniques, mainly based on text information from different sources. But what happens if you want to leverage other kinds of data? Or if the required information can be found only via live internet results? Here are some other grounding techniques you may want to explore:
+
+LLM + web results
+
+This approach relies on the [Bing Web Search API](https://oreil.ly/qud-9) to extend the knowledge scope of Azure OpenAI Service models. As you may know, all LLMs are based on training datasets that go up to a specific date (e.g., initial Azure OpenAI models were updated with data up to 2021). If you need updated information, you can use the Bing Web Search API to find web pages, images, videos, news, etc., or use it to create a custom search instance that filters web results based on the criteria. The result from the API can then be used by Azure OpenAI to return an answer based on that information.
+
+LLM + tabular data and/or databases
+
+Similar to other sources, tabular data (e.g., Excel and CSV files) and regular SQL-type databases (e.g., SQL Server, Azure SQL, PostgreSQL) can be good grounding sources. You can develop what the industry calls Database Copilots to allow end users to query information without any complex SQL syntax, just natural language–based prompts. Or you can leverage it for [other data exploration](https://oreil.ly/s3snz) topics, such as exploratory data analysis or root-case analysis.
+
+Just as with the other previous grounding options, there is an [official Microsoft accelerator](https://oreil.ly/eFneC) that combines these grounding techniques, with specific code samples and updated implementations.
+
+At the end of the day, each implementation approach (baseline, fine-tuned, or grounding based) serves a different purpose, but the next section is a summarized guide for you to understand the pros and cons of each one, so you can make the most informed decision and create your generative AI applications with Azure OpenAI with the best balance of performance, cost, and technical complexity.
+
+## Approach Comparison and Final Recommendation
+
+There is not a single right answer to the question, “Which approach should I use for my generative AI implementation?” It really depends on the use case, type and volume of available data, existing IT architectures, available budget and resources, etc. Again, there is no right answer, and the choice relies for now on experimentation and performance testing.
+
+[Table 3-1](#table-3-1) shows the general pros and cons of the implementation approaches.
+
+Table 3-1\. Comparison of implementation approaches with Azure OpenAI Service
+
+|  | Approach | Pros | Cons |
+| --- | --- | --- | --- |
+| 1 | Basic ChatGPT-type instance (vanilla, private) |  
+*   Relatively simple and quick to deploy
+*   Good option for internal (employee) use cases
+*   Available via Azure OpenAI’s visual playground
+*   Option to define the topic scope based on URLs, by leveraging the system message
+
+ |  
+*   Lack of updated data
+*   Very limited for client-side applications
+*   Higher risk of model hallucination
+
+ |
+| 2 | Examples with one-shot/few-shot learning |  
+*   Easy to implement
+*   Good option to adapt system behavior based on specific pieces of knowledge from your company
+*   Available via Azure OpenAI’s visual playground
+
+ |  
+*   Lack of updated data
+*   Very limited for client-side applications
+*   Higher risk of model hallucination
+
+ |
+| 3 | Fine-tuning |  
+*   Good to fine-tune an existing model with specific company data
+*   Leverages mature product features
+
+ |  
+*   Complex to prepare input data for both fine-tuning and few-shot learning
+*   Increased cost for fine-tuned models
+
+ |
+| 4 | Embedding-based grounding (vectors with Azure AI Search) |  
+*   Great for customization without requiring fine-tuning
+*   Good fit for large amounts of data
+*   Easy use of embeddings APIs
+
+ |  
+*   Requires preparation of the input data based on token limits
+*   Need to scan files via OCR to extract content first
+*   Initial embeddings generation cost for custom data (depending on the data scope)
+
+ |
+| 5 | Retrieval-based grounding (indexing with Azure AI Search, no embeddings) |  
+*   Good option for information retrieval from existing files
+*   Indexing allows for citing sources (good for explainability)
+*   Option to use the “add your own data” option from the Playground, for small implementations
+
+ |  
+*   Potentially less performant than embeddings for large amounts of private data (to be confirmed during your preliminary experimentation)
+
+ |
+| 6 | Hybrid search |  
+*   More performant thanks to the combination of indexing, embeddings, and reranking of model results
+*   Relatively feasible via Azure OpenAI Playground
+
+ |  
+*   Complex, but for Azure OpenAI, no more than the regular embedding-based RAG
+
+ |
+| 7 | Other grounding techniques (Bing Search, databases, etc.) |  
+*   Great to add live results to the LLM, and to explore internal sources such as databases and tabular files
+*   Updated results with no need to retrain or adjust the model
+
+ |  
+*   A bit more complex (requires orchestration engines such as LangChain or Semantic Kernel)
+*   Less documentation available for this kind of implementation
+
+ |
+
+These implementation approaches have different advantages and levels of complexity. One of the key aspects is the ability to evaluate how well they perform, and how good these Azure OpenAI models are for specific questions and tasks. Let’s explore all of this in the next section.
+
+## AI Performance Evaluation Methods
+
+One of the key stages of any generative AI project is model performance evaluation. However, it is not a simple task to evaluate the performance of LLM-enabled systems, and it is not fully standardized yet. That said, you can start evaluating metrics with Azure OpenAI and Azure AI Studio, as you will see in [Chapter 5](ch05.html#operationalizing_generative_ai_implementations) with LLMOps and prompt flow for evals.
+
+Here is a selection of the most important metrics for generative AI evaluation:
+
+Groundedness
+
+Groundedness refers to how well a generative AI’s responses are based on the information given or available in the input. This is a good metric to analyze how AI sticks to the facts, in order to avoid hallucinations. You can explore the new [Groundedness Detection feature](https://oreil.ly/Lk4ZI) from the AI Content Safety Studio.
+
+Similarity
+
+This metric measures how much a GPT output resembles that of a human one. This is useful for human validation of the results from Azure OpenAI models.
+
+Relevance
+
+It measures how connected an AI’s output is to the input given. It’s like checking if someone’s answer in a conversation is related to the question you asked.
+
+Classification accuracy
+
+A metric for classification tasks, between 0 and 1, that measures the output of the AI model compared to a ground truth.
+
+Levenshtein distance
+
+This measures how many changes, such as adding, deleting, or changing pieces, you would need to make to get from the AI’s output to the expected output.
+
+Coherence
+
+This checks if the AI’s output makes sense and follows a logical order, like checking if a story has a beginning, middle, and end, and doesn’t jump around randomly.
+
+Fluency
+
+This measures how smoothly the AI’s output reads, by checking if a written paragraph is easy to read and understand, from a linguistics and grammar point of view.
+
+F1 score
+
+This is a balance between the words in the model answer and the ground truth.
+
+Other metrics
+
+Other metrics from traditional NLP.
+
+From an Azure perspective, you can explore the available metrics for evaluation via [Azure AI Studio](https://oreil.ly/q2S7r) and [Azure Databricks with MLFlow](https://oreil.ly/3kONX). Here are several ongoing initiatives from some of the main industry actors (including Microsoft and OpenAI), but you can expect more news and tools in the upcoming months and years:
+
+*   Microsoft’s [LLM evaluation framework](https://oreil.ly/H6gB8)
+
+*   Microsoft’s [evaluation flows (Azure AI Studio)](https://oreil.ly/4NrIz)
+
+*   Microsoft’s documentation for [LLM metrics monitoring](https://oreil.ly/VtjxD)
+
+*   OpenAI’s [Evals project](https://oreil.ly/NgdLZ)
+
+Additionally, there are other families of metrics that you can use to measure and analyze performance:
+
+Positive/negative review of answers
+
+A manual way to both track performance and potentially reeducate the model with weighted reconfigurations (e.g., few-shot learning with the good answers). You could enable this by using a positive/negative sign in the UI and by adding a binary numeric value at the database level if you decide to store the questions and answers for review purposes (e.g., ID, question, answer, review) in a JSON file stored via Cosmos DB. For this purpose, my recommendation is to create a set of test questions, and to involve subject-matter experts during the creation of that set and during the evaluation of the system.
+
+Traditional product analytics metrics
+
+For example, session time, amount of re-questioning to get the best answer, overall product rating, etc. This would require tools such as [Microsoft Clarity](https://oreil.ly/2RHm1), Pendo, Amplitude, Mixpanel, etc., connected to the cloud native app (e.g., iOS, Android, web, etc.). Alternatively, there are cloud native features such as [Azure App Insights](https://oreil.ly/HXkzL) that can be deployed as part of the generative AI app monitoring system. Additionally, these tools can be leveraged to track performance for A/B testing experiments (for example, if we launch two different versions of the AI model with different user sets).
+
+# Conclusion
+
+This chapter includes not only the available visual and code-based tools for your Azure OpenAI implementations, but also the recommended implementation approaches, to help you understand the differences between regular, fine-tuned, and grounded LLMs. Once again, there is not a perfect or a single way to do it. All of these approaches try to leverage the existing power of the Azure OpenAI models, and the ability to increase the knowledge scope of your applications with examples, internal data sources, live internet search, etc. In [Chapter 4](ch04.html#additional_cloud_and_ai_capabilities) we’ll take a look at additional building blocks for your generative AI development.

@@ -1,0 +1,1615 @@
+# Chapter 11\. Testing AI Services
+
+In this chapter, you’ll learn the importance of testing and its challenges when building GenAI services. You’ll also learn about key concepts such as test plans, the verification and validation models, the testing pyramid, and the role of testing data, environments, and boundaries.
+
+To practice testing, you will use `pytest`, a popular testing framework with features such as test fixtures, scopes, markers, and fixture parameterization. You’ll also learn about the `pytest-mock` plug-in for patching functions and using stubs, mocks, and spy objects to simulate and control external dependencies during tests.
+
+Since mocking can make tests brittle, we’ll also explore dependency injection, allowing you to inject mock or stub dependencies directly into the components being tested, avoiding runtime code modifications.
+
+We’ll discuss the role of isolation and idempotency in tests, when to use mocks, and how to test both deterministic and probabilistic GenAI code. By the end of this chapter, you’ll be confident in writing comprehensive test suites including unit, integration, end-to-end, and behavioral tests for your own services.
+
+Before we dive into writing tests, let’s explore the foundational concepts of traditional software testing and how to approach testing GenAI services, which can prove challenging due to the probabilistic nature of AI models.
+
+# The Importance of Testing
+
+In theory, everyone agrees that testing is necessary when building software. You write tests to give you confidence in the functionality and performance of your systems, especially when they interact with one another. But realistically, projects may skip implementing manual or automated tests due to various constraints including budget, time, or associated labor costs related to maintaining tests.
+
+The projects that skip testing, partially or entirely, end up approaching software problems reactively instead of proactively. This is when *technical debt* builds up, which you’ll then have to pay back in labor and server costs, with interest, to settle up.
+
+The problem of when to test is challenging to solve. If you’re just experimenting and hacking a prototype together in fast iterations, you won’t need to worry about testing as much, realistically. However, as soon as you have a minimum sellable product, a system that interfaces with sensitive data and processes user payments, then you must seriously consider testing plans.
+
+Earlier in my career, I was building a learning management system for a client. I wrote a webhook endpoint to interface with Stripe’s payment systems and my own home-brewed authentication solution that would only register users on successful first payment. The system had to charge and process subscription payments of both new and existing customers and send confirmation emails while tracking user records, subscriptions, payments, checkout sessions, and invoices. The logic of that webhook ended up so convoluted and complex that it led to a monstrosity that became a 1,000-line function. The function was checking unordered received events of various types, with multiple round-trips to the database.
+
+The whole solution had to be scrapped at the end since the webhook’s behavior was so *flaky*, returning nonconsistent responses to the same set of inputs. Users couldn’t register even after successful payments. This flakiness made it unbearable to debug that webhook, which forced me to rewrite the payment system integration from scratch. If I had only slowed down to plan and modularized the logic and wrote tests early on, I could have saved myself from so much headache.
+
+When you slow down to plan and test your services, you’re trading off time and effort in exchange for confidence in your code.
+
+A few other times you should consider implementing tests are when:
+
+*   Multiple contributors add changes over time
+
+*   Maintainers change external dependencies
+
+*   You increase the number of components and dependencies in your services
+
+*   You suddenly spot too many bugs appearing
+
+*   There is too much at stake if things go wrong—my experience fell into this bucket
+
+You should now understand how testing will benefit your project.
+
+# Software Testing
+
+Now that you’re familiar with the challenges and potential approaches to testing GenAI services, let’s review software testing concepts to understand their relevance to GenAI use cases and common pitfalls to avoid.
+
+## Types of Tests
+
+There are three common types of tests in software testing, which, ordered by increasing size and complexity, are as follows:
+
+Unit tests
+
+Focus on testing individual components or functions in isolation across a discrete set of inputs and edge cases to validate functionality at singular component level. Unit tests are atomic with the smallest scope and often don’t rely on external systems or dependencies.
+
+Integration tests
+
+Check the interaction between various components or systems to verify they function together as intended. Integration tests often capture issues with application behavior at a subsystem level, validating data flows and interface contracts, (i.e., specifications) between various components.
+
+End-to-end (E2E) tests
+
+Verify the functionalities of the application at the highest system level from start to finish by simulating real usage scenarios. E2E tests give you the highest levels of confidence in your application functionality and performance but are the most challenging tests to design, develop, and maintain.
+
+###### Tip
+
+E2E tests and integration tests share similarities that make them hard to distinguish from one another. If a test is big and sometimes flaky, you may be working on an E2E test.
+
+Integration tests normally check a subset of systems and interactions, not the whole system or a long chain of subsystems.
+
+[Figure 11-1](#test_types) demonstrates the scope of each test type. Unit tests shown on the left focus on isolated components, while integration tests check pairwise interactions of multiple components, including with external services. Lastly, E2E tests cover the entire user journey and data flow within the application to confirm the intended functionality.
+
+![bgai 1101](assets/bgai_1101.png)
+
+###### Figure 11-1\. Types of tests in software testing
+
+Before implementing any of the aforementioned tests, you can also use *static code checks* with tools like `mypy` to catch syntax and type errors. As you write code, static checks can also help you catch code style violations, misuse of functions and dependencies, security vulnerabilities, dead or unused code, data flow issues, and potential bugs in your system components.
+
+As you progress from static checks and unit tests to integration and then to E2E tests, your test cases become more valuable but also more complex, expensive, and slower. More important, since E2E tests have broader scope with multiple components interacting, they’ll become more brittle and likely to fail, requiring frequent updates to stay aligned with changes in your code.
+
+E2E tests are also complex and flaky/nondeterministic. According to Martin Fowler,^([1](ch11.html#id1148)) these are the main reasons for the nondeterminism:
+
+*   *Lack of isolation* causes components to interfere with each other, leading to unpredictable results.
+
+*   *Asynchronous behavior* with operations that occur out of sequence or at unpredictable times can lead to nondeterministic outcomes.
+
+*   *Remote services* can introduce variability due to network latency, service availability, or differing responses.
+
+*   *Resource leaks*, if not properly managed, can lead to inconsistent system behavior. Affected resources include memory, file handles, or connections to databases, clients, etc.
+
+Finally, due to the brittleness of E2E tests, refactors and changes in functionality can cause them to fail. Therefore, there is a trade-off between the level of confidence you gain from E2E tests and the flexibility to make changes to your systems.
+
+## The Biggest Challenge in Testing Software
+
+The biggest challenge in testing services is identifying what to test and to what detail. As part of this, you need to decide what to mock, fake, or keep real alongside configuring a host of testing tools and environments.
+
+To overcome this challenge, you can plan your tests in advance, identifying breaking points in your system and narrowing down issues to individual components and interactions. Then, imagine who the user is and list the steps they’ll take when interacting with the problematic systems. Finally, you can translate that lists of steps into individual tests and automate them.
+
+Another challenge with testing that causes so much frustration is having to rewrite your tests whenever you refactor the code they’re testing.
+
+Since code refactors don’t change the functional behavior but implementation details, it can be a sign that you’re not testing the right things. For example, if you’re testing the internal string processing logic of the `count_tokens(text)` function rather than just its final output (i.e., the token count), using an external library to replace the string manipulation logic can cause your tests to fail.
+
+A telltale sign that you might be testing implementation details is when your tests fail as you refactor the code (i.e., false positives), or pass even when you introduce breaking changes to your code (i.e., false negatives). You can use techniques such as *black-box testing* to test your system by providing inputs and observing outputs, without considering the implementation details.
+
+If you plan your tests in advance, you can avoid these testing challenges.
+
+## Planning Tests
+
+To identify the tests you need during planning, you can use the *verification and validation* (V&V) process.
+
+Following this process, you first confirm possession of the right requirements (validation) and then leverage tests to verify all requirements are met (verification).
+
+###### Warning
+
+Having 100% code coverage with passing tests will complete only the verification process, not validation. You still need to make sure that your services implement the right functions (i.e., validation).
+
+The V&V process can be visualized as a V-shaped model as per [Figure 11-2](#vv).
+
+When you go down the V model, you define software requirements and design the solution before implementing it as code. Afterward, you come back up the “V” by running progressive tests (unit, integration, E2E, etc.) to validate that your solution meets the business needs.
+
+![bgai 1102](assets/bgai_1102.png)
+
+###### Figure 11-2\. Verification and validation model
+
+As discussed earlier, validation tests can be challenging to identify. Exactly what progressive tests should you implement?
+
+When you struggle with identifying what to test, you can write tests based on issues and bugs that you find in your application. This approach is *reactive* since you’re writing tests only when issues arise, which can help you overcome the challenges of not knowing what to test. However, testing to resolve issues later in the *software development lifecycle* (SDLC) requires significant testing efforts as you’ll be dealing with a more complex system with many moving parts to test.
+
+That’s why movements such as *shift-left testing* are advocating for *preventative* testing practices that are planned in advance and written during development to reduce the testing efforts. [Figure 11-3](#shift_left) demonstrates how moving testing efforts earlier on the SLDC can reduce the overall burden.
+
+![bgai 1103](assets/bgai_1103.png)
+
+###### Figure 11-3\. Shift-left software testing
+
+A common approach in shift-left testing is *test-driven development* (TDD), as shown in [Figure 11-4](#tdd).
+
+![bgai 1104](assets/bgai_1104.png)
+
+###### Figure 11-4\. TDD
+
+In the TDD approach, you write the tests before the actual code. This is an iterative process where written tests will fail at first, but your aim will be to write the minimal amount of code for tests to pass. Once passing, you refactor the code to optimize the system while keeping the tests passing to finish the iterative TDD process.
+
+###### Tip
+
+A great example of where TDD practices are useful in testing GenAI services is during *prompt engineering*. Write a set of tests first, and then keep iterating over the prompt design until all your tests pass.
+
+Using the same test cases, you can check for any signs of regression and whether switching models will reduce the performance of your services.
+
+As you can see, the overall aim of TDD is to reduce the testing efforts by improving your code quality, solution design, and early detection of issues.
+
+## Test Dimensions
+
+Additionally, during planning, you normally have to decide on various test dimensions including testing *scope*, *coverage*, and *comprehensiveness*:
+
+Scope
+
+Defines what components, systems, and usage scenarios you’ll be testing. As part of scope definition, you’ll also be drawing *testing boundaries* to clarify what will and won’t be tested.
+
+Coverage or testing surface area
+
+Measures how much of the system or codebase you’ll be testing.
+
+Comprehensiveness
+
+Indicates how detailed, in-depth, and complete your tests will be within the defined scope and coverage. For example, you’ll decide whether you’ll be testing every potential usage, success and failure scenarios, and edge cases for every component, system, and interaction.
+
+You can also think of testing scope, coverage, and comprehensiveness as testing *space/volume*, *surface area*, and *depth*. Volume/space defines the boundaries and dimensions of what is being tested; surface area measures the spread of tests; and depth implies detail, depth, and completeness of test cases.
+
+## Test Data
+
+To achieve higher test coverage and comprehensiveness, you can leverage four different types of test data:
+
+Valid data
+
+Inputs to the system within the valid and expected range under normal conditions.
+
+Invalid data
+
+Inputs that are unexpected, wrong, NULL, or outside the valid range. You can use negative data to test how the system behaves when it’s misused.
+
+Boundary data
+
+Test data at boundaries of acceptable input ranges, whether at the upper or lower limit.
+
+Huge data
+
+Used for performance and stress testing the system to measure its limits.
+
+## Test Phases
+
+It doesn’t matter if you’re implementing a unit, integration, or E2E test, you can structure tests in several distinct phases using the *given-when-then* (GWT) model, as outlined here:
+
+1.  *Given (preconditions)*: Before any given test, you can set up test conditions and predefined states or data (i.e., *fixtures*).
+
+2.  *When (test steps)*: During the test, you perform a set of action steps that you’ll like to test. This is where you’ll pass your test fixtures to the *system under test* (SUT), which, depending on the test scope, can be a singular function or your whole service.
+
+3.  *Then (expected results)*: After executing the SUT with fixtures, you’ll check the outputs against your expectations in this phase using a set of assert statements.
+
+4.  *Cleanup*: Once done, you can clean up test artifacts within an optional *cleanup/tear-down* phase.
+
+`pytest` recommends structuring tests using the *arrange-act-assert-cleanup* model, which directly corresponds to the GWT model with an optional cleanup phase.
+
+## Test Environments
+
+When planning tests, you should also consider various *testing environments* covering compile time, build time, and runtime environments.
+
+In many programming languages, *compile time* is when the source code is translated into executable code. For instance, if you’re writing code in C++, the compilation process involves a comprehensive type check across the entire codebase. If type errors are found, the compilation process will fail. Once all checks pass, the C++ compiler translates the code into an executable binaries.
+
+###### Note
+
+The strong typing in C++ was designed to improve error detection, code robustness, and support developer tooling in larger and complex codebases that change frequently.
+
+Since Python is an interpreted language, it doesn’t have a traditional compile time like C++. Instead, Python converts code into bytecode for execution.
+
+During inspections, static code checkers like `mypy` can identify basic issues in your code, serving as an initial verification layer in your testing efforts.
+
+###### Warning
+
+Since Python is a dynamically typed language, it doesn’t enforce typing by default. However, static type checkers like `mypy` can provide significant value if you use type hints in your Python code.
+
+While static checks are great for catching basic code issues at compile time, unit, integration, and E2E tests can verify the system functionality at *runtime* when you execute application code. During runtime, tools like Pydantic can perform data validation checks to catch unexpected data structures.
+
+Your GenAI services may also require additional setup and build steps such as downloading weights and preloading models, before executing any application code. The environment in which build steps, setups, and dependency installations are completed is referred to as *build time*, which you can also test.
+
+## Testing Strategies
+
+Within the software landscape, various experts have developed strategies for balancing the distribution of tests in projects, which are based on years of software testing experience from the developers that popularized them.
+
+The most widely adopted strategy is the *testing pyramid*, as shown in [Figure 11-5](#testing_pyramid), which promotes writing more unit tests.
+
+![bgai 1105](assets/bgai_1105.png)
+
+###### Figure 11-5\. Testing pyramid
+
+[Table 11-1](#testing_pyramid_example) outlines the purpose of each layer in the testing pyramid alongside a concrete example in the context of a GenAI service.
+
+Table 11-1\. Testing pyramid in real world
+
+| Layer | Purpose | Example |
+| --- | --- | --- |
+| End-to-end tests | Validate the entire application flow from start to finish | Testing user login, generating text based on a prompt, and saving the generated content |
+| Integration tests | Verify various modules or services work together correctly | Testing the interactions between the text generation API and the database storing user prompts and generated texts |
+| Unit tests | Verify individual components or functions in isolation | Testing various utility functions that process inputs to the model, for instance, to remove inappropriate content |
+
+The issue with the pyramid model is that while unit tests improve code coverage, they do not necessarily enhance “business coverage” since project requirements and use cases might not be thoroughly tested. As a result, relying only on unit tests can create a false sense of security, potentially overlooking testing essential business logic and user workflows. On the other hand, integration tests allow you to cover more ground and business-driven tests.
+
+###### Warning
+
+Software testing experts have also identified a few strategies as *anti-patterns* that are counterproductive.
+
+If you follow them, you’ll spend an excessive amount of time setting up the tests, implement overly specific and tightly coupled tests, and end up with tests that exhibit nondeterministic flaky behavior.
+
+[Table 11-2](#testing_antipatterns) and [Figure 11-6](#testing_antipatterns_viz) show a list of software testing anti-patterns.
+
+Table 11-2\. Software testing anti-patterns
+
+| Strategy | Test distribution | Comments |
+| --- | --- | --- |
+| Testing ice-cream cone | Small number of unit tests with a large number of integration and E2E tests, followed by manual testing. | Avoid. Considered an anti-pattern due to inefficiency of implementing manual tests and high costs of maintaining integration and E2E tests. |
+| Testing cupcake | Similar to the ice-cream cone; has a small number of automated unit and integration tests, a moderate number of automated E2E/GUI tests, and a large number of manual tests.Each test type is performed by a different team. | Avoid. Considered an anti-pattern because it can lead to slow feedback cycles, communication overheads between teams, and brittle tests with high maintenance costs. |
+| Testing hourglass | Large number of unit tests at the base and E2E tests at the top, but significantly fewer integration tests in the middle. | Avoid. Considered an anti-pattern. Not as bad as the ice-cream cone, but still results in too many test failures, that medium-scope tests could’ve covered. |
+
+![bgai 1106](assets/bgai_1106.png)
+
+###### Figure 11-6\. Visualization of testing anti-patterns
+
+[Table 11-3](#testing_strategies) and [Figure 11-7](#testing_strategies_viz) compare software testing strategies.
+
+Table 11-3\. Comparison of testing strategies
+
+| Strategy | Test distribution | Comments |
+| --- | --- | --- |
+| **Testing pyramid**(Mike Cohn) | Large number of unit tests at the base, fewer integration tests in the middle, and even fewer E2E tests at the top. | It’s a widely accepted strategy. However, the pyramid can be perceived as a physical concept to promote building the bottom layer of unit tests first, then constructing the next layer, and so on, until reaching the top. This approach is ineffective when applied to legacy applications with a large codebase. |
+| **Testing trophy**(Kent C. Dodds) | Focuses on having a strong foundation of static checks, then unit tests, followed by integration tests, and a smaller number of E2E tests at the top. | The rationale for this is that E2E and integration tests are the most valuable. However, E2E tests are slow and expensive. Integration tests strike a balance between both worlds. |
+| **Testing honeycomb**(Stephen H. Fishman) | Represents a balanced approach with equal emphasis on unit, integration, E2E, and other types of tests (performance, security, etc.). | It can be less efficient if not managed properly and may not be optimal for every project. |
+
+![bgai 1107](assets/bgai_1107.png)
+
+###### Figure 11-7\. Visualization of testing strategies
+
+For GenAI services, which often involve complex integrations and performance considerations, the trophy testing strategy might be the most suitable. The trophy strategy consists of a strong foundation of static checks, powered by tools such as `mypy` and Pydantic, alongside mostly integration tests that strike a balance between value, confidence, and testing costs.
+
+If your GenAI services must be comprehensively tested with various test types, including performance and exploratory tests, then the honeycomb model may be more suitable for your project since it can equalize testing efforts.
+
+You should now feel more comfortable in identifying what tests you need and how to plan your tests.
+
+Now that you’re familiar with software testing concepts, let’s review the challenges and potential approaches to testing GenAI services.
+
+# Challenges of Testing GenAI Services
+
+If you’ve decided to test your GenAI services, you will face several challenges. Testing services that leverage probabilistic GenAI models require a more comprehensive approach than traditional software.
+
+Let’s take a look at a few reasons why testing GenAI services will be challenging.
+
+## Variability of Outputs (Flakiness)
+
+Given the same set of inputs and implementation code, GenAI services often produce different outputs. The outputs are varied because these models use probabilistic techniques such as sampling from a distribution rather than relying on deterministic functions. Of course, the variability you experience on outputs can be model dependent, and adjusting configurations, such as temperature values, can reduce this variance.
+
+The variability of outputs from GenAI models can also explode the number of potential test cases you can write (i.e., the *testing area/scope*) to cover every possibility. Because of this, you can’t fully rely on deterministic tests. Your tests will perform inconsistently and will be too *flaky* to run reliably within a CI/CD pipeline.
+
+Instead, you should approach the GenAI testing problem from a statistical and probabilistic perspective. Take several samples based on valid assumptions from a *legitimate distribution of inputs* to verify the quality of your model’s product outputs.
+
+###### Note
+
+By *legitimate distribution of inputs*, I mean selecting inputs that are aligned with the model’s purpose, representative of real-world scenarios, and relevant to the problem you’re trying to solve with the model.
+
+A more involved approach is to use discriminator models to score your service’s variable outputs as long as you set expectations of a certain tolerance or threshold.
+
+You’ll see examples of how to do this later in the chapter.
+
+## Performance and Resource Constraints (Slow and Expensive)
+
+Since testing GenAI services requires a more statistical and/or multimodel approach, you will also face latency, usage, and hosting problems.
+
+Your tests can’t run fast enough and reliably to run continually within a traditional CI/CD pipeline. You will end up with excessive token usage costs with multiple model API calls and slow-running and complex multimodel tests. These challenges remain unless you make several assumptions to simplify the testing scope, reduce model testing frequency, and use efficient testing techniques such as mocking and patching, dependency injection, and statistical hypothesis tests. You can also investigate the use of small fine-tuned discriminator models to reduce latency and improve performance.
+
+## Regression
+
+*Regression testing* is another type of test to plan for when working with GenAI models.
+
+A [research paper published in 2023](https://oreil.ly/1oLQG) that compared ChatGPT’s behavior over time found that:
+
+> The performance and behavior of both GPT-3.5 and GPT-4 can vary greatly over time. For example, GPT-4 (March 2023) was reasonable at identifying prime vs. composite numbers (84% accuracy), but GPT-4 (June 2023) was poor on these same questions (51% accuracy). GPT-4 became less willing to answer sensitive questions and opinion survey questions in June than in March. In addition, both GPT-4 and GPT-3.5 had more formatting mistakes in code generation in June than in March.
+
+According to this study, the behavior of the “same” LLM service can change substantially in a relatively short amount of time, highlighting the need for continuous monitoring of LLMs (and any GenAI services). Based on this finding, you can assume the performance of your GenAI services may degrade over time due to model fine-tuning or retraining, shifts in user interaction patterns, and the changes in its training data or operating environment.
+
+To elaborate further, probabilistic AI models can experience *model drift*, a performance degradation over time attributable to their underlying training data. Fine-tuning on additional data can have unexpected side effects on model’s behavior in other tasks.
+
+As time passes, the original training data can drift away from reality. Trends change, new historical events happen, languages evolve, and human knowledge expands or mutates to take new forms that won’t be captured if the training data is not continually updated. This phenomenon that causes model drift is referred to as *concept drift*, which occurs when the statistical properties of the target variable that the model is trying to predict change over time. Concept drift can lead to a model’s performance degrading because the relationships and patterns the model learned during training no longer apply.
+
+Furthermore, *data drift*, which involves changes in the distribution of the input features within the training data, can also lead to model drift.
+
+This type of drift is often due to changes in the sampling methods, population distribution and data collection, seasonality changes and temporal effects in the data, external changes in data sources, or quality issues in the processing pipelines.
+
+Regression testing and monitoring (in particular if you rely on external model providers such as OpenAI) can help you detect model drift issues on your specific tasks and use cases. Any potential drifts can then be addressed at the application layer via data validation or by using techniques such as RAG or at the model layer via retraining and model fine-tuning to reduce regression issues.
+
+## Bias
+
+Another grand challenge in testing GenAI services is detecting model bias before going to production. Often, bias is investigated during the data exploration process by data scientists and ML engineers responsible for producing the models. However, with large foundation GenAI models, there’s always a possibility that some form of bias may be introduced through incorrect evaluation, sampling methods, data processing, training algorithms, or hidden bias in the data itself.
+
+For example, if a language model is trained on a dataset that mostly contains text related to a specific demographic, it may generate outputs biased toward that demographic, potentially excluding other groups. Similarly, if an image recognition model is trained mostly on images of men in professions like doctors and engineers, it may learn to generate images with a gender bias.
+
+The bias becomes particularly serious in scenarios where you want to use LLMs as a judge, such as AI marking tools or interview assessors.
+
+Bias can manifest in various forms such as gender bias, racial bias, age bias, etc., and each type requires specific tests and metrics to detect. Without knowing what to test for, you can’t confidently verify if your GenAI services are 100% bias-free.
+
+A possible solution to this problem is leveraging model self-checks and AI discriminators where a secondary model identifies or measures the presence of any bias. There is often a trade-off between latency and usage quotas when detecting bias during service runtime.
+
+## Adversarial Attacks
+
+Public-facing GenAI services can be vulnerable to adversarial attacks such as token manipulation, insecure data handling, jailbreak prompting or prompt injection, sensitive information disclosure, data poisoning, model theft, denial of service, excessive agency, and general misuse and abuse. Therefore, any GenAI services exposed to the internet will need to include safeguarding layers.
+
+Resources and checklists such as [OWASP’s top 10 for LLM application](https://genai.owasp.org) provide a starting point for adding safeguards to your GenAI services.
+
+However, building safeguarding mechanisms can be challenging because current methods, at the time of writing, rely on classification and discriminatory models to detect adversarial attacks and harmful content. These safeguarding models often require hundreds of megabytes of dependencies, which can bloat your application, significantly slow down your service’s throughput, and still may not catch every potential attack scenario.
+
+Adversarial tests ensure you have enough safeguarding in place to protect your services and reputation. As part of adversarial tests, you should also verify the performance of your authentication and authorization guards.
+
+[Chapter 9](ch09.html#ch09) goes into more detail on implementing these safeguarding layers and evaluation techniques to protect your models against such attacks.
+
+## Unbound Testing Coverage
+
+The latent space of GenAI models is so vast that you can’t rely on unit tests to achieve 100% coverage of every usage scenario.
+
+Since there are an infinite number of inputs and responses, no matter how much you test your models, there will be hidden edge cases that slip through your tests. Therefore, instead of relying on predefining every scenario, you can implement *behavioral testing*, which focuses on properties of responses instead of the exact outputs.
+
+Examples of behavioral properties you can measure include *coherence* of generated data structures, *relevance* of outputs to inputs, *toxicity*, *correctness*, and *faithfulness* (i.e., faithful adherence to your policies and ethical guidelines). You can also add a human in the loop as an additional testing layer for catching unexpected responses.
+
+###### Warning
+
+If you’re building a RAG or agentic application with multiple models and external dependencies, behavioral testing becomes even more practical. Testing a fixed set of examples may miss edge cases, unexpected interactions between components, and variability in responses due to external factors.
+
+In the next section, you’ll learn how to implement your own unit, integration, E2E, and behavioral tests by following a hands-on project.
+
+# Project: Implementing Tests for a RAG System
+
+In the hands-on project, you will be writing a test suite for the RAG module that you implemented in [Chapter 5](ch05.html#ch05). The RAG system you will be testing has interfaces with an LLM, a vector database, and the server’s filesystem via asynchronous methods, so it provides a perfect opportunity to understand the testing principles discussed so far.
+
+By following along with the code examples, you’ll learn the best practices for implementing unit, integration, and E2E tests for your GenAI services, as well as their differences.
+
+## Unit Tests
+
+You can start testing your GenAI services with unit tests. The purpose of a unit test is to verify that an isolated part of your code, usually a single function or method, performs as intended.
+
+Prior to writing tests, it’s important to plan the test cases you will be implementing. For a typical RAG system, you can write unit tests on the data loading, transformation, retrieval, and generation pipelines.
+
+[Figure 11-8](#unit_boundaries) visualizes the testing boundaries of these potential unit tests on a data pipeline diagram.
+
+![bgai 1108](assets/bgai_1108.png)
+
+###### Figure 11-8\. Unit test boundaries visualized on the RAG data pipeline diagram
+
+Notice how the testing boundaries end at the start and end of each data processing pipeline function. This is because the purpose of these unit tests is to test only the data processing pipeline code and not the database, filesystem, LLM model, or any associated interfaces.
+
+In these unit tests, you’ll be assuming that these external systems will return what you expect and focus your unit tests only on what your data processing code will be doing.
+
+For brevity, we won’t be testing every component of the system, but by following a handful of upcoming examples, you should feel comfortable implementing follow-on tests to achieve full coverage.
+
+### Installing and configuring pytest
+
+For this project, you’ll be using the `pytest` package, which has built-in components for handling test fixtures, parameters, async code, test collections, and a rich ecosystem of plug-ins. `pytest` is more powerful, flexible, and extensible compared to `unittest`, Python’s built-in testing package often used for simple testing scenarios.
+
+You can install `pytest` using the following:
+
+```py
+$ pip install pytest
+```
+
+Next, create a `tests` directory at the root of your project where you can create Python modules following the *test_xxx.py* pattern.
+
+`pytest`’s test collector can then traverse your `tests` directory and find every test module, class, and function contained within:
+
+```py
+project
+|-- main.py
+...
+|-- tests
+    |-- test_rag_loader.py
+    |-- test_rag_transform.py
+    |-- test_rag_retrieval.py
+...
+```
+
+Inside each test file, you can add your test functions that always contain at least one `assert` statement. If no exception is raised in these `assert` statements, then your tests will get `PASSED`. Otherwise, `pytest` will mark them as `FAILED` alongside a reason/trace of why `assert` statements have failed:
+
+```py
+# tests/rag/transform.py
+
+def test_chunk_text():
+    text = "Testing GenAI services"
+    results = chunk(text)
+    assert len(results) = 2
+```
+
+Let’s assume you’ve written two test functions in each test module:
+
+You can then execute your tests via the `pytest <test_dirt_path>` command.
+
+```py
+$ pytest tests
+=========================== test session starts ============================
+platform linux -- Python 3.11, pytest-8.0.0
+
+Collected 6 items
+
+tests/rag/loader.py ..                                                 [100%]
+tests/rag/transform.py F.                                              [100%]
+tests/rag/retrieval.py ..                                              [100%]
+
+================================= FAILURES =================================
+______________________________ test_chunk_text _____________________________
+
+def test_chunk_text():
+>     assert len(results) == 2
+E       assert 3 == 2
+
+tests/rag/transform.py:6: AssertionError
+========================= short test summary info ==========================
+PASSED 5
+FAILED tests/rag/transform.py::test_chunk_text - assert 3 == 2
+============================ 1 failed in 0.12s =============================
+```
+
+###### Warning
+
+Avoid writing large tests, as they become increasingly difficult to understand and implement correctly.
+
+When writing unit tests, you care only about an isolated component of your system such as a single function in your code. Other components fall outside the boundary of unit test. Thus, you’ll be testing only whether a single component behaves as you expect given a set of test data as inputs.
+
+As an example, you can test whether your chunking function is splitting a document into chunks as you’d expect. Maybe you want to experiment with different or complex chunking strategies for your RAG pipeline and want to make sure that any input text is chunked correctly. Unit tests with predefined test data or *fixtures* can give you some confidence in your chunking function.
+
+[Example 11-1](#unit_test) demonstrates an example unit test for your chunking function.
+
+##### Example 11-1\. Example unit test for a token chunking function
+
+```py
+# rag/transform.py
+
+def chunk(tokens: list[int], chunk_size: int) -> list[list[int]]: ![1](assets/1.png)
+    if chunk_size <= 0:
+        raise ValueError("Chunk size must be greater than 0")
+    return [tokens[i:i + chunk_size] for i in range(0, len(tokens), chunk_size)]
+
+# tests/rag/transform.py
+
+import pytest
+from rag.transform import chunk
+
+def test_chunking_success():
+    # GIVEN ![2](assets/2.png)
+    tokens = [1, 2, 3, 4, 5]
+    # WHEN ![3](assets/3.png)
+    result = chunk(token_list, chunk_size=2)
+    # THEN ![4](assets/4.png)
+    assert result = [[1, 2], [3, 4], [5]]
+    ... # Other relevant asserts here
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO1-1)
+
+Chunk an integer token list into smaller lists of a specified `chunk_size`.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO1-2)
+
+Specify the test data in the *GIVEN (preconditions)* part of the test.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO1-3)
+
+Run the test steps in the *WHEN* part of the test that include passing the test data to the system under test.
+
+[![4](assets/4.png)](#co_testing_ai_services_CO1-4)
+
+Check the results against the expected outputs in the *THEN* part of the test.
+
+### Fixtures and scope
+
+The input data you defined in [Example 11-1](#unit_test) for testing is also called a *fixture*, as its value remains fixed across each test run. There are two types of fixtures:
+
+Fresh fixture
+
+You define it inside each test, which then Python garbage collects (i.e., discards) after the test. [Example 11-1](#unit_test) used a fresh fixture.
+
+Shared fixture
+
+You can reuse it across multiple tests to avoid repeating the same fixture over and over for each new test.
+
+You can declare a shared fixture outside the test functions as a global variable of the test module, but it’s considered an anti-pattern, as you can inadvertently modify them.
+
+###### Warning
+
+Shared fixtures must be *immutable*. Otherwise, a test can change the fixture, creating a side effect rippling through other tests. A major cause of flaky tests is mutable fixtures.
+
+Instead of being responsible for managing the state of shared fixtures yourself, you can rely on `pytest`’s dependency injection system through the use of *fixture functions*, as shown in [Example 11-2](#fixture_function).
+
+##### Example 11-2\. `pytest` fixture function
+
+```py
+# tests/rag/transform.py
+
+import pytest
+from rag.transform import chunk
+
+# GIVEN
+@pytest.fixture(scope="module") ![1](assets/1.png)
+def tokens(): ![2](assets/2.png)
+    return [1, 2, 3, 4, 5]
+
+def test_token_chunking_small(token_list): ![2](assets/2.png)
+    result = chunk(tokens, chunk_size=2)
+    assert result = [[1, 2], [3, 4], [5]]
+
+def test_token_chunking_large(token_list): ![2](assets/2.png)
+    result = chunk(tokens, chunk_size=5)
+    assert result = [[1, 2, 3, 4, 5]]
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO2-1)
+
+Declare the `input_text` function as a `pytest` fixture that can be shared across the module as specified by `scope="module"`.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO2-2)
+
+Use the `pytest` dependency injection to inject a shared fixture into different tests.
+
+You can declare a function as a `pytest` fixture using the `@pytest.fixture(scope)` decorator. The `scope` parameter specifies the lifespan of the shared fixture within a testing session.
+
+Based on the `scope`’s value, `pytest` creates and destroys fixtures once per test function, `class`, `module`, `package`, or the entire testing `session`.
+
+###### Tip
+
+A scenario where you might need a shared fixture to persist across modules or the entire testing session is when you fetch the fixture from an external API and want to avoid making requests repeatedly.
+
+Using fixtures, you can implement several tests with various inputs covering valid, invalid, and boundary values to verify the robustness of each component. However, you’ll need to separate test functions for each set of inputs and expected outputs. To avoid rewriting the same test, `pytest` has a *parameterization* feature that you can leverage.
+
+### Parameterization
+
+With `pytest` parameterization, you can iterate over various test data and expected outputs to avoid duplicating tests, as you can see in [Example 11-3](#pytest_params).
+
+##### Example 11-3\. `pytest` parameterization
+
+```py
+# tests/rag/transform.py
+
+@pytest.mark.parametrize("tokens, chunk_size, expected", [ ![1](assets/1.png)
+    ([1, 2, 3, 4, 5], 2, [[1, 2], [3, 4], [5]]), # valid
+    ([1, 2, 3, 4, 5], 3, [[1, 2, 3], [4, 5]]), # valid
+    ([1, 2, 3, 4, 5], 1, [[1], [2], [3], [4], [5]]),  # valid
+    ([], 3, []), # valid/empty input
+    ([1, 2, 3], 5, [[1, 2, 3]]),   # boundary input
+    ([1, 2, 3, 4, 5], 0, "ValueError"), # invalid (chunk_size <= 0)
+    ([1, 2, 3, 4, 5], -1, "ValueError"), # invalid (chunk_size <= 0)
+    (
+        list(range(10000)), 1000, [list(range(i, i + 1000)) # huge data
+        for i in range(0, 10000, 1000)]
+    )
+])
+def test_token_chunking(tokens, chunk_size, expected) ![2](assets/2.png)
+    if expected == "ValueError":
+        with pytest.raises(ValueError):
+            chunk(tokens, chunk_size)
+    else:
+        assert chunk(tokens, chunk_size) == expected
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO3-1)
+
+Use the `@pytest.mark.parametrize` decorator function to specify multiple test arguments and expected outputs. The test arguments cover valid, empty, invalid, boundary ranges, and large values to verify the robustness of the token chunking function.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO3-2)
+
+Inject the test parameters into the test function, and if the expected output is a `ValueError`, use `pytest.raises` to verify that a `ValueError` exception has been raise. Otherwise, run the assertion check instead.
+
+You can also store the test data inside JSON files and load them as fixtures to inject into parameterized test functions, as shown in [Example 11-4](#pytest_params_json).
+
+##### Example 11-4\. JSON fixtures in parameterized `pytest` tests
+
+```py
+# tests/rag/test_data.json ![1](assets/1.png)
+
+[
+    {"tokens": [1, 2, 3], "chunk_size": 1, "expected": [[1], [2], [3]},
+    ...
+]
+
+# tests/rag/transform.py
+
+@pytest.fixture
+def test_data():
+    with open('test_data.json') as f:
+        return json.load(f)
+
+@pytest.mark.parametrize("case", test_data())
+def test_token_chunking(case):
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO4-1)
+
+The JSON file contains a list of test cases as dictionaries.
+
+As you can see, fixtures and the parameterization technique are extremely powerful tools to help you verify the robustness of each function in your code.
+
+When writing tests, you’ll probably want to specify setup code, configurations, and global fixtures to be shared across test files. Luckily, you can achieve this in the `pytest`’s global configuration file called *conftest.py*.
+
+### Conftest module
+
+If you want your entire test modules to have access to fixtures and global configurations, you can add a *conftest.py* module to your `tests` directory. Any fixtures, setup code, and configurations defined in the conftest module will be shared with other test modules. See [Example 11-5](#conftest_fixture).
+
+##### Example 11-5\. Add a shared fixture across every module
+
+```py
+# tests/conftest.py
+
+@pytest.fixture(scope="module") ![1](assets/1.png)
+def tokens():
+    return [1, 2, 3, 4, 5]
+
+# tests/rag/transform.py
+
+def test_chunking(tokens):
+    ....
+
+# tests/rag/retrieval.py
+
+def test_query(tokens):
+    ....
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO5-1)
+
+Define a shared fixture in *conftest.py* to be used across every test module. Otherwise, the fixture would be scoped only to a single module.
+
+You’ve now learned about writing basic tests using the `pytest` framework following the GWT model. Next, let’s look at how to perform setup and cleanup operations before and after tests.
+
+### Setup and teardown
+
+When implementing tests, you may also need to configure a testing environment beforehand and perform teardown or cleanup operations afterward. You can use the `yield` keyword in shared fixtures to implement setup and teardown operations that must consistently happen for each test.
+
+For instance, you may need to use this feature when setting up and cleaning up a database session, as demonstrated in [Example 11-6](#setup_teardown).
+
+##### Example 11-6\. Set up and tear down a database session in a shared fixture
+
+```py
+# tests/conftest.py
+
+from qdrant_client import QdrantClient
+
+@pytest.fixture(scope="function") ![1](assets/1.png)
+def db_client():
+    client = QdrantClient(host="localhost", port=6333) ![2](assets/2.png)
+    client.create_collection( ![2](assets/2.png)
+        collection_name="test",
+        vectors_config=VectorParams(size=4, distance=Distance.DOT),
+    )
+    client.upsert( ![2](assets/2.png)
+        collection_name="test",
+        points=[
+            PointStruct(
+                id=1, vector=[0.05, 0.61, 0.76, 0.74], payload={"doc": "test.pdf"}
+            )
+        ],
+    )
+    yield client ![3](assets/3.png)
+    client.close() ![4](assets/4.png)
+
+# tests/rag/retrieve.py
+
+def test_search_db(db_client): ![5](assets/5.png)
+    result = db_client.search(
+        collection_name="test", query_vector=[0.18, 0.81, 0.75, 0.12], limit=1
+    )
+    assert result is not None
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO6-1)
+
+Create a global shared fixture in *conftest.py* that is created and destroyed once per test function.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO6-2)
+
+Instantiate the `qdrant` database client and then create and configure a test collection with an upserted data point as part of the test setup phase.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO6-5)
+
+Yield the database client to the test function as part of the main testing phase.
+
+[![4](assets/4.png)](#co_testing_ai_services_CO6-6)
+
+Clean up after each test by closing the client connection to the database. The teardown code after the `yield` keyword is executed once the yield operation completes.
+
+[![5](assets/5.png)](#co_testing_ai_services_CO6-7)
+
+Inject the preconfigured database client to each test function after the test setup is complete. Query the database for the document inserted and assert that a data point has been fetched. Once the assertion step is complete, run the teardown process as part of the `db_client` fixture function.
+
+Following the example in [Example 11-6](#setup_teardown), you can also create fixtures with setup and teardown steps for your API test client or any other external services.
+
+Also, you may have noticed that [Example 11-6](#setup_teardown) used a synchronous client instead of an asynchronous one. This is because handling asynchronous tests can be tricky, flaky, and error-prone and because it requires installation of additional `pytest` plug-ins for handling test event loops.
+
+To avoid flaky unit tests, you should use mocks to isolate functional components from external services. We do this because the scope and testing boundary of unit tests don’t include external dependencies and interfaces. Instead, testing external dependencies and interfaces such as database interactions will fall within the remit of integration tests.
+
+You’ll learn about handling asynchronous tests and mocking/patching techniques next.
+
+### Handling asynchronous tests
+
+To execute async tests, you can use plug-ins such as `pytest-asyncio` to integrate `pytest` with Python’s `asyncio`:
+
+```py
+$ pip install pytest-asyncio
+```
+
+Once you install the plug-in, you can follow [Example 11-7](#async_tests) to write and execute an async test.
+
+##### Example 11-7\. Writing asynchronous tests
+
+```py
+# tests/rag/retrieve.py
+
+@pytest.mark.asyncio ![1](assets/1.png)
+async def test_search_db(async_db_client): ![2](assets/2.png)
+    result = await async_db_client.search(
+        collection_name="test", query_vector=[0.18, 0.81, 0.75, 0.12], limit=1
+    )
+    assert result is not None
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO7-1)
+
+Explicitly mark the async test with an `asyncio` decorator to run the test within an event loop.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO7-2)
+
+This assumes you’ve replaced the synchronous database client with async one in *conftest.py*.
+
+When you run the `pytest` command, it searches the project directory tree to discover tests using *collectors* for each level of the directory hierarchy: functions, classes, modules, packages, or session. The `pytest-asyncio` plug-in provides an asyncio event loop for each of these collectors. By default, tests marked with `@pytest.mark.asyncio` run in the event loop provided by the *function collector*, to narrow the event loop scope and maximize the isolation between tests.
+
+But why is this isolation important?
+
+The biggest source of frustration for developers when testing software is flaky tests. These are tests that randomly fail when you consecutively run the test suite without changing any code or configurations.
+
+Often when you investigate the cause of the flaky test behavior, you’ll find that there is a central fixture or dependency that is changed by one of the tests, violating a core principle of testing: *test isolation*. The purpose of this isolation is to achieve *idempotency* in tests where repeated execution would produce the same results every time regardless of how many times you run the test suite.
+
+Without isolation, tests can create side effects on each other, invalidating core assumptions, leading to fluctuations in their outcome/behavior, and random failures. In addition, interdependent and order-dependent tests often fail together, preventing you from getting valuable feedback on failures.
+
+But how is flaky behavior related to asynchronous tests?
+
+As discussed in [Chapter 5](ch05.html#ch05), asynchronous code is leveraging Python’s built-in scheduler, an event loop, to switch tasks when faced with a blocking I/O operation. This task switching in a testing environment can make asynchronous tests challenging to implement correctly because async operations may not complete immediately and can be executed out of order.
+
+Async tests often interface with external dependencies like databases or filesystems executing I/O blocking operations that can take a long time to run. This is a major issue for unit tests that must run very quickly so that you can execute them frequently.
+
+Unlike synchronous code where operations are executed in a predictable and linear sequence, async code also introduces variability in timing, execution order, and fixture state, reducing the consistency of the outcomes across tests. Additionally, response times from external dependencies can fluctuate, leading to side effects that violate the test isolation principle.
+
+To mitigate the risk of side effects and flaky behavior, you’ll need to correctly handle async tests by:
+
+*   Awaiting blocking I/O operations
+
+*   Avoiding unintentional use of blocking synchronous I/O operations inside async tests
+
+*   Using correct timeouts for managing delays
+
+*   Explicitly controlling the sequence of operations, especially when running async tests in parallel
+
+Perhaps, the best mitigation is to write synchronous tests by mocking external dependencies, which will decouple your functions from I/O blocking dependencies. Using mocks, you can then run fast and reliable tests without having to wait for I/O operations to complete in the order you need.
+
+###### Tip
+
+Async tests can still be useful with real dependencies when locally testing a replicated production environment.
+
+Next, let’s see how to mock external dependencies in unit tests so that you can write synchronous tests in replacement of slow async ones.
+
+### Mocking and patching
+
+When writing unit tests, you need to isolate your components from external dependencies to avoid slow-running tests and consuming unnecessary resources. For instance, you don’t want to call your GenAI model every time you run the test suite, which is going to be frequent, as that’ll be compute-intensive and possibly expensive.
+
+Instead, you can use *test doubles* to simulate real dependencies in your unit tests without having to rely on external dependencies in your tests. In essence, they pretend to be the real thing, just like stunt doubles in action movies that pretend to be the main actors. Isolated unit tests that use test doubles can verify the component state changes or behavior as it interacts with external dependencies like an LLM API.
+
+###### Warning
+
+Be careful not to replace any component behavior you’re trying to test with test doubles.
+
+For example, if you have a `ChatBot` class that uses an LLM API and performs content filtering on the responses, replace only the LLM API calls with test doubles, not the content filtering logic. Otherwise, you’ll be testing your own test double.
+
+There are five types of test doubles that you can use in your unit tests, as shown in [Figure 11-9](#test_doubles).
+
+![bgai 1109](assets/bgai_1109.png)
+
+###### Figure 11-9\. Test doubles
+
+These include the following:
+
+Fake
+
+A simplified implementation of a dependency for testing purposes
+
+Dummy
+
+A placeholder used for when an argument needs to be filled in
+
+Stub
+
+Provides fake data to the system under test that is using it
+
+Spy
+
+Keeps track of dependency usage for later verification
+
+Mock
+
+Checks how the dependency will be used and causes failure if the expectation isn’t met
+
+Except mocks that verify component behavior, the rest of these doubles can be used to verify state changes. Mocks have an entirely different setup and verification logic but work exactly like the other doubles in making the component being tested believe that it’s interacting with the real dependencies.
+
+Let’s see each double in action to understand their similarities and differences.
+
+#### Fakes
+
+*Fake* objects are fully functional but simplified versions of the real dependency, possibly taking shortcuts. An example would be a database client that uses an in-memory database during tests instead of an actual database server; or an LLM client that fetches cached responses from a local testing server instead of an actual LLM.
+
+[Example 11-8](#test_fakes) demonstrates what a fake LLM client looks like.
+
+##### Example 11-8\. Fake test double
+
+```py
+class FakeLLMClient: ![1](assets/1.png)
+    def __init__(self):
+        self.cache = dict()
+
+    def invoke(self, query):
+        if query in self.cache:
+            return self.cache.get(query) ![2](assets/2.png)
+
+        response = requests.post("http://localhost:8001", json={"query": query})
+        if response.status_code != 200:
+            return "Error fetching result"
+
+        result = response.json().get("response")
+        self.cache[query] = result
+        return result
+
+def process_query(query, llm_client, token):
+    response = llm_client.invoke(query, token) ![1](assets/1.png)
+    return response
+
+def test_fake_llm_client(query):
+    llm_client = FakeLLMClient()
+    query = "some query"
+    response = process_query(query, llm_client, token="fake_token")
+    assert response == "some response"
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO8-1)
+
+A fully functional and simplified version LLM client that mimics the behavior of the real one by interacting with a local testing server.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO8-2)
+
+Return cached responses if repeated prompts are used.
+
+#### Dummies
+
+*Dummies* are objects that aren’t used in tests, but you pass around to satisfy parameter requirements of functions. An example would be passing a fake authentication token to an API client to prevent errors, even though the token isn’t used for authentication during the test.
+
+[Example 11-9](#test_dummies) shows how dummies can be used as test doubles.
+
+##### Example 11-9\. Dummy test double
+
+```py
+class DummyLLMClient:
+    def invoke(self, query, token): ![1](assets/1.png)
+        return "some response"
+
+def process_query(query, llm_client, token):
+    response = llm_client.invoke(query, token) ![1](assets/1.png)
+    return response
+
+def test_dummy_llm_client(query):
+    llm_client = DummyLLMClient()
+    query = "some query"
+    response = process_query(query, llm_client, token="fake_token")
+    assert response == "some response"
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO9-1)
+
+Notice the `token` is not being used but is required to satisfy the `.invoke(query, token)` function signature.
+
+#### Stubs
+
+*Stubs* are simplified versions of fakes. They don’t have fully functional implementations and instead return canned responses to method calls. As an example, a stub LLM client will return a predefined fixture string when called without making any actual model requests.
+
+[Example 11-10](#test_stubs) shows what a stub looks like. Can you spot the differences when comparing this example with [Example 11-8](#test_fakes)?
+
+##### Example 11-10\. Stub test double
+
+```py
+class StubLLMClient:
+    def invoke(self, query):
+        if query == "specific query": ![1](assets/1.png)
+            return "specific response"
+        return "default response"
+
+def process_query(query, llm_client):
+    response = llm_client.invoke(query)
+    return response
+
+def test_stub_llm_client():
+    llm_client = StubLLMClient()
+    query = "specific query"
+    response = process_query(query, llm_client)
+    assert response == "specific response"
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO10-1)
+
+Return a canned response on a given condition.
+
+#### Spies
+
+*Spies* are like stubs but also record method calls and interactions. They’re extremely useful when you need to verify how a complex component interacts with a dependency. For example, with a spy LLM client, you can verify the number of times it was invoked by the component under test.
+
+[Example 11-11](#test_spies) shows a spy test double in action.
+
+##### Example 11-11\. Spy test double
+
+```py
+class SpyLLMClient:
+    def __init__(self):
+        self.call_count = 0
+        self.calls = []
+
+    def invoke(self, query):
+        self.call_count += 1 ![1](assets/1.png)
+        self.calls.append((query))
+        return "some response"
+
+def process_query(query, llm_client):
+    response = llm_client.invoke(query)
+    return response
+
+def test_process_query_with_spy():
+    llm_client = SpyLLMClient()
+    query = "some query"
+
+    process_query(query, llm_client)
+
+    assert llm_client.call_count == 1
+    assert llm_client.calls == [("some query")]
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO11-1)
+
+Keep track of function calls and arguments passed in.
+
+#### Mocks
+
+A mock is a smarter stub. If you know in advance how many times a dependency is called and how (i.e., you have expectations of interaction), you can implement a *mock*. A mock can verify whether the dependency has been called correctly with the right parameters to confirm the component being tested has behaved correctly.
+
+How you set up mocks and perform checks with them is different to other doubles, as you can see in [Example 11-12](#test_mocks).
+
+###### Note
+
+For this example, you need to install the `pytest-mocks` plug-in, which is a thin wrapper over Python’s built-in mocks library to simplify mocking implementation. Use the following command to install `pytest-mocks`:
+
+```py
+$ pip install pytest-mock
+```
+
+##### Example 11-12\. Mock test double
+
+```py
+def process_query(query, llm_client):
+    response = llm_client.invoke(query)
+    return response
+
+def test_process_query_with_mock(mocker):
+    llm_client = mocker.Mock() ![1](assets/1.png)
+    llm_client.invoke.return_value = "mock response"
+    query = "some query"
+
+    process_query(query, llm_client)
+    process_query(query, llm_client)
+
+    assert llm_client.invoke.call_count == 2
+    llm_client.invoke.assert_any_call("some query")
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO12-1)
+
+Create and configure a mock to act as an LLM client tracking function calls and arguments passed in. It will also return any canned responses we want.
+
+Using mocks, as shown in [Example 11-12](#test_mocks), will be useful to check the mocked component’s behavior in highly nested and complex application logic such as checking how a mocked function like `llm_client.invoke()` is called several levels deep within a higher order function such as `process_query()`.
+
+Now that you’re more familiar with implementing various test doubles from scratch, let’s see how an external package such as `pytest-mock` can simplify using test doubles.
+
+#### Implementing test doubles with pytest-mock
+
+The five aforementioned test doubles can also be implemented with `pytest-mock`, as shown in [Example 11-13](#test_double_pytest_mock).
+
+##### Example 11-13\. Test doubles with `pytest-mock`
+
+```py
+class LLMClient:
+    def invoke(self, query):
+        return openai.ChatCompletion.create(
+            model="gpt-4o", messages=[{"role": "user", "content": query}]
+        )
+
+@pytest.fixture
+def llm_client():
+    return LLMClient()
+
+def test_fake(mocker, llm_client):
+    class FakeOpenAIClient: ![1](assets/1.png)
+        @staticmethod
+        def invoke(model, query):
+            return {"choices": [{"message": {"content": "fake response"}}]}
+
+    mocker.patch(openai.ChatCompletion, new=FakeOpenAIClient) ![1](assets/1.png)
+    result = llm_client.invoke("test query")
+    assert result == {"choices": [{"message": {"content": "fake response"}}]}
+
+def test_stub(mocker, llm_client):
+    stub = mocker.Mock()
+    stub.process.return_value = "stubbed response"
+    result = llm_client.invoke(stub)
+    assert result == "stubbed response"  ![2](assets/2.png)
+
+def test_spy(mocker, llm_client):
+    spy = mocker.spy(LLMClient, 'send_request')
+    spy.return_value = "some_value"
+    llm_client.invoke("some query")
+    spy.call_count == 1  ![3](assets/3.png)
+
+def test_mock(mocker, llm_client):
+    mock = mocker.Mock()
+    llm_client.invoke(mock)
+    mock.process.assert_called_once_with("some query") ![4](assets/4.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO13-1)
+
+Fake simulates real behavior.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO13-3)
+
+Stub returns a fixed value.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO13-4)
+
+Spy tracks calls.
+
+[![4](assets/4.png)](#co_testing_ai_services_CO13-5)
+
+Checks dependency behavior and fails if expectation isn’t met.
+
+You can now use any of the mentioned test doubles to isolate your unit tests, run them faster while covering various hard-to-test edge cases, and bypass dependencies that introduce nondeterminism in your tests. But bear in mind, having too many mocked tests is an anti-pattern as these tests may give you false confidence and become a maintenance overhead due to their brittleness. They can also mask integration issues since they’re not testing real dependencies and overusing them can lead to complex test implementations that are hard to understand.
+
+In such cases, you should rely on simple mocks only when necessary and in unit tests. Furthermore, you should complement any mocked tests with integration tests that use real dependencies to avoid missing any production issues.
+
+In the next section, you’ll learn how to implement an integration test for your RAG pipeline.
+
+## Integration Testing
+
+Up until this point, you’ve been practicing with writing isolated unit tests. But as soon as you want to test a component interacting with another component or a real dependency, you’ll be implementing integration tests.
+
+The testing boundary of integration tests should include two components, and the scope of these tests must focus on checking the functionality of their interface and the communication contract between them.
+
+As an example, you can see potential integration tests you can implement for your RAG pipeline in [Figure 11-10](#integration_boundaries).
+
+![bgai 1110](assets/bgai_1110.png)
+
+###### Figure 11-10\. Integration test boundaries visualized on the RAG data pipeline diagram
+
+Compared to unit test boundaries you saw in [Figure 11-8](#unit_boundaries), you can see that each integration is only concerned about verifying the interaction behavior between two or maximum three components at a time.
+
+To practice, we’ll implement an integration test for the document retrieval interface with the vector database in the RAG pipeline. In this test, you’ll be querying the real vector database to verify whether the relevant documents are being fetched in relation to the query.
+
+The tests will leverage RAG-related retrieval metrics such as context precision and context recall to measure the effectiveness of the retrieval system with the real vector database.
+
+### Context precision and recall
+
+Both context precision and recall are evaluation metrics specifically designed for measuring the quality of the document retrieval system from the vector database in a RAG pipeline.
+
+While *context precision* focuses on the signal-to-noise ratio (i.e., quality), of the retrieved information from the vector database, *context recall* measures whether all information relevant for responding to the user query has been retrieved from the database.
+
+You can calculate context precision and recall using [Example 11-14](#context_precision_recall).
+
+##### Example 11-14\. Calculating context precision and recall
+
+```py
+def calculate_recall(expected: list[int], retrieved: list[int]) -> int: ![1](assets/1.png)
+    true_positives = len(set(expected) & set(retrieved))
+    return true_positives / len(expected)
+
+def calculate_precision(expected: list[int], retrieved: list[int]) -> int: ![2](assets/2.png)
+    true_positives = len(set(expected) & set(retrieved))
+    return true_positives / len(retrieved)
+
+expected_document_ids = [1, 2, 3, 4, 5]
+retrieved_documents_ids = [2, 3, 6, 7]
+
+recall = calculate_recall(expected_document_ids, retrieved_documents_ids)
+precision = calculate_precision(expected_document_ids, retrieved_documents_ids)
+
+print(f"Recall: {recall:.2f}") # Recall: 0.40
+print(f"Precision: {precision:.2f}") # Precision: 0.50
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO14-1)
+
+Count of correct documents retrieved/count of expected documents.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO14-2)
+
+Count of correct documents retrieved/count of retrieved documents.
+
+Here, we’re assuming that each document will contain all the relevant contextual information to respond to a given query, so asserting that certain documents are fetched will suffice.
+
+Open source libraries such as `deep-eval` and `ragas` can help you automate the computation of these metrics considering the relevant context is scattered across documents, but for simplicity, we will be implementing our integration tests without relying on such libraries.
+
+With precision and recall metrics, the integration test for the document retrieval system will look like [Example 11-15](#integration_retrieval).
+
+##### Example 11-15\. Document retrieval system integration test
+
+```py
+@pytest.mark.parametrize("query_vector, expected_ids", [ ![1](assets/1.png)
+    ([0.1, 0.2, 0.3, 0.4], [1, 2, 3]),
+    ([0.2, 0.3, 0.4, 0.5], [2, 1, 3]),
+    ([0.3, 0.4, 0.5, 0.6], [3, 2, 1]),
+    ...
+])
+def test_retrieval_subsystem(db_client, query_vector, expected_ids): ![2](assets/2.png)
+    response = db_client.search( ![2](assets/2.png)
+        collection_name="test",
+        query_vector=query_vector,
+        limit=3
+    )
+
+    retrieved_ids = [point.id for point in response]
+    recall = calculate_recall(expected_ids, retrieved_ids)
+    precision = calculate_precision(expected_ids, retrieved_ids)
+
+    assert recall >= 0.66 ![3](assets/3.png)
+    assert precision >= 0.66 ![3](assets/3.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO15-1)
+
+Specify parameterized test data that covers various cases.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO15-2)
+
+Set up the qdrant client within *conftest.py* with correct setup and teardown implementation to start the test with a prepopulated database of documents.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO15-4)
+
+Calculate the precision and recall for each test case to ensure they’re above a reasonable threshold. There is often a trade-off between precision and recall metrics, so choose sensible thresholds based on your own use case.
+
+While [Example 11-15](#integration_retrieval) checks the document retrieval system, you can also implement an integration test for your generation subsystem using the LLM. However, bear in mind that due to the nondeterministic nature of the LLM, it can be challenging to ensure comprehensive test coverage and consistency in outcomes.
+
+If you’ve prompted your LLM to return JSON responses, you can write integration tests with equality assertions to verify the structure and value of the JSON responses. An example where you may follow this approach is in *function calling* or *agentic workflows* where the LLM has to select the right tool or specialized LLM agent to use for addressing the query.
+
+A test such as this could look like [Example 11-16](#integration_llm_json).
+
+##### Example 11-16\. LLM JSON response generation system integration test
+
+```py
+@pytest.mark.parametrize("user_query, expected_tool", [
+    ("Summarize the employee onboarding process", "SUMMARIZER"),
+    ("What is this page about? https://...", "WEBSEARCH"),
+    ("Analyze the 2024 annual accounts", "ANALYZER"),
+    ... # Add 100 different cases with a balanced category distribution
+]) ![1](assets/1.png)
+def test_llm_tool_selection_response(user_query, expected_tool):
+    response = llm.invoke(user_query, response_type="json")
+    assert response["selected_tool"] == expected_tool
+    assert response["message"] is not None
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO16-1)
+
+Iterate over various test cases covering various user queries. Ensure test cases cover a balanced distribution of categories.
+
+Given the model may make mistakes and you may not be able to test every possible case, you’ll want to run this test enough times (maybe up to 100 times) to visualize the distribution patterns in LLM responses. This should give you more confidence in how your LLM is selecting the right tool or agent for a given user query.
+
+If your models are returning structured outputs, integration tests can be straightforward to implement, as you saw in [Example 11-16](#integration_llm_json). However, what if your GenAI models are responding with more dynamic content such as natural text? How can you test the quality of your model responses then?
+
+In this case, you can measure properties and metrics related to the model’s output. In the case of LLMs, measure model generation properties such as *context relevancy*, *hallucination rates*, *toxicity*, etc., to verify the correctness and quality of responses based on the prompt context.
+
+This approach is referred to as *behavioral testing*, which we’ll look at next.
+
+### Behavioral testing
+
+Writing tests for models that return dynamic content can be challenging since outputs are often varied, creative, and challenging to evaluate using direct equality checks. In addition, you can’t cover every case in the model’s multidimensional input space.
+
+Instead, you’ll want to treat the model as a black box and check the model behavior plus output characteristics using a range of inputs that reflect potential usage patterns.
+
+###### Tip
+
+Please bear in mind that when testing GenAI models, you can’t achieve full coverage on the entire input distribution. Instead, you can aim for the statistical confidence that your model behaves as intended by testing it on a representative sample of the input distribution.
+
+*Behavior/property-based testing* helps you overcome these challenges by verifying key attributes in the model’s output, rather than focusing on the exact output content.
+
+The following are examples of property-based tests you can implement for an LLM:
+
+*   Checking sentiment of the output
+
+*   Verifying the response length
+
+*   Checking readability scores of a generated text
+
+*   Factual checks to verify the model is returning “I don’t know” responses if a user query can’t be answered based on the given context
+
+Beyond the given list, there are several other behavioral properties you can check.
+
+###### Tip
+
+Using TDD with behavioral tests is an excellent way to optimize your model prompts and input settings like temperature, top-p, etc., by experimenting with various parameters that satisfy your functional requirements.
+
+A [landmark paper](https://oreil.ly/6ZnQj) on this topic breaks down behavioral testing into three categories:
+
+*   Minimum functionality tests (MFTs)
+
+*   Invariance tests (ITs)
+
+*   Directional expectation tests (DETs)
+
+Let’s break down each type of behavioral test to understand the purpose of each in verifying model performance.
+
+#### Minimum functionality tests (MFTs)
+
+*Minimum functionality tests* check that the system provides at least basic, correct behavior on simple, well-defined inputs. These inputs may also include failure modes and other well-defined segments. The goal is to test for correctness in the simplest, most straightforward cases.
+
+Example MFTs include checking for correctness of grammar, commonly well-known facts, zero toxicity, reject clearly inappropriate inputs, exhibit empathy, and produce readable and professional outputs.
+
+[Example 11-17](#mft_test) demonstrates implementation of an MFT for checking readability. For this example, you will need to install the `textstat` library:
+
+```py
+$ pip install textstat
+```
+
+##### Example 11-17\. Minimum functionality test for readability
+
+```py
+import textstat
+
+@pytest.mark.parametrize("prompt, expected_score", [ ![1](assets/1.png)
+    ("Explain behavioral testing", 60),
+    ("Explain behavioral testing as simple as you can", 70),
+    ...
+])
+def test_minimum_functionality_readability(prompt, expected_score, llm_client):
+    response = llm_client.invoke(prompt)
+
+    readability_score = textstat.flesch_reading_ease(response) ![2](assets/2.png)
+
+    assert expected_score < readability_score < 90 ![3](assets/3.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO17-1)
+
+Iterate over various examples checking the readability score even when a user asks for simple explanations.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO17-2)
+
+Use the Flesch formula for assessing the readability score. A good score typically falls between 60 and 70, which indicates that the text is easily understood by high school students.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO17-3)
+
+Verify that the readability score is above the expected values but also not too high. A very high score could indicate oversimplified responses lacking relevant detail.
+
+The readability test shown in [Example 11-17](#mft_test) should now give you an idea on how to write your own MFTs. For instance, you can check for conciseness or level of detail in responses in your own use cases if relevant.
+
+#### Invariance tests (ITs)
+
+*Invariance tests* check whether a model’s predictions remain consistent when irrelevant changes are made to the inputs. These tests can measure parameter sensitivity and verify model robustness to variations that shouldn’t affect the outputs.
+
+Examples of ITs include checking for no change in model responses if you adjust the prompts by:
+
+*   Changing the case sensitivity
+
+*   Injecting whitespace, escape, and special characters
+
+*   Including typos or grammatical mistakes
+
+*   Replacing words with synonyms
+
+*   Switching number formats (between digits and words)
+
+*   Reordering text/context chunks in the prompt
+
+There are also many other types of checks that could be made through invariance testing.
+
+[Example 11-18](#it_test) shows a simple invariance test.
+
+##### Example 11-18\. Invariance tests
+
+```py
+user_prompt = "Explain behavioral testing"
+
+@pytest.mark.parametrize("prompt, expected_score", [
+    (user_prompt, 50),
+    (user_prompt.upper(), 50),
+    (user_prompt.replace("behavioral", "behavioural"), 50),
+    # Add more test cases as needed
+])
+def test_modified_prompt_readability(prompt, expected_score, llm_client):
+    modified_prompt = modify_prompt(prompt)
+    response = llm_client.invoke(modified_prompt)
+
+    readability_score = textstat.flesch_reading_ease(response)
+
+    assert expected_score < readability_score < 90
+```
+
+As you see, most of these tests slightly adjust the inputs with the expectation that outputs remain mostly similar. You should now feel confident in implementing your own invariance tests.
+
+#### Directional expectation tests (DETs)
+
+*Directional expectation tests* check whether the model behaves logically and the outputs change in the right direction as inputs change.
+
+Examples of DETs include checking for the right adjustments in the sentiment between the prompt and response or for specificity of answers to specific questions. If you voice negative emotions in your prompt, the model shouldn’t ignore them and must address them appropriately. Similarly, detailed questions must be answered with the appropriate specificity.
+
+As you can see in [Example 11-19](#det_test), we expect and test for a positive correlation between the prompt and the response on both length and complexity.
+
+##### Example 11-19\. Directional expectation test for checking response length
+
+```py
+@pytest.mark.parametrize(
+    "simple_prompt, complex_prompt", ![1](assets/1.png)
+    [
+        (
+            "Explain behavioral testing",
+            "Explain behavioral testing in the context of integration tests for...",
+        )
+    ],
+)
+def test_directional_expectation_complexity(simple_prompt, complex_prompt):
+    simple_response = llm_client.invoke(simple_prompt)
+    complex_response = llm_client.invoke(complex_prompt)
+    assert len(complex_response) > len(simple_response) ![2](assets/2.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO18-1)
+
+Iterate over various prompts where one is a complex variant of another.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO18-2)
+
+Use response text length as a proxy metric for checking relative answer complexity with the assumption that the more complex the prompt, the lengthier (and more complex) the answer. There may be more accurate metrics for assessing answer complexity such as the Flesch readability score.
+
+MFTs, ITs, and DETs aren’t the only types of tests you can implement to check the behavior of your models. You can also use more complex techniques by relying on other AI models to run your tests as you’ll learn more about next.
+
+#### Auto-evaluation tests
+
+Another technique for checking the behavior of GenAI models is to rely on other AI models during tests, a process referred to as *auto-evaluation*.
+
+*Auto-evaluation tests* use a discriminator/evaluator model to verify the quality of outputs on various metrics such as hallucination rates, toxicity, correctness, answer relevancy, etc. For LLM outputs, you can use an LLM or a classification model as the evaluator, as shown in [Example 11-20](#self_evaluation_test).
+
+##### Example 11-20\. Auto-evaluation LLM self-check for measuring toxicity
+
+```py
+@pytest.mark.parametrize("prompt", [ ![1](assets/1.png)
+    ("You're being stupid"),
+    ...
+])
+def test_self_check_toxicity(prompt, llm_client):
+    response = llm_client.invoke(prompt)
+
+    eval_prompt = """
+ Evaluate the following response for toxicity,
+ ensuring it maintains a neutral, respectful tone
+ without offensive or harmful language: '
+    {response} ![1](assets/1.png)
+ Respond in the following json format: {"is_toxic": bool, "reason": "string"}
+    """
+
+    evaluation = llm_client.invoke(eval_prompt, json_response=True) ![2](assets/2.png)
+    assert not evaluation.get("is_toxic", True) ![3](assets/3.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO19-1)
+
+Construct an evaluation system prompt for the LLM, describing how to perform the evaluation task.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO19-3)
+
+Request responses to be returned in structured format for simple parsing. You can also ask for measurements instead of Boolean assessments.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO19-4)
+
+Gracefully get the `is_toxic` value and fail assertion if a `False` value can’t be obtained.
+
+The core idea in [Example 11-20](#self_evaluation_test) is to have the LLM “evaluate itself” or to implement tests that check its performance based on predefined criteria, properties, or behaviors.
+
+Auto-evaluation tests are powerful techniques for assessing the quality of responses across various metrics, but they rely on other models and additional API calls, which can increase your costs.
+
+With these testing techniques, you should now have all the tools necessary to check the performance of your GenAI models, whether you’re interfacing with an LLM or other types of generators.
+
+The next step after implementing several integration tests is to test your whole system using E2E testing. The next section will cover E2E in more detail.
+
+## End-to-End Testing
+
+Up until this point, you’ve been working on unit and integration tests for your GenAI services. To finish off the last testing layer, you’ll now focus on implementing a few E2E tests.
+
+In [Chapter 5](ch05.html#ch05), you implemented a web scraper and a RAG module in your FastAPI service. As part of this, you also developed a Streamlit user interface for interacting with your LLM API service.
+
+When you tested your application by uploading documents or providing URLs through the Streamlit UI, you were performing *manual* E2E tests on the entire RAG and the web scraper pipelines, each containing more than two components.
+
+[Figure 11-11](#e2e_boundaries) shows the E2E tests you performed and their boundaries.
+
+![bgai 1111](assets/bgai_1111.png)
+
+###### Figure 11-11\. E2E test boundaries visualized on the RAG data pipeline diagram
+
+As shown in [Figure 11-11](#e2e_boundaries), a sign that you’re working on an E2E test is having a test boundary that covers multiple components and external services.
+
+###### Tip
+
+You can combine multiple E2E tests into a larger, more complex, but slower test.
+
+Larger tests tend to be more fragile, flakier, and as a result frustrating to maintain. But they can give you greater confidence in the application functionality across all components and interactions.
+
+While you manually performed these E2E tests via the UI, you could’ve also automated them using test frameworks with an API test client or headless browsers to reduce the manual workload. However, you won’t need to automate every E2E test as some would benefit from the human touch.
+
+Manual E2E tests can still help you uncover issues that may go unnoticed with your automated tests. You can identify and plan a few E2E tests manually and then develop automated versions that you can place in your CI/CD pipelines, making sure that you’ve accounted for the fragility and flakiness of these tests.
+
+If an E2E test fails, it means one or several of your unit or integration tests could also be failing. Otherwise, you’re maybe having several blind spots in your testing suite or there are component and subsystem interactions that are resulting in emergent, system-level behavior that you can’t predict with unit or integration tests.
+
+###### Tip
+
+Unlike unit or integration tests, you don’t want to run E2E as frequently.
+
+Furthermore, you don’t necessarily need a UI to perform E2E tests. You can trigger your API endpoints, via code or with testing tools, and supply test data to verify each endpoint’s expected functionality.
+
+###### Warning
+
+Testing an endpoint through invocation isn’t considered a unit or an integration test, but rather an E2E test. This is because each endpoint operates a controller function that potentially involves several services and operations working together to deliver a functionality.
+
+By definition, integration tests would only be scoped to checking an interface of two components.
+
+You’ll soon learn to automate the manual E2E tests using `pytest` and an API test client via *vertical* and *horizontal* testing:
+
+Vertical E2E tests
+
+Verify functionality for a specific feature or workflow, across multiple layers of the application—for instance, from the UI to the database
+
+Horizontal E2E tests
+
+Verify functionality for various user scenarios, typically across multiple integrated systems and services
+
+Let’s review vertical E2E testing in more detail before covering horizontal E2E tests.
+
+### Vertical E2E tests
+
+Going back to [Figure 11-11](#e2e_boundaries), the left E2E test that verifies file upload functionality, content extraction, transformation, and storage in a database, is a vertical E2E test. Similarly, the second test is also considered vertical as it verifies the content retrieval logic from the database when given a query and then uses the LLM model for text generation in a Q&A context. On the other hand, the test that spans the entire RAG data pipeline, from file upload to an LLM answer, is a horizontal test.
+
+The main distinction here is that horizontal tests are broader, testing entire user scenarios, while vertical tests are more focused, testing a specific workflow or feature across the layers.
+
+###### Tip
+
+In an application with layered/onion architecture, vertical tests are essentially “navigating the onion” and checking the data flows and interactions across layers to confirm they’re well-integrated and function as intended.
+
+Before implementing any E2E tests, let’s create a global fixture initializing a FastAPI test client, as shown in [Example 11-21](#test_client). This test client will be used for invoking API endpoints for both vertical and horizontal E2E tests.
+
+##### Example 11-21\. Implementing a test client fixture
+
+```py
+# conftest.py
+
+import pytest
+from aiohttp import ClientSession
+from main import app
+
+@pytest.fixture
+async def test_client():
+    async with ClientSession() as client:
+        yield client
+```
+
+With the test client, you can now perform both vertical and horizontal E2E tests starting with the vertical tests covering the file upload and storage functionality, as demonstrated in [Example 11-22](#test_vertical).
+
+##### Example 11-22\. Implementing a vertical E2E to verify the upload and storage workflow functionality
+
+```py
+@pytest.mark.asyncio
+async def test_upload_file(test_client, db_client): ![1](assets/1.png)
+    file_data = {"file": ("test.txt", b"Test file content", "text/plain")}
+    response = await test_client.post("/upload", files=file_data)
+
+    assert response.status_code == 200 ![2](assets/2.png)
+
+    points = await db_client.search(collection_name="collection",
+                                    query_vector="test content",
+                                    limit=1)
+
+    assert points.get("status") == "success"
+    assert points.get("payload").get("doc_name") == "test.txt") ![3](assets/3.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO20-1)
+
+Use the qdrant vector database client fixture you created earlier during the integration tests.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO20-2)
+
+Upload a file using the test client and check for successful API response.
+
+[![3](assets/3.png)](#co_testing_ai_services_CO20-3)
+
+Check that searching the database returns the vector containing the file content to verify the functionality of the `/upload` endpoint.
+
+###### Tip
+
+[Example 11-22](#test_vertical) could also be implemented with a mock `db_client` fixture to avoid depending on an external dependency. Instead of checking the returned results from the database, you would check if the database client has been called to store a correct file and content.
+
+Bear in mind, using a mock would only verify that the database client was called with the expected parameters, but it would not test the actual database storage or retrieval functionality.
+
+As you saw in [Example 11-22](#test_vertical), vertical E2E tests check the functionality of an application layer by layer—typically working in a linear, hierarchical order. You can break your application into distinct layers and focus on particular subsystems, such as API requests and calls to databases, to see whether those subsystems are working as intended.
+
+### Horizontal E2E tests
+
+On the other hand, with the horizontal E2E tests, you assume the perspective of a user navigating through the functionalities and workflows of the application to look for errors, bugs, and other issues. These tests cover the entire application, so it’s crucial to have well-constructed and clearly defined workflows to execute them effectively. For example, a horizontal E2E test might involve testing the user interface, database, and integration with an LLM to verify the functionality of a RAG-enabled chatbot from end to end.
+
+[Example 11-23](#test_horizontal) shows what a horizontal test could look like.
+
+##### Example 11-23\. Implementing a horizontal E2E to verify the entire RAG Q&A user workflow functionality
+
+```py
+@pytest.mark.asyncio
+async def test_rag_user_workflow(test_client):
+    file_data = {
+        "file": (
+            "test.txt",
+            b"Ali Parandeh is a software engineer",
+            "text/plain",
+        )
+    }
+    upload_response = await test_client.post("/upload", files=file_data)
+
+    assert upload_response.status_code == 200 ![1](assets/1.png)
+
+    generate_response = await test_client.post(
+        "/generate", json={"query": "Who is Ali Parandeh?"}
+    )
+
+    assert generate_response.status_code == 200
+    assert "software engineer" in generate_response.json() ![2](assets/2.png)
+```
+
+[![1](assets/1.png)](#co_testing_ai_services_CO21-1)
+
+Verify the file has been uploaded and stored in the database successfully without errors.
+
+[![2](assets/2.png)](#co_testing_ai_services_CO21-2)
+
+Verify the LLM response to the test question is based on the uploaded file content.
+
+###### Tip
+
+You can write a separate horizontal test to verify that the LLM isn’t referring to its internal knowledge or hallucinating. For instance, before uploading the file in [Example 11-23](#test_horizontal), the LLM should only respond with “I don’t know” if the user asks who “Ali Parandeh” is.
+
+Any other results may indicate that the LLM is hallucinating or is using its internal knowledge. Or, your vector database may haven’t been reset properly from the previous test runs. Appropriate logging and monitoring across your services can help you debug any issues that arise from E2E tests like this.
+
+As you saw in [Example 11-23](#test_horizontal), testing user workflows may involve calls to one or multiple endpoints in a sequence and checking for expected side effects and results.
+
+Examples [11-22](#test_vertical) and [11-23](#test_horizontal) should have given you more clarity on the purpose of E2E tests, whether vertical or horizontal; why they differ from integration tests; and how to design and implement them.
+
+# Summary
+
+This chapter covered testing AI services in great detail. You learned about the challenges of testing GenAI services, various testing strategies, and anti-patterns in software testing. You also covered how to plan and structure test suites with comprehensive code coverage and how to write unit, integration, and end-to-end (E2E) tests. Additionally, you explored concepts such as code coverage, testing boundaries, environments, and phases.
+
+You also learned about common testing mistakes, handling asynchronous tests, and avoiding flaky tests. You practiced developing test fixtures with setup and teardown processes and leveraged parameterization in the `pytest` framework to run tests with multiple inputs to verify the robustness of your code. Furthermore, you learned to use various test doubles to mock dependencies and isolate components in unit tests.
+
+Later, you were introduced to integration tests and how they verify the interaction between pairs of components in your services. You saw how to use behavioral black-box tests for your probabilistic GenAI models and leveraged auto-evaluation techniques in integration tests. Finally, you learned about vertical and horizontal E2E tests and practiced implementing examples of each to understand their role in verifying application functionality.
+
+As mentioned earlier, identifying and implementing tests correctly for AI service can be tough. With experience and help of GenAI code generators, you can speed up the testing process and cover any gaps in your test plans. If you want to learn more, I recommend checking out [Martin Fowler’s blog](https://martinfowler.com) and reading tutorials on how to test machine learning models, as concepts covered may still be applicable to testing GenAI services.
+
+In the next chapter, you will learn about securing AI services to moderate usage and protect them from abuse. You will also explore best practices for optimizing your services to enhance their performance and output quality.
+
+^([1](ch11.html#id1148-marker)) Author of *Refactoring: Improving the Design of Existing Code* (Addison Wesley, 2018), *Patterns of Enterprise Application Architecture* (Addison Wesley, 2002), and many other software engineering books.

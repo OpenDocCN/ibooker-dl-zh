@@ -1,0 +1,16 @@
+# Foreword
+
+I remember the day Ali, our head of engineering at ADSP, walked confidently into the office and declared he wanted to write a book on building generative AI services. Knowing the mammoth-sized undertaking that is writing a technical book, I offered him a strong cup of coffee and regaled him with a few tales of my own late-night writing sessions, fueled by caffeine and the sheer will to meet a deadline. I might have even thrown in a cautionary whisper about the ever-present temptation to rewrite entire chapters at 3 a.m. But Ali was steadfast. He had that glint in his eye—a mix of determination and a clear vision. He knew he wanted to create something special, something that would demystify the complexities of generative AI and empower others to build.
+
+Having now read *Building Generative AI Applications with FastAPI*, I can say he’s done far more than that. Ali has crafted a truly indispensable guide for anyone looking to move beyond theoretical discussions about AI and into the realm of practical, real-world application. And somehow, he’s made the whole process look deceptively easy.
+
+As co-founder of an AI consultancy, I’ve seen firsthand the growing need for engineers who not only can understand how AI works but also build production-grade solutions with AI. We are in a period of profound transformation, where AI is rapidly changing how we live and work. It’s no longer enough to be a passive consumer of AI-powered products. The future belongs to those who can harness the power of generative models to create, innovate, and solve real problems. This book is the perfect starting point for that journey.
+
+Ali’s technical expertise is evident on every page. He effortlessly blends complex concepts with clear, concise explanations and practical examples. The code snippets aren’t just toy examples; they are building blocks for real applications. He guides you through the intricacies of FastAPI, authentication, authorization, and database integration with the confidence of a seasoned engineer who has spent countless hours wrestling with these challenges in the real world.
+
+*Building Generative AI Applications with FastAPI* is a vital resource for any engineer looking to navigate the rapidly evolving landscape of AI. It’s a testament to Ali’s technical leadership and his remarkable ability to make the complex accessible. This book isn’t just about building AI services; it’s about empowering a new generation of engineers to shape the future. And that future, thanks to works like this, looks incredibly bright.
+
+David Foster
+Partner at ADSP
+Author of Generative Deep Learning
+(O’Reilly, 2024)
