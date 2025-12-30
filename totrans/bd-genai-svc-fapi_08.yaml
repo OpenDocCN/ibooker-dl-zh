@@ -1,0 +1,2714 @@
+- en: Chapter 5\. Achieving Concurrency in AI Workloads
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this chapter, you will learn more about the role and benefits of asynchronous
+    programming in boosting the performance and scalability of your GenAI services.
+    As part of this, you’ll learn to manage concurrent user interactions and interface
+    with external systems such as databases, implement RAG, and read web pages to
+    enrich the context of model prompts. You’ll acquire techniques for effectively
+    dealing with I/O-bound and CPU-bound operations, especially when dealing with
+    external services or handling long-running inference tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: We will also dive into strategies for efficiently handling long-running Generative
+    AI inference tasks, including the use of FastAPI event loop for background tasks
+    execution.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizing GenAI Services for Multiple Users
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: AI workloads are computationally expensive operations that can inhibit your
+    GenAI services from serving multiple simultaneous requests. In most production
+    scenarios, multiple users will be using your applications. Therefore, your services
+    will be expected to serve requests *concurrently* such that multiple overlapping
+    tasks can be executed. However, if you’re interfacing with GenAI models and external
+    systems such as databases, the filesystem, or the internet, there will be operations
+    that can block other tasks from executing on your server. Long-running operations
+    that can halt the program execution flow are considered *blocking*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'These blocking operations can be twofold:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Input/output (I/O) bound
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where a process has to wait because of data input/output operation, which can
+    come from a user, file, database, network, etc. Examples include reading or writing
+    a file to a disk, making network requests and API calls, sending or receiving
+    data from databases, or waiting for user input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compute bound
+  prefs: []
+  type: TYPE_NORMAL
+- en: Where a process has to wait because of a compute-intensive operation on CPU
+    or GPU. Compute-bound programs push the CPU or GPU cores to their limit by performing
+    intensive computations, often blocking them from performing other tasks.^([1](ch05.html#id795))
+    Examples include data processing, AI model inference or training, 3D object rendering,
+    running simulations, etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You have a few strategies to serve multiple users:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: System optimization
+  prefs: []
+  type: TYPE_NORMAL
+- en: For I/O-bound tasks like fetching data from a database, working with files on
+    disk, making network requests, or reading web pages
+  prefs: []
+  type: TYPE_NORMAL
+- en: Model optimization
+  prefs: []
+  type: TYPE_NORMAL
+- en: For memory- and compute-bound tasks such as model loading and inference
+  prefs: []
+  type: TYPE_NORMAL
+- en: Queuing system
+  prefs: []
+  type: TYPE_NORMAL
+- en: For handling long-running inference tasks to avoid delays in responding
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'In this section, we will look at each strategy in more detail. To help solidify
+    your learning, we will also implement several features together that leverage
+    the aforementioned strategies:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building a *web page scraper* for bulk fetching and parsing of HTTP URLs pasted
+    in the chat, so that you can ask your LLM about the content of web pages
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adding a *retrieval augmented generation* (RAG) module to your service with
+    a self-hosted vector database such as `qdrant` so that you can upload and talk
+    to your documents via your LLM service
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Adding a *batch image generation system* so that you can run image generation
+    workloads as background tasks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Before I can show you how to build the aforementioned features, we should dive
+    deeper into the topic of *concurrency* and *parallelism* as understanding both
+    concepts will help you identify the correct strategies to use for your own use
+    cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Concurrency* refers to the ability of a service in handling multiple requests
+    or tasks at the same time, without completing one after another. During concurrent
+    operations, the timeline of multiple tasks can overlap and may start and end at
+    different times.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: In Python, you can implement concurrency with a single CPU core by switching
+    between tasks on a single thread (via asynchronous programming) or across different
+    threads (via multithreading).
+  prefs: []
+  type: TYPE_NORMAL
+- en: With multiple cores, you can also implement a subset of concurrency called *parallelism*
+    where tasks are split among several independent workers (via multiprocessing),
+    with each executing tasks simultaneously on their own isolated resources and separate
+    processes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Although there are plans to remove the GIL from Python soon, at the time of
+    this writing it is not possible for multiple threads to simultaneously work through
+    tasks. Therefore, concurrency on a single core can give an illusion of parallelism
+    even though there is one process doing all the work. The single process can only
+    multitask by switching active threads to minimize waiting times of I/O blocking
+    operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can only achieve true parallelism with multiple workers (in multiprocessing).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Even though concurrency and parallelism have many similarities, they aren’t
+    exactly the same concepts. The big difference between them is that concurrency
+    can help you manage multiple tasks by interleaving their execution, which is useful
+    for I/O-bound tasks. Parallelism, on the other hand, involves executing multiple
+    tasks simultaneously, typically on multicore machines, which is more useful for
+    CPU-bound tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can implement concurrency using approaches like threading or asynchronous
+    programming (i.e., time-slicing on a single-core machine, where tasks are interleaved
+    to give the appearance of simultaneous execution).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 5-1](#concurrency_parallelism) shows the relationship between concurrency
+    and parallelism.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0501](assets/bgai_0501.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-1\. Concurrency and parallelism
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In most scalable systems, you can witness both concurrency and parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imagine that you’re visiting a fast-food restaurant and placing an order. In
+    a concurrent system, you’ll see the restaurant owner taking orders while cooking
+    burgers, attending to each task time to time, and effectively multitasking by
+    switching between tasks. In a parallel system, you’ll see multiple staff members
+    taking orders and a few others cooking the burgers at the same time. Here different
+    workers handle each task simultaneously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Without any multithreading or asynchronous programming in a single-threaded
+    process, the process has to wait for blocking operations to finish before it can
+    start new tasks. Without multiprocessing implementing parallelism on multiple
+    cores, computationally expensive operations can block the application from starting
+    other tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 5-2](#concurrency_parallelism_timeline) shows the distinctions between
+    nonconcurrent execution, concurrent execution without parallelism (single core),
+    and concurrent execution with parallelism (multiple cores).'
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The three Python execution models shown in [Figure 5-2](#concurrency_parallelism_timeline)
+    are as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: No concurrency (synchronous)
+  prefs: []
+  type: TYPE_NORMAL
+- en: A single process (on one core) executes tasks sequentially.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concurrent and non-parallel
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiple threads in a single process (on a core) handle tasks concurrently but
+    not in parallel due to Python’s GIL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Concurrent and parallel
+  prefs: []
+  type: TYPE_NORMAL
+- en: Multiple processes on multiple cores perform the tasks in parallel, making the
+    most of multicore processors for maximum efficiency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0502](assets/bgai_0502.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-2\. Concurrency with and without parallelism
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In multiprocessing, each process has access to its own memory space and resources
+    to complete a task in isolation from other processes. This isolation can make
+    processes more stable—since if a process crashes, it won’t affect others—but makes
+    inter-process communication more complex compared to threads, which share the
+    same memory space, as shown in [Figure 5-3](#multiprocessing_resources).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0503](assets/bgai_0503.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-3\. Resource sharing in multithreading and multiprocessing
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Distributed workloads often use a managing process that coordinates the execution
+    and collaboration of these processes to avoid issues such as data corruption and
+    duplicating work. A good example of multiprocessing is when you serve requests
+    with a load balancer managing traffic to multiple containers, each running an
+    instance of your application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both multithreading and asynchronous programming reduce wait time in I/O tasks
+    because the processor can do other work while waiting for I/O. However, they don’t
+    help with tasks that require heavy computation, like AI inference, because the
+    process is busy with computing some results. Therefore, to serve a large self-hosted
+    GenAI model to multiple users, you should either scale services with multiprocessing
+    or use algorithmic model optimizations (via specialized model inference servers
+    like vLLM).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Your first instinct when working with slow models may be to adopt parallelism
+    by creating multiple instances of your FastAPI service (multiprocessing) in a
+    single machine to serve requests in parallel.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unfortunately, multiple workers running in separate processes will not have
+    access to a shared memory space. As a result, you can’t share artifacts—​like
+    a GenAI model—​loaded in memory between separate instances of your app in FastAPI.
+    Sadly, a new instance of your model will also need to be loaded, which will significantly
+    eat up your hardware resources. This is because FastAPI is a general-purpose web
+    server that doesn’t natively optimize serving GenAI models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The solution is not parallelism on its own, but to adopt the external model-serving
+    strategy, as discussed in [Chapter 3](ch03.html#ch03).
+  prefs: []
+  type: TYPE_NORMAL
+- en: The only instance where you can treat AI inference workloads as I/O-bound, instead
+    of compute-bound, is when you’re relying on third-party AI provider APIs (e.g.,
+    OpenAI API). In this case, you’re offloading the compute-bound tasks to the model
+    provider through network requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: On your side, the AI inference workloads become I/O-bound through network requests,
+    allowing for the use of concurrency through time slicing. The third-party provider
+    has to worry about scaling their services to handle model inferences—​that are
+    compute-bound—​across their hardware resources.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can externalize the serving and inference of larger GenAI models such as
+    an LLM, with specialized servers like vLLM, Ray Serve, or NVIDIA Triton.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Later in this chapter, I will detail how these servers maximize inference efficiency
+    of compute-bound operations during model inference while minimizing the model’s
+    memory footprint during the data generation process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To help you digest what was discussed so far, have a look at the comparison
+    table of concurrency strategies in [Table 5-1](#concurrency_comparison) to understand
+    when and why to use each.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Table 5-1\. Comparison of concurrency strategies
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Strategy | Features | Challenges | Use cases |'
+  prefs: []
+  type: TYPE_TB
+- en: '| --- | --- | --- | --- |'
+  prefs: []
+  type: TYPE_TB
+- en: '| No concurrency (synchronous) |'
+  prefs: []
+  type: TYPE_TB
+- en: Simple, readable, easy-to-understand code to debug
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A single CPU core and thread
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Potential long waiting times depending on I/O or CPU blocking operations halting
+    the process execution
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Can’t serve multiple users simultaneously
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Single user applications where users can wait for tasks to finish
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Infrequently used services or applications
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '| Async IO (asynchronous) |'
+  prefs: []
+  type: TYPE_TB
+- en: A single CPU core and thread
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Multitasking managed by an event loop within the Python process
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Thread-safe as the Python process manages tasks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Maximizes the CPU utilization rate
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Faster than multithreading and multiprocessing for I/O tasks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Harder to implement in code and can make debugging harder
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Requires libraries and dependencies that use Async IO features
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Easy to make mistakes that block the main process (and event loop)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '| Applications that have blocking I/O tasks |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multithreading |'
+  prefs: []
+  type: TYPE_TB
+- en: A single CPU core but multiple threads within the same process
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Threads share data and resources
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Simpler than Async IO to implement in code
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Multitasking across threads orchestrated by the OS
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Difficult to lock resources for each thread to avoid thread-safety issues that
+    can lead to nonreproducible bugs and data corruption
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Threads can block each other indefinitely (deadlocks)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Concurrent access to resources can cause inconsistent results (race conditions)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: A thread can be denied resources by monopolizing threads (starvation)
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating and destroying threads is computationally expensive
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '| Applications or services that have blocking I/O tasks |'
+  prefs: []
+  type: TYPE_TB
+- en: '| Multiprocessing |'
+  prefs: []
+  type: TYPE_TB
+- en: Multiple processes running on several CPU cores
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Each process is allocated a CPU core and isolated resources
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Work can be distributed across CPU cores and managed by an orchestrator process
+    using tools like Celery
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Sharing hardware resources and objects like a large AI model or data between
+    processes can be complex and requires inter-process communication (IPC) mechanisms
+    or a dedicated shared memory
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Difficult to keep multiple isolated processes in sync
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Creating and destroying processes is computationally expensive
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Applications or services that have blocking compute-bound tasks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Divide-and-conquer type of tasks where processing can be done in isolated chunks
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Distributing workloads or processing requests across multiple CPU cores
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: '|'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now that we’ve explored various concurrency strategies, let’s continue by enhancing
+    your services with asynchronous programming to efficiently manage I/O-bound operations.
+    Later we’ll focus on optimizing compute-bound tasks, specifically model inference
+    via specialized servers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizing for I/O Tasks with Asynchronous Programming
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: In this section, we’ll explore the use of asynchronous programming to prevent
+    blocking the main server process with I/O-bound tasks during AI workloads. You’ll
+    also learn about the `asyncio` framework that enables writing asynchronous applications
+    in Python.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Synchronous Versus Asynchronous (Async) Execution
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: What is considered an asynchronous application? To answer the question, let’s
+    compare both synchronous and asynchronous programs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: An application is considered *synchronous* when tasks are performed in a sequential
+    order with each task waiting for the previous one to complete before starting.
+    For applications that run infrequently and take only a few seconds to process,
+    synchronous code rarely causes a problem and can make implementations faster and
+    easier. However, if you need concurrency and want the efficiency of your services
+    to be maximized on every core, your services should multitask without waiting
+    for blocking operations to complete. That’s where implementing *asynchronous*
+    (async) concurrency can help.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s look at a few examples of synchronous and async functions to understand
+    how much of a performance boost an async code can give you. In both examples,
+    I will use sleeping to simulate I/O blocking operation, but you can imagine other
+    I/O tasks being performed in real-world scenarios.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-1](#sync_execution) shows an example of a synchronous code that
+    simulates an I/O blocking operation with the blocking `time.sleep()` function.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-1\. Synchronous execution
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE0]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO1-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use `sleep()` to simulate an I/O blocking operation such as sending a network
+    request.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO1-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Call the `task()` three times, sequentially. The loop simulates sending multiple
+    network requests, one after another.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Calling `task()` three times in [Example 5-1](#sync_execution) takes 15 seconds
+    to complete as Python waits for the blocking operation `sleep()` to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To develop async programs in Python, you can use the `asyncio` package as part
+    of the standard library of Python 3.5 and later versions. Using `asyncio`, asynchronous
+    code looks similar to sequential synchronous code but with additions of `async`
+    and `await` keywords to perform nonblocking I/O operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-2](#async_execution) shows how you can use `async` and `await` keywords
+    with `asyncio` to run [Example 5-1](#sync_execution) asynchronously.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-2\. Asynchronous execution
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE1]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO2-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implement a `task` coroutine that cedes control to the event loop on blocking
+    operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO2-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The nonblocking five-second sleep signals to the event loop to run another task
+    while waiting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO2-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use `asyncio.create_task` to spawn task instances to chain (or gather) and run
+    them concurrently using `asyncio.gather`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO2-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create an event loop to schedule async tasks with via the `asyncio.run` method.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO2-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Execution time is 1/3 of the synchronous example since the Python process wasn’t
+    blocked this time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After running [Example 5-2](#async_execution), you will notice that the `task()`
+    function was concurrently called three times. On the other hand, the code in [Example 5-1](#sync_execution)
+    calls the `task()` function three times sequentially. The async function ran inside
+    the `asyncio`’s event loop, which was responsible for executing the code without
+    waiting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In any async code, the `await` keyword flags the I/O blocking operations to
+    Python so that they’re executed in a *nonblocking* manner (i.e., they can run
+    without blocking the main process). By being made aware of blocking operations,
+    Python can go and do something else while waiting for blocking operations to finish.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-3](#await_keyword) shows how to use the `async` and `await` keywords
+    to declare and run async functions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-3\. How to use `async` and `await` keywords
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE2]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO3-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Simulate a nonblocking I/O operation by `await`ing the `asyncio.sleep()` so
+    that Python can go and do other things while waiting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO3-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: You need to call `main()` inside the `asyncio.run()` to execute it as it’s an
+    async function. Otherwise, it will not be executed and returns a *coroutine* object
+    instead. I will cover coroutines shortly.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO3-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you run the code, the second statement will be printed 3 seconds after the
+    first one. In this instance, as there are no other operations to run beyond sleeping,
+    Python runs in idle until the sleep operation is completed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 5-3](#await_keyword), I used sleeping as a way to simulate I/O blocking
+    operations such as making network requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can only use the `await` keyword inside a function declared with `async
+    def`. Using `await` outside of an `async` function will raise a `SyntaxError`
+    in Python. Another common pitfall is using blocking code that’s not asynchronous
+    within an `async` function that will inadvertently prevent Python from doing other
+    tasks while waiting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'So, you now understand that in async programs, to keep the main process from
+    being blocked, Python switches between functions as soon as it hits a blocking
+    operation. You now may be wondering:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: How does Python leverage `asyncio` to pause and resume functions?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: What is the mechanism that Python’s `asyncio` uses to move from one function
+    to another without forgetting about those that are suspended?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: How can functions be paused or resumed without losing their state?
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: To answer the aforementioned questions, let’s dive deeper into the underlying
+    mechanisms within `asyncio`, as understanding the answers to these questions will
+    help you significantly to debug async code in your services.
+  prefs: []
+  type: TYPE_NORMAL
+- en: At the heart of `asyncio` lies a first-class object called an *event loop*,
+    responsible for efficient handling of I/O events, system events, and application
+    context changes.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 5-4](#event_loop) shows how the `asyncio` event loop undertakes task
+    orchestration in Python.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0504](assets/bgai_0504.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-4\. Async IO event loop
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The event loop can be compared to a `while True` loop that watches for events
+    or messages emitted by *coroutine functions* within the Python process and dispatches
+    events to switch between functions while waiting for I/O blocking operations to
+    complete. This orchestration allows other functions to execute asynchronously
+    without interruption.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Async Programming with Model Provider APIs
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: All three examples I’ve shown you so far are considered to be the “Hello World”
+    examples of async programming. Now, let’s look at a real-world scenario related
+    to building GenAI services where you need to use a model provider’s API—such as
+    OpenAI, Anthropic, or Mistral—since it may be more expensive to serve LLMs yourself.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, if you stress test the generation endpoints you created in [Chapter 3](ch03.html#ch03)
+    by sending multiple requests in a short timeframe, you will notice long waiting
+    times before each request is processed. This is because you were preloading and
+    hosting the model in the same Python process and CPU core that the server is running
+    on. When you send the first request, the whole server becomes blocked while the
+    inference workload is complete. Since during inference the CPU is working as hard
+    as it can, the inference/generation process is a CPU-bound blocking operation.
+    However, it doesn’t have to be.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When you use a provider’s API, you no longer have CPU-bound AI workloads to
+    worry about since they become I/O-bound for you, and you offload the CPU-bound
+    workloads to the provider. Therefore, it makes sense to know how to leverage async
+    programming to concurrently interact with the model provider’s API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The good news is API owners will often release both synchronous and asynchronous
+    *clients* and *software development kits* (SDKs) to reduce the work needed to
+    interact with their endpoints.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: If you need to make requests to other external services, fetch some data from
+    databases, or ingest content from files, you will add other I/O blocking tasks
+    to the process. These blocking tasks can force the server to keep waiting if you
+    don’t leverage asynchronous programming.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, any synchronous code can be made async using a [process or thread pool
+    executor](https://oreil.ly/hIDNI) to avoid running the task within the event loop.
+    Instead, you run the asynchronous task on a separate process or thread to prevent
+    blocking the event loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can also verify any async support by checking library documentation or source
+    code for mentions of `async` or `await` keywords. Otherwise, you can try testing
+    whether the tool can be used within an async function without raising a `TypeError`
+    when you use `await` on it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If a tool, such as a database library, only has a synchronous implementation,
+    then you can’t implement asynchronicity with that tool. The solution will be to
+    switch the tool to an asynchronous equivalent so that can you can use them with
+    the `async` and `await` keywords.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 5-4](#openai_clients), you will interact with OpenAI GPT-3.5 API
+    via both synchronous and asynchronous OpenAI clients to understand the performance
+    difference between the two.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You will need to install the `openai` library:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE3]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-4\. Comparing synchronous and asynchronous OpenAI clients
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE4]'
+  prefs: []
+  type: TYPE_PRE
+- en: The difference between the sync and async clients is that with the async version,
+    FastAPI can start processing user inputs in parallel without waiting for a response
+    from the OpenAI API for the previous user input.
+  prefs: []
+  type: TYPE_NORMAL
+- en: By leveraging asynchronous code, you can get a massive boost in throughput and
+    scale to a larger volume of concurrent requests. However, you must be careful
+    when writing asynchronous (async) code.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Here are some common pitfalls and problems you might face with async code:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Understanding and debugging errors can be more complex due to the nonlinear
+    execution flow of concurrent tasks.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Some libraries, like `aiohttp`, require nested async context managers for proper
+    implementation. This can get confusing pretty fast.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Mixing asynchronous and synchronous code can negate any performance benefits,
+    such as if you forget to mark functions with the `async` and `await` keywords.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Not using async-compatible tools and libraries can also cancel out any performance
+    benefits; for example, using the `requests` package instead of `aiohttp` for making
+    async API calls.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Forgetting to await coroutines within any async function or awaiting non-coroutines
+    can lead to unexpected behavior. All `async` keywords must be followed by an `await`.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Improperly managing resources (e.g., open API/database connections or file buffers)
+    can cause memory leaks that freeze your computer. You can also leak memory if
+    you don’t limit the number of concurrent operations in async code.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: You might also run into concurrency and race condition issues where the thread-safety
+    principle is violated, causing deadlocks on resources leading to data corruption.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: This list is not exhaustive, and as you can see, there are several pitfalls
+    to using asynchronous programming. Therefore, I recommend starting with writing
+    synchronous programs first, to understand the basic flow and logic of your code,
+    before dealing with the complexities of migrating to an async implementation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Event Loop and Thread Pool in FastAPI
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Under the hood, FastAPI can handle both async and sync blocking operations.
+    It does this by running sync handlers in its *thread pool* so that blocking operations
+    don’t stop the *event loop* from executing tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As I mentioned in [Chapter 2](ch02.html#ch02), FastAPI runs on the ASGI web
+    framework via Starlette. If it didn’t, the server would effectively run synchronously,
+    so you would have to wait for each process to finish before it could serve the
+    next. However, using ASGI, the FastAPI server supports concurrency via both multithreading
+    (via a thread pool) and asynchronous programming (via an event loop) to serve
+    multiple requests in parallel, while keeping the main server process from being
+    blocked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FastAPI sets up the thread pool by instantiating a collection of threads at
+    application startup to reduce the runtime burden of thread creation.^([4](ch05.html#id822))
+    It then delegates background tasks and synchronous workloads to the thread pool
+    to prevent the event loop from being blocked by any blocking operations inside
+    the synchronous handlers. The event loop is also referred to as the main FastAPI
+    server thread that is responsible for orchestrating the processing of requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: As I mentioned, the event loop is the core component of every application built
+    on top of `asyncio`, including FastAPI that implements concurrency. Event loops
+    run asynchronous tasks and callbacks, including performing network I/O operations,
+    and running subprocesses. In FastAPI, the event loop is also responsible for orchestrating
+    the asynchronous processing of requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If possible, you should run handlers on the event loop (via asynchronous programming)
+    as it can be even more efficient than running them on the thread pool (via multithreading).
+    This is because each thread in the thread pool has to acquire the GIL before it
+    can execute any code bytes, and that requires some computational effort.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Imagine if multiple concurrent users were using both the synchronous and asynchronous
+    OpenAI GPT-3.5 handlers (endpoints) of your FastAPI service, as shown in [Example 5-4](#openai_clients).
+    FastAPI will run the async handler requests on the event loop since that handler
+    uses a nonblocking async OpenAI client. On the other hand, FastAPI has to delegate
+    the synchronous handler requests to the thread pool to protect the event loop
+    from blocking. Since delegating requests (to threads) and switching between threads
+    in a thread pool is more work, the synchronous requests will finish later than
+    their async counterparts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Remember that all of this work—processing both synchronous and async handler
+    requests—is running on a single CPU core within the same FastAPI Python process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is so that the CPU idle time is minimized while waiting for responses from
+    OpenAI API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The differences in performance are shown in [Figure 5-5](#multithreading_vs_async).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0505](assets/bgai_0505.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-5\. How multithreading and Async IO handle I/O blocking operations
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Figure 5-5](#multithreading_vs_async) shows that with I/O-bound workloads,
+    async implementations are faster and should be your preferred method if you need
+    concurrency. However, FastAPI does still do a solid job of serving multiple concurrent
+    requests even if it has to work with a synchronous OpenAI client. It simply sends
+    the synchronous API calls within threads of the thread pool to implement some
+    form of concurrency for you. That’s why the FastAPI official documentation tells
+    you to not worry too much about declaring your handler functions as `async def`
+    or `def`.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, keep in mind that when you declare handlers with `async def`, FastAPI
+    trusts you with performing only nonblocking operations. When you break that trust
+    and execute blocking operations inside `async` routes, the event loop will be
+    blocked and can no longer continue with executing tasks until the blocking operation
+    is finished.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Blocking the Main Server
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: If you’re using the `async` keyword when defining your functions, make sure
+    you’re also using the `await` keyword somewhere inside your function and that
+    none of the package dependencies you use inside the function are synchronous.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Avoid declaring route handler functions as `async` if their implementation is
+    synchronous. Otherwise, requests to the affected route handlers will block the
+    main server from processing other requests while the server is waiting for the
+    blocking operation to complete. It won’t matter if the blocking operation is I/O-bound
+    or compute-bound. Therefore, any calls to databases or AI models can still cause
+    the blockage if you’re not careful.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This is an easy mistake to make. For instance, you may use a synchronous dependency
+    inside handlers you’ve declared as async, as shown in [Example 5-5](#blocking_main_thread).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-5\. Incorrect implementation of asynchronous handlers in FastAPI
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE5]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO4-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: I/O blocking operation to get ChatGPT API response. Because the route handler
+    is marked async, FastAPI trusts us to not run blocking operations, but as we are,
+    the request will block the event loop (main server thread). Other requests are
+    now blocked until the current request is processed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO4-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A simple synchronous route handler with blocking operation that doesn’t leverage
+    asynchronous features. Sync requests are handed off to the thread pool to run
+    in the background so that the main server is not blocked.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO4-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: An asynchronous route that is nonblocking.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The request won’t block the main thread and doesn’t need to be handed off to
+    the thread pool. As a result, the FastAPI event loop can process the request much
+    faster using the async OpenAI client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You now should feel more comfortable implementing new features in your FastAPI
+    service that require performing I/O-bound tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'To help solidify your understanding of the I/O concurrency concepts, in the
+    next few sections you will build several new features using concurrency into your
+    FastAPI service. These features include:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Talk to the web
+  prefs: []
+  type: TYPE_NORMAL
+- en: Build and integrate a web scraper module that allows you to ask questions to
+    your self-hosted LLM about the content of a website by providing an HTTP URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Talk to documents
+  prefs: []
+  type: TYPE_NORMAL
+- en: Build and integrate a RAG module to process documents into a vector database.
+    A vector database stores data in a way that supports efficient similarity searches.
+    You can then use semantic search, which understands the meaning of queries, to
+    interact with uploaded documents using your LLM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Both projects will give you a hands-on experience interacting asynchronously
+    with external systems such as websites, a database, and a filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Project: Talk to the Web (Web Scraper)'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: Companies often host a series of internal web pages for manuals, processes,
+    and other documentation as HTML pages. For longer pages, your users may want to
+    provide URLs when asking questions and expect your LLM to fetch and read the content.
+    This is where having a built-in web scraper can come in handy.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'There are many ways to build a web scraper for your self-hosted LLM. Depending
+    on your use case, you can use a combination of the following methods:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fetch web pages as HTML and feed the raw HTML (or inner text content) to your
+    LLM to parse the content into your desired format.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use *web scraping frameworks* such as `BeautifulSoup` and `ScraPy` to parse
+    the content of web pages after fetching.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use *headless web browsers* such as Selenium and Microsoft Playwright to dynamically
+    navigate nodes in pages and parse content. Headless browsers are great for navigation
+    single-page applications (SPAs).
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Caution
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You or your users should avoid LLM-powered web scraping tools for illegal purposes.
+    Make sure you have permission before extracting content from URLs:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Review each website’s terms of use, especially if there is a mention of web
+    scraping.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Use APIs when possible.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Ask website owners for permission directly if unsure.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: For this mini-project, we will only fetch and feed raw inner text of HTML pages
+    to our LLM since implementing a production-ready scraper can become a book of
+    its own.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The process for building a simple asynchronous scraper is as follows:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Develop a function to match URL patterns using regex on user prompts to the
+    LLM.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: If found, loop over the list of provided URLs and asynchronously fetch the pages.
+    We will use an asynchronous HTTP library called `aiohttp` instead of the `requests`
+    since `requests` can only make synchronous network requests.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Develop a parsing function to extract the textual content from fetched HTML.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: Feed the parsed page content to the LLM alongside the original user prompt.
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '[Example 5-6](#web_scraper) demonstrates how you can implement the aforementioned
+    steps.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You will need to install a few additional dependencies to run this example:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE6]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-6\. Building an asynchronous web scraper
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE7]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO5-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: A simple regex pattern that captures the URLs into a named group called `url`
+    and matches both `http` and `https` protocols. For simplicity, this pattern matches
+    more loosely defined URLs and doesn’t validate the structure of a domain name
+    or path, nor does it account for query strings or anchors in a URL.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO5-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Find all nonoverlapping matches of the regex pattern in the text.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO5-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `bs4` Beautiful Soup package to parse the HTML string. In Wikipedia
+    pages, the article content is nested within a `div` container with the `id="bodyContent"`,
+    so the parsing logic assumes only Wikipedia URLs will be passed in. You can change
+    this logic for other URLs or just use `soup.getText()` to grab any text content
+    nested within the HTML. However, bear in mind that there will be lots of noise
+    in the parsed content if you parse the raw HTML like that, which can confuse the
+    LLM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO5-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given an `aiohttp` session and a URL, perform an asynchronous `get` request.
+    Create a `response` async context manager and `await` the response within this
+    context manager.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO5-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Given a list of URLs, create a client session async context manager to asynchronously
+    perform multiple fetch calls. Since `fetch()` is a coroutine function (i.e., it
+    uses the `await` keyword), `fetch_all()` will need to run multiple `fetch()` coroutines
+    inside the `asyncio.gather()` to be scheduled for asynchronous execution on the
+    event loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_achieving_concurrency_in_ai_workloads_CO5-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Check that all URLs have been fetched successfully and, if not, raise a warning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You now have the utility scraper functions you need to implement the web scraping
+    feature in your `/generate/text` endpoint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, upgrade the text-to-text handler to use the scraper functions via a dependency
+    in an asynchronous manner, as shown in [Example 5-7](#web_scraper_fastapi).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-7\. Injecting web scraper functionality as a dependency into the FastAPI
+    LLM handler
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE8]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO6-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Implement a `get_urls_content` FastAPI dependency that gets a user prompt from
+    the request body and finds all URLs. It then returns the content of all URLs as
+    a long string. The dependency has exception handling built in to handle any I/O
+    errors by returning an empty string and logging a warning on the server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO6-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: When using `aiohttp` inside FastAPI, you don’t need to manage the event loop
+    yourself because FastAPI, as an asynchronous framework, handles the event loop.
+    You can define your endpoint as an async function and use `aiohttp` to make asynchronous
+    HTTP requests within the handler or via a dependency like in this example.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO6-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inject the results of the `get_urls_content` dependency call to the handler
+    via the FastAPI’s `Depends` class. Using a FastAPI dependency here kept the controller
+    logic small, clean, and readable.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Now, run the Streamlit client in the browser and try your shiny new feature.
+    [Figure 5-6](#llm_summary) shows my experiment.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0506](assets/bgai_0506.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-6\. Asking the self-hosted TinyLlama model to summarize a Wikipedia
+    article
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Congratulations! You’ve learned how to build a simple nonblocking web scraper
+    to work with your own LLM. In this mini-project, you leveraged `re` package to
+    match URL patterns in the user prompt and then used the `aiohttp` library to asynchronously
+    fetch multiple pages concurrently. You then used the `BeautifulSoup` package to
+    parse the content of Wikipedia articles by grabbing the text content of the `div`
+    container with the ID of `bodyContent` within the fetched HTML string. For other
+    websites or internal company web pages, you can always alter the parsing logic
+    for appropriate parsing. Finally, you wrapped the whole scraping logic inside
+    a FastAPI dependency with exception handling built-in to make use of dependency
+    injection while upgrading the text model-serving handler.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Bear in mind that your scraper can’t handle complex pages with dynamic layouts
+    that are server-rendered. In such cases, you can add a headless browser to your
+    web scraper for navigating dynamic pages.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additionally, fetching content of external sites will be challenging since most
+    sites may implement anti-scraping protections such as *IP blocking* or *CAPTCHAs*
+    as common deterrents. Maintaining *data quality* and *consistency* with external
+    websites is also an ongoing challenge as you may need to update your scraping
+    scripts regularly to ensure accurate and reliable extraction.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You should now feel more comfortable building GenAI-powered services that need
+    to interact with the web via making asynchronous network requests.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, we will look at other I/O asynchronous interactions such as those with
+    databases and the filesystem by building a *talk to your documents* feature.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This functionality allows users to upload documents through the Streamlit interface
+    to your service. The content of the uploaded documents is then extracted, processed,
+    and saved in a database. Subsequently, during user interactions with the LLM,
+    an asynchronous retrieval system retrieves semantically relevant content from
+    the database, which is then used to augment the context provided to the LLM.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This process is referred to as RAG, which we will build as a module for your
+    LLM next.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'Project: Talk to Documents (RAG)'
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: In this project, we will build a RAG module into your GenAI service to give
+    you a hands-on experience interacting asynchronously with external systems such
+    as a database and a filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You might be curious about the purpose of a RAG module and its necessity. RAG
+    is simply a technique for augmenting the context of LLM prompts with custom data
+    sources for knowledge-intensive tasks.^([5](ch05.html#id830)) It is an effective
+    technique to ground LLM responses in facts contained within data without the need
+    for complex and expensive LLM fine-tuning.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Organizations are eager to implement RAG with their own LLMs since it allows
+    their employees to engage with their massive internal knowledge bases via the
+    LLM. With RAG, businesses expect that the internal knowledge bases, systems, and
+    procedures will be made accessible and readily available to anyone who needs them
+    to answer questions, just when they need it. This accessibility to the company’s
+    body of information is expected to enhance productivity, cut costs and time looking
+    for information, and boost profits for any business.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, LLMs are susceptible to generating responses that don’t adhere to the
+    instructions given by the user. In other words, the LLM can *hallucinate* responses
+    with information or data that is not based on facts or reality.
+  prefs: []
+  type: TYPE_NORMAL
+- en: These hallucinations can occur due to the model’s reliance on patterns in the
+    data it was trained on rather than direct access to external, up-to-date, and
+    factual data. LLMs can manifest hallucinations with confidently presented yet
+    incorrect or nonsensical answers, fabricated stories, or claims without a basis
+    in truth.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, for more complex and knowledge-intensive tasks, you will want your
+    LLM to access external knowledge sources to complete tasks. This enables more
+    factual consistency and improves the reliability of the generated responses. [Figure 5-7](#rag)
+    shows the full process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0507](assets/bgai_0507.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-7\. RAG
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In this project, you will build a simple RAG module for your LLM service such
+    that users can upload and talk to their documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: There is a lot to know about RAG. It’s enough to fill several textbooks with
+    new papers being published every day for new techniques and algorithms.
+  prefs: []
+  type: TYPE_NORMAL
+- en: I recommend checking out other publications on LLMs to learn about the RAG process
+    and advanced RAG techniques.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The pipeline for RAG consists of the following stages:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Extraction* of documents from a filesystem to load the textual content in
+    chunks onto memory.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Transformation* of the textual content by cleaning, splitting, and preparing
+    them to be passed into an embedding model to produce embedding vectors that represent
+    a chunk’s semantic meaning.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Storage* of embedding vectors alongside metadata, such as the source and text
+    chunk, in a vector store such as Qdrant.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Retrieval* of semantically relevant embedding vectors by performing a semantic
+    search on the user’s query to the LLM. The original text chunks—​stored as metadata
+    of the retrieved vectors—​are then used to augment (i.e., enhance the context
+    within) the initial prompt provided to the LLM.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: '*Generation* of LLM response bypassing both the query and retrieved chunks
+    (i.e., context) to the LLM for getting a response.'
+  prefs:
+  - PREF_OL
+  type: TYPE_NORMAL
+- en: You can see the full pipeline in [Figure 5-8](#rag_pipeline).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0508](assets/bgai_0508.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-8\. RAG pipeline
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can take the pipeline shown in [Figure 5-8](#rag_pipeline) and build it
+    to your existing service. [Figure 5-9](#rag_module) shows the system architecture
+    of a “talk to your documents” service enabled with RAG.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0509](assets/bgai_0509.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-9\. Talk to your documents system architecture
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: '[Figure 5-9](#rag_module) outlines how the documents uploaded by users via
+    the Streamlit interface are stored and then fetched for processing and storage
+    into the database for later retrieval to augment the LLM prompts.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step before implementing the RAG system in [Figure 5-9](#rag_module)
+    is to include a file upload functionality in both the Streamlit client and your
+    backend API.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using FastAPI’s `UploadFile` class, you can accept documents from users in chunks
+    and save them into the filesystem or any other file storage solution such as a
+    blob storage. The important item to note here is that this I/O operation is nonblocking
+    through asynchronous programming, which FastAPI’s `UploadFile` class supports.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Since users may upload large documents, FastAPI’s `UploadFile` class supports
+    *chunking* to store the uploaded documents, one piece at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: This will prevent your service’s memory from being clogged up. You will also
+    want to protect your service by disallowing users from uploading documents above
+    a certain size.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-8](#upload_file) shows how to implement an asynchronous file upload
+    functionality.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You will need to install `aiofiles` package to asynchronously upload files
+    alongside `python-multipart` to receive uploaded files from HTML forms:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE9]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-8\. Implementing an asynchronous file upload endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE10]'
+  prefs: []
+  type: TYPE_PRE
+- en: You should now be able to upload files via the Streamlit UI, as you can see
+    in [Figure 5-10](#streamlit_upload).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0510](assets/bgai_0510.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-10\. Uploading files via Streamlit to the FastAPI service
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: With upload functionality implemented, you can now turn your attention to building
+    the RAG module. [Figure 5-11](#rag_module_detailed) shows the detailed pipeline,
+    which opens up the data transformation component in [Figure 5-9](#rag_module).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0511](assets/bgai_0511.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-11\. Detailed RAG data processing pipeline
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: As you can see in [Figure 5-11](#rag_module_detailed), you need to asynchronously
+    fetch the stored files from the hard disk and pass them through a data transformation
+    pipeline prior to storage via an asynchronous database client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'The data transformation pipeline consists of the following parts:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extractor
+  prefs: []
+  type: TYPE_NORMAL
+- en: Extract content of PDFs and store in text files back onto the hard disk.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loader
+  prefs: []
+  type: TYPE_NORMAL
+- en: Asynchronously load a text file into memory in chunks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Cleaner
+  prefs: []
+  type: TYPE_NORMAL
+- en: Remove any redundant whitespace or formatting characters from text chunks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Embedder
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use a pretrained and self-hosted embedding model to convert text into embedding
+    vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once users upload their PDF files onto your server’s filesystem via the process
+    shown in [Example 5-8](#upload_file), you can immediately convert them into text
+    files via the `pypdf` library. Since there is no asynchronous library for loading
+    binary PDF files, you will want to convert them into text files first.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-9](#rag_extract) shows how to load PDFs, extract and process their
+    content, and then store them as text files.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'You will need to install several packages to run the upcoming examples:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE11]'
+  prefs: []
+  type: TYPE_PRE
+- en: Example 5-9\. RAG PDF-to-text extractor
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE12]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO7-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `pypdf` library to open a stream pointer to a PDF file with `strict=True`
+    so that any read errors are logged to the terminal. Note that there is no asynchronous
+    implementation of the `pypdf` library, so the function is declared with a normal
+    `def` keyword. It is important to avoid using this function within an asynchronous
+    function to avoid blocking the event loop that runs the main server thread. You
+    will see how FastAPI background tasks can help solve this problem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO7-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop over every page in the PDF document, and extract and append all text content
+    into a long string.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO7-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Write the content of the PDF document into a text file for downstream processing.
+    Specify `encoding="utf-8"` to avoid problems on platforms like Windows.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The text extractor will convert the PDF files into simple text files that we
+    can stream into memory in chunks using an asynchronous file loader. Each chunk
+    can then be cleaned and embedded into an embedding vector using an open source
+    embedding model such as `jinaai/jina-embeddings-v2-base-en`, available to download
+    from the [Hugging Face model hub](https://oreil.ly/gI74r).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: I selected the Jina base embedder since it matches the performance of OpenAI’s
+    proprietary `text-embedding-ada-002` model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-10](#rag_transform) shows the implementation of the RAG data transformation
+    pipeline including the async text loader, cleaner, and embedding functions.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-10\. RAG data transformation functions
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE13]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO8-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Download and use the open source `jina-embeddings-v2-base-en` model to embed
+    text strings into embedding vectors. Set `trust_remote_code=True` to download
+    model weights and tokenizer configurations. Without this parameter set to `True`,
+    the downloaded model weights will be initialized with random values instead of
+    trained values.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO8-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `aiofiles` library to open an asynchronous connections to a file on
+    the filesystem.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO8-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Load the content of text documents in chunks for memory-efficient I/O operation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO8-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of returning a `chunk`, yield it so that the `load()` function becomes
+    an *asynchronous generator*. Asynchronous generators can be iterated with `async
+    for loop`s so that blocking operations within them can be `await`ed to let the
+    event loop start/resume other tasks. Both async `for` loops and normal `for` loops,
+    iterate sequentially over the iterable but async `for` loops allow for iteration
+    over an async iterator.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO8-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Clean the text by removing any extra spaces, commas, dots, and line breaks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![6](assets/6.png)](#co_achieving_concurrency_in_ai_workloads_CO8-6)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the Jina embedding model to convert a text chunk to an embedding vector.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Once the data is processed into embedding vectors, you can store them into the
+    *vector database*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Unlike conventional alternatives such as relational databases, a vector database
+    is specifically designed for handling data storage and retrieval operations optimized
+    for *semantic searching*, which yields better results compared to keyword searches
+    that can return suboptimal or incomplete results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The following code examples require you to run a local instance of the `qdrant`
+    vector database on your local machine for the RAG module. Having a local database
+    setup will give you the hands-on experience of working asynchronously with production-grade
+    vector databases. To run the database in a container, you should have Docker installed
+    on your machine and then pull and run the `qdrant` vector database container.^([7](ch05.html#id843))
+    If you aren’t familiar with Docker, don’t worry. You will learn more about Docker
+    and containerization in [Chapter 12](ch12.html#ch12).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE14]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO9-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Download the `qdrant` vector database image from the `qdrant` repository in
+    the Docker registry.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO9-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run the `qdrant/qdrant` image, and then expose and map container ports `6333`
+    and `6334` to the same ports on the host machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO9-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Mount the `qdrant` database storage to the host machine filesystem at your project’s
+    root directory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since database storage and retrieval are I/O operations, you should use an asynchronous
+    database client. Thankfully, `qdrant` provides an asynchronous database client
+    to work with.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: You can use other vector database providers such as Weaviate, Elastic, Milvus,
+    Pinecone, Chroma, or others in replacement of Qdrant. Each has a set of features
+    and limitations to consider for your own use case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re picking another database provider, make sure there is an asynchronous
+    database client available that you can use.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Instead of writing several functions to store and retrieve data from the database,
+    you can use the repository pattern mentioned in [Chapter 2](ch02.html#ch02). With
+    the repository pattern, you can abstract low-level create, read, update, and delete
+    database operations with defaults that match your use case.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-11](#rag_repository) shows the repository pattern implementation
+    for the Qdrant vector database.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-11\. Vector database client setup using the repository pattern
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE15]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO10-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the repository pattern to interact with the vector database via an asynchronous
+    client. Normally, in the repository pattern you will implement the `create`, `get`,
+    `update`, and `delete` methods. But for now let’s implement the `create_​col⁠lection`,
+    `delete_collection`, `create`, and `search` methods.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO10-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Vectors need to be stored in a collection. A collection is a named set of points
+    that you can use during a search. Collections are similar to tables in a relational
+    database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO10-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let the database know that any vectors in this collection should be compared
+    via the cosine similarity calculation that calculates distances between vectors.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO10-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Check whether a collection exists before creating a new one. Otherwise, re-create
+    the collection.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO10-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set the `retrieval_limit` and `score_threshold` to limit the number of items
+    in the search results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The `VectorRepository` class should now make it easier to interact with the
+    database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When storing vector embeddings, you will also store some *metadata* including
+    the name of the source document, the location of the text within source, and the
+    original extracted text. RAG systems rely on this metadata to augment the LLM
+    prompts and to show source information to the users.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Currently, converting text to embedding vectors is an irreversible process.
+    Therefore, you will need to store the text that created the embedding with the
+    embedding vector as metadata.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can now extend the `VectorRepository` and create the `VectorService` that
+    allow you to chain together the data processing and storage pipeline, as shown
+    in [Example 5-12](#rag_db_service).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-12\. Vector database service
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE16]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO11-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create the `VectorService` class by inheriting the `VectorRepository` class
+    so that you can use and extend common database operation methods from [Example 5-11](#rag_repository).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO11-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `store_file_content_in_db` service method to asynchronously load, transform,
+    and store raw text documents into the database in chunks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO11-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use an asynchronous generator `load()` to load text chunks from a file asynchronously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO11-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create an instance of the `VectorService` to import and use across the application.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The final step in the RAG data processing and storage pipeline is to run the
+    text extraction and storage logic within the `file_upload_controller` as background
+    tasks. The implementation is shown in [Example 5-13](#rag_data_processor) so that
+    the handler can trigger both operations in the background after responding to
+    the user.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-13\. Update the upload handler to process and store PDF file content
+    in the vector database
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE17]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO12-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inject the FastAPI background tasks feature into the handler for processing
+    file uploads in the background. FastAPI background tasks will be executed in order
+    shortly after the handler sends a response to the client.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO12-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run the PDF text-extraction function in the background after retuning a response
+    to the client. Since the `pdf_text_extractor` is a synchronous function, FastAPI
+    will run this function on a separate thread within the thread pool to avoid blocking
+    the event loop.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO12-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Run the `vector_service.store_file_content_in_db` asynchronous function in the
+    background on the FastAPI managed event loop as soon as the `pdf_text_extractor`
+    has finished processing. Set the function to load content of the text document
+    in chunks of 512 characters and store them in the `knowledgebase` vector collection,
+    which accepts vectors of size 768.
+  prefs: []
+  type: TYPE_NORMAL
+- en: After building the RAG data storage pipeline, you can now focus on the search-and-retrieval
+    system, which will allow you to augment the user prompts to the LLM, with knowledge
+    from the database. [Example 5-14](#rag_generation) integrates the RAG search-and-retrieval
+    operations with the LLM handler to augment the LLM prompts with additional context.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-14\. RAG integration with the LLM-serving endpoint
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE18]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO13-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Create the `get_rag_content` dependency function for injection into the LLM-serving
+    handler. This dependency has access to the request `body` and subsequently the
+    user `prompt`.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO13-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `vector_service` to search the database for content relevant to the
+    user `prompt`. Convert the user `prompt` to an embedding using the `embed` function
+    when passing to the `vector_service.search` function. Only retrieve the three
+    most relevant items if their cosine similarity score is above `0.7` (or 70%).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO13-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Merge the text payload of the top three most relevant retrieved items as `rag_​con⁠tent_str`
+    and return it.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO13-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Inject the results of the `get_rag_content` dependency function into the LLM
+    handler to augment the final prompt to the LLM with content from the vector database
+    `knowledgebase`. The LLM handler can now fetch content of web pages and the RAG
+    vector database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you now visit your browser and upload a PDF document, you should be able
+    to ask questions about it to your LLM. [Figure 5-12](#rag_results) shows my experiment
+    with the service by uploading a sample of this book in its raw form and asking
+    the LLM to describe who I am.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Depending on the model and size of the inputs, you may observe performance degradations
+    or exceptions like token length limit issues.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0512](assets/bgai_0512.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-12\. Leveraging RAG to provide answers in response to user queries
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Congratulations! You now have a fully working RAG system enabled by open source
+    models and a vector database.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'This longer project served as a hands-on tutorial for learning concepts related
+    to asynchronous programming and I/O operations with the filesystem and a vector
+    database by building a RAG module for your LLM system. Note that the RAG system
+    we just built together still has many limitations:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Text splitting may split words in half leading to poor retrieval and LLM confusion.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The LLM may still produce hallucinations and inconsistent outputs even with
+    the augmented prompts.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The search-and-retrieval system may perform poorly in certain instances.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The augmented prompts may exceed the LLM context window.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The retrieved information from the database may lack the relevant facts due
+    to an outdated or incomplete knowledge base, ambiguous queries, or poor retrieval
+    algorithm.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: The retrieved context may not be ordered based on relevance to the user query.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: 'You can work on improving the RAG module further by implementing various other
+    techniques, which I will not cover in this book:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimize text splitting, chunk sizing, cleaning and embedding operations.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Perform query transformations using the LLM to aid the retrieval and augmentation
+    system via techniques such as prompt compression, chaining, refining, and aggregating,
+    etc., to reduce hallucinations and improve LLM performance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Summarize or break down large augmented prompts to feed the context into the
+    models using a sliding window approach.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Enhance retrieval algorithms to handle ambiguous queries and implement fallback
+    mechanisms for incomplete data.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Enhance the retrieval performance with methods such as *maximal marginal relevance*
+    (MMR) to enrich the augmentation process with more diverse documents.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Implement other advanced RAG techniques like retrieval reranking and filtering,
+    hierarchical database indices, RAG fusion, retrieval augmented thoughts (RAT),
+    etc., to improve the overall generation performance.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: I’ll let you research these techniques in more detail and implement them as
+    additional exercises on your own.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, well review other techniques for optimizing your GenAI
+    services to avoid blocking the server with compute-bound operations such as model
+    inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Optimizing Model Serving for Memory- and Compute-Bound AI Inference Tasks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: So far, we’ve looked at optimizing the operations of our service that are I/O
+    bound. You learned to leverage asynchronous programming to interact with the web,
+    databases, and files by building a web scraper and a RAG module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using async tools and techniques, your service remained responsive when interacting
+    with the web, the filesystem, and databases. However, if you’re self-hosting the
+    model, switching to async programming techniques won’t fully eliminate the long
+    waiting times. This is because the bottleneck will be model inference operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Compute-Bound Operations
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You can speed up the inference by running models on GPUs to massively parallelize
+    computations. Modern GPUs have staggering compute power measured by the number
+    of *floating-point* operations per second (FLOPS), with modern GPUs reaching teraflops
+    (NVIDIA A100) or petaflops (NVIDIA H100) of compute. However, despite their significant
+    power and parallelization capabilities, modern GPU cores are often underutilized
+    under concurrent workloads with larger models.
+  prefs: []
+  type: TYPE_NORMAL
+- en: When self-hosting models on GPUs, model parameters are loaded from disk to RAM
+    (I/O bound) and then moved from RAM to the GPU high-bandwidth memory by the CPU
+    (memory bound). Once model parameters are loaded on the GPU memory, inference
+    is performed (compute bound).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Counterintuitively, model inference for larger GenAI models such as SDXL and
+    LLMs is not I/O- or compute-bound, but rather memory-bound. This means it takes
+    more time to load 1 MB of data into GPU’s compute cores than it takes for those
+    compute cores to process 1 MB of data. Inevitably, to maximize the concurrency
+    of your service, you will need to *batch* the inference requests and fit the largest
+    batch size you can into the GPU high-bandwidth memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Therefore, even when using async techniques and latest GPUs, your server can
+    be blocked waiting for billions of model parameters to be loaded to the GPU high-bandwidth
+    memory during each request. To avoid blocking the server, you can decouple the
+    memory-bound model-serving operations from your FastAPI server by externalizing
+    model serving, as we touched upon in [Chapter 3](ch03.html#ch03).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s see how to delegate model serving to another process.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Externalizing Model Serving
+  prefs:
+  - PREF_H2
+  type: TYPE_NORMAL
+- en: You have several options available to you when externalizing your model-serving
+    workloads. You can either host models on another FastAPI server or use specialized
+    model inference servers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Specialized inference servers support only a limited set of GenAI model architectures.
+    However, if your model architecture is supported, you will save a lot of time
+    not having to implement inference optimizations yourself. For instance, if you
+    need to self-host LLMs, LLM-serving frameworks can perform several inference optimizations
+    for you such as batch processing, tensor parallelism, quantization, caching, streaming
+    outputs, GPU memory management, etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since we’ve been mostly working with LLMs in this chapter, I will show you how
+    to integrate vLLM, an open source LLM server that can start a FastAPI server for
+    you matching the OpenAI API specification. vLLM also has seamless integration
+    with popular open source Hugging Face model architectures including GPT, Llama,
+    Gemma, Mistral, Falcon, etc.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Note
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: At the time of writing, other LLM hosting servers you can use include NVIDIA
+    Triton Inference Server, Ray Serve, Hugging Face Inference, and OpenLLM, among
+    others.
+  prefs: []
+  type: TYPE_NORMAL
+- en: There are features, benefits, and drawbacks to using each including the supported
+    model architectures. I recommend researching these servers prior to adopting them
+    in your own use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can start your own vLLM FastAPI server via a single command, as shown in
+    [Example 5-15](#vllm). To run the code in [Example 5-15](#vllm), you will need
+    to install `vllm` using:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[PRE19]'
+  prefs: []
+  type: TYPE_PRE
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: At the time of writing, vLLM only supports Linux platforms (including WSL) with
+    NVIDIA-compatible GPUs to run CUDA toolkit dependencies. Unfortunately, you can’t
+    install vLLM on Mac or Windows machines for local testing.
+  prefs: []
+  type: TYPE_NORMAL
+- en: vLLM is designed for production inference workloads on NVIDIA GPUs in Linux
+    environments where the server can delegate requests to multiple GPU cores via
+    *tensor parallelism*. It does also support distributed computing when scaling
+    services beyond a single machine via its Ray Serve dependency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Please consult vLLM documentation for more details related to distributed inference
+    and serving.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-15\. Starting the vLLM FastAPI OpenAI API server for TinyLlama on
+    a Linux machine with 4x 16 GB NVIDIA T4 GPUs
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE20]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO14-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Start an OpenAI-compatible API server with FastAPI to serve the TinyLlama model.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO14-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use the `float16` medium precision data type. `float16` is compatible with GPU
+    hardware, whereas `bfloat16` is generally compatible with CPU hardware.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO14-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Leverage vLLM tensor parallelism feature to run the API server on four GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO14-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Set a secret token for basic authentication to secure the LLM server. This is
+    useful for secure machine-to-machine communication, for instance, to directly
+    communicate with your current FastAPI service.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With the vLLM FastAPI server up and running, you can now replace the model-serving
+    logic in your current service with network calls to the vLLM server. Refer to
+    [Example 5-16](#vllm_fastapi_text_generation) for implementation details.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-16\. Replace model serving with asynchronous API calls to the new
+    vLLM server
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE21]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO15-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Use `aiohttp` to create an asynchronous session for sending `POST` requests
+    to the vLLM FastAPI server. This logic replaces the Hugging Face model pipeline
+    inference logic on the current FastAPI server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO15-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Since the vLLM server is OpenAI compatible, you can access the output content
+    by following the OpenAI API specification.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, remove the code related to the FastAPI lifespan so that your current service
+    won’t load the TinyLlama model. You can achieve this by following the code in
+    [Example 5-17](#vllm_fastapi_handler).
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-17\. Remove the FastAPI lifespan and update the text generation handler
+    to be asynchronous
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE22]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO16-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: There is no need to use FastAPI `lifespan` anymore since the model is now served
+    by an external vLLM FastAPI server.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO16-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Make `serve_text_to_text_controller` an async route handler as it is now performing
+    I/O operations to the vLLM server. It is no longer running synchronous compute-bound
+    model inference operations as those are delegated to the vLLM server to manage.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Congratulations, you’ve now achieved concurrency with your AI inference workloads.
+    You implemented a form of multiprocessing on a single machine by moving your LLM
+    inference workloads to another server. Both servers are now running on separate
+    cores with your LLM server delegating work to multiple GPU cores, leveraging parallelism.
+    This means your main server is now able to process multiple incoming requests
+    and do other tasks than processing one LLM inference operation at a time.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Bear in mind that any concurrency you’ve achieved so far has been limited to
+    a single machine.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To support more concurrent users, you may need more machines with CPU and GPU
+    cores. At that point, distributed computing frameworks like Ray Serve and Kubernetes
+    can help to scale and orchestrate your services beyond a single worker machine
+    using parallelism.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Before integrating vLLM, you would experience long waiting times between requests
+    because your main server was too busy running inference operations. With vLLM,
+    there is now a massive reduction in latency and increase in throughput of your
+    LLM service.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In addition to model compression mechanisms like quantization, vLLM uses other
+    optimization techniques including continuous request batching, cache partitioning
+    (paged attention), reduced GPU memory footprint via memory sharing, and streaming
+    outputs to achieve smaller latency and high throughput.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Let’s look at both the request batching and paged attention mechanisms in more
+    detail to understand how to further optimize LLM inference.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Request batching and continuous batching
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: As we discussed in [Chapter 3](ch03.html#ch03), LLMs produce the next token
+    prediction in an autoregressive manner, as you can see in [Figure 5-13](#autoregressive_prediction5).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0513](assets/bgai_0513.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-13\. Autoregressive prediction
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: This means the LLMs must perform several inference iterations in a loop to produce
+    a response, and each iteration produces a single output token. The input sequence
+    grows as each iteration’s output token is appended to the end, and the new sequence
+    is forwarded to the model in the next iteration step. Once the model generates
+    an end-of-sequence token, the generation loop stops. Essentially, the LLM produces
+    a sequence of completion tokens, stopping only after producing a stop token or
+    reaching a maximum sequence length.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The LLM must calculate several attention maps for each token in the sequence
+    so that it can iteratively make the next token predictions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Fortunately, GPUs can parallelize the attention map calculations for each iteration.
+    As you learned, these attention maps are capturing the meaning and context of
+    each token within the input sequence and are expensive to calculate. Therefore,
+    to optimize inference, LLMs use *key-value* (KV) *caching* to store calculated
+    maps in the GPU memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Tip
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: The attention map formula computes a *value (V)* based on a given *query (Q)*
+    and a *key (K)*.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Q = KV
+  prefs:
+  - PREF_BQ
+  type: TYPE_NORMAL
+- en: This calculation has to be done for each token in the sequence but luckily can
+    be vectorized using large matrix multiplication operations on a GPU.
+  prefs: []
+  type: TYPE_NORMAL
+- en: However, storing parameters on the GPU memory for reuse between iterations can
+    consume huge chunks of GPU memory. For instance, a 13B-parameter model consumes
+    nearly 1 MB of state for each token in a sequence on top of all those 13B model
+    parameters. This means there is a limited number of tokens you can store in memory
+    for reuse.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you’re using a higher-end GPU, such as the A100 with 40 GB RAM, you can only
+    hold 14 K tokens in memory at once, while the rest of the memory is used up for
+    storing 26 GB of model parameters. In short, the GPU memory consumed scales with
+    the base model size plus the length of the token sequence.
+  prefs: []
+  type: TYPE_NORMAL
+- en: To make matters worse, if you need to serve multiple users concurrently by batching
+    requests, your GPU memory has to be shared between multiple LLM inferences. As
+    a result, you have less memory to store longer sequences, and your LLM is constrained
+    to a shorter context window. On the other hand, if you want to maintain a large
+    context window, then you can’t handle more concurrent users. As an example, a
+    sequence length of 2048 means that your batch size will be limited to 7 concurrent
+    requests (or 7 prompt sequences). Realistically, this is an upper-bound limit
+    and doesn’t leave room for storing intermediate computations, which will reduce
+    the aforementioned numbers even further.
+  prefs: []
+  type: TYPE_NORMAL
+- en: What this all means is that LLMs are failing to fully saturate the GPU’s available
+    resources. The primary reason is that a significant portion of the GPU’s memory
+    bandwidth is consumed in loading the model parameters instead of processing inputs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The first step to reduce the load on your services is to integrate the most
+    efficient models. Often, smaller and more compressed models could do the job you’re
+    asking of them, with a similar performance to their larger counterparts.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Another suitable solution to the GPU underutilization problem is to implement
+    *request batching* where the model processes multiple inputs in groups, reducing
+    the overhead of loading model parameters for each request. This is more efficient
+    in using the chip’s memory bandwidth, leading to higher compute utilization, higher
+    throughput, and less expensive LLM inference. LLM inference servers like vLLM
+    take advantage of batching plus fast attention, KV caching, and paged attention
+    mechanisms to maximize throughput.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You can see the difference of response latency and throughput with and without
+    batching in [Figure 5-14](#with_without_batching).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0514](assets/bgai_0514.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-14\. LLM server response latency and throughput with and without batching
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: 'There are two ways to implement batching:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Static batching
+  prefs: []
+  type: TYPE_NORMAL
+- en: The size of the batch remains constant.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Dynamic or continuous batching
+  prefs: []
+  type: TYPE_NORMAL
+- en: The size of batch is determined based on demand.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In *static batching*, we wait for a predetermined number of incoming requests
+    to arrive before we batch and process them through the model. However, since requests
+    can finish at any time in a batch, we’re effectively delaying responses to every
+    request—​and increasing latency—​until the whole batch is processed.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Releasing the GPU resource can also be tricky when processing a batch and adding
+    new requests to the batch that may be at different completion states. As a result,
+    the GPU remains underutilized as the generated sequences within a batch vary and
+    don’t match the length of the longest sequence in that batch.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 5-15](#static_batching) illustrates static batching in the context
+    of LLM inference.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0515](assets/bgai_0515.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-15\. Static batching with fixed batch size
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: In [Figure 5-15](#static_batching) you will notice the white blocks representing
+    underutilized GPU computation time. Only one input sequence in the batch saturated
+    the GPU across the batch’s processing timeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Aside from adding unnecessary waiting times and not saturating the GPU utilization,
+    what makes static batching problematic is that users of an LLM-powered chatbot
+    service won’t be providing fixed-length prompts or expect fixed-length outputs.
+    The variance in generation outputs could cause massive underutilization of GPUs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: A solution is to avoid assuming fixed input or output sequences and instead
+    set dynamic batch sizes during the processing of a batch. In *dynamic* or *continuous
+    batching*, the size of batch can be set based on the incoming request sequence
+    length and the available GPU resource. With this approach, new generation requests
+    can be inserted in a batch by replacing completed requests to yield higher GPU
+    utilization than static batching.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Figure 5-16](#dynamic_batching) shows how dynamic or continuous batching can
+    fully saturate the GPU resource.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: '![bgai 0516](assets/bgai_0516.png)'
+  prefs: []
+  type: TYPE_IMG
+- en: Figure 5-16\. Dynamic/continuous batching with variable batch size
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: While the model parameters are loaded, requests can keep flowing in, and the
+    LLM inference server schedules and insert them into the batch to maximize GPU
+    usage. This approach leads to higher throughput and reduced latency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'If you’re building a LLM inference server, you will probably want to bake in
+    the continuous batching mechanism into your server. However, the good news is
+    that the vLLM server already provides continuous batching out of the box with
+    its FastAPI server, so you don’t have to implement all of that yourself. Additionally,
+    it also ships with another important GPU optimization feature, which sets it apart
+    from other alternative LLM inference frameworks: paged attention.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Paged attention
+  prefs:
+  - PREF_H3
+  type: TYPE_NORMAL
+- en: Efficient memory usage is a critical challenge for systems that handle high-throughput
+    serving, particularly for LLMs. For faster inference, today’s models rely on *KV
+    caches* to store and reuse attention maps, which grow exponentially as input sequence
+    lengths increase.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '*Paged attention* is a novel solution designed to minimize the memory demands
+    of these KV caches, subsequently enhancing the memory efficiency of LLMs and making
+    them more viable for use on devices with limited resources. In transformer-based
+    LLMs, attention key and value tensors are generated for each input token to capture
+    essential context. Instead of recalculating these tensors at every step, they’re
+    saved in the GPU memory as a KV cache, which serves as the model’s memory. However,
+    the KV cache can grow to enormous sizes, such as 40 GB for a model with 13B parameters,
+    posing a significant challenge for efficient storage and access, particularly
+    on hardware with constrained resources.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Paged attention introduces a method that breaks down the KV cache into smaller,
+    more manageable segments called *pages*, each holding a KV vector for a set number
+    of tokens. With this segmentation, paged attention can efficiently load and access
+    KV caches during the attention computations. You can compare this technique to
+    how the virtual memory is managed by operating systems, where the logical arrangement
+    of data is separated from its physical storage. Essentially, a block table maps
+    the logical blocks to physical ones, allowing for dynamic allocation of memory
+    as new tokens are processed. The core idea is to avoid memory fragmentation by
+    leveraging logical blocks (instead of physical ones) and use a mapping table to
+    quickly access data stored in a paged physical memory.
+  prefs: []
+  type: TYPE_NORMAL
+- en: 'You can break down the paged attention mechanism into several steps:'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Partitioning the KV cache
+  prefs: []
+  type: TYPE_NORMAL
+- en: The cache is split into fixed-size pages, with each containing a portion of
+    the key-value pairs.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Building the lookup table
+  prefs: []
+  type: TYPE_NORMAL
+- en: A table is created to map query keys to their corresponding pages, facilitating
+    quick allocation and retrieval.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Selective loading
+  prefs: []
+  type: TYPE_NORMAL
+- en: Only the necessary pages for the current input sequence are loaded during inference,
+    reducing the memory footprint.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Attention computation
+  prefs: []
+  type: TYPE_NORMAL
+- en: The model computes attention using the key-value pairs from the loaded pages.
+    This approach aims to make LLMs more accessible by addressing the memory bottleneck,
+    potentially enabling their deployment on a wider range of devices.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The aforementioned steps enable the vLLM server to maximize memory usage efficiency
+    through the mapping of physical and logical memory blocks so that the KV cache
+    is efficiently stored and retrieved during generation.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In a [blog post published on Anyscale.com](https://oreil.ly/WgRfJ), the authors
+    have researched and compared the performance of various LLM-serving frameworks
+    during inference. The authors concluded that leveraging both paged attention and
+    continuous batching mechanisms are so powerful in optimizing GPU memory usage
+    that the vLLM server was able to reduce latencies by 4 times and throughput by
+    up to 23 times.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the next section, we will turn our attention to GenAI workloads that can
+    take a long time to process and are compute-bound. This is mostly the case with
+    large non-LLM models such as SDXL where performing batch inferences (such as batch
+    image generation) for multiple users may prove challenging.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Managing Long-Running AI Inference Tasks
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: With the ability to host models in a separate process outside the FastAPI event
+    loop, you can turn your attention to blocking operations that take a long time
+    to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In the previous section, you leveraged specialized frameworks such as vLLM to
+    externally host and optimize the inference workloads of your LLMs. However, you
+    may still run into models that can take significant time to generate results.
+    To prevent your users from waiting, you should manage tasks that generate models
+    and take a long time to complete.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Several GenAI models such as Stable Diffusion XL may take several minutes, even
+    on a GPU, to produce results. In most cases, you can ask your users to wait until
+    the generation process is complete. But if users are using a single model simultaneously,
+    the server will have to queue these requests. When your users work with generative
+    models, they need to interact with it several times to guide the model to the
+    results they want. This usage pattern creates a large backlog of requests, and
+    users at the end of the queue will have to wait a long time before they see any
+    results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If there was a way to handle long-running tasks without making the users wait,
+    that would be perfect. Luckily, FastAPI provides a mechanism for solving these
+    kinds of problems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: FastAPI’s *background tasks* is a mechanism you can leverage to respond to users
+    while your models are busy processing the request. You’ve been briefly introduced
+    to this feature while building the RAG module where a background task was populating
+    a vector database with the content of the uploaded PDF documents.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Using background tasks, your users can continue sending requests or carry on
+    with their day without having to wait. You can either save the results to disk
+    or a database for later retrieval or provide a polling system so that their client
+    can ping for updates as the model processes the requests. Another option is to
+    create a live connection between the client and the server so that their UI is
+    updated with the results as soon as it becomes available. All these solutions
+    are doable with FastAPI’s background tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[Example 5-18](#fastapi_background_tasks) shows how to implement background
+    tasks to handle long-running model inferences.'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Example 5-18\. Using background tasks to handle long-running model inference
+    (e.g., batch generating images)
+  prefs:
+  - PREF_H5
+  type: TYPE_NORMAL
+- en: '[PRE23]'
+  prefs: []
+  type: TYPE_PRE
+- en: '[![1](assets/1.png)](#co_achieving_concurrency_in_ai_workloads_CO17-1)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Generate multiple images in a batch using an external model-serving API like
+    [Ray Serve](https://oreil.ly/NjlV4).
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![2](assets/2.png)](#co_achieving_concurrency_in_ai_workloads_CO17-2)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Loop over the generated images and asynchronously save each to disk using the
+    `aiofiles` library. In production, you can also save output images to cloud storage
+    solutions that clients can directly fetch from.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![3](assets/3.png)](#co_achieving_concurrency_in_ai_workloads_CO17-3)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Enable the controller to perform background tasks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![4](assets/4.png)](#co_achieving_concurrency_in_ai_workloads_CO17-4)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Pass the `batch_generate_image` function definition to a FastAPI background
+    tasks handler with the required arguments.
+  prefs: []
+  type: TYPE_NORMAL
+- en: '[![5](assets/5.png)](#co_achieving_concurrency_in_ai_workloads_CO17-5)'
+  prefs: []
+  type: TYPE_NORMAL
+- en: Return a generic success message to the client before processing the background
+    task so that the user is not kept waiting.
+  prefs: []
+  type: TYPE_NORMAL
+- en: In [Example 5-18](#fastapi_background_tasks), you’re allowing FastAPI to run
+    inference operations in the background (via an external model server API) such
+    that the event loop remains unblocked to process other incoming requests. You
+    can even run multiple tasks in the background, such as generating images in batches
+    (in separate processes) and sending notification emails. These tasks are added
+    to a queue and processed sequentially without blocking the user. You can then
+    store the generated images and expose an additional endpoint that clients can
+    use to poll for status updates and to retrieve the inference results.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Warning
+  prefs:
+  - PREF_H6
+  type: TYPE_NORMAL
+- en: Background tasks run in the same event loop. They won’t provide true parallelism;
+    they only provide concurrency.
+  prefs: []
+  type: TYPE_NORMAL
+- en: If you run heavy CPU-bound operations like AI inference in background tasks,
+    it’ll block the main event loop until all background tasks are completed. Similarly,
+    be careful with async background tasks. If you don’t await the blocking I/O operations,
+    the task will block the main server from responding to other requests, even if
+    it runs in the background. FastAPI runs nonasync background tasks in an internal
+    thread pool.
+  prefs: []
+  type: TYPE_NORMAL
+- en: While FastAPI’s background tasks are a wonderful tool for handling simple batch
+    jobs, it doesn’t scale and can’t handle exceptions or retries as well as specialized
+    tools. Other ML-serving frameworks like Ray Serve, BentoML, and vLLM may handle
+    model serving better at scale by providing features such as request batching.
+    More sophisticated tools like Celery (a queue manager), Redis (a caching database),
+    and RabbitMQ (a message broker) can also be used in combination to implement a
+    more robust and reliable inference pipeline.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Summary
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: This chapter explored the complex aspects of applying concurrency in AI systems.
+  prefs: []
+  type: TYPE_NORMAL
+- en: You were introduced to concurrency and parallelism concepts, including several
+    types of blocking operations that prevent you from simultaneously serving users.
+    You discovered concurrency techniques such as multithreading, multiprocessing,
+    and asynchronous programming alongside their differences, similarities, benefits,
+    and drawbacks in various use cases.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Next, you learned about thread pools and event loops, particularly in a FastAPI
+    server environment, and understood their roles in processing requests concurrently.
+    This involved understanding how and why the server can be blocked if you’re not
+    careful how you declare your route handlers.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Later, you discovered how to implement asynchronous programming to manage I/O
+    blocking operations. Through hands-on examples, you developed a deeper understanding
+    of asynchronous interactions with databases and the web content, constructing
+    both a web scraper and a RAG module.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Furthermore, you saw why larger GenAI models can be memory hungry and create
+    memory-bound blocking operations. As part of this, you were introduced to memory
+    optimization techniques such as continuous batching and paged attention in serving
+    LLMs to minimize memory-related bottlenecks.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Finally, you learned about approaches for handling long-running AI inference
+    processes, ensuring your service remains responsive over prolonged operations.
+  prefs: []
+  type: TYPE_NORMAL
+- en: With your knowledge from this chapter, you’re now prepared to apply concurrency
+    principles to your own services, crafting resilient, scalable, and high-performing
+    AI applications.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The ability to handle multiple users simultaneously is a significant milestone.
+    But there are additional optimizations you can perform to improve the user experience
+    of your GenAI services even further. You can provide real-time updates via streaming
+    technologies to progressively show near real-time results to users during generation.
+    This is particularly useful for LLMs that may have longer generation times in
+    conversation scenarios.
+  prefs: []
+  type: TYPE_NORMAL
+- en: The upcoming chapter will explore AI streaming workloads, detailing the use
+    of real-time communication technologies like server-sent events (SSE) and WebSocket
+    (WS). You will learn the difference between these technologies and how to implement
+    model streaming by building endpoints for real-time text-to-text, text-to-speech,
+    and speech-to-text interactions.
+  prefs: []
+  type: TYPE_NORMAL
+- en: Additional References
+  prefs:
+  - PREF_H1
+  type: TYPE_NORMAL
+- en: Kwon, W., et al. (2023). [“Efficient Memory Management for Large Language Model
+    Serving with PagedAttention”](https://oreil.ly/PtCqL). arXiv preprint arXiv:2309.06180.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: Lewis, P., et al. (2022). [“Retrieval-Augmented Generation for Knowledge-Intensive
+    NLP Tasks”](https://oreil.ly/r5yVL). arXiv preprint arXiv:2005.11401.
+  prefs:
+  - PREF_UL
+  type: TYPE_NORMAL
+- en: ^([1](ch05.html#id795-marker)) A core is an individual processing unit within
+    a CPU or GPU that executes instructions. Modern CPUs and GPUs have multiple cores
+    to perform tasks simultaneously.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([2](ch05.html#id802-marker)) Multithreading in most languages is parallel
+    (running on multiple cores) and not concurrent. Python is changing over the next
+    coming versions to do the same (free-threaded Python).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([3](ch05.html#id817-marker)) You can also find a custom implementation in
+    [OpenAI Cookbook on GitHub](https://oreil.ly/8E7GQ).
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([4](ch05.html#id822-marker)) The cost of setting up the threads is still incurred;
+    it’s just done early to avoid doing it on the fly later.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([5](ch05.html#id830-marker)) P. Lewis et al. (2022), [“Retrieval-Augmented
+    Generation for Knowledge-Intensive NLP Tasks”](https://oreil.ly/GCk08), arXiv
+    preprint arXiv:2005.11401.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([6](ch05.html#id841-marker)) A dot product operation multiplies components
+    of two vectors and then sums the results. It can be used to calculate the cosine
+    of the angle between the vectors to quantify their similarity in direction (i.e.,
+    alignment). Vector databases use it to perform semantic search on document embeddings.
+  prefs: []
+  type: TYPE_NORMAL
+- en: ^([7](ch05.html#id843-marker)) Refer to the [Docker documentation](https://oreil.ly/V4itQ)
+    for installation instructions.
+  prefs: []
+  type: TYPE_NORMAL
