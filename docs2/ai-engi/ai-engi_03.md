@@ -550,7 +550,7 @@ AI 评委不仅是一个模型——它是一个包括模型和提示的系统�
 
 | [Ragas](https://github.com/explodinggradients/ragas/blob/b276f59c0d4eb4795dc28966bfbce14d5aacd140/src/ragas/metrics/_faithfulness.py#L93C1-L94C1) | `你的任务是判断一系列陈述的忠诚度，基于给定的上下文。对于每个陈述，你必须返回 1，如果陈述可以根据上下文验证，或者返回 0，如果陈述不能根据上下文验证。` | 0 和 1 |
 | --- | --- | --- |
-| [LlamaIndex](https://github.com/run-llama/llama_index/blob/main/llama-index-core/llama_index/core/evaluation/faithfulness.py) | `请告知给定信息是否由上下文支持。``你需要回答 YES 或 NO。``如果上下文中的任何部分支持信息，即使大部分上下文与信息无关，也要回答 YES。以下提供了一些示例。` `信息：苹果派通常是双层皮的。``上下文：苹果派是一种水果派……它通常是双层皮的，` `面皮` `在填充物上方和下方。``答案：YES` | YES 和 NO |
+| [LlamaIndex](https://github.com/run-llama/llama_index/blob/main/llama-index-core/llama_index/core/evaluation/faithfulness.py) | `请告知给定信息是否由上下文支持。你需要回答 YES 或 NO。如果上下文中的任何部分支持信息，即使大部分上下文与信息无关，也要回答 YES。以下提供了一些示例。信息：苹果派通常是双层皮的。上下文：苹果派是一种水果派……它通常是双层皮的，面皮在填充物上方和下方。答案：YES` | YES 和 NO |
 
 这三个工具输出的忠诚度分数不可比较。如果给定一个（上下文，答案）对，MLflow 给出忠诚度分数为 3，Ragas 输出 1，LlamaIndex 输出 NO，你会使用哪个分数？
 

@@ -67,7 +67,7 @@ LLM 应用可能只涉及循环的一次迭代。例如，如果用户正在撰�
 
 大多数最好的 LLM 对它们的训练数据守口如瓶，这是有充分理由的。如果你确切知道它们的训练文档是如何格式化的，那么你在操纵提示和，比如说，寻找新的越狱策略上就占有了优势。然而，如果你想看看模型熟悉哪些类型的文档，那么最简单的事情就是——*直接询问*。例如，尝试以下请求：`**"哪些类型的正式文档对于指定公司的财务信息是有用的?"**`你应该会看到一大堆可以模仿你请求的文档。接下来，要求模型生成一个示例文档，看看它是否符合你的需求。
 
-幸运的是，有无数种文档和图案可以借鉴。对于完成模型，看看你是否可以使提示类似于计算机程序、新闻文章、推文、Markdown 文档、通信记录等。对于聊天模型，整体文档由你决定——对于 OpenAI，这是一个以指导性系统消息开始，随后是用户和助手角色之间来回交流的 ChatML 文档。但你可以通过在用户消息中包含常见图案来使用小红帽原则。例如，利用 Markdown 语法来帮助模型理解内容的结构。使用井号（`#`）来分隔部分，反引号(```py` ```) ```py` to delimit code, an asterisk (`*)` to indicate items in a list, etc.
+幸运的是，有无数种文档和图案可以借鉴。对于完成模型，看看你是否可以使提示类似于计算机程序、新闻文章、推文、Markdown 文档、通信记录等。对于聊天模型，整体文档由你决定——对于 OpenAI，这是一个以指导性系统消息开始，随后是用户和助手角色之间来回交流的 ChatML 文档。但你可以通过在用户消息中包含常见图案来使用小红帽原则。例如，利用 Markdown 语法来帮助模型理解内容的结构。使用井号（`#`）来分隔部分，反引号(`` ` ``) to delimit code, an asterisk (`*`) to indicate items in a list, etc.
 
 Now, let’s look at the second criterion: the prompt must include all the information relevant to addressing the user’s problem. As you convert the user’s problem into the model’s domain, you must collect all of the information relevant to solving the user’s problem and incorporate it into the prompt. Sometimes, the user directly supplies you with all of the information that you need—in the proofreading example, the user’s raw text is sufficient. But at the other extreme, the travel planning application requires that you pull in user preferences, information from user calendars, airline ticket availability, recent news about the destination, government travel recommendations, etc.
 

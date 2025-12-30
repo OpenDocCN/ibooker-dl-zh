@@ -80,7 +80,7 @@ Yesterday, my TV stopped working. Now, I can’t turn it on at all.
 
 ## 人类思维与 LLM 处理
 
-LLM 选择看起来最可能的后续内容，这与人类在阅读文本时做出的某些假设相矛盾。这是因为当人类产生文本时，他们这样做是作为一个涉及产生看似合理的文本输出的过程的一部分。假设你想写一篇关于你在播客网站 Acast 上遇到的播客的博客文章。你可能开始写以下内容：``在他们最新的《历史的其余部分》中，他们谈论了百年战争（在 acast 上收听，http://.`` 当然，你可能并不记得 URL，所以这就是你停止写作并快速进行网络搜索的点。希望你能找到正确的链接：shows.acast.com/the-rest-is-history-podcast/episodes/321-hundred-years-war-a-storm-of-swords。或者，也许你找不到它，在这种情况下，你可能回去删除整个括号，并用 `(episode unfortunately not available anymore)` 代替。
+LLM 选择看起来最可能的后续内容，这与人类在阅读文本时做出的某些假设相矛盾。这是因为当人类产生文本时，他们这样做是作为一个涉及产生看似合理的文本输出的过程的一部分。假设你想写一篇关于你在播客网站 Acast 上遇到的播客的博客文章。你可能开始写以下内容：`在他们最新的《历史的其余部分》中，他们谈论了百年战争（在 acast 上收听，http://.` 当然，你可能并不记得 URL，所以这就是你停止写作并快速进行网络搜索的点。希望你能找到正确的链接：shows.acast.com/the-rest-is-history-podcast/episodes/321-hundred-years-war-a-storm-of-swords。或者，也许你找不到它，在这种情况下，你可能回去删除整个括号，并用 `(episode unfortunately not available anymore)` 代替。
 
 模型无法进行谷歌搜索或编辑，所以它只是猜测.^(1) 原始的 LLM 也不会表达任何怀疑，^(2) 添加一个免责声明说它只是在猜测，或者显示任何其他证据表明信息仅仅是猜测而不是实际知识——因为毕竟，模型 *总是* 在猜测.^(3) 这个猜测恰好发生在人类通常切换到产生文本的不同模式（谷歌搜索而不是按下第一个想到的键）的时刻。
 
